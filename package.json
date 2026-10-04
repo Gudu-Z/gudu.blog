@@ -1,0 +1,11 @@
+{
+  "name": "gudu-personal-universe",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Gudu 的个人博客 · 深空首屏",
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "start": "node scripts/serve.mjs",
+    "check": "node --check js/main.js && node --check js/black-hole.js && node --check scripts/serve.mjs"
+  }
+}

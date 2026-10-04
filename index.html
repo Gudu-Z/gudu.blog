@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#080b10" />
+    <meta name="description" content="Gudu的个人博客。在自己的轨道上，记录思考、生活与一切未知。" />
+    <title>Gudu的个人博客 · 在自己的轨道上</title>
+    <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" />
+    <link rel="stylesheet" href="./css/style.css" />
+    <script src="./js/black-hole.js" defer></script>
+    <script src="./js/main.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <section class="hero" id="home" aria-labelledby="hero-title">
+        <canvas class="starfield" id="starfield" aria-hidden="true"></canvas>
+        <div class="space-grid" aria-hidden="true"></div>
+
+        <div class="hero-heading" data-depth="0.7">
+          <h1 id="hero-title"><span class="title-first">Gudu<span class="title-particle">的</span></span><span class="title-second">个人博客<span class="title-period">.</span></span></h1>
+          <time class="live-clock" id="local-time" aria-live="off">
+            <span class="clock-dot" aria-hidden="true"></span>
+            <span data-clock-date></span>
+            <span class="clock-divider" aria-hidden="true"></span>
+            <span data-clock-time></span>
+          </time>
+        </div>
+
+        <figure class="black-hole" id="black-hole" aria-label="倾斜的三维黑洞：发光的吸积盘环绕黑洞阴影，光线在引力作用下弯曲，朝向观察者旋转的一侧更亮。">
+          <img class="black-hole-fallback" src="./assets/black-hole-static.png" alt="" width="1200" height="1035" aria-hidden="true" />
+          <canvas id="black-hole-canvas" aria-hidden="true"></canvas>
+        </figure>
+      </section>
+    </main>
+  </body>
+</html>
