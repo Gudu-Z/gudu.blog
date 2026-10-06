@@ -1,5 +1,13 @@
 @charset "UTF-8";
 
+@font-face {
+  font-family: "Barlow Condensed";
+  src: url("../assets/fonts/barlow-condensed-black-latin.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
   --space: #080b10;
@@ -14,6 +22,37 @@
 html { background: var(--space); }
 body { margin: 0; color: var(--paper); }
 ::selection { color: var(--space); background: var(--red); }
+
+/* The loader is opt-in: without JavaScript the page stays directly accessible. */
+.site-loader { display: none; }
+.is-loading { overflow: hidden; }
+.is-loading .site-loader {
+  display: grid;
+  place-items: center;
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: radial-gradient(ellipse at center, #c8954920, transparent 48%), var(--space);
+  opacity: 1;
+  transition: opacity 420ms ease;
+}
+.loader-content { width: 240px; text-align: center; transform: translateY(-12px); transition: transform 420ms ease; }
+.loader-mark { display: block; width: 240px; height: 200px; }
+.loader-frame { stroke: #e7e4dc30; stroke-width: 1; }
+.loader-orbit { stroke: #c49358; stroke-width: 1; opacity: 0.55; }
+.loader-shadow { fill: var(--space); stroke: #e7e4dc45; stroke-width: 1; }
+.loader-light { stroke: var(--paper); stroke-width: 1.4; stroke-dasharray: 38 213.33; animation: loader-orbit 2200ms linear infinite; }
+.loader-foreground { stroke: #d9ad70; stroke-width: 1.4; }
+.loader-accent { fill: var(--red); }
+.loader-wordmark { margin-top: 14px; color: var(--paper); font: 900 38px/1 "Barlow Condensed", "Arial Narrow", sans-serif; letter-spacing: 1px; }
+.loader-wordmark span { color: #e7e4dc90; }
+.loader-track { width: 144px; height: 1px; overflow: hidden; background: #e7e4dc20; margin: 26px auto 0; }
+.loader-track span { display: block; width: 40%; height: 100%; background: #d9ad70; animation: loader-scan 1400ms ease-in-out infinite; }
+.loader-caption { margin: 14px 0 0; color: #a7a8b0; font-size: 10px; letter-spacing: 0.28em; text-indent: 0.28em; }
+.is-loading-exit .site-loader { opacity: 0; }
+.is-loading-exit .loader-content { transform: translateY(-24px); }
+@keyframes loader-orbit { to { stroke-dashoffset: -251.33; } }
+@keyframes loader-scan { from { transform: translateX(-110%); } to { transform: translateX(360%); } }
 
 .hero {
   min-height: 760px;
@@ -42,14 +81,38 @@ body { margin: 0; color: var(--paper); }
   border: 1px solid #ffffff07;
   background: linear-gradient(90deg, transparent calc(33.333% - 1px), #ffffff06 33.333%, transparent calc(33.333% + 1px), transparent calc(66.666% - 1px), #ffffff06 66.666%, transparent calc(66.666% + 1px));
 }
-[data-depth] { will-change: transform; }
+[data-depth] { transform: translate3d(var(--pointer-x, 0px), var(--pointer-y, 0px), 0); will-change: transform; }
+.hero-composition { position: absolute; inset: 0; margin-inline: auto; }
 .hero-heading { position: absolute; left: 7.5%; top: 17%; z-index: 3; width: max-content; }
-h1 { margin: 0; font-size: clamp(80px, 8.2vw, 164px); letter-spacing: -0.065em; font-weight: 900; line-height: 1.1; }
+h1 { position: relative; isolation: isolate; margin: 0; font-size: clamp(86px, 8.8vw, 176px); letter-spacing: -0.065em; font-weight: 900; line-height: 1.1; }
 h1 > span { display: block; }
-.title-first { font-size: 1.065em; }
-.title-particle { font-size: 0.81em; margin-left: 0.08em; vertical-align: 0.015em; }
-.title-second { font-size: 0.84em; letter-spacing: -0.052em; }
-.title-period { color: var(--red); margin-left: 0.065em; }
+.title-first { position: relative; z-index: 0; font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-size: 1.55em; line-height: 1; letter-spacing: 0.015em; text-transform: uppercase; opacity: 0.18; transform: translate3d(var(--pointer-x, 0px), calc(-0.065em + var(--pointer-y, 0px)), 0); }
+.title-suffix { letter-spacing: 0; text-transform: none; }
+.title-second { position: relative; z-index: 1; margin-top: -0.58em; font-size: 0.84em; letter-spacing: -0.03em; }
+.title-first-content, .title-second-content { display: block; }
+.title-period { display: inline-block; position: relative; top: 0.13em; color: var(--red); font-size: 0.85em; letter-spacing: 0; margin-left: 0.065em; transform-origin: 50% 85%; }
+
+/* Entrance lives on the inner text, independent of the outer parallax layers. */
+@keyframes title-first-enter {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes title-second-enter {
+  from { clip-path: inset(100% 0 0); transform: translateY(18px); }
+  to { clip-path: inset(0); transform: translateY(0); }
+}
+@keyframes title-period-enter {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .hero:not(.intro-complete) .title-first-content { animation: title-first-enter 720ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .hero:not(.intro-complete) .title-second-content { animation: title-second-enter 700ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both; }
+  .hero:not(.intro-complete) .title-period { animation: title-period-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) 680ms both; }
+  .is-loading .hero .title-first-content,
+  .is-loading .hero .title-second-content,
+  .is-loading .hero .title-period { animation-play-state: paused; }
+}
 .live-clock {
   display: flex;
   align-items: center;
@@ -57,22 +120,26 @@ h1 > span { display: block; }
   min-height: 20px;
   margin: 32px 0 0 7px;
   color: #a7a8b0;
-  font: 13px "Consolas", "SFMono-Regular", monospace;
+  font: 14px "Consolas", "SFMono-Regular", monospace;
   font-variant-numeric: tabular-nums;
   letter-spacing: 1.7px;
   white-space: nowrap;
 }
 .clock-dot { width: 4px; height: 4px; background: var(--red); margin-right: 2px; }
 .clock-divider { width: 25px; height: 1px; background: #656873; }
-.black-hole { --hole-size: max(189vw, 303svh); position: absolute; width: var(--hole-size); height: calc(var(--hole-size) * 0.8625); left: 65%; top: 66%; transform: translate(-50%, -41%); margin: 0; z-index: 1; pointer-events: none; }
+.black-hole { --hole-size: max(189vw, 303svh); position: absolute; width: var(--hole-size); height: calc(var(--hole-size) * 0.8625); left: 65%; top: 62%; transform: translate(-50%, -41%); margin: 0; z-index: 1; pointer-events: none; }
 #black-hole-canvas { width: 100%; height: 100%; position: absolute; inset: 0; opacity: 0; transition: opacity 800ms ease; }
 .black-hole.is-ready #black-hole-canvas { opacity: 1; }
 .black-hole-fallback { position: absolute; inset: 0; width: 100%; height: 100%; transition: opacity 600ms ease; }
 .black-hole.is-ready .black-hole-fallback { opacity: 0; }
 
 @media (min-aspect-ratio: 16/10) and (min-width: 1101px) {
-  .hero { min-height: 660px; }
-  h1 { font-size: min(8.2vw, 13.8svh); }
+  .hero { --hero-height: clamp(660px, 100svh, 1400px); min-height: 660px; }
+  /* Cap the composition at 16:9 using the hero's actual, clamped height.
+     Extra screen width becomes space around it, without clipping the disk. */
+  .hero-composition { width: min(100%, calc(var(--hero-height) * 16 / 9)); }
+  .black-hole { --hole-size: min(max(189vw, 303svh), calc(var(--hero-height) * 3.36)); }
+  h1 { font-size: min(8.8vw, calc(var(--hero-height) * 0.148)); }
 }
 @media (max-width: 1100px) and (min-width: 701px) {
   .hero-heading { left: 7.5%; top: 17%; }
@@ -82,15 +149,18 @@ h1 > span { display: block; }
   .hero { min-height: 660px; height: 100svh; max-height: 1100px; }
   .space-grid { inset: 28px 7%; background: none; }
   .hero-heading { top: clamp(72px, 11svh, 112px); left: 9%; }
-  h1 { font-size: clamp(62px, 18vw, 106px); }
-  .live-clock { margin-top: 24px; font-size: 11px; letter-spacing: 1px; gap: 12px; }
+  h1 { font-size: clamp(66px, 19.2vw, 114px); }
+  .title-first { font-size: 1.48em; }
+  .live-clock { margin-top: 24px; font-size: 12px; letter-spacing: 1px; gap: 12px; }
   .clock-divider { width: 20px; }
-  .black-hole { --hole-size: max(289vw, 228svh); top: 75svh; }
+  .black-hole { --hole-size: max(289vw, 228svh); top: 71svh; }
 }
 @media (max-width: 380px) {
-  .live-clock { gap: 10px; font-size: 10px; }
+  .live-clock { gap: 10px; font-size: 11px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; }
   [data-depth] { will-change: auto; }
+  .loader-light, .loader-track span { animation: none; }
+  .loader-track span { width: 100%; opacity: 0.4; }
 }

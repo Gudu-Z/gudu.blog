@@ -21,6 +21,7 @@
     precision highp float;
     varying vec2 v_uv;
     uniform vec2 u_resolution;
+    uniform vec2 u_renderSize;
     uniform vec4 u_crop;
     uniform vec2 u_pointer;
     uniform float u_time;
@@ -35,26 +36,47 @@
       return mix(mix(hash(i), hash(i + vec2(1., 0.)), f.x),
                  mix(hash(i + vec2(0., 1.)), hash(i + vec2(1., 1.)), f.x), f.y);
     }
+    float detailVisibility(vec2 uv, bool averageDetail) {
+      // Refined ring samples resolve geometry only: its texture is subpixel.
+      // No derivatives may run inside the adaptive sampling branch.
+      if (averageDetail) return 0.0;
+      #ifdef HAS_DERIVATIVES
+        // Fade frequencies before a noise cell becomes smaller than a pixel.
+        // This also follows the actual render resolution during quality scaling.
+        float footprint = max(length(dFdx(uv)), length(dFdy(uv)));
+        return 1.0 - smoothstep(0.35, 1.2, footprint);
+      #else
+        return 0.0;
+      #endif
+    }
+    float filteredNoise(vec2 uv, bool averageDetail) {
+      // Unresolved value noise converges to its mean instead of shimmering.
+      return mix(0.5, noise(uv), detailVisibility(uv, averageDetail));
+    }
     vec3 acceleration(vec3 p, float h2) {
       float r2 = dot(p, p);
       return -1.5 * h2 * p / (r2 * r2 * sqrt(r2));
     }
-    vec3 diskEmission(vec3 p, vec3 ray) {
+    vec3 diskEmission(vec3 p, vec3 ray, bool averageDetail) {
       float r = length(p.xz);
       float phi = atan(p.z, p.x);
       // Keplerian shear winds the features into fine, orbiting filaments.
       float phase = phi - u_time * 2.1 / pow(r, 1.5);
-      // Periodic coordinates keep close-up filaments seamless across atan's wrap.
+      // Periodic coordinates keep the flow seamless across atan's wrap.
       vec2 orbit = vec2(cos(phase), sin(phase));
-      float bands = noise(vec2(r * 9.0 + orbit.x * 1.2, orbit.y * 2.8));
-      float detail = noise(vec2(r * 21.0 + orbit.x * 2.5, orbit.y * 6.0));
-      float streakPhase = r * 27.0 + 3.0 * noise(vec2(r * 4.0 + orbit.x * 0.8, orbit.y * 4.0));
-      float streak = sin(streakPhase);
-      float ink = smoothstep(-0.50, 0.80, streak);
-      #ifdef HAS_DERIVATIVES
-        ink = mix(ink, 0.5, smoothstep(1.1, 3.0, fwidth(streakPhase)));
-      #endif
-      float texture = (0.44 + 0.65 * bands + 0.20 * detail) * (0.72 + 0.28 * ink);
+      float flow = noise(vec2(r * 0.8 + orbit.x * 1.6, orbit.y * 2.0));
+      float streamRadius = r + (flow - 0.5) * 0.32;
+      float body = filteredNoise(vec2(streamRadius * 2.0 + orbit.x * 0.7, orbit.y * 3.0), averageDetail);
+      float ribbons = filteredNoise(vec2(streamRadius * 6.5 + orbit.x * 1.3, orbit.y * 4.5), averageDetail);
+      vec2 fineUV = vec2(streamRadius * 22.0 + orbit.x * 2.0, orbit.y * 12.0);
+      float fine = noise(fineUV);
+      // Independent angular patches vary the lengths of the fine highlights.
+      vec2 patchUV = vec2(r * 1.2 + orbit.x * 5.0, orbit.y * 5.0);
+      float patches = noise(patchUV);
+      float filament = smoothstep(0.53, 0.76, fine) * smoothstep(0.25, 0.70, patches);
+      // Filter the thresholded highlight too, not just its input noise.
+      filament = mix(0.12, filament, detailVisibility(fineUV, averageDetail) * detailVisibility(patchUV, averageDetail));
+      float texture = 0.46 + 0.36 * body + 0.38 * ribbons + 0.38 * filament;
 
       // Local orbital velocity; -ray is the emitted photon's direction.
       vec3 tangent = normalize(vec3(-p.z, 0.0, p.x));
@@ -65,18 +87,20 @@
       float heat = pow(3.0 / r, 0.75) * pow(max(0.001, 1.0 - sqrt(3.0 / r)), 0.25);
       float observedHeat = heat * shift;
 
-      // Stepped highlights and fine ink-like lanes give the light an anime finish.
+      // Warm body color, with cream reserved for the hotter fine highlights.
       vec3 ember = vec3(0.94, 0.25, 0.075);
       vec3 gold = vec3(1.0, 0.66, 0.30);
       vec3 ivory = vec3(1.0, 0.93, 0.73);
-      vec3 hot = vec3(0.88, 0.94, 1.0);
       vec3 color = mix(ember, gold, smoothstep(0.17, 0.33, observedHeat));
-      color = mix(color, ivory, smoothstep(0.30, 0.49, observedHeat));
-      color = mix(color, hot, smoothstep(0.52, 0.75, observedHeat) * 0.42);
+      color = mix(color, ivory, smoothstep(0.38, 0.68, observedHeat) * (0.30 + 0.60 * filament));
       float innerEdge = smoothstep(3.0, 3.35, r);
-      float outerEdge = 1.0 - smoothstep(8.0, 11.0, r);
       float energy = 2.25 * pow(3.0 / r, 1.6) * pow(shift, 3.0);
-      return color * energy * texture * innerEdge * outerEdge;
+      // A monotonic highlight shoulder retains Doppler asymmetry and texture
+      // without allowing the approaching side to flatten into a white sheet.
+      float intensity = energy * texture;
+      float excess = max(intensity - 0.75, 0.0);
+      intensity = min(intensity, 0.75) + excess / (1.0 + 1.10 * excess);
+      return color * intensity * innerEdge;
     }
     vec3 distantStars(vec3 direction) {
       vec2 sky = vec2(atan(direction.z, direction.x), asin(clamp(direction.y, -1.0, 1.0)));
@@ -87,39 +111,26 @@
       float star = (1.0 - smoothstep(0.012, 0.075, length(fract(grid) - center))) * step(0.986, seed);
       return vec3(0.45, 0.53, 0.65) * star * 0.6;
     }
-    void main() {
-      float aspect = u_resolution.x / u_resolution.y;
-      vec2 sceneUV = u_crop.xy + v_uv * u_crop.zw;
-      vec2 screen = (sceneUV - vec2(0.50, 0.59)) * vec2(aspect, 1.0) * 2.0;
-      screen -= u_pointer * vec2(0.012, 0.009);
-      // Screen roll controls composition independently of the disk's 3D inclination.
-      float screenRoll = 18.0 * PI / 180.0;
-      screen = mat2(cos(screenRoll), -sin(screenRoll), sin(screenRoll), cos(screenRoll)) * screen;
-      // Inclination is measured from the disk normal: 0° face-on, 90° edge-on.
-      float diskInclination = 81.0 * PI / 180.0;
-      float cameraDistance = 31.784430;
-      vec3 origin = vec3(u_pointer.x * 0.8,
-        cameraDistance * cos(diskInclination) + u_pointer.y * 0.55,
-        cameraDistance * sin(diskInclination));
-      vec3 forward = normalize(-origin);
-      vec3 right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
-      vec3 up = cross(right, forward);
+    vec4 traceScene(vec2 screen, vec3 origin, vec3 forward, vec3 right, vec3 up, bool averageDetail, out bool directDisk) {
+      directDisk = false;
+      int crossings = 0;
       vec3 direction = normalize(forward * 2.08 + screen.x * right + screen.y * up);
       vec3 p = origin;
       vec3 v = direction;
       vec3 angular = cross(p, v);
       float h2 = dot(angular, angular);
-      // These rays cannot reach the disk's outer radius, even after deflection.
-      if (h2 > 140.0) {
-        vec3 stars = distantStars(direction);
-        gl_FragColor = vec4(stars, max(stars.r, max(stars.g, stars.b)));
-        return;
-      }
       vec3 emission = vec3(0.0);
       float alpha = 0.0;
-      bool escaped = false;
+      float diskOpacity = 1.0;
+      // These rays cannot reach the disk's outer radius, even after deflection.
+      // Skip their tracing without returning before the shared derivative work.
+      bool escaped = h2 > 140.0;
+      bool diskFound = false;
+      vec3 diskPoint = vec3(6.0, 0.0, 0.0);
+      vec3 diskRay = vec3(0.0, 0.0, 1.0);
 
       for (int i = 0; i < 180; i++) {
+        if (escaped) break;
         float r = length(p);
         if (r < 1.015) { alpha = 1.0; break; }
         if (r > 42.0) { escaped = true; break; }
@@ -129,25 +140,82 @@
         vec3 nextV = v + 0.5 * (a + acceleration(next, h2)) * dt;
 
         if (p.y * next.y < 0.0) {
+          crossings++;
           float fraction = p.y / (p.y - next.y);
           vec3 hit = mix(p, next, fraction);
           float diskRadius = length(hit.xz);
           if (diskRadius > 3.0 && diskRadius < 11.0) {
-            emission = diskEmission(hit, mix(v, nextV, fraction));
-            alpha = 1.0 - smoothstep(9.0, 11.0, diskRadius);
+            diskPoint = hit;
+            diskRay = mix(v, nextV, fraction);
+            diskFound = true;
+            directDisk = crossings == 1;
+            // Fade coverage rather than painting a dim opaque outer rim.
+            diskOpacity = 1.0 - smoothstep(7.8, 10.8, diskRadius);
+            alpha = diskOpacity;
             break;
           }
         }
         p = next;
         v = nextV;
       }
+      // The base trace reaches this call in all pixels after the loop; adaptive
+      // samples use averageDetail to avoid derivatives in divergent control flow.
+      vec3 diskLight = diskEmission(diskPoint, diskRay, averageDetail);
+      if (diskFound) emission = diskLight;
       if (escaped) {
         emission = distantStars(normalize(v));
         alpha = max(emission.r, max(emission.g, emission.b));
       }
       // Soft clipping preserves thin light lanes instead of flattening the disk.
-      emission = 1.0 - exp(-emission * 1.65);
-      gl_FragColor = vec4(emission, alpha);
+      if (h2 <= 140.0) emission = 1.0 - exp(-emission * 1.65);
+      emission *= diskOpacity;
+      return vec4(emission, alpha);
+    }
+    void main() {
+      float aspect = u_resolution.x / u_resolution.y;
+      vec2 sceneUV = u_crop.xy + v_uv * u_crop.zw;
+      vec2 screen = (sceneUV - vec2(0.50, 0.59)) * vec2(aspect, 1.0) * 2.0;
+      screen -= u_pointer * vec2(0.012, 0.009);
+      // Screen roll controls composition independently of the disk's 3D inclination.
+      float screenRoll = 18.0 * PI / 180.0;
+      mat2 roll = mat2(cos(screenRoll), -sin(screenRoll), sin(screenRoll), cos(screenRoll));
+      screen = roll * screen;
+      // Inclination is measured from the disk normal: 0° face-on, 90° edge-on.
+      float diskInclination = 81.0 * PI / 180.0;
+      float cameraDistance = 31.784430;
+      vec3 origin = vec3(u_pointer.x * 0.8,
+        cameraDistance * cos(diskInclination) + u_pointer.y * 0.55,
+        cameraDistance * sin(diskInclination));
+      vec3 forward = normalize(-origin);
+      vec3 right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
+      vec3 up = cross(right, forward);
+
+      // The ordinary material pass remains unconditional for valid derivatives.
+      bool directDisk;
+      vec4 center = traceScene(screen, origin, forward, right, up, false, directDisk);
+      vec2 pixel = 2.0 * u_crop.zw * vec2(aspect, 1.0) / u_renderSize;
+      vec3 direction = normalize(forward * 2.08 + screen.x * right + screen.y * up);
+      float impact = length(cross(origin, direction));
+      float pixelImpact = length(origin) * max(pixel.x, pixel.y) / 2.08;
+      // Use proximity to the critical orbit only to budget extra samples.
+      // The visible ring, shadow and disk occlusion still come from traced rays.
+      float refine = 1.0 - smoothstep(0.045 + 1.5 * pixelImpact,
+        0.075 + 2.5 * pixelImpact, abs(impact - 2.6));
+      // A first-crossing disk hit already hides the ring; keep its resolved
+      // foreground texture instead of averaging it into a circular seam.
+      if (refine > 0.0 && !directDisk) {
+        vec4 resolved = vec4(0.0);
+        // A fixed 4x4 grid estimates subpixel coverage without temporal ghosts.
+        for (int y = 0; y < 4; y++) {
+          for (int x = 0; x < 4; x++) {
+            vec2 offset = (vec2(float(x), float(y)) + 0.5) / 4.0 - 0.5;
+            bool sampleDirectDisk;
+            resolved += traceScene(screen + roll * (offset * pixel), origin, forward, right, up, true, sampleDirectDisk);
+          }
+        }
+        center = mix(center, resolved / 16.0, refine);
+      }
+      gl_FragColor = center;
     }
   `;
 
@@ -163,7 +231,9 @@
         float x = float(i);
         float w = exp(-x * x / 16.0);
         vec3 c = texture2D(u_scene, v_uv + vec2(x * u_texel.x * 3.0, 0.0)).rgb;
-        light += max(c - 0.22, 0.0) * w;
+        float brightness = max(c.r, max(c.g, c.b));
+        // Bright filaments contribute glow; dim amber outskirts stay clear.
+        light += c * smoothstep(0.34, 0.68, brightness) * 0.72 * w;
         weights += w;
       }
       gl_FragColor = vec4(light / weights, 1.0);
@@ -171,14 +241,39 @@
   `;
 
   const compositeSource = `
-    precision mediump float;
+    precision highp float;
     varying vec2 v_uv;
     uniform sampler2D u_scene;
     uniform sampler2D u_bloom;
     uniform vec2 u_texel;
     uniform vec4 u_crop;
+    float luminance(vec3 color) {
+      return dot(color, vec3(0.299, 0.587, 0.114));
+    }
+    vec4 antialiasedScene() {
+      vec4 center = texture2D(u_scene, v_uv);
+      float middle = luminance(center.rgb);
+      float nw = luminance(texture2D(u_scene, v_uv + vec2(-1.0, -1.0) * u_texel).rgb);
+      float ne = luminance(texture2D(u_scene, v_uv + vec2( 1.0, -1.0) * u_texel).rgb);
+      float sw = luminance(texture2D(u_scene, v_uv + vec2(-1.0,  1.0) * u_texel).rgb);
+      float se = luminance(texture2D(u_scene, v_uv + vec2( 1.0,  1.0) * u_texel).rgb);
+      float darkest = min(middle, min(min(nw, ne), min(sw, se)));
+      float brightest = max(middle, max(max(nw, ne), max(sw, se)));
+      // Leave low-contrast flow detail alone; only smooth sharp pixel edges.
+      if (brightest - darkest < max(0.035, brightest * 0.18)) return center;
+      vec2 direction = vec2(-((nw + ne) - (sw + se)), (nw + sw) - (ne + se));
+      float reduce = max((nw + ne + sw + se) * 0.03125, 0.0078125);
+      direction = clamp(direction / (min(abs(direction.x), abs(direction.y)) + reduce),
+        vec2(-3.0), vec2(3.0)) * u_texel;
+      vec4 inner = 0.5 * (texture2D(u_scene, v_uv - direction / 6.0) +
+        texture2D(u_scene, v_uv + direction / 6.0));
+      vec4 outer = inner * 0.5 + 0.25 * (texture2D(u_scene, v_uv - direction * 0.5) +
+        texture2D(u_scene, v_uv + direction * 0.5));
+      float smoothed = luminance(outer.rgb);
+      return smoothed < darkest || smoothed > brightest ? inner : outer;
+    }
     void main() {
-      vec4 scene = texture2D(u_scene, v_uv);
+      vec4 scene = antialiasedScene();
       vec3 glow = vec3(0.0);
       float weights = 0.0;
       for (int i = -6; i <= 6; i++) {
@@ -187,7 +282,10 @@
         glow += texture2D(u_bloom, v_uv + vec2(0.0, y * u_texel.y * 3.0)).rgb * w;
         weights += w;
       }
-      glow = glow / weights * 0.7;
+      glow = glow / weights * 0.55;
+      // Keep the shadow dark while letting the traced photon ring remain sharp.
+      float shadow = scene.a * (1.0 - smoothstep(0.015, 0.075, max(scene.r, max(scene.g, scene.b))));
+      glow *= 1.0 - shadow * 0.9;
       vec3 color = 1.0 - (1.0 - scene.rgb) * exp(-glow * 1.8);
       float alpha = max(scene.a, max(glow.r, max(glow.g, glow.b)));
       vec2 sceneUV = u_crop.xy + v_uv * u_crop.zw;
@@ -352,6 +450,7 @@
       const gl = this.gl;
       this.use(this.scene, this.sceneTarget);
       gl.uniform2f(this.scene.uniforms.u_resolution, this.sceneWidth, this.sceneHeight);
+      gl.uniform2f(this.scene.uniforms.u_renderSize, this.width, this.height);
       gl.uniform4fv(this.scene.uniforms.u_crop, this.crop);
       gl.uniform2f(this.scene.uniforms.u_pointer, x, y);
       gl.uniform1f(this.scene.uniforms.u_time, time);

@@ -7,30 +7,54 @@
     <meta name="description" content="Gudu的个人博客。在自己的轨道上，记录思考、生活与一切未知。" />
     <title>Gudu的个人博客 · 在自己的轨道上</title>
     <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" />
+    <link rel="preload" href="./assets/fonts/barlow-condensed-black-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <script src="./js/loading.js"></script>
     <link rel="stylesheet" href="./css/style.css" />
     <script src="./js/black-hole.js" defer></script>
     <script src="./js/main.js" defer></script>
   </head>
   <body>
+    <div class="site-loader" id="site-loader" role="status" aria-live="polite">
+      <div class="loader-content">
+        <svg class="loader-mark" viewBox="0 0 240 200" fill="none" aria-hidden="true">
+          <path class="loader-frame" d="M20 32V18h14M206 18h14v14M220 168v14h-14M34 182H20v-14" />
+          <g transform="rotate(-18 120 100)">
+            <ellipse class="loader-orbit" cx="120" cy="100" rx="84" ry="19" />
+            <circle class="loader-shadow" cx="120" cy="100" r="40" />
+            <circle class="loader-light" cx="120" cy="100" r="40" />
+            <path class="loader-foreground" d="M36 100a84 19 0 0 0 168 0" />
+            <path class="loader-accent" d="M201 97h6v6h-6z" />
+          </g>
+        </svg>
+        <div class="loader-wordmark" aria-hidden="true">GUDU<span>’s</span></div>
+        <div class="loader-track" aria-hidden="true"><span></span></div>
+        <p class="loader-caption">正在载入</p>
+      </div>
+    </div>
     <main>
       <section class="hero" id="home" aria-labelledby="hero-title">
         <canvas class="starfield" id="starfield" aria-hidden="true"></canvas>
         <div class="space-grid" aria-hidden="true"></div>
 
-        <div class="hero-heading" data-depth="0.7">
-          <h1 id="hero-title"><span class="title-first">Gudu<span class="title-particle">的</span></span><span class="title-second">个人博客<span class="title-period">.</span></span></h1>
-          <time class="live-clock" id="local-time" aria-live="off">
-            <span class="clock-dot" aria-hidden="true"></span>
-            <span data-clock-date></span>
-            <span class="clock-divider" aria-hidden="true"></span>
-            <span data-clock-time></span>
-          </time>
-        </div>
+        <div class="hero-composition">
+          <div class="hero-heading">
+            <h1 id="hero-title">
+              <span class="title-first" data-depth="1.05"><span class="title-first-content">Gudu<span class="title-suffix">’s</span></span></span>
+              <span class="title-second" data-depth="0.35"><span class="title-second-content">个人博客<span class="title-period">.</span></span></span>
+            </h1>
+            <time class="live-clock" id="local-time" data-depth="0.7" aria-live="off">
+              <span class="clock-dot" aria-hidden="true"></span>
+              <span data-clock-date></span>
+              <span class="clock-divider" aria-hidden="true"></span>
+              <span data-clock-time></span>
+            </time>
+          </div>
 
-        <figure class="black-hole" id="black-hole" aria-label="倾斜的三维黑洞：发光的吸积盘环绕黑洞阴影，光线在引力作用下弯曲，朝向观察者旋转的一侧更亮。">
-          <img class="black-hole-fallback" src="./assets/black-hole-static.png" alt="" width="1200" height="1035" aria-hidden="true" />
-          <canvas id="black-hole-canvas" aria-hidden="true"></canvas>
-        </figure>
+          <figure class="black-hole" id="black-hole" aria-label="倾斜的三维黑洞：发光的吸积盘环绕黑洞阴影，光线在引力作用下弯曲，朝向观察者旋转的一侧更亮。">
+            <img class="black-hole-fallback" src="./assets/black-hole-static.png" alt="" width="1200" height="1035" aria-hidden="true" />
+            <canvas id="black-hole-canvas" aria-hidden="true"></canvas>
+          </figure>
+        </div>
       </section>
     </main>
   </body>

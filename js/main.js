@@ -18,6 +18,7 @@
   const finePointer = matchMedia('(pointer: fine)');
   const pointer = { x: 0, y: 0, targetX: 0, targetY: 0 };
   let paused = reducedMotion.matches;
+  let loading = document.documentElement.classList.contains('is-loading');
   let visible = true;
   let frame = 0;
   let lastTime = 0;
@@ -26,6 +27,13 @@
   let width = 0;
   let height = 0;
   let starList = [];
+
+  function finishIntro() { hero.classList.add('intro-complete'); }
+  window.addEventListener('site:revealed', () => { loading = false; start(); });
+  if (reducedMotion.matches) finishIntro();
+  hero.addEventListener('animationend', event => {
+    if (event.animationName === 'title-period-enter') finishIntro();
+  });
 
   // Read the actual wall clock every second, independently of visual animation.
   function updateClock() {
@@ -91,14 +99,15 @@
     drawStars();
     for (const layer of layers) {
       const depth = Number(layer.dataset.depth);
-      layer.style.transform = `translate3d(${-pointer.x * depth * 8}px, ${-pointer.y * depth * 6}px, 0)`;
+      layer.style.setProperty('--pointer-x', `${-pointer.x * depth * 8}px`);
+      layer.style.setProperty('--pointer-y', `${-pointer.y * depth * 6}px`);
     }
     blackHole.render(elapsed, pointer.x, -pointer.y);
   }
 
   function tick(timestamp) {
     frame = 0;
-    if (paused || !visible || document.hidden) return;
+    if (loading || paused || !visible || document.hidden) return;
     const delta = lastTime ? Math.min(timestamp - lastTime, 100) : 16;
     lastTime = timestamp;
     elapsed += delta / 1000;
@@ -118,7 +127,7 @@
     lastTime = 0;
     lastRender = 0;
     blackHole.resetTiming();
-    if (!frame && !paused && visible && !document.hidden) frame = requestAnimationFrame(tick);
+    if (!frame && !loading && !paused && visible && !document.hidden) frame = requestAnimationFrame(tick);
   }
 
   function stop() {
@@ -133,7 +142,7 @@
   }
 
   hero.addEventListener('pointermove', event => {
-    if (paused || !finePointer.matches || event.pointerType === 'touch') return;
+    if (loading || paused || !finePointer.matches || event.pointerType === 'touch') return;
     const rect = hero.getBoundingClientRect();
     pointer.targetX = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
     pointer.targetY = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
@@ -141,12 +150,13 @@
   hero.addEventListener('pointerleave', () => { pointer.targetX = 0; pointer.targetY = 0; });
   reducedMotion.addEventListener('change', () => {
     paused = reducedMotion.matches;
+    if (paused) finishIntro();
     pointer.x = pointer.y = pointer.targetX = pointer.targetY = 0;
     updateMotion();
     draw();
   });
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { stop(); stopClock(); }
+    if (document.hidden) { stop(); stopClock(); finishIntro(); }
     else { start(); updateClock(); }
   });
   new IntersectionObserver(entries => {
@@ -155,9 +165,10 @@
   }).observe(hero);
   blackHole.onRestore = () => { draw(); start(); };
   new ResizeObserver(resize).observe(hero);
-  window.addEventListener('pagehide', () => { stop(); stopClock(); });
+  window.addEventListener('pagehide', () => { stop(); stopClock(); finishIntro(); });
   window.addEventListener('pageshow', () => { start(); updateClock(); });
   resize();
   updateMotion();
   updateClock();
+  window.SiteLoader?.ready();
 })();
