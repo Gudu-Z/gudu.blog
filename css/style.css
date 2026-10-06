@@ -45,7 +45,6 @@ body { margin: 0; color: var(--paper); }
 .loader-foreground { stroke: #d9ad70; stroke-width: 1.4; }
 .loader-accent { fill: var(--red); }
 .loader-wordmark { margin-top: 14px; color: var(--paper); font: 900 38px/1 "Barlow Condensed", "Arial Narrow", sans-serif; letter-spacing: 1px; }
-.loader-wordmark span { color: #e7e4dc90; }
 .loader-track { width: 144px; height: 1px; overflow: hidden; background: #e7e4dc20; margin: 26px auto 0; }
 .loader-track span { display: block; width: 40%; height: 100%; background: #d9ad70; animation: loader-scan 1400ms ease-in-out infinite; }
 .loader-caption { margin: 14px 0 0; color: #a7a8b0; font-size: 10px; letter-spacing: 0.28em; text-indent: 0.28em; }
