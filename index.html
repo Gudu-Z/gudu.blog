@@ -9,9 +9,10 @@
     <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" />
     <link rel="preload" href="./assets/fonts/barlow-condensed-black-latin.woff2" as="font" type="font/woff2" crossorigin />
     <script src="./js/loading.js"></script>
-    <link rel="stylesheet" href="./css/style.css" />
-    <script src="./js/black-hole.js" defer></script>
-    <script src="./js/main.js" defer></script>
+    <link rel="stylesheet" href="./css/style.css?v=20261007-horizon-2" />
+    <script src="./js/black-hole.js?v=20261007-horizon-2" defer></script>
+    <script src="./js/horizon-transition.js?v=20261007-horizon-2" defer></script>
+    <script src="./js/main.js?v=20261007-horizon-2" defer></script>
   </head>
   <body>
     <div class="site-loader" id="site-loader" role="status" aria-live="polite">
@@ -35,6 +36,7 @@
       <section class="hero" id="home" aria-labelledby="hero-title">
         <canvas class="starfield" id="starfield" aria-hidden="true"></canvas>
         <div class="space-grid" aria-hidden="true"></div>
+        <button class="shadow-toggle" id="shadow-toggle" type="button" aria-label="反色主题" aria-pressed="false" disabled></button>
 
         <div class="hero-composition">
           <div class="hero-heading">
@@ -57,5 +59,8 @@
         </div>
       </section>
     </main>
+    <div class="theme-inversion" id="theme-inversion" aria-hidden="true" hidden></div>
+    <div class="theme-sweep" id="theme-sweep" aria-hidden="true" hidden></div>
+    <canvas class="theme-shock" id="theme-shock" aria-hidden="true" hidden></canvas>
   </body>
 </html>

@@ -20,7 +20,7 @@
 
 * { box-sizing: border-box; }
 html { background: var(--space); }
-body { margin: 0; color: var(--paper); }
+body { margin: 0; color: var(--paper); background: var(--space); }
 ::selection { color: var(--space); background: var(--red); }
 
 /* The loader is opt-in: without JavaScript the page stays directly accessible. */
@@ -131,6 +131,20 @@ h1 > span { display: block; }
 .black-hole.is-ready #black-hole-canvas { opacity: 1; }
 .black-hole-fallback { position: absolute; inset: 0; width: 100%; height: 100%; transition: opacity 600ms ease; }
 .black-hole.is-ready .black-hole-fallback { opacity: 0; }
+
+/* White difference layers invert the live page, including both canvases and text.
+   Keep them as separate body children so a return sweep cancels the inversion. */
+.theme-inversion, .theme-sweep, .theme-shock { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.theme-inversion, .theme-sweep { background: #fff; mix-blend-mode: difference; }
+.theme-inversion { z-index: 8; }
+.theme-sweep { z-index: 9; }
+.theme-shock { z-index: 10; }
+.theme-inversion[hidden], .theme-sweep[hidden], .theme-shock[hidden] { display: none; }
+.shadow-toggle { position: absolute; z-index: 6; padding: 0; border: 0; background: transparent; color: inherit; transform: translate(-50%, -50%); pointer-events: none; }
+.shadow-toggle:focus-visible { outline: 1px solid var(--paper); outline-offset: 8px; }
+.shadow-toggle:disabled { visibility: hidden; }
+.hero.is-shadow-hover { cursor: pointer; }
+.hero.is-theme-transitioning { cursor: default; }
 
 @media (min-aspect-ratio: 16/10) and (min-width: 1101px) {
   .hero { --hero-height: clamp(660px, 100svh, 1400px); min-height: 660px; }

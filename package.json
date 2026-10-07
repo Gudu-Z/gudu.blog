@@ -6,6 +6,6 @@
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "start": "node scripts/serve.mjs",
-    "check": "node --check js/loading.js && node --check js/main.js && node --check js/black-hole.js && node --check scripts/serve.mjs"
+    "check": "node --check js/loading.js && node --check js/main.js && node --check js/black-hole.js && node --check js/horizon-transition.js && node --check scripts/serve.mjs"
   }
 }

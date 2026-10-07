@@ -305,6 +305,7 @@
       this.frameTimes = [];
       this.lastSample = 0;
       this.resources = [];
+      this.interactionPointer = { x: 0, y: 0 };
       if (!this.gl) return;
       try { this.initialize(); } catch (error) { console.warn('Using the static black-hole illustration.', error); }
       canvas.addEventListener('webglcontextlost', event => {
@@ -445,7 +446,93 @@
       gl.uniform1i(program.uniforms[name], index);
     }
 
+    getInteractionGeometry() {
+      const rect = this.canvas.parentElement?.getBoundingClientRect();
+      if (!rect?.width || !rect.height) return null;
+      // The fallback was rendered with a centered camera, regardless of where
+      // the pointer was when WebGL became unavailable.
+      const pointer = this.ready && !this.lost ? this.interactionPointer : { x: 0, y: 0 };
+      const inclination = 81 * Math.PI / 180;
+      const distance = Math.hypot(pointer.x * 0.8,
+        31.784430 * Math.cos(inclination) + pointer.y * 0.55,
+        31.784430 * Math.sin(inclination));
+      // Use an impact parameter just inside the critical orbit (~2.6 Rs),
+      // keeping the luminous, subpixel-sampled photon ring out of the target.
+      const radius = rect.height * 1.04 * 2.5 / Math.sqrt(distance * distance - 2.5 * 2.5);
+      return {
+        x: rect.left + rect.width * 0.5 + pointer.x * 0.006 * rect.height,
+        y: rect.top + rect.height * 0.41 - pointer.y * 0.0045 * rect.height,
+        radius,
+        axisAngle: -108 * Math.PI / 180,
+      };
+    }
+
+    hitTestShadow(clientX, clientY) {
+      if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return false;
+      const geometry = this.getInteractionGeometry();
+      if (!geometry || Math.hypot(clientX - geometry.x, clientY - geometry.y) > geometry.radius) return false;
+      const figure = this.canvas.parentElement;
+      const hero = figure.closest('.hero')?.getBoundingClientRect();
+      if (hero && (clientX < hero.left || clientX > hero.right || clientY < hero.top || clientY > hero.bottom)) return false;
+      const rect = figure.getBoundingClientRect();
+      const pointer = this.ready && !this.lost ? this.interactionPointer : { x: 0, y: 0 };
+      const inclination = 81 * Math.PI / 180;
+      const roll = 18 * Math.PI / 180;
+      let px = pointer.x * 0.8;
+      let py = 31.784430 * Math.cos(inclination) + pointer.y * 0.55;
+      let pz = 31.784430 * Math.sin(inclination);
+      const distance = Math.hypot(px, py, pz);
+      const fx = -px / distance, fy = -py / distance, fz = -pz / distance;
+      const horizontal = Math.hypot(fx, fz);
+      const rx = -fz / horizontal, rz = fx / horizontal;
+      const ux = -rz * fy, uy = rz * fx - rx * fz, uz = rx * fy;
+      const sx = (clientX - geometry.x) * 2 / rect.height;
+      const sy = (geometry.y - clientY) * 2 / rect.height;
+      const screenX = Math.cos(roll) * sx + Math.sin(roll) * sy;
+      const screenY = -Math.sin(roll) * sx + Math.cos(roll) * sy;
+      let vx = fx * 2.08 + screenX * rx + screenY * ux;
+      let vy = fy * 2.08 + screenY * uy;
+      let vz = fz * 2.08 + screenX * rz + screenY * uz;
+      const speed = Math.hypot(vx, vy, vz);
+      vx /= speed; vy /= speed; vz /= speed;
+      const hx = py * vz - pz * vy;
+      const hy = pz * vx - px * vz;
+      const hz = px * vy - py * vx;
+      const h2 = hx * hx + hy * hy + hz * hz;
+
+      // Trace only candidate clicks/pointer positions, without reading GPU
+      // pixels. This mirrors traceScene: foreground and lensed disk crossings
+      // must block interaction even when they overlap the projected shadow.
+      for (let i = 0; i < 180; i++) {
+        const r2 = px * px + py * py + pz * pz;
+        const r = Math.sqrt(r2);
+        if (r < 1.015) return true;
+        if (r > 42) return false;
+        const dt = Math.max(0.055, Math.min(1.8, r * 0.095));
+        const acceleration = -1.5 * h2 / (r2 * r2 * r);
+        const ax = acceleration * px, ay = acceleration * py, az = acceleration * pz;
+        const nx = px + vx * dt + 0.5 * ax * dt * dt;
+        const ny = py + vy * dt + 0.5 * ay * dt * dt;
+        const nz = pz + vz * dt + 0.5 * az * dt * dt;
+        const nextR2 = nx * nx + ny * ny + nz * nz;
+        const nextAcceleration = -1.5 * h2 / (nextR2 * nextR2 * Math.sqrt(nextR2));
+        const nextVx = vx + 0.5 * (ax + nextAcceleration * nx) * dt;
+        const nextVy = vy + 0.5 * (ay + nextAcceleration * ny) * dt;
+        const nextVz = vz + 0.5 * (az + nextAcceleration * nz) * dt;
+        if (py * ny < 0) {
+          const fraction = py / (py - ny);
+          const diskRadius = Math.hypot(px + (nx - px) * fraction, pz + (nz - pz) * fraction);
+          if (diskRadius > 3 && diskRadius < 11) return false;
+        }
+        px = nx; py = ny; pz = nz;
+        vx = nextVx; vy = nextVy; vz = nextVz;
+      }
+      return false;
+    }
+
     render(time, x, y) {
+      this.interactionPointer.x = x;
+      this.interactionPointer.y = y;
       if (!this.ready || this.lost) return;
       const gl = this.gl;
       this.use(this.scene, this.sceneTarget);
