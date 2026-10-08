@@ -295,6 +295,140 @@
     }
   `;
 
+  // A separate transparent pass shares the scene's camera and geodesics.
+  // Light is integrated in depth order: neither jet is a screen-space decal.
+  const jetSource = `
+    precision highp float;
+    varying vec2 v_uv;
+    uniform vec2 u_resolution;
+    uniform vec4 u_crop;
+    uniform vec2 u_pointer;
+    uniform float u_head;
+    uniform float u_tail;
+    uniform float u_strength;
+    uniform float u_phase;
+    #define PI 3.14159265359
+
+    vec3 acceleration(vec3 p, float h2) {
+      float r2 = dot(p, p);
+      return -1.5 * h2 * p / (r2 * r2 * sqrt(r2));
+    }
+    vec4 plasma(vec3 p) {
+      float h = abs(p.y);
+      float radial = length(p.xz);
+      float width = 0.22 + h * 0.076 + h * h * 0.0022;
+      if (h < 2.15 || h > u_head + 1.6 || radial > width * 1.65) return vec4(0.0);
+      float q = radial / width;
+      float base = smoothstep(2.15, 3.0, h) * smoothstep(u_tail, u_tail + 0.85, h);
+      float body = 1.0 - smoothstep(u_head - 0.95, u_head + 0.2, h);
+      float core = exp(-q * q * 15.0);
+      float sheath = exp(-pow((q - 0.64) * 3.25, 2.0));
+      // Two broad helical filaments live around a genuinely round volume.
+      float phase = atan(p.z, p.x) * 2.0 - h * 1.05 + u_phase;
+      float helix = 0.72 + 0.28 * cos(phase);
+      float trail = exp(-q * q * 2.3) * 0.12;
+      // Curved bow shock: its centre leads its wings along the polar axis.
+      float cap = (h - u_head + 0.65 * q * q) / (0.25 + width * 0.10);
+      float shock = exp(-cap * cap) * exp(-pow(q / 1.12, 6.0));
+      float wake = 0.82 + 0.18 * sin(h * 1.8 - u_phase * 1.8 + p.z * 0.65);
+      float density = base * ((core * 2.35 + sheath * helix * 0.25 + trail) * body * wake + shock * 1.65);
+      density *= u_strength * (p.y > 0.0 ? 1.08 : 0.92);
+      density *= pow(max(0.0, 1.0 - 1.0 / length(p)), 1.5);
+      vec3 color = mix(vec3(0.84, 0.90, 1.0), vec3(0.998, 0.998, 1.0),
+        clamp(core * 1.1 + shock * 0.82, 0.0, 1.0));
+      return vec4(color, density);
+    }
+    void integrate(vec3 start, vec3 end, inout vec3 light, inout float coverage, inout float transmittance) {
+      float distance = length(end - start);
+      // Subsamples only refine the volume, never change the base geodesic.
+      for (int j = 0; j < 3; j++) {
+        vec3 point = mix(start, end, (float(j) + 0.5) / 3.0);
+        vec4 sampleLight = plasma(point);
+        float alpha = 1.0 - exp(-sampleLight.a * distance / 3.0);
+        float visible = transmittance * alpha;
+        light += sampleLight.rgb * visible;
+        coverage += visible;
+        transmittance *= 1.0 - alpha;
+      }
+    }
+    void main() {
+      float aspect = u_resolution.x / u_resolution.y;
+      vec2 sceneUV = u_crop.xy + v_uv * u_crop.zw;
+      vec2 screen = (sceneUV - vec2(0.50, 0.59)) * vec2(aspect, 1.0) * 2.0;
+      screen -= u_pointer * vec2(0.012, 0.009);
+      float screenRoll = 18.0 * PI / 180.0;
+      mat2 roll = mat2(cos(screenRoll), -sin(screenRoll), sin(screenRoll), cos(screenRoll));
+      screen = roll * screen;
+      // This conservative strip contains the widest cone and the critical
+      // orbit. Unlike a disk-only impact cutoff, it preserves both long jets.
+      if (abs(screen.x) > 0.40 || u_strength < 0.001) {
+        gl_FragColor = vec4(0.0); return;
+      }
+      float inclination = 81.0 * PI / 180.0;
+      vec3 p = vec3(u_pointer.x * 0.8,
+        31.784430 * cos(inclination) + u_pointer.y * 0.55,
+        31.784430 * sin(inclination));
+      vec3 forward = normalize(-p);
+      vec3 right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
+      vec3 up = cross(right, forward);
+      vec3 v = normalize(forward * 2.08 + screen.x * right + screen.y * up);
+      vec3 angular = cross(p, v);
+      float h2 = dot(angular, angular);
+      vec3 light = vec3(0.0);
+      float coverage = 0.0;
+      float transmittance = 1.0;
+      for (int i = 0; i < 180; i++) {
+        float r = length(p);
+        if (r < 1.015 || (r > 42.0 && dot(p, v) > 0.0) || transmittance < 0.002) break;
+        float dt = clamp(r * 0.095, 0.055, 1.8);
+        vec3 a = acceleration(p, h2);
+        vec3 next = p + v * dt + 0.5 * a * dt * dt;
+        vec3 nextV = v + 0.5 * (a + acceleration(next, h2)) * dt;
+        vec3 segment = next - p;
+        // Clip the segment at its first entry into the event horizon BEFORE
+        // sampling its volume. No back-side emission survives a captured ray.
+        float stop = 1.0;
+        float aa = dot(segment, segment);
+        float bb = dot(p, segment);
+        float cc = dot(p, p) - 1.015 * 1.015;
+        float discriminant = bb * bb - aa * cc;
+        if (discriminant >= 0.0 && aa > 0.000001) {
+          float entry = (-bb - sqrt(discriminant)) / aa;
+          if (entry >= 0.0 && entry < 1.0) stop = entry;
+        }
+        float crossing = -1.0;
+        float opacity = 0.0;
+        if (p.y * next.y < 0.0) {
+          crossing = p.y / (p.y - next.y);
+          vec3 hit = mix(p, next, crossing);
+          float diskRadius = length(hit.xz);
+          if (diskRadius > 3.0 && diskRadius < 11.0) {
+            opacity = 1.0 - smoothstep(7.8, 10.8, diskRadius);
+          }
+        }
+        if (crossing >= 0.0 && crossing < stop && opacity > 0.0) {
+          vec3 hit = mix(p, next, crossing);
+          integrate(p, hit, light, coverage, transmittance);
+          // The true foreground disk blocks either pole. Its soft outer edge
+          // transmits the remaining light instead of terminating the ray early.
+          transmittance *= 1.0 - opacity;
+          if (transmittance < 0.002) break;
+          integrate(hit, mix(p, next, stop), light, coverage, transmittance);
+        } else {
+          integrate(p, mix(p, next, stop), light, coverage, transmittance);
+        }
+        if (stop < 1.0) break;
+        p = next;
+        v = nextV;
+      }
+      // Straight alpha for normal compositing ABOVE the theme inversion.
+      // The soft sheath is integrated in space, so no screen blur leaks over
+      // the disk or fills the black-hole shadow after visibility was resolved.
+      gl_FragColor = vec4(light / max(coverage, 0.00001), coverage);
+    }
+  `;
+
+
   class BlackHole {
     constructor(canvas) {
       this.canvas = canvas;
@@ -466,6 +600,129 @@
         axisAngle: -108 * Math.PI / 180,
       };
     }
+
+    beginJetBurst() {
+      this.endJetBurst();
+      const figure = this.canvas.parentElement;
+      const rect = figure?.getBoundingClientRect();
+      const hero = figure?.closest('.hero')?.getBoundingClientRect();
+      if (!rect?.width || !rect.height || !hero) return false;
+      const left = Math.max(0, rect.left, hero.left);
+      const top = Math.max(0, rect.top, hero.top);
+      const width = Math.min(innerWidth, rect.right, hero.right) - left;
+      const height = Math.min(innerHeight, rect.bottom, hero.bottom) - top;
+      if (width <= 0 || height <= 0) return false;
+      try {
+        if (!this.jetPass || this.jetPass.gl.isContextLost()) {
+          this.jetPass?.canvas.remove();
+          const canvas = document.createElement('canvas');
+          canvas.className = 'black-hole-jet';
+          canvas.setAttribute('aria-hidden', 'true');
+          Object.assign(canvas.style, {
+            position: 'fixed', pointerEvents: 'none', zIndex: '10', display: 'none',
+          });
+          const gl = canvas.getContext('webgl', {
+            alpha: true, antialias: false, depth: false, stencil: false,
+            premultipliedAlpha: false, powerPreference: 'low-power',
+          });
+          if (!gl) return false;
+          const compile = (type, source) => {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+              const log = gl.getShaderInfoLog(shader);
+              gl.deleteShader(shader);
+              throw new Error(log);
+            }
+            return shader;
+          };
+          const vertex = compile(gl.VERTEX_SHADER, vertexSource);
+          const fragment = compile(gl.FRAGMENT_SHADER, jetSource);
+          const program = gl.createProgram();
+          gl.attachShader(program, vertex);
+          gl.attachShader(program, fragment);
+          gl.linkProgram(program);
+          gl.deleteShader(vertex);
+          gl.deleteShader(fragment);
+          if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+          const buffer = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+          gl.useProgram(program);
+          const position = gl.getAttribLocation(program, 'a_position');
+          gl.enableVertexAttribArray(position);
+          gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+          const uniforms = {};
+          for (const name of ['u_resolution', 'u_crop', 'u_pointer', 'u_head', 'u_tail', 'u_strength', 'u_phase']) {
+            uniforms[name] = gl.getUniformLocation(program, name);
+          }
+          canvas.addEventListener('webglcontextlost', event => {
+            event.preventDefault();
+            canvas.style.display = 'none';
+          });
+          document.body.append(canvas);
+          this.jetPass = { canvas, gl, program, buffer, uniforms };
+        }
+        const pass = this.jetPass;
+        // A bounded volume pass remains cheaper than re-rendering the full
+        // material and photon ring. CSS expands it with smooth interpolation.
+        const scale = Math.min(devicePixelRatio || 1, 1.15, 960 / width, 640 / height,
+          Math.sqrt(440000 / (width * height)));
+        pass.canvas.width = Math.max(2, Math.round(width * scale));
+        pass.canvas.height = Math.max(2, Math.round(height * scale));
+        Object.assign(pass.canvas.style, {
+          left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px`, display: 'block',
+        });
+        const pointer = this.ready && !this.lost ? this.interactionPointer : { x: 0, y: 0 };
+        const gl = pass.gl;
+        gl.useProgram(pass.program);
+        gl.viewport(0, 0, pass.canvas.width, pass.canvas.height);
+        gl.uniform2f(pass.uniforms.u_resolution, rect.width, rect.height);
+        gl.uniform4f(pass.uniforms.u_crop, (left - rect.left) / rect.width,
+          1 - (top - rect.top + height) / rect.height, width / rect.width, height / rect.height);
+        gl.uniform2f(pass.uniforms.u_pointer, pointer.x, pointer.y);
+        pass.bounds = { left, top, width, height };
+        pass.active = true;
+        return true;
+      } catch (error) {
+        console.warn('The volumetric jet is unavailable; the color transition remains active.', error);
+        this.endJetBurst();
+        return false;
+      }
+    }
+
+    renderJetBurst(progress) {
+      const pass = this.jetPass;
+      if (!pass?.active || pass.gl.isContextLost()) return null;
+      const clamp = value => Math.max(0, Math.min(1, value));
+      const smooth = (start, end, value) => {
+        const t = clamp((value - start) / (end - start));
+        return t * t * (3 - 2 * t);
+      };
+      const flight = clamp((progress - 0.055) / 0.175);
+      const head = 2.55 + 22 * flight ** 1.35;
+      const strength = smooth(0.012, 0.058, progress) * (1 - smooth(0.28, 0.53, progress));
+      const gl = pass.gl;
+      if (strength < 0.001) {
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      } else {
+        gl.uniform1f(pass.uniforms.u_head, head);
+        gl.uniform1f(pass.uniforms.u_tail, 22 * smooth(0.18, 0.44, progress));
+        gl.uniform1f(pass.uniforms.u_strength, strength * 2.45);
+        gl.uniform1f(pass.uniforms.u_phase, progress * 19);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+      return { canvas: pass.canvas, ...pass.bounds };
+    }
+
+    endJetBurst() {
+      if (!this.jetPass) return;
+      this.jetPass.active = false;
+      this.jetPass.canvas.style.display = 'none';
+    }
+
 
     hitTestShadow(clientX, clientY) {
       if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return false;
