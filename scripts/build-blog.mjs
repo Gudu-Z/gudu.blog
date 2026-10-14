@@ -85,7 +85,7 @@ function renderBlock(block) {
 function siteHeader(prefix) {
   return `<a class="skip-link" href="#main-content">跳到主要内容</a>
     <header class="site-header">
-      <a class="site-brand" href="${prefix}index.html#home" aria-label="Gudu 博客首页">GUDU<span class="brand-dot">.</span></a>
+      <a class="site-brand" href="${prefix}index.html#home" aria-label="Gudu 博客首页"><img class="brand-logo" src="${prefix}assets/brand/gudu-logo-light.svg" width="160" height="40" alt="GUDU" /></a>
       <nav class="site-nav" aria-label="主导航">
         <a href="${prefix}index.html#journal">文章</a><a href="${prefix}index.html#archive">归档</a><a href="${prefix}index.html#about">关于</a>
       </nav>
@@ -94,7 +94,7 @@ function siteHeader(prefix) {
 }
 
 function siteFooter(prefix) {
-  return `<footer class="site-footer"><a class="footer-brand" href="${prefix}index.html#home">GUDU<span>.</span></a><p>在自己的轨道上，保持好奇。</p><a href="${prefix}feed.xml">RSS 订阅 <span aria-hidden="true">↗</span></a></footer>`;
+  return `<footer class="site-footer"><a class="footer-brand" href="${prefix}index.html#home"><img class="brand-logo" src="${prefix}assets/brand/gudu-logo-light.svg" width="160" height="40" alt="GUDU" /></a><p>在自己的轨道上，保持好奇。</p><a href="${prefix}feed.xml">RSS 订阅 <span aria-hidden="true">↗</span></a></footer>`;
 }
 
 function documentHead({ title, description, canonical, prefix, noindex = false, article }) {
@@ -112,7 +112,7 @@ function documentHead({ title, description, canonical, prefix, noindex = false, 
     <meta property="og:description" content="${escape(description)}" />
     <meta property="og:url" content="${escape(canonical)}" />
     ${article ? `<meta property="article:published_time" content="${article.date}T00:00:00Z" />` : ''}
-    <link rel="icon" type="image/svg+xml" href="${prefix}assets/favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="${prefix}assets/favicon.svg?v=20261014-brand" />
     <link rel="alternate" type="application/rss+xml" title="Gudu 的个人博客" href="${prefix}feed.xml" />
     <link rel="stylesheet" href="${prefix}css/style.css" />
     <link rel="stylesheet" href="${prefix}css/blog.css" />`.replace(/[ \t]+$/gm, '');

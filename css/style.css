@@ -116,20 +116,23 @@ h1 > span { display: block; }
 }
 .clock-dot { width: 4px; height: 4px; background: var(--red); margin-right: 2px; }
 .clock-divider { width: 25px; height: 1px; background: #656873; }
-.black-hole { --hole-size: max(189vw, 303svh); position: absolute; width: var(--hole-size); height: calc(var(--hole-size) * 0.8625); left: 68%; top: 58%; transform: translate(-50%, -41%); margin: 0; z-index: 1; pointer-events: none; }
-.black-hole-art { display: block; width: 100%; height: 100%; overflow: visible; }
+.black-hole { --hole-size: clamp(1020px, 114vw, 1760px); position: absolute; width: var(--hole-size); aspect-ratio: 3 / 2; left: 64%; top: 63%; transform: translate(-50%, -50%); margin: 0; z-index: 1; pointer-events: none; }
+#black-hole-canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 400ms ease; }
+.black-hole-fallback { display: block; position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transition: opacity 400ms ease; }
+.black-hole.is-ready #black-hole-canvas { opacity: 1; }
+.black-hole.is-ready .black-hole-fallback { opacity: 0; }
 
 @media (min-aspect-ratio: 16/10) and (min-width: 1101px) {
   .hero { --hero-height: clamp(660px, 100svh, 1400px); min-height: 660px; }
   /* Cap the composition at 16:9 using the hero's actual, clamped height.
      Extra screen width becomes space around it, without clipping the disk. */
   .hero-composition { width: min(100%, calc(var(--hero-height) * 16 / 9)); }
-  .black-hole { --hole-size: min(max(189vw, 303svh), calc(var(--hero-height) * 3.36)); }
+  .black-hole { --hole-size: calc(var(--hero-height) * 1.85); top: 57%; }
   h1 { font-size: min(8.8vw, calc(var(--hero-height) * 0.148)); }
 }
 @media (max-width: 1100px) and (min-width: 701px) {
   .hero-heading { left: 7.5%; top: 17%; }
-  .black-hole { --hole-size: max(189vw, 207svh); }
+  .black-hole { --hole-size: max(118vw, 1000px); top: 64%; }
 }
 @media (max-width: 700px) {
   .hero { min-height: 660px; height: 100svh; max-height: 1100px; }
@@ -139,7 +142,7 @@ h1 > span { display: block; }
   .title-first { font-size: 1.48em; }
   .live-clock { margin-top: 24px; font-size: 12px; letter-spacing: 1px; gap: 12px; }
   .clock-divider { width: 20px; }
-  .black-hole { --hole-size: max(289vw, 228svh); top: 71svh; }
+  .black-hole { --hole-size: clamp(840px, 215vw, 1200px); left: 50%; top: 66%; }
 }
 @media (max-width: 380px) {
   .live-clock { gap: 10px; font-size: 11px; }

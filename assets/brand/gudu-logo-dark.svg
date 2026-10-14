@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" role="img" aria-labelledby="title">
+  <title id="title">Gudu — geometric G and GUDU wordmark — dark</title>
+  <g fill="#111111">
+    <path d="M70 8H26L8 26v30l16 16h30l18-18V34H40v12h20v3L49 60H29l-9-9V31l11-11h27Z"/>
+    <g transform="translate(104 19) scale(.65625) translate(-8 -8)"><path d="M70 8H26L8 26v30l16 16h30l18-18V34H40v12h20v3L49 60H29l-9-9V31l11-11h27Z"/></g>
+    <path transform="translate(158 19)" d="M0 0h9v27l6 6h12l6-6V0h9v32L32 42H10L0 32Z"/>
+    <path transform="translate(212 19)" fill-rule="evenodd" d="M0 0h28l14 14v14L28 42H0Zm9 9v24h15l9-9v-6l-9-9Z"/>
+    <path transform="translate(266 19)" d="M0 0h9v27l6 6h12l6-6V0h9v32L32 42H10L0 32Z"/>
+  </g>
+</svg>

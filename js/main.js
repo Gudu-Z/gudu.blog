@@ -3,6 +3,13 @@
   const hero = document.querySelector('.hero');
   const stars = document.querySelector('#starfield');
   const context = stars.getContext('2d');
+  const blackHoleCanvas = document.querySelector('#black-hole-canvas');
+  let blackHole = null;
+  try {
+    if (blackHoleCanvas && window.BlackHole) blackHole = new window.BlackHole(blackHoleCanvas);
+  } catch (error) {
+    console.warn('Using the static black-hole illustration.', error);
+  }
   const layers = [...document.querySelectorAll('[data-depth]')];
   const clock = document.querySelector('#local-time');
   const clockDate = clock.querySelector('[data-clock-date]');
@@ -21,6 +28,8 @@
   let visible = true;
   let frame = 0;
   let lastTime = 0;
+  let lastRender = 0;
+  let elapsed = 12;
   let width = 0;
   let height = 0;
   let starList = [];
@@ -60,13 +69,15 @@
     stars.width = Math.round(width * dpr);
     stars.height = Math.round(height * dpr);
     context?.setTransform(dpr, 0, 0, dpr, 0, 0);
-    starList = Array.from({ length: Math.round(width * height / 11000) }, (_, i) => ({
+    // The shader owns the lensed background; these few dim points fill its edges.
+    starList = Array.from({ length: Math.round(width * height / 24000) }, (_, i) => ({
       x: random(i * 5 + 1) * width,
       y: random(i * 5 + 2) * height,
       radius: 0.35 + random(i * 5 + 3) * 0.65,
-      light: 0.08 + random(i * 5 + 4) * 0.28,
+      light: 0.04 + random(i * 5 + 4) * 0.12,
       depth: 0.2 + random(i * 5 + 5) * 1.2,
     }));
+    blackHole?.resize();
     draw();
   }
 
@@ -90,6 +101,7 @@
       layer.style.setProperty('--pointer-x', `${-pointer.x * depth * 8}px`);
       layer.style.setProperty('--pointer-y', `${-pointer.y * depth * 6}px`);
     }
+    blackHole?.render(elapsed, pointer.x, -pointer.y);
   }
 
   function tick(timestamp) {
@@ -97,6 +109,7 @@
     if (loading || paused || !visible || document.hidden) { lastTime = 0; return; }
     const delta = lastTime ? Math.min(timestamp - lastTime, 100) : 16;
     lastTime = timestamp;
+    elapsed += delta / 1000;
     const ease = 1 - Math.exp(-delta * 0.005);
     pointer.x += (pointer.targetX - pointer.x) * ease;
     pointer.y += (pointer.targetY - pointer.y) * ease;
@@ -105,16 +118,24 @@
       pointer.x = pointer.targetX;
       pointer.y = pointer.targetY;
     }
-    draw();
-    // The SVG and stars are static once the pointer settles; input wakes them.
-    if (settled) lastTime = 0;
-    else frame = requestAnimationFrame(tick);
+    const animated = blackHole?.ready && !blackHole.lost;
+    if (timestamp - lastRender >= 30 || (!animated && settled)) {
+      draw();
+      if (animated) blackHole.sampleFrame(timestamp);
+      lastRender = timestamp;
+    }
+    // Visible WebGL keeps the disk flowing at about 30 fps; the fallback rests.
+    if (animated || !settled) frame = requestAnimationFrame(tick);
+    else lastTime = 0;
   }
 
   function start() {
     if (frame || loading || paused || !visible || document.hidden) return;
-    if (pointer.x === pointer.targetX && pointer.y === pointer.targetY) return;
+    const animated = blackHole?.ready && !blackHole.lost;
+    if (!animated && pointer.x === pointer.targetX && pointer.y === pointer.targetY) return;
     lastTime = 0;
+    lastRender = 0;
+    blackHole?.resetTiming();
     frame = requestAnimationFrame(tick);
   }
 
@@ -156,9 +177,12 @@
     visible = entries[0].isIntersecting;
     if (visible) start(); else stop();
   }).observe(hero);
+  if (blackHole) blackHole.onRestore = () => { draw(); start(); };
   new ResizeObserver(resize).observe(hero);
   window.addEventListener('pagehide', () => { stop(); stopClock(); finishIntro(); });
   window.addEventListener('pageshow', () => { start(); updateClock(); });
+  // Resize and submit a real scene frame before the loader checks .is-ready.
+  // This also supplies the static frame used with reduced motion enabled.
   resize();
   updateMotion();
   updateClock();

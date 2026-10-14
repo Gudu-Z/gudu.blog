@@ -15,8 +15,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .skip-link:focus { transform: translateY(0); }
 .accent { color: var(--red); }
 .site-header { position: absolute; top: 0; left: 0; right: 0; z-index: 10; height: 86px; padding: 0 4.2%; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #d7e6ee0a; }
-.site-brand { flex-shrink: 0; font: 900 30px/1 "Barlow Condensed", "Arial Narrow", sans-serif; letter-spacing: 0.025em; }
-.site-brand > span { color: var(--red); }
+.site-brand, .footer-brand { display: inline-flex; flex-shrink: 0; align-items: center; }
+.brand-logo { display: block; width: 160px; height: 40px; }
 .site-nav { display: flex; align-items: center; gap: 36px; font-size: 12px; letter-spacing: 0.08em; color: #b5bdc6; }
 .site-nav a { padding-block: 14px; transition: color 180ms; }
 .site-nav a:hover, .site-nav a[aria-current], .footer-links a:hover { color: var(--paper); }
@@ -128,7 +128,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .about-copy > .about-lead { color: #c8ced6 !important; font-size: 19px !important; line-height: 1.8 !important; margin: 25px 0 19px; }
 .about-copy > .text-link { margin-top: 15px; }
 .site-footer { width: min(var(--content-width), 85%); margin: 0 auto; padding: 33px 0 38px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 30px; }
-.site-footer .site-brand { font-size: 24px; }
+.site-footer .brand-logo { width: 128px; height: 32px; }
 .site-footer > p { color: #84909e; font-size: 10px; line-height: 1.8; margin: 0; }
 .footer-divider { color: #465464; margin: 0 10px; }
 .footer-links { display: flex; gap: 26px; margin-left: auto; font-size: 10px; color: var(--muted); }
@@ -139,8 +139,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .article-page .site-nav, .not-found-page .site-nav { margin-left: auto; margin-right: 32px; }
 .header-rss { font: 11px "Consolas", monospace; color: var(--muted); }
 .header-rss span { color: var(--red); }
-.footer-brand { font: 900 24px/1 "Barlow Condensed", sans-serif; }
-.footer-brand span { color: var(--red); }
 .site-footer > a:last-child:not(:first-child) { font-size: 11px; color: var(--muted); margin-left: auto; }
 .article-shell { width: min(1080px, 85%); margin: 0 auto; padding: 58px 0 80px; }
 .article-back { color: var(--muted); font-size: 12px; display: inline-block; padding-block: 10px; margin-bottom: 40px; }
@@ -210,7 +208,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 @media (max-width: 720px) {
   html { scroll-padding-top: 28px; }
   .site-header { height: 64px; padding-inline: 7%; }
-  .site-brand { font-size: 26px; }
+  .site-header .brand-logo { width: 120px; height: 30px; }
+  .site-footer .brand-logo { width: 104px; height: 26px; }
   .site-nav { gap: 18px; font-size: 11px; letter-spacing: 0; }
   .site-nav .nav-rss { border: 0; padding-left: 0; font-size: 10px; }
   .nav-rss span { display: none; }

@@ -7,6 +7,6 @@
     "dev": "node scripts/serve.mjs",
     "start": "node scripts/serve.mjs",
     "build": "node scripts/build-blog.mjs",
-    "check": "node --check js/loading.js && node --check js/main.js && node --check js/blog.js && node --check js/article.js && node --check js/posts-data.js && node --check scripts/serve.mjs && node --check scripts/build-blog.mjs && node scripts/build-blog.mjs --check && node scripts/check-blog.mjs"
+    "check": "node --check js/loading.js && node --check js/black-hole.js && node --check js/main.js && node --check js/blog.js && node --check js/article.js && node --check js/posts-data.js && node --check scripts/serve.mjs && node --check scripts/build-blog.mjs && node scripts/build-blog.mjs --check && node scripts/check-blog.mjs"
   }
 }
