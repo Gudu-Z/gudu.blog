@@ -45,11 +45,9 @@
   function ready() {
     if (released || readyRequested) return;
     readyRequested = true;
-    const image = document.querySelector('.black-hole-fallback');
-    const sceneReady = document.querySelector('.black-hole')?.classList.contains('is-ready');
-    const visual = sceneReady ? Promise.resolve() : image?.decode?.();
     const font = document.fonts?.load('900 1em "Barlow Condensed"');
-    Promise.allSettled([font, visual]).then(() => {
+    // The inline SVG is already present; only the title font needs loading.
+    Promise.allSettled([font]).then(() => {
       if (released) return;
       if (document.hidden || reducedMotion.matches) dismiss();
       else requestAnimationFrame(() => requestAnimationFrame(dismiss));

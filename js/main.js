@@ -3,8 +3,6 @@
   const hero = document.querySelector('.hero');
   const stars = document.querySelector('#starfield');
   const context = stars.getContext('2d');
-  const blackHole = new window.BlackHole(document.querySelector('#black-hole-canvas'));
-  const themeTransition = new window.HorizonTransition(hero, blackHole);
   const layers = [...document.querySelectorAll('[data-depth]')];
   const clock = document.querySelector('#local-time');
   const clockDate = clock.querySelector('[data-clock-date]');
@@ -23,21 +21,9 @@
   let visible = true;
   let frame = 0;
   let lastTime = 0;
-  let lastRender = 0;
-  let elapsed = 12;
   let width = 0;
   let height = 0;
   let starList = [];
-
-  hero.addEventListener('theme:transitionstart', () => {
-    pointer.targetX = pointer.x; pointer.targetY = pointer.y;
-    blackHole.resetTiming();
-  });
-  hero.addEventListener('theme:transitionend', () => {
-    blackHole.resetTiming();
-    if (!hero.matches(':hover')) pointer.targetX = pointer.targetY = 0;
-    draw();
-  });
 
   function finishIntro() { hero.classList.add('intro-complete'); }
   window.addEventListener('site:revealed', () => { loading = false; start(); });
@@ -74,14 +60,13 @@
     stars.width = Math.round(width * dpr);
     stars.height = Math.round(height * dpr);
     context?.setTransform(dpr, 0, 0, dpr, 0, 0);
-    starList = Array.from({ length: Math.round(width * height / 3800) }, (_, i) => ({
+    starList = Array.from({ length: Math.round(width * height / 11000) }, (_, i) => ({
       x: random(i * 5 + 1) * width,
       y: random(i * 5 + 2) * height,
       radius: 0.35 + random(i * 5 + 3) * 0.65,
-      light: 0.12 + random(i * 5 + 4) * 0.48,
+      light: 0.08 + random(i * 5 + 4) * 0.28,
       depth: 0.2 + random(i * 5 + 5) * 1.2,
     }));
-    blackHole.resize();
     draw();
   }
 
@@ -95,14 +80,6 @@
       context.beginPath();
       context.arc(x, y, star.radius, 0, Math.PI * 2);
       context.fill();
-      if (star.light > 0.57 && star.radius > 0.85) {
-        context.strokeStyle = `rgba(205,214,229,${star.light * 0.3})`;
-        context.lineWidth = 0.5;
-        context.beginPath();
-        context.moveTo(x - 3, y); context.lineTo(x + 3, y);
-        context.moveTo(x, y - 3); context.lineTo(x, y + 3);
-        context.stroke();
-      }
     }
   }
 
@@ -113,33 +90,32 @@
       layer.style.setProperty('--pointer-x', `${-pointer.x * depth * 8}px`);
       layer.style.setProperty('--pointer-y', `${-pointer.y * depth * 6}px`);
     }
-    blackHole.render(elapsed, pointer.x, -pointer.y);
-    themeTransition.updateGeometry();
   }
 
   function tick(timestamp) {
     frame = 0;
-    if (loading || paused || !visible || document.hidden) return;
+    if (loading || paused || !visible || document.hidden) { lastTime = 0; return; }
     const delta = lastTime ? Math.min(timestamp - lastTime, 100) : 16;
     lastTime = timestamp;
-    if (!themeTransition.active) elapsed += delta / 1000;
     const ease = 1 - Math.exp(-delta * 0.005);
     pointer.x += (pointer.targetX - pointer.x) * ease;
     pointer.y += (pointer.targetY - pointer.y) * ease;
-    // A calm 30 fps disk, with requestAnimationFrame-controlled input smoothing.
-    if (!themeTransition.active && timestamp - lastRender >= 30) {
-      draw();
-      blackHole.sampleFrame(timestamp);
-      lastRender = timestamp;
+    const settled = Math.abs(pointer.targetX - pointer.x) < 0.001 && Math.abs(pointer.targetY - pointer.y) < 0.001;
+    if (settled) {
+      pointer.x = pointer.targetX;
+      pointer.y = pointer.targetY;
     }
-    frame = requestAnimationFrame(tick);
+    draw();
+    // The SVG and stars are static once the pointer settles; input wakes them.
+    if (settled) lastTime = 0;
+    else frame = requestAnimationFrame(tick);
   }
 
   function start() {
+    if (frame || loading || paused || !visible || document.hidden) return;
+    if (pointer.x === pointer.targetX && pointer.y === pointer.targetY) return;
     lastTime = 0;
-    lastRender = 0;
-    blackHole.resetTiming();
-    if (!frame && !loading && !paused && visible && !document.hidden) frame = requestAnimationFrame(tick);
+    frame = requestAnimationFrame(tick);
   }
 
   function stop() {
@@ -154,12 +130,17 @@
   }
 
   hero.addEventListener('pointermove', event => {
-    if (loading || paused || themeTransition.active || !finePointer.matches || event.pointerType === 'touch') return;
+    if (loading || paused || !finePointer.matches || event.pointerType === 'touch') return;
     const rect = hero.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
     pointer.targetX = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
     pointer.targetY = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
+    start();
   }, { passive: true });
-  hero.addEventListener('pointerleave', () => { if (!themeTransition.active) pointer.targetX = pointer.targetY = 0; });
+  hero.addEventListener('pointerleave', () => { pointer.targetX = pointer.targetY = 0; start(); });
+  finePointer.addEventListener('change', () => {
+    if (!finePointer.matches) { pointer.targetX = pointer.targetY = 0; start(); }
+  });
   reducedMotion.addEventListener('change', () => {
     paused = reducedMotion.matches;
     if (paused) finishIntro();
@@ -175,7 +156,6 @@
     visible = entries[0].isIntersecting;
     if (visible) start(); else stop();
   }).observe(hero);
-  blackHole.onRestore = () => { draw(); start(); };
   new ResizeObserver(resize).observe(hero);
   window.addEventListener('pagehide', () => { stop(); stopClock(); finishIntro(); });
   window.addEventListener('pageshow', () => { start(); updateClock(); });
