@@ -7,11 +7,8 @@
   const blackHoleTheme = window.BlackHoleTheme;
   let blackHoleStyle = blackHoleTheme?.apply() || 'minimal';
   let blackHole = null;
-  try {
-    if (blackHoleCanvas && window.BlackHole) blackHole = new window.BlackHole(blackHoleCanvas, { style: blackHoleStyle });
-  } catch (error) {
-    console.warn('Using the static black-hole illustration.', error);
-  }
+  let rendererStarted = false;
+  let rendererTimer = 0;
   const layers = [...document.querySelectorAll('[data-depth]')];
   const titlePeriod = document.querySelector('.title-period');
   const clock = document.querySelector('#local-time');
@@ -49,8 +46,31 @@
   window.addEventListener('site:revealed', revealScene);
   if (reducedMotion.matches) finishIntro();
   hero.addEventListener('animationend', event => {
-    if (event.animationName === 'hero-scroll-enter') finishIntro();
+    if (event.animationName === 'hero-scroll-enter') { finishIntro(); start(); }
   });
+
+  // The decoded fallback carries the logo and entrance. GPU setup starts only
+  // after those animations, so a cold driver cannot freeze their SVG strokes.
+  function scheduleRenderer() {
+    if (rendererStarted || rendererTimer || !blackHoleCanvas || !window.BlackHole
+        || loading || !visible || document.hidden
+        || document.documentElement.classList.contains('has-site-intro')) return;
+    rendererTimer = setTimeout(() => {
+      rendererTimer = 0;
+      if (loading || !visible || document.hidden
+          || document.documentElement.classList.contains('has-site-intro')) return;
+      rendererStarted = true;
+      try {
+        blackHole = new window.BlackHole(blackHoleCanvas, { style: blackHoleStyle });
+        blackHole.onRestore = () => { draw(); start(); };
+        blackHoleCanvas.addEventListener('webglcontextlost', () => { stop(); drawStars(); });
+        // Also support an already-ready renderer (including older cached builds).
+        if (blackHole.ready) { draw(); start(); }
+      } catch (error) {
+        console.warn('Using the static black-hole illustration.', error);
+      }
+    }, 32);
+  }
 
   function stopTitleBlink() {
     titlePeriod?.classList.remove('is-cursor-blinking');
@@ -193,6 +213,7 @@
   }
 
   function start() {
+    scheduleRenderer();
     if (frame || loading || paused || !visible || document.hidden) return;
     const animated = blackHole?.ready && !blackHole.lost;
     if (!animated && pointer.x === pointer.targetX && pointer.y === pointer.targetY) return;
@@ -204,6 +225,8 @@
   }
 
   function stop() {
+    clearTimeout(rendererTimer);
+    rendererTimer = 0;
     pauseSceneClock();
     cancelAnimationFrame(frame);
     frame = 0;
@@ -212,7 +235,7 @@
 
   function updateMotion() {
     hero.dataset.motion = paused ? 'paused' : 'playing';
-    if (paused) stop(); else start();
+    if (paused) { stop(); scheduleRenderer(); } else start();
     updateTitleBlink();
   }
 
@@ -245,14 +268,12 @@
     if (visible) start(); else stop();
     updateTitleBlink();
   }).observe(hero);
-  blackHoleCanvas?.addEventListener('webglcontextlost', stop);
-  if (blackHole) blackHole.onRestore = () => { draw(); start(); };
   new ResizeObserver(resize).observe(hero);
   window.addEventListener('pagehide', () => { stop(); stopClock(); clearTimeout(themeTimer); finishIntro(); stopTitleBlink(); });
   window.addEventListener('pageshow', () => { updateBlackHoleTheme(); start(); updateClock(); updateTitleBlink(); });
   window.addEventListener('popstate', updateBlackHoleTheme);
-  // Resize and submit a real scene frame before the loader checks .is-ready.
-  // This also supplies the static frame used with reduced motion enabled.
+  // Prepare the lightweight page first; loading.js waits for the fallback
+  // image instead of tying the logo animation to shader compilation.
   resize();
   updateMotion();
   updateClock();

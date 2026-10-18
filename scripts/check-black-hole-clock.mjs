@@ -35,6 +35,7 @@ function browser({ reduced = false, loading = false, deferInk = false } = {}) {
   let resize;
   let nextStyle = 'minimal';
   const frames = new Map();
+  const timers = new Map();
   const renders = [];
   const media = {
     '(prefers-reduced-motion: reduce)': eventTarget({ matches: reduced }),
@@ -58,7 +59,7 @@ function browser({ reduced = false, loading = false, deferInk = false } = {}) {
   const nodes = { '.hero': hero, '#starfield': stars, '#black-hole-canvas': canvas, '#local-time': clock };
   const document = eventTarget({
     hidden: false,
-    documentElement: { classList: classes(loading ? ['is-loading'] : []) },
+    documentElement: { classList: classes(loading ? ['is-loading', 'has-site-intro'] : []) },
     querySelector: name => nodes[name], querySelectorAll: () => layers,
   });
   const window = eventTarget({
@@ -88,17 +89,30 @@ function browser({ reduced = false, loading = false, deferInk = false } = {}) {
     matchMedia: query => media[query],
     requestAnimationFrame: callback => { const id = ++sequence; frames.set(id, callback); return id; },
     cancelAnimationFrame: id => frames.delete(id),
-    setTimeout: () => ++sequence, clearTimeout() {},
+    setTimeout: (callback, delay) => { const id = ++sequence; timers.set(id, { callback, delay }); return id; },
+    clearTimeout: id => timers.delete(id),
     IntersectionObserver: class { constructor(callback) { intersection = callback; } observe() {} },
     ResizeObserver: class { constructor(callback) { resize = callback; } observe() {} },
   }, { timeout: 1000 });
+
+  // Flush only the deferred renderer task, leaving wall-clock timers alone.
+  // Ordinary phase tests use the ready scene as their time-zero baseline.
+  function setupRenderer() {
+    for (const [id, timer] of [...timers]) {
+      if (timer.delay !== 32) continue;
+      timers.delete(id);
+      timer.callback();
+    }
+  }
+  if (!loading) setupRenderer();
 
   function at(time) {
     assert.ok(time >= now, 'the synthetic performance clock must stay monotonic');
     now = time;
   }
   return {
-    renders, renderer, layers,
+    renders, layers,
+    get renderer() { return renderer; },
     get pendingFrames() { return frames.size; },
     get last() { return renders.at(-1); },
     set renderCost(value) { renderCost = value; },
@@ -120,7 +134,8 @@ function browser({ reduced = false, loading = false, deferInk = false } = {}) {
       media['(prefers-reduced-motion: reduce)'].matches = reduced;
       media['(prefers-reduced-motion: reduce)'].emit('change');
     },
-    page(time, event) { at(time); window.emit(event); },
+    page(time, event) { at(time); window.emit(event); setupRenderer(); },
+    finishIntro(time) { at(time); hero.emit('animationend', { animationName: 'hero-scroll-enter' }); setupRenderer(); },
     theme(time, style) { at(time); nextStyle = style; window.emit('popstate'); },
     lose(time) { at(time); canvas.emit('webglcontextlost'); },
     restore(time) { at(time); renderer.ready = true; renderer.lost = false; renderer.onRestore(); },
@@ -223,23 +238,32 @@ await test('reduced motion freezes the scene and resuming adds no synthetic firs
   phase(site.last.time, 13.25);
 });
 
-await test('loading time is excluded until the initial reveal', () => {
+await test('loading and entrance time are excluded from the scene clock', () => {
   const site = browser({ loading: true });
   site.move(1000);
   assert.equal(site.pendingFrames, 0);
   site.page(5000, 'site:revealed');
-  site.frame(5500);
+  assert.equal(site.renderer, undefined);
+  site.finishIntro(5500);
+  site.frame(6000);
   phase(site.last.time, 12.5);
 });
 
-await test('loader fade starts the scene once without resetting it when the loader exits', () => {
+await test('cold renderer initialization waits until the logo and page entrance finish', () => {
   const site = browser({ loading: true });
   assert.equal(site.pendingFrames, 0);
   site.page(5000, 'site:revealing');
   site.frame(5250);
-  phase(site.last.time, 12.25);
+  assert.equal(site.renderer, undefined);
+  assert.equal(site.renders.length, 0);
   site.page(5420, 'site:revealed');
-  site.frame(6000);
+  assert.equal(site.renderer, undefined);
+  site.finishIntro(6000);
+  phase(site.last.time, 12);
+  const firstRenderer = site.renderer;
+  site.page(6500, 'site:revealed');
+  site.frame(7000);
+  assert.equal(site.renderer, firstRenderer);
   phase(site.last.time, 13);
 });
 

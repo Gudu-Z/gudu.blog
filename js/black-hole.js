@@ -480,7 +480,7 @@
       this.resources = [];
       this.generation = 0;
       if (!this.gl) return;
-      try { this.initialize(); } catch (error) { console.warn('Using the static black-hole illustration.', error); }
+      this.initialize().catch(error => console.warn('Using the static black-hole illustration.', error));
       canvas.addEventListener('webglcontextlost', event => {
         event.preventDefault();
         this.ready = false;
@@ -490,8 +490,7 @@
       canvas.addEventListener('webglcontextrestored', () => {
         this.resources = [];
         this.lost = false;
-        try { this.initialize(); this.onRestore?.(); }
-        catch (error) { console.warn('The static illustration remains available.', error); }
+        this.initialize().catch(error => console.warn('The static illustration remains available.', error));
       });
     }
 
@@ -500,11 +499,8 @@
       const shader = gl.createShader(type);
       gl.shaderSource(shader, source);
       gl.compileShader(shader);
-      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-        const log = gl.getShaderInfoLog(shader);
-        gl.deleteShader(shader);
-        throw new Error(log);
-      }
+      // Querying COMPILE_STATUS here synchronously waits for the driver.
+      // Validate the linked program after the non-blocking completion poll.
       return shader;
     }
 
@@ -522,15 +518,30 @@
       gl.linkProgram(program);
       gl.deleteShader(vertex);
       gl.deleteShader(pixel);
-      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
       this.resources.push({ type: 'program', value: program });
-      const uniforms = {};
-      const count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
-      for (let i = 0; i < count; i++) {
-        const info = gl.getActiveUniform(program, i);
-        uniforms[info.name] = gl.getUniformLocation(program, info.name);
+      return { value: program, position: -1, uniforms: {} };
+    }
+
+    async finishPrograms(programs, generation) {
+      const gl = this.gl;
+      const parallel = gl.getExtension('KHR_parallel_shader_compile');
+      if (parallel) {
+        while (!this.lost && generation === this.generation
+          && programs.some(program => !gl.getProgramParameter(program.value, parallel.COMPLETION_STATUS_KHR))) {
+          await new Promise(resolve => setTimeout(resolve, 32));
+        }
       }
-      return { value: program, position: gl.getAttribLocation(program, 'a_position'), uniforms };
+      if (this.lost || generation !== this.generation) return false;
+      for (const program of programs) {
+        if (!gl.getProgramParameter(program.value, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program.value));
+        const count = gl.getProgramParameter(program.value, gl.ACTIVE_UNIFORMS);
+        for (let i = 0; i < count; i++) {
+          const info = gl.getActiveUniform(program.value, i);
+          program.uniforms[info.name] = gl.getUniformLocation(program.value, info.name);
+        }
+        program.position = gl.getAttribLocation(program.value, 'a_position');
+      }
+      return true;
     }
 
     target() {
@@ -548,7 +559,7 @@
       return { texture, buffer };
     }
 
-    initialize() {
+    async initialize() {
       const gl = this.gl;
       this.ready = false;
       this.initialized = false;
@@ -564,6 +575,7 @@
       this.scene = this.program(sceneSource);
       this.bloom = this.program(bloomSource);
       this.composite = this.program(compositeSource);
+      if (!await this.finishPrograms([this.scene, this.bloom, this.composite], this.generation)) return;
       this.triangle = gl.createBuffer();
       this.resources.push({ type: 'buffer', value: this.triangle });
       gl.bindBuffer(gl.ARRAY_BUFFER, this.triangle);
@@ -585,6 +597,7 @@
       this.initialized = this.ready;
       if (!this.initialized) return;
       if (this.style === 'ink') { this.ready = false; this.loadInk(); }
+      else this.onRestore?.();
     }
 
     loadInk() {

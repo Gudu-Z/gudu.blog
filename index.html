@@ -19,8 +19,8 @@
     <link rel="stylesheet" href="./css/style.css?v=20261018-hidden-scrollbar" />
     <link rel="stylesheet" href="./css/blog.css?v=20261018-logo" />
     <script src="./js/ink-splatter.js?v=20261015-ink-light" defer></script>
-    <script src="./js/black-hole.js?v=20261018-minimal-rim-aa" defer></script>
-    <script src="./js/main.js?v=20261018-title-cursor-500ms" defer></script>
+    <script src="./js/black-hole.js?v=20261019-async-startup" defer></script>
+    <script src="./js/main.js?v=20261019-async-startup" defer></script>
     <script src="./js/posts-data.js?v=20261014-1" defer></script>
     <script src="./js/blog.js?v=20261014-1" defer></script>
   </head>
@@ -119,7 +119,7 @@
           </div>
 
           <figure class="black-hole" id="black-hole" aria-label="实时三维黑洞：暖白与淡琥珀细线流经倾斜的吸积盘，光线在深黑阴影周围弯曲，视角随鼠标轻微转动。">
-            <img class="black-hole-fallback" src="./assets/black-hole-minimal-fallback.png?v=20261018-minimal-rim-aa" data-black-hole-style="minimal" alt="" width="1536" height="1024" decoding="async" aria-hidden="true" />
+            <img class="black-hole-fallback" src="./assets/black-hole-minimal-fallback.png?v=20261018-minimal-rim-aa" data-black-hole-style="minimal" alt="" width="1536" height="1024" decoding="async" fetchpriority="high" aria-hidden="true" />
             <canvas id="black-hole-canvas" aria-hidden="true"></canvas>
           </figure>
         </div>
