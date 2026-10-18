@@ -32,28 +32,37 @@ body { margin: 0; color: var(--paper); background: var(--space); }
   position: fixed;
   inset: 0;
   z-index: 20;
-  background: radial-gradient(ellipse at center, #a4b9c709, transparent 48%), var(--space);
+  background: radial-gradient(ellipse 360px 280px at 50% 48%, #fbb03b06, transparent 72%), var(--space);
   opacity: 1;
   transition: opacity 420ms ease;
 }
-.loader-content { width: 240px; text-align: center; transform: translateY(-12px); transition: transform 420ms ease; }
-.loader-mark { display: block; width: 240px; height: 200px; }
-.loader-frame { stroke: #e7e4dc30; stroke-width: 1; }
-.loader-orbit { stroke: #8499a6; stroke-width: 1; opacity: 0.55; }
-.loader-shadow { fill: var(--space); stroke: #e7e4dc45; stroke-width: 1; }
-.loader-light { stroke: var(--paper); stroke-width: 1.4; stroke-dasharray: 38 213.33; animation: loader-orbit 2200ms linear infinite; }
-.loader-foreground { stroke: #c5d4de; stroke-width: 1.4; }
-.loader-accent { fill: var(--red); }
-.loader-wordmark { margin-top: 14px; color: var(--paper); font: 900 38px/1 "Barlow Condensed", "Arial Narrow", sans-serif; letter-spacing: 1px; }
-.loader-track { width: 144px; height: 1px; overflow: hidden; background: #e7e4dc20; margin: 26px auto 0; }
-.loader-track span { display: block; width: 40%; height: 100%; background: #b1c2cf; animation: loader-scan 1400ms ease-in-out infinite; }
-.loader-caption { margin: 14px 0 0; color: #a7a8b0; font-size: 10px; letter-spacing: 0.28em; text-indent: 0.28em; }
+.loader-content { width: min(240px, 80vw); text-align: center; transform: translateY(-10px); }
+.loader-symbol { width: clamp(132px, 24vw, 160px); margin-inline: auto; animation: loader-arrive 640ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.loader-mark { display: block; width: 100%; height: auto; overflow: visible; }
+.loader-ring { stroke: #fbb03b; }
+.loader-ring-reveal { stroke-dasharray: 1; animation: loader-ring-trace 680ms cubic-bezier(0.42, 0, 0.28, 1) 140ms both; }
+.loader-body { fill: #fff; stroke: #fff; stroke-width: 1; }
+/* Skip the 22.2503-unit inward arc at the top; its edge appears with the fill. */
+.loader-outline { fill: none; stroke: #fff; stroke-width: 1; stroke-dasharray: 0 22.251 2000; }
+/* Accelerate into the slash, then carry its momentum into the slowing arc.
+   The 90ms overlap avoids a stopped handoff; matching fill curves follow 140ms later. */
+.loader-slash-reveal { stroke-dasharray: 1; animation: loader-trace 280ms cubic-bezier(0.38, 0, 0.5, 1) 60ms both; }
+.loader-circle-reveal { stroke-dasharray: 1; animation: loader-trace 540ms cubic-bezier(0.18, 0.58, 0.38, 1) 250ms both; }
+.loader-fill-slash { animation-delay: 200ms; }
+.loader-fill-circle { animation-delay: 390ms; }
+.loader-caption { margin: 26px 0 0; color: #979b9e; font-size: 10px; line-height: 1.8; letter-spacing: 0.3em; text-indent: 0.3em; animation: loader-caption-in 300ms ease 500ms both; }
 .is-loading-exit .site-loader { opacity: 0; }
-.is-loading-exit .loader-content { transform: translateY(-24px); }
-@keyframes loader-orbit { to { stroke-dashoffset: -251.33; } }
-@keyframes loader-scan { from { transform: translateX(-110%); } to { transform: translateX(360%); } }
+@keyframes loader-arrive {
+  from { opacity: 0; transform: translateY(4px) scale(0.97); }
+  24% { opacity: 1; }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes loader-trace { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes loader-ring-trace { from { stroke-dashoffset: -1; } to { stroke-dashoffset: 0; } }
+@keyframes loader-caption-in { from { opacity: 0; } to { opacity: 1; } }
 
 .hero {
+  --hero-height: clamp(760px, 100svh, 1400px);
   min-height: 760px;
   height: 100svh;
   max-height: 1400px;
@@ -62,6 +71,25 @@ body { margin: 0; color: var(--paper); background: var(--space); }
   overflow: hidden;
   background: radial-gradient(ellipse at 70% 58%, #14232e16, transparent 48%), var(--space);
 }
+/* The occasional ink treatment stays inside the hero; the rest of the blog is unchanged. */
+html[data-black-hole-style="ink"] .hero {
+  --paper: #e8e2d4;
+  --red: #b9ab8e;
+  color: var(--paper);
+  background: #080808;
+}
+html[data-black-hole-style="ink"] .hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.28;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.78' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 .78 0 0 0 0 .74 0 0 0 0 .66 0 0 0 .10 0'/%3E%3C/filter%3E%3Cpath fill='%23fff' filter='url(%23grain)' d='M0 0h180v180H0z'/%3E%3C/svg%3E");
+}
+html[data-black-hole-style="ink"] .hero .space-grid { border-color: #e8e2d407; }
+html[data-black-hole-style="ink"] .hero .live-clock { color: #a8a296; }
+html[data-black-hole-style="ink"] .hero .clock-divider { background: #676358; }
 .starfield { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.3; z-index: -1; }
 .space-grid {
   position: absolute;
@@ -94,13 +122,44 @@ h1 > span { display: block; }
   from { opacity: 0; transform: scale(0.6); }
   to { opacity: 1; transform: scale(1); }
 }
+@keyframes title-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+@keyframes hero-element-enter {
+  from { opacity: 0; translate: 0 12px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes hero-nav-enter {
+  from { opacity: 0; translate: 0 -8px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes hero-scene-enter { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hero-stars-enter { from { opacity: 0; } to { opacity: 0.3; } }
+/* A separate final animation provides one completion signal for the whole entrance. */
+@keyframes hero-scroll-enter {
+  from { opacity: 0; translate: 0 12px; }
+  to { opacity: 1; translate: 0 0; }
+}
 @media (prefers-reduced-motion: no-preference) {
-  .hero:not(.intro-complete) .title-first-content { animation: title-first-enter 720ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-  .hero:not(.intro-complete) .title-second-content { animation: title-second-enter 700ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both; }
-  .hero:not(.intro-complete) .title-period { animation: title-period-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) 680ms both; }
-  .is-loading .hero .title-first-content,
-  .is-loading .hero .title-second-content,
-  .is-loading .hero .title-period { animation-play-state: paused; }
+  .title-period.is-cursor-blinking { animation: title-cursor-blink 1s steps(1, end) infinite; }
+  .has-site-intro .black-hole { animation: hero-scene-enter 800ms ease-out both; }
+  .has-site-intro .starfield { animation: hero-stars-enter 720ms ease-out both; }
+  .has-site-intro .space-grid { animation: hero-scene-enter 620ms ease-out 160ms both; }
+  .has-site-intro .title-first-content { animation: title-first-enter 720ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both; }
+  .has-site-intro .title-second-content { animation: title-second-enter 700ms cubic-bezier(0.22, 1, 0.36, 1) 160ms both; }
+  .has-site-intro .title-period { animation: title-period-enter 240ms cubic-bezier(0.22, 1, 0.36, 1) 720ms both; }
+  .has-site-intro .live-clock { animation: hero-element-enter 600ms cubic-bezier(0.22, 1, 0.36, 1) 280ms both; }
+  .has-site-intro .site-header .site-brand { animation: hero-nav-enter 520ms cubic-bezier(0.22, 1, 0.36, 1) 200ms both; }
+  .has-site-intro .site-header .menu-toggle { animation: hero-nav-enter 480ms cubic-bezier(0.22, 1, 0.36, 1) 300ms both; }
+  .has-site-intro .site-header .site-nav a { animation: hero-nav-enter 480ms cubic-bezier(0.22, 1, 0.36, 1) var(--nav-enter-delay, 240ms) both; }
+  .site-header .site-nav a:nth-child(2) { --nav-enter-delay: 290ms; }
+  .site-header .site-nav a:nth-child(3) { --nav-enter-delay: 340ms; }
+  .site-header .site-nav a:nth-child(4) { --nav-enter-delay: 390ms; }
+  .has-site-intro .hero-bottom > p { animation: hero-element-enter 560ms cubic-bezier(0.22, 1, 0.36, 1) 380ms both; }
+  .has-site-intro .hero-bottom .scroll-link { animation: hero-scroll-enter 560ms cubic-bezier(0.22, 1, 0.36, 1) 440ms both; }
+  /* Resume while the loader fades, so the page is already arriving underneath. */
+  .is-loading:not(.is-loading-exit) :is(.black-hole, .starfield, .space-grid, .title-first-content, .title-second-content, .title-period, .live-clock, .site-header .site-brand, .site-header .menu-toggle, .site-header .site-nav a, .hero-bottom > p, .hero-bottom .scroll-link) { animation-play-state: paused; }
 }
 .live-clock {
   display: flex;
@@ -121,7 +180,19 @@ h1 > span { display: block; }
 .black-hole-fallback { display: block; position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transition: opacity 400ms ease; }
 .black-hole.is-ready #black-hole-canvas { opacity: 1; }
 .black-hole.is-ready .black-hole-fallback { opacity: 0; }
+.black-hole-fallback[data-theme-ready="false"],
+html[data-black-hole-style="ink"] .black-hole-fallback:not([data-black-hole-style="ink"]) { visibility: hidden; }
 
+@media (min-width: 1101px) {
+  /* Keep the approved wide-screen disk/hero ratio in taller desktop windows,
+     instead of switching to a smaller, lower disk at the 16:10 breakpoint. */
+  html:not([data-black-hole-style="ink"]) .black-hole {
+    --hole-size: calc(var(--hero-height) * 1.85);
+    top: 57%;
+    /* As the window narrows, leave room for the heading and the left disk tip. */
+    left: clamp(64%, calc(19% + var(--hero-height) * 0.72), 74%);
+  }
+}
 @media (min-aspect-ratio: 16/10) and (min-width: 1101px) {
   .hero { --hero-height: clamp(660px, 100svh, 1400px); min-height: 660px; }
   /* Cap the composition at 16:9 using the hero's actual, clamped height.
@@ -150,6 +221,5 @@ h1 > span { display: block; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; }
   [data-depth] { will-change: auto; }
-  .loader-light, .loader-track span { animation: none; }
-  .loader-track span { width: 100%; opacity: 0.4; }
+  .loader-symbol, .loader-ring-reveal, .loader-slash-reveal, .loader-circle-reveal, .loader-caption { animation: none; }
 }

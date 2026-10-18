@@ -1,8 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
-  <title>Gudu</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-labelledby="title">
+  <title id="title">Gudu</title>
+  <!-- Original vector paths from the white logo artboard in logo.ai. -->
   <style>
-    path { fill: #111111; }
-    @media (prefers-color-scheme: dark) { path { fill: #f5f5f5; } }
+    .logo-body { fill: #000; stroke: #000; }
+    @media (prefers-color-scheme: dark) { .logo-body { fill: #fff; stroke: #fff; } }
   </style>
-  <path d="M70 8H26L8 26v30l16 16h30l18-18V34H40v12h20v3L49 60H29l-9-9V31l11-11h27Z"/>
+  <defs>
+    <mask id="ring-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="200" height="200" style="mask-type: luminance">
+      <rect width="200" height="200" fill="#fff"/>
+      <path transform="translate(137.6289 135.2456)" d="M0 0 L-29.598 -29.598 L-45.95 -13.246 L-34.806 -2.101 C-36.462 0.187 -37.429 2.998 -37.429 6.036 C-37.429 13.748 -31.166 20.001 -23.453 20.001 C-17.151 20.001 -11.825 15.829 -10.09 10.089 Z" fill="#000"/>
+    </mask>
+  </defs>
+  <g transform="translate(0 200) scale(1 -1)" stroke-miterlimit="10">
+    <g mask="url(#ring-mask)">
+      <path transform="translate(142.5468 97.1514)" d="M0 0 C0 -23.222 -19.109 -42.33 -42.33 -42.33 C-65.552 -42.33 -84.661 -23.222 -84.661 0 C-84.661 23.222 -65.552 42.33 -42.33 42.33 C-19.109 42.33 0 23.222 0 0 Z" fill="none" stroke="#fbb03b" stroke-width="4"/>
+    </g>
+    <path class="logo-body" transform="translate(99.6361 141.5268)" d="M0 0 C0 7.822 6.341 14.163 14.163 14.163 C10.757 14.739 8.624 15.246 0.516 15.246 C-26.52 15.246 -59.034 -5.32 -59.034 -44.576 C-59.034 -72.483 -35.949 -104.126 0.516 -104.126 C29.283 -104.126 59.567 -84.628 59.567 -44.444 C59.567 -41.785 56.668 11.712 80.516 35.56 L-79.301 -124.257 C-64.905 -112.169 17.674 -33.647 36.383 -33.647 C39.921 -33.647 42.054 -35.379 42.054 -35.379 C44.767 -37.551 45.368 -41.363 45.368 -44.44 C45.368 -65.744 27.606 -89.164 0.389 -89.164 C-22.724 -89.164 -44.336 -69.854 -44.336 -44.44 C-44.335 -18.029 -21.891 0.412 0.516 0.412" fill="#000" stroke="#000"/>
+    <path transform="translate(100.2437 54.8483)" d="M0 0 C-23.222 0 -42.33 19.109 -42.33 42.33" fill="none" stroke="#fbb03b" stroke-width="4"/>
+  </g>
 </svg>

@@ -4,13 +4,16 @@
   const stars = document.querySelector('#starfield');
   const context = stars.getContext('2d');
   const blackHoleCanvas = document.querySelector('#black-hole-canvas');
+  const blackHoleTheme = window.BlackHoleTheme;
+  let blackHoleStyle = blackHoleTheme?.apply() || 'minimal';
   let blackHole = null;
   try {
-    if (blackHoleCanvas && window.BlackHole) blackHole = new window.BlackHole(blackHoleCanvas);
+    if (blackHoleCanvas && window.BlackHole) blackHole = new window.BlackHole(blackHoleCanvas, { style: blackHoleStyle });
   } catch (error) {
     console.warn('Using the static black-hole illustration.', error);
   }
   const layers = [...document.querySelectorAll('[data-depth]')];
+  const titlePeriod = document.querySelector('.title-period');
   const clock = document.querySelector('#local-time');
   const clockDate = clock.querySelector('[data-clock-date]');
   const clockTime = clock.querySelector('[data-clock-time]');
@@ -20,6 +23,7 @@
   });
   clock.title = clockFormatter.resolvedOptions().timeZone;
   let clockTimer = 0;
+  let themeTimer = 0;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const finePointer = matchMedia('(pointer: fine)');
   const pointer = { x: 0, y: 0, targetX: 0, targetY: 0 };
@@ -30,16 +34,36 @@
   let lastTime = 0;
   let lastRender = 0;
   let elapsed = 12;
+  let activeSince = null;
   let width = 0;
   let height = 0;
   let starList = [];
 
-  function finishIntro() { hero.classList.add('intro-complete'); }
-  window.addEventListener('site:revealed', () => { loading = false; start(); });
+  function finishIntro() {
+    hero.classList.add('intro-complete');
+    document.documentElement.classList.remove('has-site-intro');
+    updateTitleBlink();
+  }
+  function revealScene() { loading = false; start(); updateTitleBlink(); }
+  window.addEventListener('site:revealing', revealScene);
+  window.addEventListener('site:revealed', revealScene);
   if (reducedMotion.matches) finishIntro();
   hero.addEventListener('animationend', event => {
-    if (event.animationName === 'title-period-enter') finishIntro();
+    if (event.animationName === 'hero-scroll-enter') finishIntro();
   });
+
+  function stopTitleBlink() {
+    titlePeriod?.classList.remove('is-cursor-blinking');
+  }
+
+  function updateTitleBlink() {
+    if (!titlePeriod || loading || paused || !visible || document.hidden
+        || document.documentElement.classList.contains('has-site-intro')) {
+      stopTitleBlink();
+      return;
+    }
+    titlePeriod.classList.add('is-cursor-blinking');
+  }
 
   // Read the actual wall clock every second, independently of visual animation.
   function updateClock() {
@@ -54,6 +78,27 @@
   }
 
   function stopClock() { clearTimeout(clockTimer); }
+
+  function updateBlackHoleTheme() {
+    clearTimeout(themeTimer);
+    const nextStyle = blackHoleTheme?.resolve() || 'minimal';
+    if (nextStyle !== blackHoleStyle) {
+      stop();
+      blackHoleStyle = blackHoleTheme.apply(nextStyle);
+      blackHoleCanvas?.parentElement.classList.remove('is-ready');
+      try {
+        if (blackHole) blackHole.setStyle(nextStyle);
+      } catch (error) {
+        blackHole = null;
+        console.warn('Using the static black-hole illustration.', error);
+      }
+      resize();
+      start();
+    }
+    if (blackHoleTheme && !document.hidden) {
+      themeTimer = setTimeout(updateBlackHoleTheme, 60010 - Date.now() % 60000);
+    }
+  }
 
   // Seeded positions stay in place when the viewport is resized.
   function random(seed) {
@@ -87,7 +132,9 @@
     for (const star of starList) {
       const x = star.x + pointer.x * star.depth * 13;
       const y = star.y + pointer.y * star.depth * 10;
-      context.fillStyle = `rgba(193,204,223,${star.light})`;
+      context.fillStyle = blackHoleStyle === 'ink'
+        ? `rgba(225,218,200,${star.light * 0.55})`
+        : `rgba(193,204,223,${star.light})`;
       context.beginPath();
       context.arc(x, y, star.radius, 0, Math.PI * 2);
       context.fill();
@@ -101,15 +148,32 @@
       layer.style.setProperty('--pointer-x', `${-pointer.x * depth * 8}px`);
       layer.style.setProperty('--pointer-y', `${-pointer.y * depth * 6}px`);
     }
-    blackHole?.render(elapsed, pointer.x, -pointer.y);
+    blackHole?.render(sceneTime(), pointer.x, -pointer.y);
+  }
+
+  // Orbital phase follows monotonic active time, independently of frame rate
+  // and the bounded delta used only to ease the pointer below.
+  function sceneTime() {
+    return elapsed + (activeSince === null ? 0 : (performance.now() - activeSince) / 1000);
+  }
+
+  function resumeSceneClock() {
+    if (activeSince === null) activeSince = performance.now();
+  }
+
+  function pauseSceneClock() {
+    if (activeSince === null) return;
+    elapsed = sceneTime();
+    activeSince = null;
   }
 
   function tick(timestamp) {
     frame = 0;
-    if (loading || paused || !visible || document.hidden) { lastTime = 0; return; }
+    if (loading || paused || !visible || document.hidden) { stop(); return; }
+    const animated = blackHole?.ready && !blackHole.lost;
+    if (animated) resumeSceneClock(); else pauseSceneClock();
     const delta = lastTime ? Math.min(timestamp - lastTime, 100) : 16;
     lastTime = timestamp;
-    elapsed += delta / 1000;
     const ease = 1 - Math.exp(-delta * 0.005);
     pointer.x += (pointer.targetX - pointer.x) * ease;
     pointer.y += (pointer.targetY - pointer.y) * ease;
@@ -118,7 +182,6 @@
       pointer.x = pointer.targetX;
       pointer.y = pointer.targetY;
     }
-    const animated = blackHole?.ready && !blackHole.lost;
     if (timestamp - lastRender >= 30 || (!animated && settled)) {
       draw();
       if (animated) blackHole.sampleFrame(timestamp);
@@ -133,6 +196,7 @@
     if (frame || loading || paused || !visible || document.hidden) return;
     const animated = blackHole?.ready && !blackHole.lost;
     if (!animated && pointer.x === pointer.targetX && pointer.y === pointer.targetY) return;
+    if (animated) resumeSceneClock(); else pauseSceneClock();
     lastTime = 0;
     lastRender = 0;
     blackHole?.resetTiming();
@@ -140,6 +204,7 @@
   }
 
   function stop() {
+    pauseSceneClock();
     cancelAnimationFrame(frame);
     frame = 0;
     lastTime = 0;
@@ -148,6 +213,7 @@
   function updateMotion() {
     hero.dataset.motion = paused ? 'paused' : 'playing';
     if (paused) stop(); else start();
+    updateTitleBlink();
   }
 
   hero.addEventListener('pointermove', event => {
@@ -170,21 +236,26 @@
     draw();
   });
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { stop(); stopClock(); finishIntro(); }
-    else { start(); updateClock(); }
+    if (document.hidden) { stop(); stopClock(); clearTimeout(themeTimer); finishIntro(); }
+    else { updateBlackHoleTheme(); start(); updateClock(); }
+    updateTitleBlink();
   });
   new IntersectionObserver(entries => {
     visible = entries[0].isIntersecting;
     if (visible) start(); else stop();
+    updateTitleBlink();
   }).observe(hero);
+  blackHoleCanvas?.addEventListener('webglcontextlost', stop);
   if (blackHole) blackHole.onRestore = () => { draw(); start(); };
   new ResizeObserver(resize).observe(hero);
-  window.addEventListener('pagehide', () => { stop(); stopClock(); finishIntro(); });
-  window.addEventListener('pageshow', () => { start(); updateClock(); });
+  window.addEventListener('pagehide', () => { stop(); stopClock(); clearTimeout(themeTimer); finishIntro(); stopTitleBlink(); });
+  window.addEventListener('pageshow', () => { updateBlackHoleTheme(); start(); updateClock(); updateTitleBlink(); });
+  window.addEventListener('popstate', updateBlackHoleTheme);
   // Resize and submit a real scene frame before the loader checks .is-ready.
   // This also supplies the static frame used with reduced motion enabled.
   resize();
   updateMotion();
   updateClock();
+  updateBlackHoleTheme();
   window.SiteLoader?.ready();
 })();

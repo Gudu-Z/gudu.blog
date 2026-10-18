@@ -3,13 +3,21 @@
   'use strict';
   const root = document.documentElement;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-  const started = performance.now();
+  let visibleSince = null;
   let released = false;
   let closing = false;
   let readyRequested = false;
   let closeTimer = 0;
   let exitTimer = 0;
-  root.classList.add('is-loading');
+  root.classList.add('is-loading', 'has-site-intro');
+
+  // Measure the short logo intro from its first paint, not the head-script download.
+  function introStarted(event) {
+    if (event.animationName !== 'loader-arrive' || !event.target.matches('.loader-symbol')) return;
+    visibleSince = performance.now();
+    document.removeEventListener('animationstart', introStarted);
+  }
+  document.addEventListener('animationstart', introStarted);
 
   function release() {
     if (released) return;
@@ -17,29 +25,44 @@
     clearTimeout(deadline);
     clearTimeout(closeTimer);
     clearTimeout(exitTimer);
+    document.removeEventListener('animationstart', introStarted);
+    if (reducedMotion.matches || document.hidden || !root.classList.contains('is-loading-exit')) {
+      root.classList.remove('has-site-intro');
+    }
     root.classList.remove('is-loading', 'is-loading-exit');
     document.querySelector('#site-loader')?.remove();
     window.dispatchEvent(new Event('site:revealed'));
   }
 
-  // Includes slow downloads, missing assets and a main-script failure.
-  const deadline = setTimeout(release, 4000);
+  // Finish the fade once the page has requested readiness; a cold WebGL
+  // first frame can delay timers and must not cut the animation off midway.
+  // A missing main script still releases the page immediately at the deadline.
+  const deadline = setTimeout(() => { if (readyRequested) dismiss(); else release(); }, 4000);
 
   function dismiss() {
     if (released || closing) return;
     closing = true;
     if (reducedMotion.matches || document.hidden) { release(); return; }
-    closeTimer = setTimeout(() => {
+    // Resource readiness may arrive before the browser delivers animationstart.
+    visibleSince ??= performance.now();
+    function finishIntro() {
       if (released) return;
+      const remaining = 1100 - (performance.now() - visibleSince);
+      if (remaining > 0) {
+        closeTimer = setTimeout(finishIntro, remaining);
+        return;
+      }
       const loader = document.querySelector('#site-loader');
       if (!loader) { release(); return; }
       loader.addEventListener('transitionend', event => {
         if (event.target === loader && event.propertyName === 'opacity') release();
       });
       root.classList.add('is-loading-exit');
-      // Transition events can be skipped when the browser suspends a tab.
+      window.dispatchEvent(new Event('site:revealing'));
+      // Allow the 420ms fade to finish even if transitionend is skipped.
       exitTimer = setTimeout(release, 550);
-    }, Math.max(0, 600 - (performance.now() - started)));
+    }
+    finishIntro();
   }
 
   function ready() {

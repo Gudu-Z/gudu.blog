@@ -24,6 +24,9 @@
     uniform vec4 u_crop;
     uniform vec2 u_pointer;
     uniform float u_time;
+    uniform float u_ink;
+    uniform sampler2D u_inkAtlas;
+    uniform sampler2D u_inkLight;
     #define PI 3.14159265359
 
     float hash(vec2 p) {
@@ -34,13 +37,25 @@
     float laneIntegral(float x, float duty) {
       return floor(x) * duty + clamp(fract(x) - 0.5 + duty * 0.5, 0.0, duty);
     }
-    float filteredLane(float phase, float duty, float footprint) {
-      float width = max(footprint, 0.015);
+    float filteredLane(float phase, float duty, vec2 gradient) {
+      float width = max(dot(abs(gradient), vec2(1.0)), 0.015);
       float coverage = (laneIntegral(phase + width * 0.5, duty)
         - laneIntegral(phase - width * 0.5, duty)) / width;
-      // Remove unresolved contrast before the Nyquist limit, rather than
-      // letting aliased beats change brightness as the camera moves.
-      return mix(clamp(coverage, 0.0, 1.0), duty, smoothstep(0.30, 0.75, width));
+      // Filter each harmonic against both screen axes. A pulse's base
+      // frequency alone misses the fine edges that alias before the lanes do.
+      float frequency = max(abs(gradient.x), abs(gradient.y));
+      float bandLimited = duty;
+      for (int harmonic = 1; harmonic <= 8; harmonic++) {
+        float n = float(harmonic);
+        float weight = exp(-2.0 * PI * PI * 0.1444 * n * n * dot(gradient, gradient))
+          * (1.0 - smoothstep(0.38, 0.5, n * frequency));
+        bandLimited += 2.0 * sin(PI * n * duty) / (PI * n)
+          * cos(2.0 * PI * n * (fract(phase) - 0.5)) * weight;
+      }
+      // Wide, resolved strands keep their original profile. Only compressed
+      // strands use the band-limited profile instead of flickering between pixels.
+      return mix(clamp(coverage, 0.0, 1.0), clamp(bandLimited, 0.0, 1.0),
+        smoothstep(0.04, 0.08, frequency));
     }
     vec3 acceleration(vec3 p, float h2) {
       float r2 = dot(p, p);
@@ -72,8 +87,8 @@
       vec2 streakGradient = (25.0 + 14.57 * cos(r * 2.35) + 4.5 * cos(r * 5.0)) * radialGradient
         + 0.65 * cos(warpPhase) * warpFilter * warpGradient
         + 0.25 * cos(phase) * phaseFilter * phaseGradient;
-      float footprint = dot(abs(streakGradient), vec2(1.0)) / (2.0 * PI);
-      float filament = filteredLane(streakPhase / (2.0 * PI), laneWidth * 2.0, footprint);
+      float filament = filteredLane(streakPhase / (2.0 * PI), laneWidth * 2.0,
+        streakGradient / (2.0 * PI));
       // Broad, slowly travelling illumination reveals depth without grain.
       float flowPhase = phase * 3.0 + r * 0.85;
       // Analytic gradients include orbital shear at long running times and
@@ -99,22 +114,91 @@
       vec3 color = mix(amber, pearl, smoothstep(0.12, 0.32, observedHeat));
       color = mix(color, white, smoothstep(0.30, 0.58, observedHeat));
       float innerEdge = smoothstep(3.0, 3.35, r);
-      float outerEdge = 1.0 - smoothstep(9.3, 10.7, r);
+      // The outer falloff belongs to surface coverage (traceLayers), rather
+      // than darkening an opaque annulus that would mask the background.
       // Compress the Doppler contrast for balanced left/right readability.
       float balancedShift = mix(1.0, clamp(shift, 0.55, 1.65), 0.27);
       float energy = 2.5 * pow(3.0 / r, 1.18) * balancedShift;
       // A soft outer lip joins the disk through a wider, dimmer light shoulder.
       // Keep the near edge subdued so it does not read as a separate outline.
       // Both profiles preserve energy as their pixel footprint changes.
-      float rimWidth = 0.055;
+      float rimWidth = 0.070;
       float filteredWidth = sqrt(rimWidth * rimWidth + radialFootprint * radialFootprint / 12.0);
       float rim = exp(-0.5 * pow((r - 10.38) / filteredWidth, 2.0)) * rimWidth / filteredWidth;
       float shoulderWidth = 0.28;
       float filteredShoulder = sqrt(shoulderWidth * shoulderWidth + radialFootprint * radialFootprint / 12.0);
       float shoulder = exp(-0.5 * pow((r - 10.15) / filteredShoulder, 2.0)) * shoulderWidth / filteredShoulder;
       float edgeFacing = 0.72 - 0.22 * sin(phi);
-      vec3 edgeLight = mix(pearl, white, 0.35) * (rim * 0.34 + shoulder * 0.12) * edgeFacing;
-      return color * energy * texture * innerEdge * outerEdge + edgeLight;
+      vec3 edgeLight = mix(pearl, white, 0.35) * (rim * 0.40 + shoulder * 0.15) * edgeFacing;
+      // Lift the minimalist disk before tone mapping, so dim strands become
+      // clearer while the brightest lanes keep their smooth highlight rolloff.
+      const float diskExposure = 1.22;
+      return (color * energy * texture * innerEdge + edgeLight) * diskExposure;
+    }
+    float pigmentNoise(vec2 p) {
+      vec2 cell = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(cell), hash(cell + vec2(1.0, 0.0)), f.x),
+        mix(hash(cell + vec2(0.0, 1.0)), hash(cell + vec2(1.0)), f.x), f.y);
+    }
+    vec4 inkEmission(vec3 p, vec3 pointDx, vec3 pointDy, float order, vec3 ray) {
+      float r = length(p.xz);
+      float phi = atan(p.z, p.x);
+      // A complete polar material sampled at real ray/surface intersections.
+      // All illustrated image orders share a continuous angular coordinate.
+      // A constant angular velocity keeps flowing indefinitely without winding
+      // the brush fibres into subpixel radial shear. One orbit takes 52.36 s.
+      float turn = (u_time - 12.0) * 0.12 / (2.0 * PI);
+      vec2 uv = vec2(phi / (2.0 * PI) + 0.5 - turn, (r - 1.85) / 10.15);
+      vec2 dr = vec2(dot(p.xz, pointDx.xz), dot(p.xz, pointDy.xz)) / r;
+      vec2 dp = vec2(p.x * pointDx.z - p.z * pointDx.x,
+        p.x * pointDy.z - p.z * pointDy.x) / (r * r * 2.0 * PI);
+      vec4 pigment = vec4(0.5);
+      vec3 movingLight = vec3(0.5), fixedLight = vec3(0.5);
+      #ifdef HAS_TEXTURE_LOD
+        // Explicit chart derivatives stay continuous across atan's seam and
+        // remain defined at ray-march / material branch boundaries.
+        pigment = texture2DGradEXT(u_inkAtlas, uv, vec2(dp.x, dr.x / 10.15), vec2(dp.y, dr.y / 10.15));
+        movingLight = texture2DGradEXT(u_inkLight, uv, vec2(dp.x, dr.x / 10.15), vec2(dp.y, dr.y / 10.15)).rgb;
+        fixedLight = texture2DGradEXT(u_inkLight, vec2(uv.x + turn, uv.y),
+          vec2(dp.x, dr.x / 10.15), vec2(dp.y, dr.y / 10.15)).rgb;
+      #endif
+      vec3 rawPigment = pigment.rgb;
+      // Advect pigment detail through a stationary illumination field. Correct
+      // each image order before blending so their light levels never mix.
+      pigment.rgb *= max(fixedLight, vec3(0.02)) / max(movingLight, vec3(0.02));
+      // The illustration gives its lensed arc a distinct brush treatment.
+      // Preserve each painted treatment on the same rotating polar surface.
+      float arcBlend = smoothstep(-0.22, 0.22, dot(normalize(p), normalize(ray)));
+      float painted = order < 1.5 ? mix(pigment.r, pigment.g, arcBlend) : pigment.b;
+      float rawPainted = order < 1.5 ? mix(rawPigment.r, rawPigment.g, arcBlend) : rawPigment.b;
+      float brushAngle = phi - (u_time - 12.0) * 0.12;
+      vec2 materialPoint = r * vec2(cos(brushAngle), sin(brushAngle));
+      float coarse = pigmentNoise(materialPoint * 3.2);
+      float footprint = max(length(pointDx.xz), length(pointDy.xz));
+      float fine = mix(0.5, pigmentNoise(materialPoint * 21.0), exp(-footprint * footprint * 440.0));
+      // Pigment breaks on the paper in irregular islands, while broad strokes
+      // remain continuous. This grain follows the orbit instead of boiling.
+      float dry = smoothstep(0.27, 0.61, coarse * 0.65 + fine * 0.35);
+      float density = clamp(painted * mix(0.95, 1.04, dry), 0.0, 0.99);
+      vec3 color = vec3(1.06, 1.0, 0.88) * density;
+      // Discontinuous dry-brush ends belong to the rotating material itself.
+      // Lighting changes the ink's color, never its holes or silhouette.
+      float edgeRadius = 11.1 + (rawPainted - 0.5) * 0.6 + (coarse - 0.5) * 1.1
+        + 0.30 * sin(brushAngle * 3.0) + 0.16 * sin(brushAngle * 7.0 + 1.1);
+      float edgeWidth = max(0.08, dot(abs(dr), vec2(1.0)) * 0.65);
+      float outline = 1.0 - smoothstep(edgeRadius - edgeWidth, edgeRadius + edgeWidth, r);
+      float wash = (1.0 - smoothstep(10.7, 11.95, r)) * 0.18;
+      float coverage = max(outline, wash)
+        * mix(1.0, smoothstep(0.016, 0.07, rawPainted), smoothstep(7.5, 9.5, r))
+        * (1.0 - smoothstep(11.5, 12.0, r));
+      return vec4(color * coverage, coverage);
+    }
+    float inkHeight(vec3 p) {
+      float r = length(p.xz);
+      float phase = atan(p.z, p.x) - (u_time - 12.0) * 0.12;
+      return (0.075 * sin(phase * 3.0 + r * 0.65)
+        + 0.035 * sin(phase * 7.0 - r)) * smoothstep(3.0, 7.0, r);
     }
     vec3 distantStars(vec3 direction) {
       vec2 sky = vec2(atan(direction.z, direction.x), asin(clamp(direction.y, -1.0, 1.0)));
@@ -130,17 +214,20 @@
       vec3 ray;
       float alpha;
       float material;
+      float order;
     };
-    RayHit traceRay(vec3 origin, vec3 direction) {
+    RayHit traceLayers(vec3 origin, vec3 direction, float skipLayers) {
       RayHit hit;
       hit.point = vec3(6.0, 0.0, 0.0);
       hit.ray = direction;
       hit.alpha = 0.0;
       hit.material = 0.0;
+      hit.order = 0.0;
+      float crossings = 0.0;
       vec3 p = origin, v = direction;
       vec3 angular = cross(p, v);
       float h2 = dot(angular, angular);
-      if (h2 > 140.0) hit.material = -1.0;
+      if (h2 > mix(140.0, 210.0, u_ink)) hit.material = -1.0;
       else {
         for (int i = 0; i < 180; i++) {
           float r = length(p);
@@ -150,16 +237,29 @@
           vec3 a = acceleration(p, h2);
           vec3 next = p + v * dt + 0.5 * a * dt * dt;
           vec3 nextV = v + 0.5 * (a + acceleration(next, h2)) * dt;
-          if (p.y * next.y < 0.0) {
-            float fraction = p.y / (p.y - next.y);
+          float planeFrom = p.y, planeTo = next.y;
+          if (u_ink > 0.5 && (abs(p.y) < 0.25 || abs(next.y) < 0.25 || p.y * next.y < 0.0)) {
+            planeFrom -= inkHeight(p);
+            planeTo -= inkHeight(next);
+          }
+          if (planeFrom * planeTo < 0.0) {
+            hit.order = crossings;
+            crossings += 1.0;
+            float fraction = planeFrom / (planeFrom - planeTo);
             vec3 crossing = mix(p, next, fraction);
             float diskRadius = length(crossing.xz);
-            if (diskRadius > 3.0 && diskRadius < 11.0) {
-              hit.point = crossing;
-              hit.ray = mix(v, nextV, fraction);
-              hit.material = 1.0;
-              hit.alpha = 1.0 - smoothstep(10.65, 11.0, diskRadius);
-              break;
+            if (diskRadius > mix(3.0, 1.85, u_ink) && diskRadius < mix(11.0, 12.0, u_ink)) {
+              if (skipLayers > 0.5) { skipLayers -= 1.0; }
+              else {
+                hit.point = crossing;
+                hit.ray = mix(v, nextV, fraction);
+                // Separate the front disk from its outgoing, bent images. A
+                // plane-crossing count alone merges the front and vaulted arc.
+                hit.order = min(2.0, hit.order + step(0.0, dot(crossing, hit.ray)));
+                hit.material = 1.0;
+                hit.alpha = 1.0 - smoothstep(mix(9.8, 10.65, u_ink), 11.0, diskRadius);
+                break;
+              }
             }
           }
           p = next;
@@ -168,9 +268,26 @@
       }
       return hit;
     }
+    RayHit traceRay(vec3 origin, vec3 direction) {
+      return traceLayers(origin, direction, 0.0);
+    }
+    vec3 surfaceDifferential(vec3 origin, vec3 direction, vec3 point) {
+      // At an occlusion edge adjacent fragments can hit different image
+      // orders. Match their physical surface before choosing the mip level;
+      // otherwise a one-pixel seam samples an unrelated, heavily blurred texel.
+      RayHit neighbour = traceRay(origin, direction);
+      vec3 delta = neighbour.point - point;
+      if (dot(delta, delta) > 0.09) {
+        RayHit behind = traceLayers(origin, direction, 1.0);
+        vec3 other = behind.point - point;
+        if (behind.material > 0.5 && dot(other, other) < dot(delta, delta)) delta = other;
+      }
+      return delta;
+    }
     vec4 shadeHit(RayHit hit, vec3 pointDx, vec3 pointDy) {
       vec3 emission = vec3(0.0);
       float alpha = hit.alpha;
+      if (u_ink > 0.5 && hit.material > 0.5) return inkEmission(hit.point, pointDx, pointDy, hit.order, hit.ray);
       if (hit.material > 0.5) emission = diskEmission(hit.point, hit.ray, pointDx, pointDy);
       if (hit.material < -0.5) {
         emission = distantStars(hit.ray);
@@ -182,21 +299,26 @@
     void main() {
       float aspect = u_resolution.x / u_resolution.y;
       vec2 sceneUV = u_crop.xy + v_uv * u_crop.zw;
+      vec2 cameraPointer = u_pointer;
       vec2 screen = (sceneUV - vec2(0.50)) * vec2(aspect, 1.0) * 2.0;
-      screen -= u_pointer * vec2(0.012, 0.009);
+      screen -= vec2(0.06, -0.01) * u_ink;
+      screen -= cameraPointer * vec2(0.012, 0.009);
       // Screen roll controls composition independently of the disk's 3D inclination.
-      float screenRoll = (18.0 + u_pointer.x * 1.4) * PI / 180.0;
+      float screenRoll = (18.0 + cameraPointer.x * 1.4) * PI / 180.0;
       screen = mat2(cos(screenRoll), -sin(screenRoll), sin(screenRoll), cos(screenRoll)) * screen;
       // Inclination is measured from the disk normal: 0° face-on, 90° edge-on.
-      float diskInclination = (81.0 + u_pointer.y * 3.8) * PI / 180.0;
+      float diskInclination = (mix(81.0, 83.0, u_ink) + cameraPointer.y * 3.8) * PI / 180.0;
       float cameraDistance = 31.784430;
-      float azimuth = u_pointer.x * 0.10;
+      // Ink parallax uses pitch, screen roll and pan. Orbiting the camera
+      // around the disk normal would add apparent speed to its painted flow.
+      float azimuth = cameraPointer.x * 0.10 * (1.0 - u_ink);
       vec3 origin = cameraDistance * vec3(sin(azimuth) * sin(diskInclination),
         cos(diskInclination), cos(azimuth) * sin(diskInclination));
       vec3 forward = normalize(-origin);
       vec3 right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
       vec3 up = cross(right, forward);
-      vec3 direction = normalize(forward * 4.05 + screen.x * right + screen.y * up);
+      float focal = mix(4.05, 3.70, u_ink);
+      vec3 direction = normalize(forward * focal + screen.x * right + screen.y * up);
       RayHit hit = traceRay(origin, direction);
       vec3 pointDx = vec3(0.0), pointDy = vec3(0.0);
       vec2 screenDx = vec2(0.0), screenDy = vec2(0.0);
@@ -208,7 +330,30 @@
         screenDx = dFdx(screen);
         screenDy = dFdy(screen);
       #endif
+      vec3 rayDx = normalize(forward * focal + (screen.x + screenDx.x) * right + (screen.y + screenDx.y) * up);
+      vec3 rayDy = normalize(forward * focal + (screen.x + screenDy.x) * right + (screen.y + screenDy.y) * up);
+      if (hit.material > 0.5) {
+        // Ordinary pixels retain hardware derivatives; only discontinuities
+        // need neighbouring rays, so surface filtering stays cheap and stable.
+        if (dot(pointDx, pointDx) > 0.09) pointDx = surfaceDifferential(origin, rayDx, hit.point);
+        if (dot(pointDy, pointDy) > 0.09) pointDy = surfaceDifferential(origin, rayDy, hit.point);
+      }
       vec4 light = shadeHit(hit, pointDx, pointDy);
+      // Both the minimal rim and transparent brush ends reveal the next
+      // physical surface, rather than cutting a black band out of the rear arc.
+      bool throughDisk = hit.material > 0.5 && light.a < 0.999;
+      RayHit beneath = hit;
+      if (throughDisk) beneath = traceLayers(origin, direction, 1.0);
+      vec3 beneathDx = vec3(0.0), beneathDy = vec3(0.0);
+      #ifdef HAS_DERIVATIVES
+        beneathDx = dFdx(beneath.point);
+        beneathDy = dFdy(beneath.point);
+      #endif
+      if (throughDisk && beneath.material > 0.5) {
+        if (dot(beneathDx, beneathDx) > 0.09) beneathDx = surfaceDifferential(origin, rayDx, beneath.point);
+        if (dot(beneathDy, beneathDy) > 0.09) beneathDy = surfaceDifferential(origin, rayDy, beneath.point);
+      }
+      if (throughDisk) light += shadeHit(beneath, beneathDx, beneathDy) * (1.0 - light.a);
       vec3 angular = cross(origin, direction);
       float h2 = dot(angular, angular);
       // Only the critical-curve neighbourhood needs geometry supersampling.
@@ -223,8 +368,31 @@
           if (sampleIndex == 2) offset = vec2(0.375, 0.125);
           if (sampleIndex == 3) offset = vec2(-0.125, 0.375);
           vec2 subScreen = screen + screenDx * offset.x + screenDy * offset.y;
-          vec3 subRay = normalize(forward * 4.05 + subScreen.x * right + subScreen.y * up);
-          samples += shadeHit(traceRay(origin, subRay), pointDx, pointDy);
+          vec3 subRay = normalize(forward * focal + subScreen.x * right + subScreen.y * up);
+          RayHit subHit = traceRay(origin, subRay);
+          vec3 subDx = pointDx, subDy = pointDy;
+          vec3 subRayDx = normalize(forward * focal + (subScreen.x + screenDx.x) * right + (subScreen.y + screenDx.y) * up);
+          vec3 subRayDy = normalize(forward * focal + (subScreen.x + screenDy.x) * right + (subScreen.y + screenDy.y) * up);
+          // A subpixel ray can land on a different lensed image than its
+          // centre ray. Reusing that centre's footprint leaves the newly
+          // visible strands unfiltered at the shadow and overlap boundaries.
+          if (u_ink < 0.5 && subHit.material > 0.5
+              && (hit.material < 0.5 || distance(subHit.point, hit.point) > 0.3)) {
+            subDx = surfaceDifferential(origin, subRayDx, subHit.point);
+            subDy = surfaceDifferential(origin, subRayDy, subHit.point);
+          }
+          vec4 subLight = shadeHit(subHit, subDx, subDy);
+          if (subHit.material > 0.5 && subLight.a < 0.999) {
+            RayHit subBeneath = traceLayers(origin, subRay, 1.0);
+            vec3 subBeneathDx = beneathDx, subBeneathDy = beneathDy;
+            if (u_ink < 0.5 && subBeneath.material > 0.5
+                && (beneath.material < 0.5 || distance(subBeneath.point, beneath.point) > 0.3)) {
+              subBeneathDx = surfaceDifferential(origin, subRayDx, subBeneath.point);
+              subBeneathDy = surfaceDifferential(origin, subRayDy, subBeneath.point);
+            }
+            subLight += shadeHit(subBeneath, subBeneathDx, subBeneathDy) * (1.0 - subLight.a);
+          }
+          samples += subLight;
         }
         light = mix(light, samples * 0.25, edgeAA);
       }
@@ -262,10 +430,25 @@
     varying vec2 v_uv;
     uniform sampler2D u_scene;
     uniform sampler2D u_bloom;
+    uniform sampler2D u_splatter;
+    uniform float u_hasSplatter;
     uniform vec2 u_texel;
     uniform vec4 u_crop;
+    uniform float u_ink;
     void main() {
       vec4 scene = texture2D(u_scene, v_uv);
+      if (u_ink > 0.5) {
+        if (u_hasSplatter > 0.5) {
+          vec4 splatter = texture2D(u_splatter, v_uv);
+          scene += splatter * (1.0 - scene.a);
+        }
+        vec2 sceneUV = u_crop.xy + v_uv * u_crop.zw;
+        vec2 border = min(sceneUV, 1.0 - sceneUV);
+        float fade = smoothstep(0.0, 0.035, min(border.x, border.y));
+        float grain = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+        gl_FragColor = vec4(scene.rgb * (0.94 + grain * 0.12) / max(scene.a, 0.001), scene.a * fade);
+        return;
+      }
       vec3 glow = vec3(0.0);
       float weights = 0.0;
       for (int i = -6; i <= 6; i++) {
@@ -285,8 +468,9 @@
   `;
 
   class BlackHole {
-    constructor(canvas) {
+    constructor(canvas, { style = 'minimal' } = {}) {
       this.canvas = canvas;
+      this.setStyle(style);
       this.gl = canvas.getContext('webgl', { alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'low-power' });
       this.ready = false;
       this.lost = false;
@@ -294,6 +478,7 @@
       this.frameTimes = [];
       this.lastSample = 0;
       this.resources = [];
+      this.generation = 0;
       if (!this.gl) return;
       try { this.initialize(); } catch (error) { console.warn('Using the static black-hole illustration.', error); }
       canvas.addEventListener('webglcontextlost', event => {
@@ -327,7 +512,9 @@
       const gl = this.gl;
       const vertex = this.shader(gl.VERTEX_SHADER, vertexSource);
       const derivatives = gl.getExtension('OES_standard_derivatives');
-      const prefix = derivatives ? '#extension GL_OES_standard_derivatives : enable\n#define HAS_DERIVATIVES\n' : '';
+      const lod = gl.getExtension('EXT_shader_texture_lod');
+      const prefix = (derivatives ? '#extension GL_OES_standard_derivatives : enable\n#define HAS_DERIVATIVES\n' : '')
+        + (lod ? '#extension GL_EXT_shader_texture_lod : enable\n#define HAS_TEXTURE_LOD\n' : '');
       const pixel = this.shader(gl.FRAGMENT_SHADER, prefix + fragment);
       const program = gl.createProgram();
       gl.attachShader(program, vertex);
@@ -363,6 +550,14 @@
 
     initialize() {
       const gl = this.gl;
+      this.ready = false;
+      this.initialized = false;
+      this.inkTexture = this.inkLightTexture = null;
+      this.inkSplatter = null;
+      this.sceneTarget = this.bloomTarget = null;
+      this.generation++;
+      this.inkLoaded = false;
+      this.inkLoading = false;
       // A fixed-width approximation cannot safely filter the lensed filaments.
       // Older devices without derivatives use the matching rendered fallback.
       if (!gl.getExtension('OES_standard_derivatives')) return;
@@ -375,8 +570,73 @@
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
       this.sceneTarget = this.target();
       this.bloomTarget = this.target();
+      for (const name of ['inkTexture', 'inkLightTexture']) {
+        this[name] = gl.createTexture();
+        this.resources.push({ type: 'texture', value: this[name] });
+        gl.bindTexture(gl.TEXTURE_2D, this[name]);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([8, 8, 8, 255]));
+      }
       this.ready = true;
       this.resize();
+      this.initialized = this.ready;
+      if (!this.initialized) return;
+      if (this.style === 'ink') { this.ready = false; this.loadInk(); }
+    }
+
+    loadInk() {
+      if (this.inkLoading || this.inkLoaded || !this.inkTexture || !this.gl.getExtension('EXT_shader_texture_lod')) return;
+      this.inkLoading = true;
+      const generation = this.generation;
+      const readImage = name => new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error(`Ink ${name} unavailable.`));
+        image.src = `./assets/black-hole-ink-${name}.png?v=20261015-ink-light`;
+      });
+      Promise.all([readImage('material'), readImage('light')]).then(images => {
+        if (this.lost || generation !== this.generation) return;
+        const gl = this.gl;
+        try {
+          // Brush detail and fixed illumination have the same periodic chart.
+          gl.activeTexture(gl.TEXTURE0);
+          gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+          // The grazing disk is highly anisotropic. Isotropic mipmaps would
+          // erase the thin radial brush fibres along with angular aliasing.
+          const anisotropy = gl.getExtension('EXT_texture_filter_anisotropic');
+          for (const [index, texture] of [this.inkTexture, this.inkLightTexture].entries()) {
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, images[index]);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+            gl.generateMipmap(gl.TEXTURE_2D);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+            if (anisotropy) gl.texParameterf(gl.TEXTURE_2D, anisotropy.TEXTURE_MAX_ANISOTROPY_EXT,
+              Math.min(8, gl.getParameter(anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+          }
+          const uploadError = gl.getError();
+          if (uploadError !== gl.NO_ERROR) throw new Error(`Ink texture upload failed (${uploadError}).`);
+          this.inkLoaded = true;
+          this.inkLoading = false;
+          if (window.InkSplatter) this.inkSplatter = new window.InkSplatter(gl);
+          if (this.style === 'ink') {
+            this.ready = true;
+            this.resize();
+            this.onRestore?.();
+          }
+        } catch (error) {
+          this.inkLoading = false;
+          console.warn('Using the ink illustration fallback.', error);
+        } finally {
+          gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        }
+      }).catch(error => {
+        if (this.lost || generation !== this.generation) return;
+        this.inkLoading = false;
+        console.warn('Using the ink illustration fallback.', error);
+      });
     }
 
     resize() {
@@ -418,11 +678,13 @@
         gl.bindFramebuffer(gl.FRAMEBUFFER, target.buffer);
         if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
           this.ready = false;
+          this.initialized = false;
           this.canvas.parentElement.classList.remove('is-ready');
           return;
         }
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      this.inkSplatter?.resize(this.width, this.height);
     }
 
     use(program, target) {
@@ -450,18 +712,31 @@
       gl.uniform4fv(this.scene.uniforms.u_crop, this.crop);
       gl.uniform2f(this.scene.uniforms.u_pointer, x, y);
       gl.uniform1f(this.scene.uniforms.u_time, time);
+      gl.uniform1f(this.scene.uniforms.u_ink, this.style === 'ink' ? 1 : 0);
+      this.texture(this.scene, 'u_inkAtlas', this.inkTexture, 0);
+      this.texture(this.scene, 'u_inkLight', this.inkLightTexture, 1);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-      this.use(this.bloom, this.bloomTarget);
-      this.texture(this.bloom, 'u_scene', this.sceneTarget.texture, 0);
-      gl.uniform2f(this.bloom.uniforms.u_texel, 1 / this.width, 1 / this.height);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      if (this.style !== 'ink') {
+        this.use(this.bloom, this.bloomTarget);
+        this.texture(this.bloom, 'u_scene', this.sceneTarget.texture, 0);
+        gl.uniform2f(this.bloom.uniforms.u_texel, 1 / this.width, 1 / this.height);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
 
+      const splatter = this.style === 'ink' ? this.inkSplatter?.render({
+        time, x, y, width: this.width, height: this.height,
+        sceneWidth: this.sceneWidth, sceneHeight: this.sceneHeight,
+        crop: this.crop, sceneTexture: this.sceneTarget.texture,
+      }) : null;
       this.use(this.composite, null);
       this.texture(this.composite, 'u_scene', this.sceneTarget.texture, 0);
       this.texture(this.composite, 'u_bloom', this.bloomTarget.texture, 1);
+      this.texture(this.composite, 'u_splatter', splatter?.texture || this.inkTexture, 2);
+      gl.uniform1f(this.composite.uniforms.u_hasSplatter, splatter ? 1 : 0);
       gl.uniform2f(this.composite.uniforms.u_texel, 1 / this.width, 1 / this.height);
       gl.uniform4fv(this.composite.uniforms.u_crop, this.crop);
+      gl.uniform1f(this.composite.uniforms.u_ink, this.style === 'ink' ? 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       this.canvas.parentElement.classList.add('is-ready');
     }
@@ -479,6 +754,13 @@
     }
 
     resetTiming() { this.lastSample = 0; this.frameTimes = []; }
+    setStyle(style) {
+      this.style = style === 'ink' ? 'ink' : 'minimal';
+      if (!this.initialized || !this.inkTexture || this.lost) return;
+      this.ready = this.style !== 'ink' || this.inkLoaded;
+      if (!this.ready) this.canvas.parentElement.classList.remove('is-ready');
+      if (this.style === 'ink') this.loadInk();
+    }
   }
   window.BlackHole = BlackHole;
 })();
