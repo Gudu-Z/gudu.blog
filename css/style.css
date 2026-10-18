@@ -19,7 +19,9 @@
 }
 
 * { box-sizing: border-box; }
-html { background: var(--space); }
+/* Hide the page scrollbar while retaining native scrolling. */
+html { background: var(--space); scrollbar-width: none; }
+html::-webkit-scrollbar { display: none; }
 body { margin: 0; color: var(--paper); background: var(--space); }
 ::selection { color: var(--space); background: var(--red); }
 
