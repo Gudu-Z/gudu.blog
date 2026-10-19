@@ -3,9 +3,10 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 
-const source = await readFile(new URL('../js/black-hole.js', import.meta.url), 'utf8');
+const source = (await Promise.all(['particle-sky', 'black-hole'].map(name =>
+  readFile(new URL(`../js/${name}.js`, import.meta.url), 'utf8')))).join('\n');
 
-function browser({ parallel = true, broken = false } = {}) {
+function browser({ parallel = true, broken = false, style = 'minimal' } = {}) {
   let complete = !parallel;
   let id = 0;
   const calls = [];
@@ -13,11 +14,14 @@ function browser({ parallel = true, broken = false } = {}) {
   const timers = new Map();
   const warnings = [];
   const events = new Map();
+  const images = [];
+  const shaderSources = [];
   const extension = { COMPLETION_STATUS_KHR: 0x91b1 };
   const constants = ['VERTEX_SHADER', 'FRAGMENT_SHADER', 'LINK_STATUS', 'ACTIVE_UNIFORMS',
     'ARRAY_BUFFER', 'STATIC_DRAW', 'TEXTURE_2D', 'TEXTURE_MIN_FILTER', 'TEXTURE_MAG_FILTER',
     'LINEAR', 'TEXTURE_WRAP_S', 'TEXTURE_WRAP_T', 'CLAMP_TO_EDGE', 'FRAMEBUFFER',
-    'COLOR_ATTACHMENT0', 'RGBA', 'UNSIGNED_BYTE'];
+    'COLOR_ATTACHMENT0', 'RGBA', 'UNSIGNED_BYTE', 'MAX_TEXTURE_SIZE', 'ALIASED_POINT_SIZE_RANGE',
+    'FRAMEBUFFER_COMPLETE', 'LINEAR_MIPMAP_LINEAR', 'REPEAT', 'TEXTURE0', 'UNPACK_FLIP_Y_WEBGL'];
   const gl = Object.fromEntries(constants.map((name, i) => [name, i + 1]));
   Object.assign(gl, {
     getExtension(name) {
@@ -37,15 +41,25 @@ function browser({ parallel = true, broken = false } = {}) {
       if (name === gl.ACTIVE_UNIFORMS) return 0;
     },
     getProgramInfoLog: () => 'Test shader failed to link',
-    getAttribLocation: () => 0,
+    getAttribLocation: (program, name) => ({ a_position: 0, a_style: 1, a_wrap: 2 })[name] ?? -1,
+    getParameter(name) {
+      if (name === gl.MAX_TEXTURE_SIZE) return 8192;
+      if (name === gl.ALIASED_POINT_SIZE_RANGE) return [1, 1024];
+      throw new Error(`Unexpected GL parameter ${name}`);
+    },
+    checkFramebufferStatus: () => gl.FRAMEBUFFER_COMPLETE,
+    NO_ERROR: 0,
+    getError: () => 0,
   });
   for (const name of ['shaderSource', 'compileShader', 'attachShader', 'linkProgram', 'deleteShader',
     'bindTexture', 'texParameteri', 'bindFramebuffer', 'framebufferTexture2D', 'bindBuffer', 'bufferData', 'texImage2D',
+    'generateMipmap', 'activeTexture', 'pixelStorei',
     'deleteProgram', 'deleteTexture', 'deleteFramebuffer', 'deleteBuffer']) {
     gl[name] = () => calls.push(name);
   }
+  gl.shaderSource = (shader, text) => { calls.push('shaderSource'); shaderSources.push(text); };
   const canvas = {
-    getContext: () => gl,
+    getContext: type => type === 'webgl' ? gl : null,
     parentElement: { classList: { remove() {} } },
     addEventListener: (name, fn) => events.set(name, fn),
     removeEventListener: (name, fn) => { if (events.get(name) === fn) events.delete(name); },
@@ -53,28 +67,32 @@ function browser({ parallel = true, broken = false } = {}) {
   const window = {};
   runInNewContext(source, {
     window, console: { warn: (...args) => warnings.push(args.map(String).join(' ')) },
+    Image: class { constructor() { images.push(this); } },
+    performance: { now: () => 0 },
     setTimeout: fn => { const id = ++timerId; timers.set(id, fn); return id; },
     clearTimeout: id => timers.delete(id),
   });
   // Allocation sizing is covered by browser checks; these tests isolate
   // compilation, readiness and context restoration without a GPU driver.
   window.BlackHole.prototype.resize = () => calls.push('resize');
-  const renderer = new window.BlackHole(canvas);
+  const renderer = new window.BlackHole(canvas, { style });
   let readySignals = 0;
   renderer.onRestore = () => readySignals++;
   return {
-    renderer, calls, warnings,
+    renderer, calls, warnings, images, shaderSources,
     get readySignals() { return readySignals; },
     get pendingPolls() { return timers.size; },
     get listeners() { return events.size; },
     complete() { complete = true; },
+    pauseCompilation() { complete = false; },
+    loadImages() { for (const image of images.splice(0)) image.onload(); },
     lose() { events.get('webglcontextlost')({ preventDefault() {} }); },
     restore() { complete = false; events.get('webglcontextrestored')(); },
     async tick() {
       const pending = [...timers.values()];
       timers.clear();
       for (const fn of pending) fn();
-      for (let i = 0; i < 5; i++) await Promise.resolve();
+      for (let i = 0; i < 30; i++) await Promise.resolve();
     },
   };
 }
@@ -82,10 +100,12 @@ function browser({ parallel = true, broken = false } = {}) {
 await test('cold compilation returns control before querying link status or allocating the scene', async () => {
   const site = browser();
   assert.equal(site.renderer.ready, false);
-  assert.equal(site.calls.filter(name => name === 'compileShader').length, 6);
+  assert.equal(site.calls.filter(name => name === 'compileShader').length, 0,
+    'cold shader submission must yield to a microtask before starting work');
   assert.equal(site.calls.includes('link-status'), false);
   assert.equal(site.calls.includes('resize'), false);
   await site.tick();
+  assert.equal(site.calls.filter(name => name === 'compileShader').length, 8);
   assert.equal(site.pendingPolls, 1);
   assert.equal(site.readySignals, 0);
   site.complete();
@@ -93,7 +113,7 @@ await test('cold compilation returns control before querying link status or allo
   assert.equal(site.renderer.ready, true);
   assert.equal(site.renderer.initialized, true);
   assert.equal(site.readySignals, 1);
-  assert.equal(site.calls.filter(name => name === 'link-status').length, 3);
+  assert.equal(site.calls.filter(name => name === 'link-status').length, 4);
   assert.deepEqual(site.warnings, []);
 });
 
@@ -132,13 +152,14 @@ await test('browsers without parallel compilation still finish deferred setup', 
 
 await test('disposing during compilation cancels polling and prevents late setup or restoration', async () => {
   const site = browser();
+  await site.tick();
   assert.equal(site.pendingPolls, 1);
   const oldRestore = site.renderer.handleContextRestored;
   site.renderer.dispose();
   assert.equal(site.pendingPolls, 0);
   assert.equal(site.listeners, 0);
   assert.equal(site.renderer.ready, false);
-  assert.equal(site.calls.filter(name => name === 'deleteProgram').length, 3);
+  assert.equal(site.calls.filter(name => name === 'deleteProgram').length, 4);
   assert.equal(site.calls.filter(name => name === 'lose-context').length, 0,
     'exit must not force synchronous driver context destruction');
   site.complete();
@@ -152,4 +173,120 @@ await test('disposing during compilation cancels polling and prevents late setup
   site.renderer.dispose();
   assert.equal(site.calls.length, callsAfterDispose);
   assert.deepEqual(site.warnings, []);
+});
+
+await test('an ink-only visit compiles only ink shaders and never allocates particle geometry', async () => {
+  const site = browser({ style: 'ink' });
+  await site.tick();
+  assert.equal(site.calls.filter(name => name === 'compileShader').length, 4);
+  assert.equal(site.shaderSources.filter(text => text.includes('const float u_ink = 1.0;')).length, 2);
+  assert.equal(site.shaderSources.some(text => text.includes('attribute float a_wrap;')), false);
+  site.complete();
+  await site.tick();
+  assert.equal(site.images.length, 2);
+  assert.equal(site.renderer.ready, false, 'ink must wait for both material images');
+  site.loadImages();
+  await site.tick();
+  assert.equal(site.renderer.ready, true);
+  assert.equal(site.renderer.particleSky, null);
+  assert.equal(site.renderer.bloom, null);
+  assert.equal(site.calls.filter(name => name === 'bufferData').length, 1,
+    'ink-only startup should upload only the fullscreen triangle');
+  assert.equal(site.readySignals, 1);
+  assert.deepEqual(site.warnings, []);
+  site.renderer.dispose();
+});
+
+await test('switching back during lazy theme compilation cannot activate a stale theme', async () => {
+  const site = browser();
+  site.complete();
+  await site.tick();
+  const minimalScene = site.renderer.scene;
+  site.pauseCompilation();
+  site.renderer.setStyle('ink');
+  await site.tick();
+  assert.equal(site.renderer.ready, false);
+  assert.equal(site.pendingPolls, 1);
+  site.renderer.setStyle('minimal');
+  await site.tick();
+  assert.equal(site.renderer.ready, true);
+  assert.equal(site.renderer.scene, minimalScene);
+  const signals = site.readySignals;
+  site.complete();
+  await site.tick();
+  assert.equal(site.renderer.style, 'minimal');
+  assert.equal(site.renderer.scene, minimalScene);
+  assert.equal(site.readySignals, signals, 'late ink compilation must not announce a replacement frame');
+  assert.equal(site.images.length, 0, 'obsolete theme activation must not start image requests');
+  assert.equal(site.pendingPolls, 0);
+  assert.deepEqual(site.warnings, []);
+  site.renderer.dispose();
+});
+
+await test('late ink images respect the latest theme and switching back reuses cached shaders and particles', async () => {
+  const site = browser({ parallel: false });
+  await site.tick();
+  const minimalScene = site.renderer.scene;
+  const particles = site.renderer.particleSky;
+  site.renderer.setStyle('ink');
+  await site.tick();
+  assert.equal(site.images.length, 2);
+  site.renderer.setStyle('minimal');
+  await site.tick();
+  const signals = site.readySignals;
+  site.loadImages();
+  await site.tick();
+  assert.equal(site.readySignals, signals);
+  assert.equal(site.renderer.scene, minimalScene);
+  assert.equal(site.renderer.particleSky, particles);
+  const compiles = site.calls.filter(name => name === 'compileShader').length;
+  const uploads = site.calls.filter(name => name === 'bufferData').length;
+  site.renderer.setStyle('ink');
+  await site.tick();
+  assert.equal(site.renderer.ready, true);
+  assert.equal(site.renderer.particleSky, null);
+  const inkScene = site.renderer.scene;
+  assert.notEqual(inkScene, minimalScene);
+  site.renderer.setStyle('minimal');
+  await site.tick();
+  assert.equal(site.renderer.ready, true);
+  assert.equal(site.renderer.scene, minimalScene);
+  assert.equal(site.renderer.particleSky, particles);
+  assert.equal(site.calls.filter(name => name === 'compileShader').length, compiles);
+  assert.equal(site.calls.filter(name => name === 'bufferData').length, uploads);
+  assert.equal(site.images.length, 0);
+  assert.deepEqual(site.warnings, []);
+  site.renderer.dispose();
+});
+
+await test('context restoration rebuilds only the active theme and rejects images from the lost generation', async () => {
+  const site = browser();
+  site.complete();
+  await site.tick();
+  const oldScene = site.renderer.scene;
+  site.renderer.setStyle('ink');
+  await site.tick();
+  const staleImages = site.images.splice(0);
+  assert.equal(staleImages.length, 2);
+  site.lose();
+  site.restore();
+  site.complete();
+  await site.tick();
+  assert.equal(site.images.length, 2);
+  assert.equal(site.renderer.themePrograms.size, 1);
+  assert.equal(site.renderer.themePrograms.has('ink'), true);
+  const uploads = site.calls.filter(name => name === 'texImage2D').length;
+  for (const image of staleImages) image.onload();
+  await site.tick();
+  assert.equal(site.renderer.ready, false);
+  assert.equal(site.calls.filter(name => name === 'texImage2D').length, uploads,
+    'stale image callbacks must not upload into restored-context textures');
+  site.loadImages();
+  await site.tick();
+  assert.equal(site.renderer.ready, true);
+  assert.equal(site.renderer.style, 'ink');
+  assert.notEqual(site.renderer.scene, oldScene);
+  assert.equal(site.renderer.particleSky, null);
+  assert.deepEqual(site.warnings, []);
+  site.renderer.dispose();
 });

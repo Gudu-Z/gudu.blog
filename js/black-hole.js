@@ -28,6 +28,8 @@
     uniform float u_ink;
     uniform sampler2D u_inkAtlas;
     uniform sampler2D u_inkLight;
+    uniform sampler2D u_starSky;
+    uniform float u_starInset;
     #define PI 3.14159265359
 
     float hash(vec2 p) {
@@ -97,7 +99,7 @@
       vec2 flowGradient = phaseGradient * 3.0 + radialGradient * 0.85;
       float flowFilter = exp(-0.5 * dot(flowGradient, flowGradient));
       float flow = 0.76 + 0.24 * sin(flowPhase) * flowFilter;
-      float texture = (0.055 + 0.12 * bundles + filament * (0.28 + 1.15 * bundles)) * flow;
+      float filamentLight = (0.055 + 0.12 * bundles + filament * (0.28 + 1.15 * bundles)) * flow;
 
       // Local orbital velocity; -ray is the emitted photon's direction.
       vec3 tangent = normalize(vec3(-p.z, 0.0, p.x));
@@ -134,7 +136,7 @@
       // Lift the minimalist disk before tone mapping, so dim strands become
       // clearer while the brightest lanes keep their smooth highlight rolloff.
       const float diskExposure = 1.22;
-      return (color * energy * texture * innerEdge + edgeLight) * diskExposure;
+      return (color * energy * filamentLight * innerEdge + edgeLight) * diskExposure;
     }
     float pigmentNoise(vec2 p) {
       vec2 cell = floor(p), f = fract(p);
@@ -210,69 +212,37 @@
       float star = (1.0 - smoothstep(0.012, 0.075, length(fract(grid) - center))) * step(0.986, seed);
       return vec3(0.45, 0.53, 0.65) * star * 0.6;
     }
-    // A coherent sky, sampled through the escaped ray. Gaussian footprints use
-    // both screen axes, so a lensed point becomes a smooth arc rather than a
-    // blinking, subpixel speck. Neighbouring cells keep the filter continuous.
-    vec3 starLayer(vec2 sky, vec2 dx, vec2 dy, float scale, float population) {
-      vec2 grid = sky * scale;
-      vec2 cell = floor(grid);
-      vec2 gx = dx * scale, gy = dy * scale;
-      vec3 light = vec3(0.0);
-      float footprint = max(length(gx), length(gy));
-      float resolved = 1.0 - smoothstep(0.65, 1.6, footprint);
-      for (int row = -1; row <= 1; row++) {
-        for (int column = -1; column <= 1; column++) {
-          vec2 id = cell + vec2(float(column), float(row));
-          float seed = hash(id + 19.4);
-          float density = 0.0;
-          // Reject empty cells before evaluating the clustered density field.
-          if (seed > 1.0 - population * 1.8) {
-            float grouping = pigmentNoise(id * 0.075 + 12.7);
-            density = population * mix(0.18, 1.8, smoothstep(0.25, 0.75, grouping));
-          }
-          if (seed > 1.0 - density) {
-            vec2 center = 0.15 + 0.7 * vec2(hash(id + 2.1), hash(id + 7.8));
-            vec2 delta = grid - id - center;
-            float brightness = hash(id + 31.8);
-            float radius = mix(0.035, 0.095, pow(brightness, 3.0));
-            float variance = radius * radius;
-            float a = variance + (gx.x * gx.x + gy.x * gy.x) / 12.0;
-            float b = (gx.x * gx.y + gy.x * gy.y) / 12.0;
-            float c = variance + (gx.y * gx.y + gy.y * gy.y) / 12.0;
-            float determinant = max(a * c - b * b, 0.00000001);
-            float distance2 = (c * delta.x * delta.x - 2.0 * b * delta.x * delta.y
-              + a * delta.y * delta.y) / determinant;
-            float core = exp(-0.5 * distance2) * variance / sqrt(determinant);
-            float halo = exp(-dot(delta, delta) / 0.085) * 0.025 * pow(brightness, 5.0);
-            vec3 tint = mix(vec3(0.69, 0.78, 0.88), vec3(1.0, 0.88, 0.68), hash(id + 43.2));
-            light += tint * (core + halo) * mix(0.16, 0.85, pow(brightness, 2.0)) * resolved;
-          }
-        }
-      }
-      return light;
-    }
+    // Every star comes from the XYZ particle pass. Explicit chart derivatives
+    // keep lensed/minified stars filtered even across the longitude seam.
     vec3 minimalSky(vec3 ray, vec3 rayDx, vec3 rayDy) {
-      vec3 direction = normalize(ray);
-      float horizontal = max(dot(direction.xz, direction.xz), 0.0001);
-      vec2 sky = vec2(atan(direction.x, -direction.z), asin(clamp(direction.y, -0.9999, 0.9999)));
-      // Analytic angular derivatives avoid a false footprint at atan's seam.
-      vec2 dx = vec2((-direction.z * rayDx.x + direction.x * rayDx.z) / horizontal,
-        rayDx.y / sqrt(max(1.0 - direction.y * direction.y, 0.0001)));
-      vec2 dy = vec2((-direction.z * rayDy.x + direction.x * rayDy.z) / horizontal,
-        rayDy.y / sqrt(max(1.0 - direction.y * direction.y, 0.0001)));
-      // Increasing both angular coordinates moves the visible stars toward
-      // screen-left and screen-bottom. Use the same active clock as the disk,
-      // independent of pointer input and frame rate; do not wrap the phase.
-      vec2 movingSky = sky + (u_time - 12.0) * vec2(0.00090, 0.00060);
-      vec3 light = starLayer(movingSky, dx, dy, 105.0, 0.052)
-        + starLayer(movingSky + vec2(1.7, 2.3), dx, dy, 185.0, 0.065) * 0.45;
-      // A few broad, softly lit pockets of dust. No narrow galactic stripe,
-      // temporal noise, or texture that can compete with the disk's filaments.
+      vec3 d = normalize(ray);
+      float horizontal = max(dot(d.xz, d.xz), 0.0001);
+      float phi = atan(d.x, -d.z);
+      float s = sin(phi * 0.5), c = cos(phi * 0.5);
+      vec2 uv = vec2(atan(8.0 * s, c), atan(4.0 * d.y, sqrt(horizontal))) / PI + 0.5;
+      vec2 jacobian = vec2(4.0 / (c*c + 64.0*s*s),
+        4.0 / (horizontal + 16.0*d.y*d.y)) / PI;
+      vec2 dx = vec2((-d.z * rayDx.x + d.x * rayDx.z) / horizontal,
+        rayDx.y / sqrt(horizontal)) * jacobian;
+      vec2 dy = vec2((-d.z * rayDy.x + d.x * rayDy.z) / horizontal,
+        rayDy.y / sqrt(horizontal)) * jacobian;
+      float interior = 1.0 - 2.0 * u_starInset;
+      uv = u_starInset + uv * interior;
+      dx *= interior; dy *= interior;
+      #ifdef HAS_TEXTURE_LOD
+        vec3 light = texture2DGradEXT(u_starSky, uv, dx, dy).rgb;
+      #else
+        // Called from a uniform theme branch, so implicit derivatives
+        // remain defined. The padded longitude seam keeps filtering local.
+        vec3 light = texture2D(u_starSky, uv).rgb;
+      #endif
+      // Broad stationary ambient light; individual stars are never procedural.
+      vec2 sky = vec2(phi, asin(clamp(d.y, -0.9999, 0.9999)));
       vec2 warmOffset = (sky - vec2(0.12, -0.07)) / vec2(0.17, 0.11);
       vec2 coolOffset = (sky - vec2(-0.19, 0.11)) / vec2(0.13, 0.09);
       float dust = mix(0.25, 1.0, pigmentNoise(sky * 18.0 + 8.0));
-      light += vec3(0.033, 0.026, 0.017) * exp(-dot(warmOffset, warmOffset)) * dust;
-      light += vec3(0.012, 0.019, 0.027) * exp(-dot(coolOffset, coolOffset)) * dust;
+      light += vec3(0.043, 0.032, 0.019) * exp(-dot(warmOffset, warmOffset)) * dust;
+      light += vec3(0.015, 0.024, 0.035) * exp(-dot(coolOffset, coolOffset)) * dust;
       return light;
     }
     struct RayHit {
@@ -294,8 +264,7 @@
         vec3 backgroundRay = normalize(mix(direction, hit.ray, lens));
         vec3 local = vec3(dot(backgroundRay, right), dot(backgroundRay, up), -dot(backgroundRay, forward));
         local.xy = mat2(cos(roll), sin(roll), -sin(roll), cos(roll)) * local.xy;
-        // Distant stars have much less parallax than the foreground disk.
-        local.xy -= u_pointer * vec2(0.0025, 0.0018) * local.z;
+        // The XYZ particle observer uses this unrolled local camera frame.
         hit.ray = normalize(local);
       }
       return hit;
@@ -457,7 +426,7 @@
       // at every surface/subray call site on WebGL 1 drivers.
       vec4 skyLight = vec4(0.0);
       bool primarySky = hit.material < -0.5;
-      if (u_ink < 0.5 && (primarySky || (throughDisk && beneath.material < -0.5))) {
+      if (u_ink < 0.5) {
         vec3 radiance = minimalSky(primarySky ? hit.ray : beneath.ray,
           primarySky ? skyDx : beneathSkyDx, primarySky ? skyDy : beneathSkyDy);
         vec2 quiet = (v_uv - u_quiet.xy) / max(u_quiet.zw, vec2(0.001));
@@ -594,7 +563,9 @@
     constructor(canvas, { style = 'minimal' } = {}) {
       this.canvas = canvas;
       this.setStyle(style);
-      this.gl = canvas.getContext('webgl', { alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'low-power' });
+      const options = { alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'low-power' };
+      this.gl = canvas.getContext('webgl2', options) || canvas.getContext('webgl', options);
+      this.webgl2 = typeof this.gl?.fenceSync === 'function';
       this.ready = false;
       this.lost = false;
       this.quality = 1;
@@ -605,6 +576,8 @@
       this.disposed = false;
       this.compileWait = null;
       this.gpuQuery = null;
+      this.gpuSync = null;
+      this.gpuPendingSince = this.gpuWaitMs = 0;
       this.gpuTimes = [];
       if (!this.gl) return;
       this.initialize().catch(error => console.warn('Using the static black-hole illustration.', error));
@@ -615,6 +588,7 @@
         this.lost = true;
         this.cancelCompileWait();
         this.gpuQuery = null;
+        this.gpuSync = null;
         canvas.parentElement.classList.remove('is-ready');
       };
       this.handleContextRestored = () => {
@@ -627,24 +601,41 @@
       canvas.addEventListener('webglcontextrestored', this.handleContextRestored);
     }
 
+    static shaderSource(gl, type, source) {
+      if (typeof gl.fenceSync === 'function') {
+        const fragment = type === gl.FRAGMENT_SHADER;
+        const converted = source
+          .replace(/^\s*#(?:version|extension)[^\n]*$/gm, '')
+          .replace(/\battribute\b/g, 'in')
+          .replace(/\bvarying\b/g, fragment ? 'in' : 'out')
+          .replace(/\btexture2DGradEXT\b/g, 'textureGrad')
+          .replace(/\btexture2DLodEXT\b/g, 'textureLod')
+          .replace(/\btexture2D\b/g, 'texture')
+          .replace(/\bgl_FragColor\b/g, 'fragmentColor');
+        return '#version 300 es\n#define HAS_DERIVATIVES\n#define HAS_TEXTURE_LOD\n'
+          + (fragment ? 'out highp vec4 fragmentColor;\n' : '') + converted;
+      }
+      if (type !== gl.FRAGMENT_SHADER) return source;
+      const derivatives = gl.getExtension('OES_standard_derivatives');
+      const lod = gl.getExtension('EXT_shader_texture_lod');
+      return (derivatives ? '#extension GL_OES_standard_derivatives : enable\n#define HAS_DERIVATIVES\n' : '')
+        + (lod ? '#extension GL_EXT_shader_texture_lod : enable\n#define HAS_TEXTURE_LOD\n' : '') + source;
+    }
+
     shader(type, source) {
       const gl = this.gl;
       const shader = gl.createShader(type);
-      gl.shaderSource(shader, source);
+      gl.shaderSource(shader, BlackHole.shaderSource(gl, type, source));
       gl.compileShader(shader);
       // Querying COMPILE_STATUS here synchronously waits for the driver.
       // Validate the linked program after the non-blocking completion poll.
       return shader;
     }
 
-    program(fragment) {
+    program(fragment, vertices = vertexSource) {
       const gl = this.gl;
-      const vertex = this.shader(gl.VERTEX_SHADER, vertexSource);
-      const derivatives = gl.getExtension('OES_standard_derivatives');
-      const lod = gl.getExtension('EXT_shader_texture_lod');
-      const prefix = (derivatives ? '#extension GL_OES_standard_derivatives : enable\n#define HAS_DERIVATIVES\n' : '')
-        + (lod ? '#extension GL_EXT_shader_texture_lod : enable\n#define HAS_TEXTURE_LOD\n' : '');
-      const pixel = this.shader(gl.FRAGMENT_SHADER, prefix + fragment);
+      const vertex = this.shader(gl.VERTEX_SHADER, vertices);
+      const pixel = this.shader(gl.FRAGMENT_SHADER, fragment);
       const program = gl.createProgram();
       gl.attachShader(program, vertex);
       gl.attachShader(program, pixel);
@@ -698,27 +689,37 @@
     async initialize() {
       if (this.disposed) return;
       const gl = this.gl;
+      this.cancelCompileWait();
       this.ready = false;
       this.initialized = false;
       this.inkTexture = this.inkLightTexture = null;
       this.inkSplatter = null;
+      this.particleSky = null;
+      this.scene = this.bloom = this.composite = null;
       this.sceneTarget = this.bloomTarget = null;
       this.generation++;
+      this.themePrograms = new Map();
+      this.themeBuild = Promise.resolve();
+      this.styleRequest = 0;
       this.inkLoaded = false;
       this.inkLoading = false;
-      const timerQuery = gl.getExtension('EXT_disjoint_timer_query');
+      this.inkPromise = null;
+      // WebGL 2 uses a completion fence, without asking the driver to gather
+      // elapsed-time/timestamp queries for every rendered frame.
+      const timerQuery = this.webgl2 ? null : gl.getExtension('EXT_disjoint_timer_query');
       this.timerQuery = timerQuery?.createQueryEXT ? timerQuery : null;
       this.gpuQuery = null;
+      this.gpuSync = null;
+      this.gpuPendingSince = this.gpuWaitMs = 0;
       this.gpuTimes = [];
       this.resizePending = false;
       this.maxTexture = 0;
       // A fixed-width approximation cannot safely filter the lensed filaments.
       // Older devices without derivatives use the matching rendered fallback.
-      if (!gl.getExtension('OES_standard_derivatives')) return;
-      this.scene = this.program(sceneSource);
-      this.bloom = this.program(bloomSource);
-      this.composite = this.program(compositeSource);
-      if (!await this.finishPrograms([this.scene, this.bloom, this.composite], this.generation)) return;
+      if (!this.webgl2 && !gl.getExtension('OES_standard_derivatives')) return;
+      const generation = this.generation;
+      if (!await this.prepareTheme(this.style, generation)
+          || this.disposed || this.lost || generation !== this.generation) return;
       this.triangle = gl.createBuffer();
       this.resources.push({ type: 'buffer', value: this.triangle });
       gl.bindBuffer(gl.ARRAY_BUFFER, this.triangle);
@@ -735,16 +736,70 @@
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([8, 8, 8, 255]));
       }
+      this.initialized = true;
+      await this.activateStyle();
+    }
+
+    prepareTheme(style, generation) {
+      const cached = this.themePrograms.get(style);
+      if (cached) return cached;
+      // A compile-time constant lets the driver discard the other theme's
+      // ray/material paths. A uniform kept both enormous paths live, causing
+      // multi-second cold compilation before the first frame could be drawn.
+      // Serialize lazy builds so rapid theme changes never overlap the one
+      // cancellable KHR_parallel_shader_compile completion poll.
+      const prepared = this.themeBuild.catch(() => {}).then(async () => {
+        if (this.disposed || this.lost || generation !== this.generation) return null;
+        const specialize = source => source.replace('uniform float u_ink;',
+          `const float u_ink = ${style === 'ink' ? '1.0' : '0.0'};`);
+        const theme = {
+          scene: this.program(specialize(sceneSource)),
+          composite: this.program(specialize(compositeSource)),
+          bloom: null,
+          particleSky: null,
+        };
+        const programs = [theme.scene, theme.composite];
+        if (style !== 'ink') {
+          theme.bloom = this.program(bloomSource);
+          theme.particleSky = new window.ParticleSky(this);
+          programs.push(theme.bloom, theme.particleSky.program);
+        }
+        return await this.finishPrograms(programs, generation) ? theme : null;
+      });
+      this.themePrograms.set(style, prepared);
+      this.themeBuild = prepared;
+      return prepared;
+    }
+
+    async activateStyle() {
+      const style = this.style, generation = this.generation;
+      const request = ++this.styleRequest;
+      this.ready = false;
+      this.canvas.parentElement.classList.remove('is-ready');
+      const current = () => !this.disposed && !this.lost
+        && generation === this.generation && request === this.styleRequest && style === this.style;
+      const theme = await this.prepareTheme(style, generation);
+      if (!theme || !current()) return;
+      if (style === 'ink' && !await this.loadInk()) return;
+      if (!current()) return;
+      this.scene = theme.scene;
+      this.composite = theme.composite;
+      this.bloom = theme.bloom;
+      this.particleSky = theme.particleSky;
+      // The atlas uses the actual requested viewport. Allocate its geometry
+      // only on first minimal activation, never for an ink-only visit.
       this.ready = true;
       this.resize();
-      this.initialized = this.ready;
-      if (!this.initialized) return;
-      if (this.style === 'ink') { this.ready = false; this.loadInk(); }
-      else this.onRestore?.();
+      this.ready = false;
+      if (this.particleSky && !this.particleSky.target) this.particleSky.initialize();
+      this.ready = true;
+      this.onRestore?.();
     }
 
     loadInk() {
-      if (this.inkLoading || this.inkLoaded || !this.inkTexture || !this.gl.getExtension('EXT_shader_texture_lod')) return;
+      if (this.inkLoaded) return Promise.resolve(true);
+      if (this.inkPromise) return this.inkPromise;
+      if (!this.inkTexture || (!this.webgl2 && !this.gl.getExtension('EXT_shader_texture_lod'))) return Promise.resolve(false);
       this.inkLoading = true;
       const generation = this.generation;
       const readImage = name => new Promise((resolve, reject) => {
@@ -753,8 +808,8 @@
         image.onerror = () => reject(new Error(`Ink ${name} unavailable.`));
         image.src = `./assets/black-hole-ink-${name}.png?v=20261015-ink-light`;
       });
-      Promise.all([readImage('material'), readImage('light')]).then(images => {
-        if (this.disposed || this.lost || generation !== this.generation) return;
+      this.inkPromise = Promise.all([readImage('material'), readImage('light')]).then(images => {
+        if (this.disposed || this.lost || generation !== this.generation) return false;
         const gl = this.gl;
         try {
           // Brush detail and fixed illumination have the same periodic chart.
@@ -774,25 +829,26 @@
           }
           const uploadError = gl.getError();
           if (uploadError !== gl.NO_ERROR) throw new Error(`Ink texture upload failed (${uploadError}).`);
+          if (window.InkSplatter) this.inkSplatter = new window.InkSplatter(gl);
           this.inkLoaded = true;
           this.inkLoading = false;
-          if (window.InkSplatter) this.inkSplatter = new window.InkSplatter(gl);
-          if (this.style === 'ink') {
-            this.ready = true;
-            this.resize();
-            this.onRestore?.();
-          }
+          return true;
         } catch (error) {
           this.inkLoading = false;
           console.warn('Using the ink illustration fallback.', error);
+          return false;
         } finally {
           gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
         }
       }).catch(error => {
-        if (this.disposed || this.lost || generation !== this.generation) return;
+        if (this.disposed || this.lost || generation !== this.generation) return false;
         this.inkLoading = false;
         console.warn('Using the ink illustration fallback.', error);
+        return false;
+      }).finally(() => {
+        if (generation === this.generation) this.inkPromise = null;
       });
+      return this.inkPromise;
     }
 
     resize() {
@@ -829,7 +885,7 @@
       // Bound cold-start work on high-DPI screens. The GPU's measured cost
       // subsequently controls scale, independently of fast JS submission.
       const maxTexture = this.maxTexture ||= gl.getParameter(gl.MAX_TEXTURE_SIZE);
-      const pixelBudget = this.timerQuery ? 1800000 : 900000;
+      const pixelBudget = this.webgl2 ? 1300000 : this.timerQuery ? 1800000 : 900000;
       const scale = Math.min(devicePixelRatio || 1, 1.5, 2400 / visibleWidth,
         maxTexture / visibleWidth, maxTexture / visibleHeight,
         Math.sqrt(pixelBudget / (visibleWidth * visibleHeight))) * this.quality;
@@ -878,6 +934,8 @@
 
     texture(program, name, texture, index) {
       const gl = this.gl;
+      // Skip samplers removed by specialization; some drivers retain them.
+      if (program.uniforms[name] == null) return;
       gl.activeTexture(gl.TEXTURE0 + index);
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.uniform1i(program.uniforms[name], index);
@@ -885,8 +943,8 @@
 
     render(time, x, y) {
       if (!this.ready || this.lost || this.disposed) return false;
-      // At most one frame is in flight. Poll availability without waiting for
-      // GPU completion; keep the last presented frame while the GPU is busy.
+      // Completion-capable contexts keep at most one frame in flight. Poll
+      // without waiting; preserve the last presented frame while GPU is busy.
       if (!this.gpuAvailable()) return false;
       this.allocateTargets();
       if (!this.ready) return false;
@@ -895,15 +953,20 @@
         this.gpuQuery = this.timerQuery.createQueryEXT();
         this.timerQuery.beginQueryEXT(this.timerQuery.TIME_ELAPSED_EXT, this.gpuQuery);
       }
+      if (this.style !== 'ink') this.particleSky.render(time, x, y);
       this.use(this.scene, this.sceneTarget);
       gl.uniform2f(this.scene.uniforms.u_resolution, this.sceneWidth, this.sceneHeight);
       gl.uniform4fv(this.scene.uniforms.u_crop, this.crop);
       gl.uniform2f(this.scene.uniforms.u_pointer, x, y);
       gl.uniform4fv(this.scene.uniforms.u_quiet, this.quiet);
       gl.uniform1f(this.scene.uniforms.u_time, time);
-      gl.uniform1f(this.scene.uniforms.u_ink, this.style === 'ink' ? 1 : 0);
+      // ANGLE can retain samplers from an unreachable theme branch. Bind all
+      // reflected samplers explicitly so none keeps unit 0's previous scene
+      // attachment, which would form a feedback loop on the next draw.
       this.texture(this.scene, 'u_inkAtlas', this.inkTexture, 0);
       this.texture(this.scene, 'u_inkLight', this.inkLightTexture, 1);
+      this.texture(this.scene, 'u_starSky', this.particleSky?.target.texture || this.inkTexture, 2);
+      if (this.particleSky) gl.uniform1f(this.scene.uniforms.u_starInset, this.particleSky.inset);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
       if (this.style !== 'ink') {
@@ -925,14 +988,39 @@
       gl.uniform1f(this.composite.uniforms.u_hasSplatter, splatter ? 1 : 0);
       gl.uniform2f(this.composite.uniforms.u_texel, 1 / this.width, 1 / this.height);
       gl.uniform4fv(this.composite.uniforms.u_crop, this.crop);
-      gl.uniform1f(this.composite.uniforms.u_ink, this.style === 'ink' ? 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       if (this.gpuQuery) this.timerQuery.endQueryEXT(this.timerQuery.TIME_ELAPSED_EXT);
+      if (this.webgl2) {
+        this.gpuSync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+        if (!this.gpuSync) return this.gpuFailed();
+        this.gpuPendingSince = performance.now();
+        this.gpuWaitMs = 0;
+        // Submit the fence without waiting. Completion is polled on a later
+        // animation tick, with a zero timeout, before another frame is queued.
+        gl.flush();
+      }
       this.canvas.parentElement.classList.add('is-ready');
       return true;
     }
 
     gpuAvailable() {
+      if (this.webgl2) {
+        if (!this.gpuSync) return true;
+        const gl = this.gl;
+        const status = gl.clientWaitSync(this.gpuSync, 0, 0);
+        if (status === gl.TIMEOUT_EXPIRED) {
+          // Only an observed unfinished fence proves a lower bound on GPU
+          // work. A finished first poll after a hidden tab contributes zero,
+          // rather than mistaking the time spent hidden for rendering cost.
+          this.gpuWaitMs = Math.max(this.gpuWaitMs, performance.now() - this.gpuPendingSince);
+          return false;
+        }
+        gl.deleteSync(this.gpuSync);
+        this.gpuSync = null;
+        if (status !== gl.ALREADY_SIGNALED && status !== gl.CONDITION_SATISFIED) return this.gpuFailed();
+        this.recordGpuCost(this.gpuWaitMs);
+        return true;
+      }
       if (!this.gpuQuery) return true;
       const ext = this.timerQuery;
       // A GPU clock reset invalidates outstanding timings; an invalid query
@@ -945,6 +1033,19 @@
       }
       if (!ext.getQueryObjectEXT(this.gpuQuery, ext.QUERY_RESULT_AVAILABLE_EXT)) return false;
       const milliseconds = ext.getQueryObjectEXT(this.gpuQuery, ext.QUERY_RESULT_EXT) / 1000000;
+      this.recordGpuCost(milliseconds);
+      ext.deleteQueryEXT(this.gpuQuery);
+      this.gpuQuery = null;
+      return true;
+    }
+
+    gpuFailed() {
+      this.ready = this.initialized = false;
+      this.canvas.parentElement.classList.remove('is-ready');
+      return false;
+    }
+
+    recordGpuCost(milliseconds) {
       this.gpuTimes.push(milliseconds);
       if (this.gpuTimes.length >= 8) {
         // A cold first draw or a one-off driver stall must not permanently
@@ -959,13 +1060,10 @@
           this.resize();
         }
       }
-      ext.deleteQueryEXT(this.gpuQuery);
-      this.gpuQuery = null;
-      return true;
     }
 
     sampleFrame(timestamp) {
-      if (this.timerQuery) return;
+      if (this.webgl2 || this.timerQuery) return;
       if (this.lastSample) this.frameTimes.push(timestamp - this.lastSample);
       this.lastSample = timestamp;
       if (this.frameTimes.length < 45) return;
@@ -995,6 +1093,7 @@
       this.canvas.removeEventListener('webglcontextrestored', this.handleContextRestored);
       const gl = this.gl;
       if (gl && !this.lost) {
+        if (this.gpuSync) gl.deleteSync(this.gpuSync);
         if (this.gpuQuery) this.timerQuery.deleteQueryEXT(this.gpuQuery);
         this.inkSplatter?.dispose();
         const remove = { program: 'deleteProgram', texture: 'deleteTexture', framebuffer: 'deleteFramebuffer', buffer: 'deleteBuffer' };
@@ -1004,16 +1103,18 @@
         // let the browser retire the context as the document is discarded.
       }
       this.resources = [];
-      this.gpuQuery = this.inkSplatter = null;
+      this.gpuQuery = this.gpuSync = this.inkSplatter = null;
+      this.particleSky = null;
+      this.themePrograms?.clear();
     }
 
     resetTiming() { this.lastSample = 0; this.frameTimes = []; }
     setStyle(style) {
-      this.style = style === 'ink' ? 'ink' : 'minimal';
-      if (!this.initialized || !this.inkTexture || this.lost) return;
-      this.ready = this.style !== 'ink' || this.inkLoaded;
-      if (!this.ready) this.canvas.parentElement.classList.remove('is-ready');
-      if (this.style === 'ink') this.loadInk();
+      const next = style === 'ink' ? 'ink' : 'minimal';
+      if (next === this.style && this.ready) return;
+      this.style = next;
+      if (!this.initialized || this.lost || this.disposed) return;
+      this.activateStyle().catch(error => console.warn('Using the requested black-hole illustration.', error));
     }
   }
   window.BlackHole = BlackHole;
