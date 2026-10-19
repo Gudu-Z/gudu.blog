@@ -26,7 +26,7 @@ function classes(initial = []) {
 
 // Execute the real main.js against controlled browser events and a monotonic
 // clock. Assertions observe the time and camera passed to the renderer.
-function browser({ reduced = false, loading = false, deferInk = false } = {}) {
+function browser({ reduced = false, loading = false, deferInk = false, deferReady = false } = {}) {
   let now = 0;
   let sequence = 0;
   let renderCost = 0;
@@ -37,6 +37,8 @@ function browser({ reduced = false, loading = false, deferInk = false } = {}) {
   const frames = new Map();
   const timers = new Map();
   const renders = [];
+  const renderers = [];
+  const samples = [];
   const media = {
     '(prefers-reduced-motion: reduce)': eventTarget({ matches: reduced }),
     '(pointer: fine)': eventTarget({ matches: true }),
@@ -67,19 +69,25 @@ function browser({ reduced = false, loading = false, deferInk = false } = {}) {
     BlackHole: class {
       constructor(_canvas, options) {
         renderer = this;
+        renderers.push(this);
         this.style = options.style;
-        this.ready = true;
+        this.ready = !deferReady;
         this.lost = false;
+        this.disposed = false;
+        this.busy = false;
+        this.resizes = 0;
         canvas.addEventListener('webglcontextlost', () => { this.ready = false; this.lost = true; });
       }
-      resize() {}
+      resize() { this.resizes++; }
       resetTiming() {}
-      sampleFrame() {}
+      sampleFrame(timestamp) { samples.push(timestamp); }
+      dispose() { this.disposed = true; this.ready = false; }
       setStyle(style) { this.style = style; this.ready = !(deferInk && style === 'ink'); }
       render(time, x, y) {
-        if (!this.ready || this.lost) return;
+        if (!this.ready || this.lost || this.disposed || this.busy) return false;
         renders.push({ time, x, y, at: now });
         now += renderCost;
+        return true;
       }
     },
   });
@@ -99,7 +107,7 @@ function browser({ reduced = false, loading = false, deferInk = false } = {}) {
   // Ordinary phase tests use the ready scene as their time-zero baseline.
   function setupRenderer() {
     for (const [id, timer] of [...timers]) {
-      if (timer.delay !== 32) continue;
+      if (timer.callback.name !== 'initializeRenderer') continue;
       timers.delete(id);
       timer.callback();
     }
@@ -111,9 +119,11 @@ function browser({ reduced = false, loading = false, deferInk = false } = {}) {
     now = time;
   }
   return {
-    renders, layers,
+    renders, layers, renderers, samples,
     get renderer() { return renderer; },
     get pendingFrames() { return frames.size; },
+    get pendingTimers() { return timers.size; },
+    get pendingDrawTasks() { return [...timers.values()].filter(timer => timer.callback.name === 'retryDraw').length; },
     get last() { return renders.at(-1); },
     set renderCost(value) { renderCost = value; },
     frame(time) {
@@ -134,11 +144,21 @@ function browser({ reduced = false, loading = false, deferInk = false } = {}) {
       media['(prefers-reduced-motion: reduce)'].matches = reduced;
       media['(prefers-reduced-motion: reduce)'].emit('change');
     },
-    page(time, event) { at(time); window.emit(event); setupRenderer(); },
+    page(time, event, detail = {}) { at(time); window.emit(event, detail); setupRenderer(); },
     finishIntro(time) { at(time); hero.emit('animationend', { animationName: 'hero-scroll-enter' }); setupRenderer(); },
     theme(time, style) { at(time); nextStyle = style; window.emit('popstate'); },
     lose(time) { at(time); canvas.emit('webglcontextlost'); },
-    restore(time) { at(time); renderer.ready = true; renderer.lost = false; renderer.onRestore(); },
+    restore(time, target = renderer) { at(time); target.ready = true; target.lost = false; target.onRestore(); },
+    queuedTimers() { return [...timers.values()].map(timer => timer.callback); },
+    queuedDrawTasks() { return [...timers.values()].filter(timer => timer.callback.name === 'retryDraw').map(timer => timer.callback); },
+    retry(time) {
+      at(time);
+      for (const [id, timer] of [...timers]) {
+        if (timer.callback.name !== 'retryDraw') continue;
+        timers.delete(id);
+        timer.callback();
+      }
+    },
   };
 }
 
@@ -213,8 +233,9 @@ await test('repeated page lifecycle events neither accumulate a pause nor reset 
   site.frame(500);
   site.page(750, 'pagehide');
   site.page(1000, 'pagehide');
+  const renderCount = site.renders.length;
   site.resize(5000);
-  phase(site.last.time, 12.75);
+  assert.equal(site.renders.length, renderCount, 'a closed page must not draw on resize');
   site.page(6000, 'pageshow');
   site.page(6250, 'pageshow');
   site.frame(6500);
@@ -273,8 +294,9 @@ await test('context loss pauses immediately, and restoration while hidden stays 
   site.lose(750);
   assert.equal(site.pendingFrames, 0);
   site.hidden(1000, true);
+  const renderCount = site.renders.length;
   site.restore(10000);
-  phase(site.last.time, 12.75);
+  assert.equal(site.renders.length, renderCount, 'a hidden page must not draw on context restoration');
   assert.equal(site.pendingFrames, 0);
   site.hidden(15000, false);
   site.frame(15500);
@@ -288,10 +310,121 @@ await test('pointer-only fallback and asynchronous theme loading do not advance 
   site.move(1000);
   site.frame(1500);
   site.hidden(2000, true);
+  const renderCount = site.renders.length;
   site.restore(5000);
-  phase(site.last.time, 12.75);
+  assert.equal(site.renders.length, renderCount, 'a hidden page must not draw when a theme finishes loading');
   assert.equal(site.pendingFrames, 0);
   site.hidden(6000, false);
   site.frame(6500);
   phase(site.last.time, 13.25);
+});
+
+await test('pagehide disposes the renderer and rejects late initialization, input and timer callbacks', () => {
+  const site = browser({ deferReady: true });
+  const oldRenderer = site.renderer;
+  const queuedTimers = site.queuedTimers();
+  site.page(500, 'pagehide', { persisted: false });
+  assert.equal(oldRenderer.disposed, true);
+  assert.equal(site.pendingFrames, 0);
+  assert.equal(site.pendingTimers, 0);
+  site.restore(1000, oldRenderer);
+  site.move(1500);
+  site.resize(2000);
+  site.visible(2500, true);
+  site.hidden(3000, false);
+  site.motion(3500, false);
+  site.page(4000, 'site:revealed');
+  for (const callback of queuedTimers) callback();
+  assert.equal(site.renders.length, 0);
+  assert.equal(oldRenderer.resizes, 0);
+  assert.equal(site.renderers.length, 1, 'only pageshow may reopen a disposed scene');
+  assert.equal(site.pendingFrames, 0);
+  assert.equal(site.pendingTimers, 0);
+
+  site.page(5000, 'pageshow');
+  const currentRenderer = site.renderer;
+  assert.notEqual(currentRenderer, oldRenderer);
+  assert.equal(site.renderers.length, 2);
+  site.restore(5500, oldRenderer);
+  assert.equal(site.pendingFrames, 0, 'an obsolete renderer cannot restart its replacement');
+  site.restore(6000, currentRenderer);
+  site.frame(6500);
+  phase(site.last.time, 12.5);
+});
+
+await test('BFCache preserves the renderer, freezes late callbacks and resumes without a time jump', () => {
+  const site = browser();
+  site.frame(500);
+  const renderer = site.renderer;
+  site.page(750, 'pagehide', { persisted: true });
+  assert.equal(renderer.disposed, false);
+  const renderCount = site.renders.length;
+  const resizeCount = renderer.resizes;
+  site.restore(1000);
+  site.resize(2000);
+  site.move(3000);
+  assert.equal(site.renders.length, renderCount);
+  assert.equal(renderer.resizes, resizeCount);
+  assert.equal(site.pendingFrames, 0);
+  assert.equal(site.pendingTimers, 0);
+  site.page(10000, 'pageshow', { persisted: true });
+  assert.equal(site.renderer, renderer);
+  assert.equal(site.renderers.length, 1);
+  phase(site.last.time, 12.75);
+  site.frame(10500);
+  phase(site.last.time, 13.25);
+});
+
+await test('busy GPU frames do not enter adaptive-resolution timing samples', () => {
+  const site = browser();
+  site.renderer.busy = true;
+  site.frame(100);
+  site.frame(200);
+  assert.equal(site.samples.length, 0);
+  assert.equal(site.renders.length, 1);
+  site.renderer.busy = false;
+  site.frame(300);
+  assert.deepEqual(site.samples, [300]);
+  phase(site.last.time, 12.3);
+});
+
+await test('a busy reduced-motion resize retries one draw without starting the scene clock', () => {
+  const site = browser({ reduced: true });
+  site.renderer.busy = true;
+  site.resize(100);
+  site.resize(105);
+  assert.equal(site.pendingDrawTasks, 1, 'resize notifications coalesce into one retry');
+  site.retry(137);
+  assert.equal(site.pendingDrawTasks, 1, 'a still-busy GPU keeps only one retry');
+  assert.equal(site.renders.length, 1);
+  assert.equal(site.pendingFrames, 0);
+  site.renderer.busy = false;
+  site.retry(169);
+  assert.equal(site.pendingDrawTasks, 0);
+  assert.equal(site.renders.length, 2);
+  assert.equal(site.pendingFrames, 0);
+  phase(site.last.time, 12);
+});
+
+await test('offscreen, hidden and pagehide stops cancel busy-GPU draw retries', () => {
+  const stops = [
+    site => site.visible(110, false),
+    site => site.hidden(110, true),
+    site => site.page(110, 'pagehide', { persisted: false }),
+    site => site.page(110, 'pagehide', { persisted: true }),
+  ];
+  for (const stop of stops) {
+    const site = browser({ reduced: true });
+    site.renderer.busy = true;
+    site.resize(100);
+    assert.equal(site.pendingDrawTasks, 1);
+    const queued = site.queuedDrawTasks();
+    stop(site);
+    assert.equal(site.pendingDrawTasks, 0);
+    site.renderer.busy = false;
+    for (const callback of queued) callback();
+    assert.equal(site.renders.length, 1, 'an already queued retry must remain stopped');
+    assert.equal(site.pendingDrawTasks, 0);
+    assert.equal(site.pendingFrames, 0);
+  }
 });

@@ -9,7 +9,8 @@ function browser({ parallel = true, broken = false } = {}) {
   let complete = !parallel;
   let id = 0;
   const calls = [];
-  const timers = [];
+  let timerId = 0;
+  const timers = new Map();
   const warnings = [];
   const events = new Map();
   const extension = { COMPLETION_STATUS_KHR: 0x91b1 };
@@ -19,7 +20,12 @@ function browser({ parallel = true, broken = false } = {}) {
     'COLOR_ATTACHMENT0', 'RGBA', 'UNSIGNED_BYTE'];
   const gl = Object.fromEntries(constants.map((name, i) => [name, i + 1]));
   Object.assign(gl, {
-    getExtension: name => name === 'KHR_parallel_shader_compile' ? (parallel ? extension : null) : {},
+    getExtension(name) {
+      if (name === 'KHR_parallel_shader_compile') return parallel ? extension : null;
+      if (name === 'WEBGL_lose_context') return { loseContext: () => calls.push('lose-context') };
+      if (name === 'OES_standard_derivatives' || name === 'EXT_shader_texture_lod') return {};
+      return null;
+    },
     createShader: () => ({ id: ++id }),
     createProgram: () => ({ id: ++id }),
     createTexture: () => ({}), createFramebuffer: () => ({}), createBuffer: () => ({}),
@@ -34,18 +40,21 @@ function browser({ parallel = true, broken = false } = {}) {
     getAttribLocation: () => 0,
   });
   for (const name of ['shaderSource', 'compileShader', 'attachShader', 'linkProgram', 'deleteShader',
-    'bindTexture', 'texParameteri', 'bindFramebuffer', 'framebufferTexture2D', 'bindBuffer', 'bufferData', 'texImage2D']) {
+    'bindTexture', 'texParameteri', 'bindFramebuffer', 'framebufferTexture2D', 'bindBuffer', 'bufferData', 'texImage2D',
+    'deleteProgram', 'deleteTexture', 'deleteFramebuffer', 'deleteBuffer']) {
     gl[name] = () => calls.push(name);
   }
   const canvas = {
     getContext: () => gl,
     parentElement: { classList: { remove() {} } },
     addEventListener: (name, fn) => events.set(name, fn),
+    removeEventListener: (name, fn) => { if (events.get(name) === fn) events.delete(name); },
   };
   const window = {};
   runInNewContext(source, {
     window, console: { warn: (...args) => warnings.push(args.map(String).join(' ')) },
-    setTimeout: fn => timers.push(fn),
+    setTimeout: fn => { const id = ++timerId; timers.set(id, fn); return id; },
+    clearTimeout: id => timers.delete(id),
   });
   // Allocation sizing is covered by browser checks; these tests isolate
   // compilation, readiness and context restoration without a GPU driver.
@@ -56,12 +65,15 @@ function browser({ parallel = true, broken = false } = {}) {
   return {
     renderer, calls, warnings,
     get readySignals() { return readySignals; },
-    get pendingPolls() { return timers.length; },
+    get pendingPolls() { return timers.size; },
+    get listeners() { return events.size; },
     complete() { complete = true; },
     lose() { events.get('webglcontextlost')({ preventDefault() {} }); },
     restore() { complete = false; events.get('webglcontextrestored')(); },
     async tick() {
-      for (const fn of timers.splice(0)) fn();
+      const pending = [...timers.values()];
+      timers.clear();
+      for (const fn of pending) fn();
       for (let i = 0; i < 5; i++) await Promise.resolve();
     },
   };
@@ -115,5 +127,29 @@ await test('browsers without parallel compilation still finish deferred setup', 
   assert.equal(site.renderer.ready, true);
   assert.equal(site.readySignals, 1);
   assert.equal(site.pendingPolls, 0);
+  assert.deepEqual(site.warnings, []);
+});
+
+await test('disposing during compilation cancels polling and prevents late setup or restoration', async () => {
+  const site = browser();
+  assert.equal(site.pendingPolls, 1);
+  const oldRestore = site.renderer.handleContextRestored;
+  site.renderer.dispose();
+  assert.equal(site.pendingPolls, 0);
+  assert.equal(site.listeners, 0);
+  assert.equal(site.renderer.ready, false);
+  assert.equal(site.calls.filter(name => name === 'deleteProgram').length, 3);
+  assert.equal(site.calls.filter(name => name === 'lose-context').length, 0,
+    'exit must not force synchronous driver context destruction');
+  site.complete();
+  oldRestore();
+  await site.tick();
+  assert.equal(site.calls.includes('link-status'), false);
+  assert.equal(site.calls.includes('resize'), false);
+  assert.equal(site.readySignals, 0);
+  assert.equal(site.pendingPolls, 0);
+  const callsAfterDispose = site.calls.length;
+  site.renderer.dispose();
+  assert.equal(site.calls.length, callsAfterDispose);
   assert.deepEqual(site.warnings, []);
 });

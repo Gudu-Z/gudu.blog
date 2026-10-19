@@ -602,19 +602,29 @@
       this.lastSample = 0;
       this.resources = [];
       this.generation = 0;
+      this.disposed = false;
+      this.compileWait = null;
+      this.gpuQuery = null;
+      this.gpuTimes = [];
       if (!this.gl) return;
       this.initialize().catch(error => console.warn('Using the static black-hole illustration.', error));
-      canvas.addEventListener('webglcontextlost', event => {
+      this.handleContextLost = event => {
+        if (this.disposed) return;
         event.preventDefault();
         this.ready = false;
         this.lost = true;
+        this.cancelCompileWait();
+        this.gpuQuery = null;
         canvas.parentElement.classList.remove('is-ready');
-      });
-      canvas.addEventListener('webglcontextrestored', () => {
+      };
+      this.handleContextRestored = () => {
+        if (this.disposed) return;
         this.resources = [];
         this.lost = false;
         this.initialize().catch(error => console.warn('The static illustration remains available.', error));
-      });
+      };
+      canvas.addEventListener('webglcontextlost', this.handleContextLost);
+      canvas.addEventListener('webglcontextrestored', this.handleContextRestored);
     }
 
     shader(type, source) {
@@ -649,12 +659,15 @@
       const gl = this.gl;
       const parallel = gl.getExtension('KHR_parallel_shader_compile');
       if (parallel) {
-        while (!this.lost && generation === this.generation
+        while (!this.disposed && !this.lost && generation === this.generation
           && programs.some(program => !gl.getProgramParameter(program.value, parallel.COMPLETION_STATUS_KHR))) {
-          await new Promise(resolve => setTimeout(resolve, 32));
+          await new Promise(resolve => {
+            const timer = setTimeout(() => { this.compileWait = null; resolve(); }, 32);
+            this.compileWait = { timer, resolve };
+          });
         }
       }
-      if (this.lost || generation !== this.generation) return false;
+      if (this.disposed || this.lost || generation !== this.generation) return false;
       for (const program of programs) {
         if (!gl.getProgramParameter(program.value, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program.value));
         const count = gl.getProgramParameter(program.value, gl.ACTIVE_UNIFORMS);
@@ -683,6 +696,7 @@
     }
 
     async initialize() {
+      if (this.disposed) return;
       const gl = this.gl;
       this.ready = false;
       this.initialized = false;
@@ -692,6 +706,12 @@
       this.generation++;
       this.inkLoaded = false;
       this.inkLoading = false;
+      const timerQuery = gl.getExtension('EXT_disjoint_timer_query');
+      this.timerQuery = timerQuery?.createQueryEXT ? timerQuery : null;
+      this.gpuQuery = null;
+      this.gpuTimes = [];
+      this.resizePending = false;
+      this.maxTexture = 0;
       // A fixed-width approximation cannot safely filter the lensed filaments.
       // Older devices without derivatives use the matching rendered fallback.
       if (!gl.getExtension('OES_standard_derivatives')) return;
@@ -734,7 +754,7 @@
         image.src = `./assets/black-hole-ink-${name}.png?v=20261015-ink-light`;
       });
       Promise.all([readImage('material'), readImage('light')]).then(images => {
-        if (this.lost || generation !== this.generation) return;
+        if (this.disposed || this.lost || generation !== this.generation) return;
         const gl = this.gl;
         try {
           // Brush detail and fixed illumination have the same periodic chart.
@@ -769,14 +789,14 @@
           gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
         }
       }).catch(error => {
-        if (this.lost || generation !== this.generation) return;
+        if (this.disposed || this.lost || generation !== this.generation) return;
         this.inkLoading = false;
         console.warn('Using the ink illustration fallback.', error);
       });
     }
 
     resize() {
-      if (!this.ready) return;
+      if (!this.ready || this.disposed || this.lost) return;
       const gl = this.gl;
       const figure = this.canvas.parentElement;
       const rect = figure.getBoundingClientRect();
@@ -806,14 +826,26 @@
         left: `${offsetX}px`, top: `${offsetY}px`,
         width: `${visibleWidth}px`, height: `${visibleHeight}px`,
       });
-      // Avoid stretching a 1440px buffer across a wide screen. Keep a bounded
-      // pixel budget, with the procedural filter handling any adaptive scale.
-      const maxTexture = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+      // Bound cold-start work on high-DPI screens. The GPU's measured cost
+      // subsequently controls scale, independently of fast JS submission.
+      const maxTexture = this.maxTexture ||= gl.getParameter(gl.MAX_TEXTURE_SIZE);
+      const pixelBudget = this.timerQuery ? 1800000 : 900000;
       const scale = Math.min(devicePixelRatio || 1, 1.5, 2400 / visibleWidth,
         maxTexture / visibleWidth, maxTexture / visibleHeight,
-        Math.sqrt(3600000 / (visibleWidth * visibleHeight))) * this.quality;
-      this.width = Math.max(2, Math.round(visibleWidth * scale));
-      this.height = Math.max(2, Math.round(visibleHeight * scale));
+        Math.sqrt(pixelBudget / (visibleWidth * visibleHeight))) * this.quality;
+      this.nextWidth = Math.max(2, Math.round(visibleWidth * scale));
+      this.nextHeight = Math.max(2, Math.round(visibleHeight * scale));
+      this.resizePending = this.width !== this.nextWidth || this.height !== this.nextHeight
+        || !this.sceneTarget.width;
+    }
+
+    allocateTargets() {
+      if (!this.resizePending) return;
+      const gl = this.gl;
+      this.width = this.nextWidth;
+      this.height = this.nextHeight;
+      // Changing canvas dimensions clears the displayed buffer. Do it only
+      // inside render(), directly before drawing its replacement in this task.
       this.canvas.width = this.width;
       this.canvas.height = this.height;
       for (const [target, divisor] of [[this.sceneTarget, 1], [this.bloomTarget, 2]]) {
@@ -831,6 +863,7 @@
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       this.inkSplatter?.resize(this.width, this.height);
+      this.resizePending = false;
     }
 
     use(program, target) {
@@ -851,8 +884,17 @@
     }
 
     render(time, x, y) {
-      if (!this.ready || this.lost) return;
+      if (!this.ready || this.lost || this.disposed) return false;
+      // At most one frame is in flight. Poll availability without waiting for
+      // GPU completion; keep the last presented frame while the GPU is busy.
+      if (!this.gpuAvailable()) return false;
+      this.allocateTargets();
+      if (!this.ready) return false;
       const gl = this.gl;
+      if (this.timerQuery) {
+        this.gpuQuery = this.timerQuery.createQueryEXT();
+        this.timerQuery.beginQueryEXT(this.timerQuery.TIME_ELAPSED_EXT, this.gpuQuery);
+      }
       this.use(this.scene, this.sceneTarget);
       gl.uniform2f(this.scene.uniforms.u_resolution, this.sceneWidth, this.sceneHeight);
       gl.uniform4fv(this.scene.uniforms.u_crop, this.crop);
@@ -885,19 +927,84 @@
       gl.uniform4fv(this.composite.uniforms.u_crop, this.crop);
       gl.uniform1f(this.composite.uniforms.u_ink, this.style === 'ink' ? 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
+      if (this.gpuQuery) this.timerQuery.endQueryEXT(this.timerQuery.TIME_ELAPSED_EXT);
       this.canvas.parentElement.classList.add('is-ready');
+      return true;
+    }
+
+    gpuAvailable() {
+      if (!this.gpuQuery) return true;
+      const ext = this.timerQuery;
+      // A GPU clock reset invalidates outstanding timings; an invalid query
+      // need not become available, so discard it before polling completion.
+      if (this.gl.getParameter(ext.GPU_DISJOINT_EXT)) {
+        ext.deleteQueryEXT(this.gpuQuery);
+        this.gpuQuery = null;
+        this.gpuTimes = [];
+        return true;
+      }
+      if (!ext.getQueryObjectEXT(this.gpuQuery, ext.QUERY_RESULT_AVAILABLE_EXT)) return false;
+      const milliseconds = ext.getQueryObjectEXT(this.gpuQuery, ext.QUERY_RESULT_EXT) / 1000000;
+      this.gpuTimes.push(milliseconds);
+      if (this.gpuTimes.length >= 8) {
+        // A cold first draw or a one-off driver stall must not permanently
+        // soften the scene. Adapt to sustained cost, using the window median.
+        const ordered = this.gpuTimes.sort((a, b) => a - b);
+        const cost = (ordered[3] + ordered[4]) * 0.5;
+        this.gpuTimes = [];
+        // Leave headroom for compositing and the rest of the browser. A
+        // quality change is one-way within a visit, avoiding oscillation.
+        if (cost > 28 && this.quality > 0.5) {
+          this.quality = Math.max(0.5, this.quality * Math.max(0.75, Math.sqrt(24 / cost)));
+          this.resize();
+        }
+      }
+      ext.deleteQueryEXT(this.gpuQuery);
+      this.gpuQuery = null;
+      return true;
     }
 
     sampleFrame(timestamp) {
+      if (this.timerQuery) return;
       if (this.lastSample) this.frameTimes.push(timestamp - this.lastSample);
       this.lastSample = timestamp;
       if (this.frameTimes.length < 45) return;
       const average = this.frameTimes.reduce((sum, ms) => sum + ms, 0) / this.frameTimes.length;
       this.frameTimes = [];
-      if (average > 48 && this.quality > 0.8) {
-        this.quality = Math.max(0.8, this.quality * 0.9);
+      if (average > 48 && this.quality > 0.5) {
+        this.quality = Math.max(0.5, this.quality * 0.9);
         this.resize();
       }
+    }
+
+    cancelCompileWait() {
+      if (!this.compileWait) return;
+      clearTimeout(this.compileWait.timer);
+      this.compileWait.resolve();
+      this.compileWait = null;
+    }
+
+    dispose() {
+      if (this.disposed) return;
+      this.disposed = true;
+      this.ready = this.initialized = false;
+      this.generation++;
+      this.onRestore = null;
+      this.cancelCompileWait();
+      this.canvas.removeEventListener('webglcontextlost', this.handleContextLost);
+      this.canvas.removeEventListener('webglcontextrestored', this.handleContextRestored);
+      const gl = this.gl;
+      if (gl && !this.lost) {
+        if (this.gpuQuery) this.timerQuery.deleteQueryEXT(this.gpuQuery);
+        this.inkSplatter?.dispose();
+        const remove = { program: 'deleteProgram', texture: 'deleteTexture', framebuffer: 'deleteFramebuffer', buffer: 'deleteBuffer' };
+        for (const { type, value } of this.resources) gl[remove[type]](value);
+        // Delete handles without a synchronous finish/readback/context-loss.
+        // Forced loseContext() can block the Intel/ANGLE driver for seconds;
+        // let the browser retire the context as the document is discarded.
+      }
+      this.resources = [];
+      this.gpuQuery = this.inkSplatter = null;
     }
 
     resetTiming() { this.lastSample = 0; this.frameTimes = []; }

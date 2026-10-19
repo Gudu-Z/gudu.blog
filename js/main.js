@@ -9,6 +9,7 @@
   let blackHole = null;
   let rendererStarted = false;
   let rendererTimer = 0;
+  let drawTimer = 0;
   const layers = [...document.querySelectorAll('[data-depth]')];
   const titlePeriod = document.querySelector('.title-period');
   const clock = document.querySelector('#local-time');
@@ -25,6 +26,7 @@
   const finePointer = matchMedia('(pointer: fine)');
   const pointer = { x: 0, y: 0, targetX: 0, targetY: 0 };
   let paused = reducedMotion.matches;
+  let pageActive = true;
   let loading = document.documentElement.classList.contains('is-loading');
   let visible = true;
   let frame = 0;
@@ -52,18 +54,22 @@
   // The decoded fallback carries the logo and entrance. GPU setup starts only
   // after those animations, so a cold driver cannot freeze their SVG strokes.
   function scheduleRenderer() {
-    if (rendererStarted || rendererTimer || !blackHoleCanvas || !window.BlackHole
+    if (!pageActive || rendererStarted || rendererTimer || !blackHoleCanvas || !window.BlackHole
         || loading || !visible || document.hidden
         || document.documentElement.classList.contains('has-site-intro')) return;
-    rendererTimer = setTimeout(() => {
+    rendererTimer = setTimeout(function initializeRenderer() {
       rendererTimer = 0;
-      if (loading || !visible || document.hidden
+      if (!pageActive || loading || !visible || document.hidden
           || document.documentElement.classList.contains('has-site-intro')) return;
       rendererStarted = true;
       try {
-        blackHole = new window.BlackHole(blackHoleCanvas, { style: blackHoleStyle });
-        blackHole.onRestore = () => { draw(); start(); };
-        blackHoleCanvas.addEventListener('webglcontextlost', () => { stop(); drawStars(); });
+        const renderer = new window.BlackHole(blackHoleCanvas, { style: blackHoleStyle });
+        blackHole = renderer;
+        renderer.onRestore = () => {
+          if (!pageActive || document.hidden || blackHole !== renderer) return;
+          draw();
+          start();
+        };
         // Also support an already-ready renderer (including older cached builds).
         if (blackHole.ready) { draw(); start(); }
       } catch (error) {
@@ -77,7 +83,7 @@
   }
 
   function updateTitleBlink() {
-    if (!titlePeriod || loading || paused || !visible || document.hidden
+    if (!pageActive || !titlePeriod || loading || paused || !visible || document.hidden
         || document.documentElement.classList.contains('has-site-intro')) {
       stopTitleBlink();
       return;
@@ -88,6 +94,7 @@
   // Read the actual wall clock every second, independently of visual animation.
   function updateClock() {
     clearTimeout(clockTimer);
+    if (!pageActive || document.hidden) return;
     const now = new Date();
     const parts = Object.fromEntries(clockFormatter.formatToParts(now).map(part => [part.type, part.value]));
     clock.dateTime = now.toISOString();
@@ -101,6 +108,7 @@
 
   function updateBlackHoleTheme() {
     clearTimeout(themeTimer);
+    if (!pageActive || document.hidden) return;
     const nextStyle = blackHoleTheme?.resolve() || 'minimal';
     if (nextStyle !== blackHoleStyle) {
       stop();
@@ -127,6 +135,7 @@
   }
 
   function resize() {
+    if (!pageActive || document.hidden) return;
     const bounds = hero.getBoundingClientRect();
     width = bounds.width;
     height = bounds.height;
@@ -146,12 +155,12 @@
     draw();
   }
 
-  function drawStars() {
-    if (!context) return;
+  function drawStars(fallback = false) {
+    if (!pageActive || document.hidden || !context) return;
     context.clearRect(0, 0, width, height);
     // The live minimal renderer supplies one continuous, lensed sky across
     // the hero. Keep the old edge stars for ink and the static fallback only.
-    if (blackHoleStyle === 'minimal' && blackHole?.ready && !blackHole.lost) return;
+    if (!fallback && blackHoleStyle === 'minimal' && blackHole?.ready && !blackHole.lost) return;
     for (const star of starList) {
       const x = star.x + pointer.x * star.depth * 13;
       const y = star.y + pointer.y * star.depth * 10;
@@ -165,13 +174,25 @@
   }
 
   function draw() {
+    clearTimeout(drawTimer);
+    drawTimer = 0;
+    if (!pageActive || document.hidden) return false;
     drawStars();
     for (const layer of layers) {
       const depth = Number(layer.dataset.depth);
       layer.style.setProperty('--pointer-x', `${-pointer.x * depth * 8}px`);
       layer.style.setProperty('--pointer-y', `${-pointer.y * depth * 6}px`);
     }
-    blackHole?.render(sceneTime(), pointer.x, -pointer.y);
+    const submitted = blackHole?.render(sceneTime(), pointer.x, -pointer.y);
+    // A busy GPU can also defer a static/reduced-motion resize. Keep just one
+    // retry, without starting the animation clock or waiting for pointer input.
+    if (submitted === false && blackHole?.ready && !blackHole.lost && visible) {
+      drawTimer = setTimeout(function retryDraw() {
+        drawTimer = 0;
+        if (pageActive && !document.hidden && visible) draw();
+      }, 32);
+    }
+    return submitted;
   }
 
   // Orbital phase follows monotonic active time, independently of frame rate
@@ -192,7 +213,7 @@
 
   function tick(timestamp) {
     frame = 0;
-    if (loading || paused || !visible || document.hidden) { stop(); return; }
+    if (!pageActive || loading || paused || !visible || document.hidden) { stop(); return; }
     const animated = blackHole?.ready && !blackHole.lost;
     if (animated) resumeSceneClock(); else pauseSceneClock();
     const delta = lastTime ? Math.min(timestamp - lastTime, 100) : 16;
@@ -206,8 +227,8 @@
       pointer.y = pointer.targetY;
     }
     if (timestamp - lastRender >= 30 || (!animated && settled)) {
-      draw();
-      if (animated) blackHole.sampleFrame(timestamp);
+      const submitted = draw();
+      if (animated && submitted !== false) blackHole.sampleFrame(timestamp);
       lastRender = timestamp;
     }
     // Visible WebGL keeps the disk flowing at about 30 fps; the fallback rests.
@@ -217,7 +238,7 @@
 
   function start() {
     scheduleRenderer();
-    if (frame || loading || paused || !visible || document.hidden) return;
+    if (!pageActive || frame || loading || paused || !visible || document.hidden) return;
     const animated = blackHole?.ready && !blackHole.lost;
     if (!animated && pointer.x === pointer.targetX && pointer.y === pointer.targetY) return;
     if (animated) resumeSceneClock(); else pauseSceneClock();
@@ -230,6 +251,8 @@
   function stop() {
     clearTimeout(rendererTimer);
     rendererTimer = 0;
+    clearTimeout(drawTimer);
+    drawTimer = 0;
     pauseSceneClock();
     cancelAnimationFrame(frame);
     frame = 0;
@@ -243,7 +266,7 @@
   }
 
   hero.addEventListener('pointermove', event => {
-    if (loading || paused || !finePointer.matches || event.pointerType === 'touch') return;
+    if (!pageActive || document.hidden || loading || paused || !finePointer.matches || event.pointerType === 'touch') return;
     const rect = hero.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     pointer.targetX = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
@@ -263,7 +286,7 @@
   });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { stop(); stopClock(); clearTimeout(themeTimer); finishIntro(); }
-    else { updateBlackHoleTheme(); start(); updateClock(); }
+    else { updateBlackHoleTheme(); resize(); start(); updateClock(); }
     updateTitleBlink();
   });
   new IntersectionObserver(entries => {
@@ -276,8 +299,30 @@
   // A late web font changes the heading's quiet zone without resizing the hero.
   const heading = document.querySelector('.hero-heading');
   if (heading) sceneResize.observe(heading);
-  window.addEventListener('pagehide', () => { stop(); stopClock(); clearTimeout(themeTimer); finishIntro(); stopTitleBlink(); });
-  window.addEventListener('pageshow', () => { updateBlackHoleTheme(); start(); updateClock(); updateTitleBlink(); });
+  blackHoleCanvas?.addEventListener('webglcontextlost', () => { stop(); drawStars(true); });
+  window.addEventListener('pagehide', event => {
+    // pagehide can precede visibilitychange. Gate every late completion before
+    // releasing GPU resources, while preserving the renderer for BFCache.
+    pageActive = false;
+    stop();
+    stopClock();
+    clearTimeout(themeTimer);
+    finishIntro();
+    stopTitleBlink();
+    if (!event.persisted) {
+      blackHole?.dispose?.();
+      blackHole = null;
+      rendererStarted = false;
+    }
+  });
+  window.addEventListener('pageshow', () => {
+    pageActive = true;
+    updateBlackHoleTheme();
+    resize();
+    start();
+    updateClock();
+    updateTitleBlink();
+  });
   window.addEventListener('popstate', updateBlackHoleTheme);
   // Prepare the lightweight page first; loading.js waits for the fallback
   // image instead of tying the logo animation to shader compilation.
