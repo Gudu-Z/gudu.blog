@@ -149,6 +149,9 @@
   function drawStars() {
     if (!context) return;
     context.clearRect(0, 0, width, height);
+    // The live minimal renderer supplies one continuous, lensed sky across
+    // the hero. Keep the old edge stars for ink and the static fallback only.
+    if (blackHoleStyle === 'minimal' && blackHole?.ready && !blackHole.lost) return;
     for (const star of starList) {
       const x = star.x + pointer.x * star.depth * 13;
       const y = star.y + pointer.y * star.depth * 10;
@@ -268,7 +271,11 @@
     if (visible) start(); else stop();
     updateTitleBlink();
   }).observe(hero);
-  new ResizeObserver(resize).observe(hero);
+  const sceneResize = new ResizeObserver(resize);
+  sceneResize.observe(hero);
+  // A late web font changes the heading's quiet zone without resizing the hero.
+  const heading = document.querySelector('.hero-heading');
+  if (heading) sceneResize.observe(heading);
   window.addEventListener('pagehide', () => { stop(); stopClock(); clearTimeout(themeTimer); finishIntro(); stopTitleBlink(); });
   window.addEventListener('pageshow', () => { updateBlackHoleTheme(); start(); updateClock(); updateTitleBlink(); });
   window.addEventListener('popstate', updateBlackHoleTheme);

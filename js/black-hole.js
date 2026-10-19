@@ -23,6 +23,7 @@
     uniform vec2 u_resolution;
     uniform vec4 u_crop;
     uniform vec2 u_pointer;
+    uniform vec4 u_quiet;
     uniform float u_time;
     uniform float u_ink;
     uniform sampler2D u_inkAtlas;
@@ -209,6 +210,71 @@
       float star = (1.0 - smoothstep(0.012, 0.075, length(fract(grid) - center))) * step(0.986, seed);
       return vec3(0.45, 0.53, 0.65) * star * 0.6;
     }
+    // A coherent sky, sampled through the escaped ray. Gaussian footprints use
+    // both screen axes, so a lensed point becomes a smooth arc rather than a
+    // blinking, subpixel speck. Neighbouring cells keep the filter continuous.
+    vec3 starLayer(vec2 sky, vec2 dx, vec2 dy, float scale, float population) {
+      vec2 grid = sky * scale;
+      vec2 cell = floor(grid);
+      vec2 gx = dx * scale, gy = dy * scale;
+      vec3 light = vec3(0.0);
+      float footprint = max(length(gx), length(gy));
+      float resolved = 1.0 - smoothstep(0.65, 1.6, footprint);
+      for (int row = -1; row <= 1; row++) {
+        for (int column = -1; column <= 1; column++) {
+          vec2 id = cell + vec2(float(column), float(row));
+          float seed = hash(id + 19.4);
+          float density = 0.0;
+          // Reject empty cells before evaluating the clustered density field.
+          if (seed > 1.0 - population * 1.8) {
+            float grouping = pigmentNoise(id * 0.075 + 12.7);
+            density = population * mix(0.18, 1.8, smoothstep(0.25, 0.75, grouping));
+          }
+          if (seed > 1.0 - density) {
+            vec2 center = 0.15 + 0.7 * vec2(hash(id + 2.1), hash(id + 7.8));
+            vec2 delta = grid - id - center;
+            float brightness = hash(id + 31.8);
+            float radius = mix(0.035, 0.095, pow(brightness, 3.0));
+            float variance = radius * radius;
+            float a = variance + (gx.x * gx.x + gy.x * gy.x) / 12.0;
+            float b = (gx.x * gx.y + gy.x * gy.y) / 12.0;
+            float c = variance + (gx.y * gx.y + gy.y * gy.y) / 12.0;
+            float determinant = max(a * c - b * b, 0.00000001);
+            float distance2 = (c * delta.x * delta.x - 2.0 * b * delta.x * delta.y
+              + a * delta.y * delta.y) / determinant;
+            float core = exp(-0.5 * distance2) * variance / sqrt(determinant);
+            float halo = exp(-dot(delta, delta) / 0.085) * 0.025 * pow(brightness, 5.0);
+            vec3 tint = mix(vec3(0.69, 0.78, 0.88), vec3(1.0, 0.88, 0.68), hash(id + 43.2));
+            light += tint * (core + halo) * mix(0.16, 0.85, pow(brightness, 2.0)) * resolved;
+          }
+        }
+      }
+      return light;
+    }
+    vec3 minimalSky(vec3 ray, vec3 rayDx, vec3 rayDy) {
+      vec3 direction = normalize(ray);
+      float horizontal = max(dot(direction.xz, direction.xz), 0.0001);
+      vec2 sky = vec2(atan(direction.x, -direction.z), asin(clamp(direction.y, -0.9999, 0.9999)));
+      // Analytic angular derivatives avoid a false footprint at atan's seam.
+      vec2 dx = vec2((-direction.z * rayDx.x + direction.x * rayDx.z) / horizontal,
+        rayDx.y / sqrt(max(1.0 - direction.y * direction.y, 0.0001)));
+      vec2 dy = vec2((-direction.z * rayDy.x + direction.x * rayDy.z) / horizontal,
+        rayDy.y / sqrt(max(1.0 - direction.y * direction.y, 0.0001)));
+      // Increasing both angular coordinates moves the visible stars toward
+      // screen-left and screen-bottom. Use the same active clock as the disk,
+      // independent of pointer input and frame rate; do not wrap the phase.
+      vec2 movingSky = sky + (u_time - 12.0) * vec2(0.00090, 0.00060);
+      vec3 light = starLayer(movingSky, dx, dy, 105.0, 0.052)
+        + starLayer(movingSky + vec2(1.7, 2.3), dx, dy, 185.0, 0.065) * 0.45;
+      // A few broad, softly lit pockets of dust. No narrow galactic stripe,
+      // temporal noise, or texture that can compete with the disk's filaments.
+      vec2 warmOffset = (sky - vec2(0.12, -0.07)) / vec2(0.17, 0.11);
+      vec2 coolOffset = (sky - vec2(-0.19, 0.11)) / vec2(0.13, 0.09);
+      float dust = mix(0.25, 1.0, pigmentNoise(sky * 18.0 + 8.0));
+      light += vec3(0.033, 0.026, 0.017) * exp(-dot(warmOffset, warmOffset)) * dust;
+      light += vec3(0.012, 0.019, 0.027) * exp(-dot(coolOffset, coolOffset)) * dust;
+      return light;
+    }
     struct RayHit {
       vec3 point;
       vec3 ray;
@@ -216,6 +282,24 @@
       float material;
       float order;
     };
+    RayHit orientSky(RayHit hit, vec3 origin, vec3 direction, vec3 right, vec3 up, vec3 forward, float roll) {
+      if (u_ink < 0.5 && hit.material < -0.5) {
+        // Background-only art direction: keep the strong lens close to the
+        // shadow, then smoothly return to round, undistorted distant stars.
+        // A broad C2 transition avoids a new ring at the cutoff. The disk's
+        // intersections and light paths retain their full gravitational bend.
+        float impact = length(cross(origin, direction));
+        float t = clamp((impact - 3.5) / 3.5, 0.0, 1.0);
+        float lens = 1.0 - t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+        vec3 backgroundRay = normalize(mix(direction, hit.ray, lens));
+        vec3 local = vec3(dot(backgroundRay, right), dot(backgroundRay, up), -dot(backgroundRay, forward));
+        local.xy = mat2(cos(roll), sin(roll), -sin(roll), cos(roll)) * local.xy;
+        // Distant stars have much less parallax than the foreground disk.
+        local.xy -= u_pointer * vec2(0.0025, 0.0018) * local.z;
+        hit.ray = normalize(local);
+      }
+      return hit;
+    }
     RayHit traceLayers(vec3 origin, vec3 direction, float skipLayers) {
       RayHit hit;
       hit.point = vec3(6.0, 0.0, 0.0);
@@ -227,12 +311,18 @@
       vec3 p = origin, v = direction;
       vec3 angular = cross(p, v);
       float h2 = dot(angular, angular);
-      if (h2 > mix(140.0, 210.0, u_ink)) hit.material = -1.0;
+      if (h2 > mix(140.0, 210.0, u_ink)) {
+        hit.material = -1.0;
+      }
       else {
         for (int i = 0; i < 180; i++) {
           float r = length(p);
           if (r < 1.015) { hit.alpha = 1.0; break; }
-          if (r > 42.0) { hit.material = -1.0; hit.ray = normalize(v); break; }
+          if (r > 42.0) {
+            hit.material = -1.0;
+            hit.ray = normalize(v);
+            break;
+          }
           float dt = clamp(r * 0.095, 0.055, 1.8);
           vec3 a = acceleration(p, h2);
           vec3 next = p + v * dt + 0.5 * a * dt * dt;
@@ -284,12 +374,13 @@
       }
       return delta;
     }
-    vec4 shadeHit(RayHit hit, vec3 pointDx, vec3 pointDy) {
+    vec4 shadeHit(RayHit hit, vec3 pointDx, vec3 pointDy, vec4 skyLight) {
       vec3 emission = vec3(0.0);
       float alpha = hit.alpha;
       if (u_ink > 0.5 && hit.material > 0.5) return inkEmission(hit.point, pointDx, pointDy, hit.order, hit.ray);
       if (hit.material > 0.5) emission = diskEmission(hit.point, hit.ray, pointDx, pointDy);
       if (hit.material < -0.5) {
+        if (u_ink < 0.5) return skyLight;
         emission = distantStars(hit.ray);
         alpha = max(emission.r, max(emission.g, emission.b));
       }
@@ -320,7 +411,9 @@
       float focal = mix(4.05, 3.70, u_ink);
       vec3 direction = normalize(forward * focal + screen.x * right + screen.y * up);
       RayHit hit = traceRay(origin, direction);
+      hit = orientSky(hit, origin, direction, right, up, forward, screenRoll);
       vec3 pointDx = vec3(0.0), pointDy = vec3(0.0);
+      vec3 skyDx = vec3(0.0), skyDy = vec3(0.0);
       vec2 screenDx = vec2(0.0), screenDy = vec2(0.0);
       #ifdef HAS_DERIVATIVES
         // Every fragment reconverges here. Never evaluate derivatives inside
@@ -329,6 +422,8 @@
         pointDy = dFdy(hit.point);
         screenDx = dFdx(screen);
         screenDy = dFdy(screen);
+        skyDx = dFdx(hit.ray);
+        skyDy = dFdy(hit.ray);
       #endif
       vec3 rayDx = normalize(forward * focal + (screen.x + screenDx.x) * right + (screen.y + screenDx.y) * up);
       vec3 rayDy = normalize(forward * focal + (screen.x + screenDy.x) * right + (screen.y + screenDy.y) * up);
@@ -338,22 +433,42 @@
         if (dot(pointDx, pointDx) > 0.09) pointDx = surfaceDifferential(origin, rayDx, hit.point);
         if (dot(pointDy, pointDy) > 0.09) pointDy = surfaceDifferential(origin, rayDy, hit.point);
       }
-      vec4 light = shadeHit(hit, pointDx, pointDy);
+      vec4 light = shadeHit(hit, pointDx, pointDy, vec4(0.0));
       // Both the minimal rim and transparent brush ends reveal the next
       // physical surface, rather than cutting a black band out of the rear arc.
       bool throughDisk = hit.material > 0.5 && light.a < 0.999;
       RayHit beneath = hit;
-      if (throughDisk) beneath = traceLayers(origin, direction, 1.0);
+      if (throughDisk) beneath = orientSky(traceLayers(origin, direction, 1.0), origin, direction, right, up, forward, screenRoll);
       vec3 beneathDx = vec3(0.0), beneathDy = vec3(0.0);
+      vec3 beneathSkyDx = vec3(0.0), beneathSkyDy = vec3(0.0);
       #ifdef HAS_DERIVATIVES
         beneathDx = dFdx(beneath.point);
         beneathDy = dFdy(beneath.point);
+        beneathSkyDx = dFdx(beneath.ray);
+        beneathSkyDy = dFdy(beneath.ray);
       #endif
       if (throughDisk && beneath.material > 0.5) {
         if (dot(beneathDx, beneathDx) > 0.09) beneathDx = surfaceDifferential(origin, rayDx, beneath.point);
         if (dot(beneathDy, beneathDy) > 0.09) beneathDy = surfaceDifferential(origin, rayDy, beneath.point);
       }
-      if (throughDisk) light += shadeHit(beneath, beneathDx, beneathDy) * (1.0 - light.a);
+      // Filter the sky once per pixel. The four subrays below resolve surface
+      // coverage; they share this already filtered sky radiance. Keeping the
+      // star field outside shadeHit also avoids duplicating its shader code
+      // at every surface/subray call site on WebGL 1 drivers.
+      vec4 skyLight = vec4(0.0);
+      bool primarySky = hit.material < -0.5;
+      if (u_ink < 0.5 && (primarySky || (throughDisk && beneath.material < -0.5))) {
+        vec3 radiance = minimalSky(primarySky ? hit.ray : beneath.ray,
+          primarySky ? skyDx : beneathSkyDx, primarySky ? skyDy : beneathSkyDy);
+        vec2 quiet = (v_uv - u_quiet.xy) / max(u_quiet.zw, vec2(0.001));
+        float room = u_quiet.z > 0.0 ? mix(0.14, 1.0, smoothstep(0.55, 1.25, length(quiet))) : 1.0;
+        radiance = (1.0 - exp(-radiance * 1.25)) * room;
+        // Already premultiplied: do not square dim starlight by multiplying
+        // it by its own opacity for a second time.
+        skyLight = vec4(radiance, max(radiance.r, max(radiance.g, radiance.b)));
+        if (primarySky) light = skyLight;
+      }
+      if (throughDisk) light += shadeHit(beneath, beneathDx, beneathDy, skyLight) * (1.0 - light.a);
       vec3 angular = cross(origin, direction);
       float h2 = dot(angular, angular);
       // Only the critical-curve neighbourhood needs geometry supersampling.
@@ -370,6 +485,7 @@
           vec2 subScreen = screen + screenDx * offset.x + screenDy * offset.y;
           vec3 subRay = normalize(forward * focal + subScreen.x * right + subScreen.y * up);
           RayHit subHit = traceRay(origin, subRay);
+          subHit = orientSky(subHit, origin, subRay, right, up, forward, screenRoll);
           vec3 subDx = pointDx, subDy = pointDy;
           vec3 subRayDx = normalize(forward * focal + (subScreen.x + screenDx.x) * right + (subScreen.y + screenDx.y) * up);
           vec3 subRayDy = normalize(forward * focal + (subScreen.x + screenDy.x) * right + (subScreen.y + screenDy.y) * up);
@@ -381,16 +497,17 @@
             subDx = surfaceDifferential(origin, subRayDx, subHit.point);
             subDy = surfaceDifferential(origin, subRayDy, subHit.point);
           }
-          vec4 subLight = shadeHit(subHit, subDx, subDy);
+          vec4 subLight = shadeHit(subHit, subDx, subDy, skyLight);
           if (subHit.material > 0.5 && subLight.a < 0.999) {
             RayHit subBeneath = traceLayers(origin, subRay, 1.0);
+            subBeneath = orientSky(subBeneath, origin, subRay, right, up, forward, screenRoll);
             vec3 subBeneathDx = beneathDx, subBeneathDy = beneathDy;
             if (u_ink < 0.5 && subBeneath.material > 0.5
                 && (beneath.material < 0.5 || distance(subBeneath.point, beneath.point) > 0.3)) {
               subBeneathDx = surfaceDifferential(origin, subRayDx, subBeneath.point);
               subBeneathDy = surfaceDifferential(origin, subRayDy, subBeneath.point);
             }
-            subLight += shadeHit(subBeneath, subBeneathDx, subBeneathDy) * (1.0 - subLight.a);
+            subLight += shadeHit(subBeneath, subBeneathDx, subBeneathDy, skyLight) * (1.0 - subLight.a);
           }
           samples += subLight;
         }
@@ -398,6 +515,12 @@
       }
       // Internal targets contain premultiplied light. The final pass converts
       // to straight alpha exactly once for the transparent WebGL canvas.
+      if (u_ink < 0.5 && hit.material > -0.5) {
+        float fade = 1.0 - smoothstep(0.70, 1.0, length((sceneUV - 0.5) * 1.7));
+        // Fade foreground coverage into the escaped sky, rather than fading
+        // the already composited background and leaving a dark outer seam.
+        light = light * fade + skyLight * (1.0 - fade);
+      }
       gl_FragColor = light;
     }
   `;
@@ -457,13 +580,13 @@
         glow += texture2D(u_bloom, v_uv + vec2(0.0, y * u_texel.y * 2.0)).rgb * w;
         weights += w;
       }
-      glow = glow / weights * 0.30;
-      vec3 color = 1.0 - (1.0 - scene.rgb) * exp(-glow * 1.2);
-      float alpha = max(scene.a, max(color.r, max(color.g, color.b)));
       vec2 sceneUV = u_crop.xy + v_uv * u_crop.zw;
       float fade = 1.0 - smoothstep(0.70, 1.0, length((sceneUV - 0.5) * 1.7));
+      glow = glow / weights * 0.30 * fade;
+      vec3 color = 1.0 - (1.0 - scene.rgb) * exp(-glow * 1.2);
+      float alpha = max(scene.a, max(color.r, max(color.g, color.b)));
       // Straight-alpha output; the light remains luminous over the star field.
-      gl_FragColor = vec4(color / max(alpha, 0.001), alpha * fade);
+      gl_FragColor = vec4(color / max(alpha, 0.001), alpha);
     }
   `;
 
@@ -657,18 +780,28 @@
       const gl = this.gl;
       const figure = this.canvas.parentElement;
       const rect = figure.getBoundingClientRect();
-      const hero = figure.closest('.hero').getBoundingClientRect();
-      const left = Math.max(rect.left, hero.left);
-      const top = Math.max(rect.top, hero.top);
-      const visibleWidth = Math.max(1, Math.min(rect.right, hero.right) - left);
-      const visibleHeight = Math.max(1, Math.min(rect.bottom, hero.bottom) - top);
+      const heroElement = figure.closest('.hero');
+      const hero = heroElement.getBoundingClientRect();
+      const fullSky = this.style !== 'ink';
+      const left = fullSky ? hero.left : Math.max(rect.left, hero.left);
+      const top = fullSky ? hero.top : Math.max(rect.top, hero.top);
+      const visibleWidth = fullSky ? hero.width : Math.max(1, Math.min(rect.right, hero.right) - left);
+      const visibleHeight = fullSky ? hero.height : Math.max(1, Math.min(rect.bottom, hero.bottom) - top);
       const offsetX = left - rect.left;
       const offsetY = top - rect.top;
       this.sceneWidth = rect.width;
       this.sceneHeight = rect.height;
       this.crop = [offsetX / rect.width, 1 - (offsetY + visibleHeight) / rect.height, visibleWidth / rect.width, visibleHeight / rect.height];
-      // Render only the visible portion of the enlarged scene, keeping its
-      // original camera coordinates without spending pixels outside the hero.
+      const heading = heroElement.querySelector('.hero-heading')?.getBoundingClientRect();
+      this.quiet = heading ? [
+        (heading.left + heading.width * 0.5 - left) / visibleWidth,
+        1 - (heading.top + heading.height * 0.45 - top) / visibleHeight,
+        (heading.width * 0.65 + 30) / visibleWidth,
+        (heading.height * 0.65 + 30) / visibleHeight,
+      ] : [0, 0, 0, 0];
+      // The minimal sky covers the whole hero, using the same virtual camera
+      // rectangle as before. Negative crop coordinates extend the sky without
+      // moving or scaling the disk. Ink retains its original clipped target.
       Object.assign(this.canvas.style, {
         left: `${offsetX}px`, top: `${offsetY}px`,
         width: `${visibleWidth}px`, height: `${visibleHeight}px`,
@@ -724,6 +857,7 @@
       gl.uniform2f(this.scene.uniforms.u_resolution, this.sceneWidth, this.sceneHeight);
       gl.uniform4fv(this.scene.uniforms.u_crop, this.crop);
       gl.uniform2f(this.scene.uniforms.u_pointer, x, y);
+      gl.uniform4fv(this.scene.uniforms.u_quiet, this.quiet);
       gl.uniform1f(this.scene.uniforms.u_time, time);
       gl.uniform1f(this.scene.uniforms.u_ink, this.style === 'ink' ? 1 : 0);
       this.texture(this.scene, 'u_inkAtlas', this.inkTexture, 0);

@@ -9,8 +9,8 @@
   };
   const themes = {
     minimal: {
-      fallback: './assets/black-hole-minimal-fallback.png?v=20261018-minimal-rim-aa',
-      label: '实时三维黑洞：暖白与淡琥珀细线流经倾斜的吸积盘，光线在深黑阴影周围弯曲，视角随鼠标轻微转动。',
+      fallback: './assets/black-hole-minimal-fallback.png?v=20261019-local-lens-drift',
+      label: '实时三维黑洞：暖白与淡琥珀细线流经倾斜的吸积盘，稀疏星光经引力透镜弯曲，局部微光衬托深黑阴影，视角随鼠标轻微转动。',
     },
     ink: {
       fallback: './assets/black-hole-ink-fallback.png?v=20261015-ink-light',
