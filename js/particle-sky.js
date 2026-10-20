@@ -13,8 +13,8 @@
     uniform vec3 u_observer;
     uniform vec2 u_chart;
     uniform float u_maxPoint;
-    varying vec2 v_sigma;
-    varying vec3 v_light;
+    varying vec2 v_coreSigma;
+    varying vec3 v_coreLight;
     varying float v_size;
     #define PI 3.14159265359
     void main() {
@@ -36,30 +36,36 @@
       float interior = 1.0 - 2.0 * u_chart.y;
       uv = u_chart.y + uv * interior;
       vec2 rawSigma = a_style.x / distance * jacobian * u_chart.x * interior;
-      // Pixel reconstruction preserves energy as a point crosses texels.
-      v_sigma = sqrt(rawSigma * rawSigma + 0.30);
-      v_size = min(u_maxPoint, ceil(6.0 * max(v_sigma.x, v_sigma.y)));
+      // Concentrate the same starlight into a small core. Keep the pixel
+      // reconstruction variance: subpixel stars still cross texels smoothly.
+      v_coreSigma = sqrt(rawSigma * rawSigma * 0.36 + 0.30);
+      v_size = min(u_maxPoint, ceil(6.0 * max(v_coreSigma.x, v_coreSigma.y)));
       gl_PointSize = min(u_maxPoint, max(v_size, 2.0));
       v_size = gl_PointSize;
-      float energy = rawSigma.x * rawSigma.y / (v_sigma.x * v_sigma.y);
+      float energy = rawSigma.x * rawSigma.y;
       float visibility = edge * smoothstep(80.0, 140.0, distance)
         * (1.0 - smoothstep(0.985, 0.999, abs(d.y)));
-      vec3 tint = mix(vec3(0.69, 0.79, 0.94), vec3(1.0, 0.88, 0.69), a_style.z);
-      v_light = tint * a_style.y * energy * visibility;
+      // Match the restrained cool-white points from the October 4 sky.
+      // No second halo or warm haze, while depth still controls projection.
+      vec3 tint = vec3(193.0, 204.0, 223.0) / 255.0;
+      vec3 light = tint * a_style.y * energy * visibility;
+      v_coreLight = light / (v_coreSigma.x * v_coreSigma.y);
       gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
     }
   `;
   const fragment = `
     precision highp float;
-    varying vec2 v_sigma;
-    varying vec3 v_light;
+    varying vec2 v_coreSigma;
+    varying vec3 v_coreLight;
     varying float v_size;
     void main() {
-      vec2 delta = (gl_PointCoord - 0.5) * v_size / v_sigma;
-      float light = exp(-0.5 * dot(delta, delta));
-      // A zero tail avoids the square boundary of the point primitive.
-      light *= 1.0 - smoothstep(2.3, 3.0, max(abs(delta.x), abs(delta.y)));
-      gl_FragColor = vec4(v_light * light, 0.0);
+      vec2 offset = (gl_PointCoord - 0.5) * v_size;
+      vec2 core = offset / v_coreSigma;
+      float nucleus = exp(-0.5 * dot(core, core));
+      // The filtered core fades before the point boundary. No hard threshold
+      // can blink on/off as a subpixel star drifts between atlas texels.
+      nucleus *= 1.0 - smoothstep(2.3, 3.0, max(abs(core.x), abs(core.y)));
+      gl_FragColor = vec4(v_coreLight * nucleus, 0.0);
     }
   `;
 
@@ -86,7 +92,7 @@
         const y = (random() * 2 - 1) * 1600;
         const z = (random() < 0.5 ? -1 : 1) * (120 + 1380 * random());
         const bright = random();
-        const radius = 0.14 + 0.22 * bright * bright;
+        const radius = 0.14 + 0.16 * bright * bright;
         // Stable broad clusters leave dark breathing room; there is no band.
         const group = 0.5 + 0.5 * Math.sin(x * 0.006 + Math.sin(z * 0.005)) * Math.cos(y * 0.007);
         const luminosity = (0.3 + 1.7 * bright * bright) * (0.22 + 0.78 * group);
@@ -109,6 +115,11 @@
       gl.bindTexture(gl.TEXTURE_2D, this.target.texture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.size, this.size, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      // Lensing stretches stars mostly along one axis. Filter that footprint
+      // without needlessly blurring the perpendicular, narrow stellar core.
+      const anisotropy = gl.getExtension('EXT_texture_filter_anisotropic');
+      if (anisotropy) gl.texParameterf(gl.TEXTURE_2D, anisotropy.TEXTURE_MAX_ANISOTROPY_EXT,
+        Math.min(4, gl.getParameter(anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
       gl.generateMipmap(gl.TEXTURE_2D);
       if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
         throw new Error('Particle sky framebuffer unavailable.');
@@ -139,8 +150,9 @@
       // dependent drift. Pointer displacement never changes orbital time.
       // Whole-volume translations are equivalent under per-star wrapping;
       // bound the uniform to retain subpixel precision during long visits.
-      gl.uniform3f(uniforms.u_observer, ((time - 12) * 0.75) % 3200 + x * 2.1,
-        ((time - 12) * 0.50) % 3200 + y * 1.5, 0);
+      const travel = (time - 12) * 1.50;
+      gl.uniform3f(uniforms.u_observer, (travel * 0.75) % 3200 + x * 2.1,
+        (travel * 0.50) % 3200 + y * 1.5, 0);
       gl.uniform2f(uniforms.u_chart, this.size, this.inset);
       gl.uniform1f(uniforms.u_maxPoint, this.maxPoint);
       gl.enable(gl.BLEND);

@@ -8,6 +8,7 @@
     attribute float a_seed;
     uniform float u_time;
     uniform vec2 u_pointer;
+    uniform float u_chapter;
     uniform float u_aspect;
     uniform vec4 u_crop;
     uniform float u_pointScale;
@@ -22,7 +23,8 @@
       // Increasing atan(z, x) follows the disk material's phi - time * 0.12.
       vec3 point = vec3(c * a_position.x - s * a_position.z,
         a_position.y, s * a_position.x + c * a_position.z);
-      float inclination = radians(83.0 + u_pointer.y * 3.8);
+      vec2 cameraPointer = u_pointer * (1.0 - u_chapter);
+      float inclination = radians(83.0 + cameraPointer.y * 3.8);
       float azimuth = 0.0;
       float distance = 31.784430;
       vec3 origin = distance * vec3(sin(azimuth) * sin(inclination),
@@ -32,13 +34,15 @@
       vec3 up = cross(right, forward);
       vec3 relative = point - origin;
       float depth = dot(relative, forward);
-      vec2 projected = vec2(dot(relative, right), dot(relative, up)) * (3.7 / max(depth, 0.01));
-      float roll = radians(18.0 + u_pointer.x * 1.4);
+      float focal = 3.7 * mix(1.0, 0.34, u_chapter);
+      vec2 projected = vec2(dot(relative, right), dot(relative, up)) * (focal / max(depth, 0.01));
+      float roll = radians(18.0 * (1.0 - u_chapter) + cameraPointer.x * 1.4);
       // Invert the ray shader's screen rotation, then its offset and UV crop.
       vec2 screen = vec2(cos(roll) * projected.x - sin(roll) * projected.y,
         sin(roll) * projected.x + cos(roll) * projected.y);
-      screen += vec2(0.06, -0.01) + u_pointer * vec2(0.012, 0.009);
-      vec2 sceneUV = 0.5 + screen / vec2(u_aspect, 1.0) * 0.5;
+      screen += vec2(0.06, -0.01) * (1.0 - u_chapter) + cameraPointer * vec2(0.012, 0.009);
+      vec2 screenOrigin = mix(vec2(0.5), u_crop.xy + u_crop.zw * 0.5, u_chapter);
+      vec2 sceneUV = screenOrigin + screen / vec2(u_aspect, 1.0) * 0.5;
       vec2 targetUV = (sceneUV - u_crop.xy) / u_crop.zw;
       gl_Position = depth > 0.01 ? vec4(targetUV * 2.0 - 1.0, 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
 
@@ -46,7 +50,7 @@
       float smallSize = 1.10 + 0.85 * random(a_seed + 4.9);
       float baseSize = mix(smallSize, 2.5 + sizeSeed * 0.7, step(0.94, sizeSeed));
       float perspective = clamp(sqrt(distance / max(depth, 0.01)), 0.8, 1.3);
-      float requestedSize = min(baseSize * perspective, 3.6) * u_pointScale;
+      float requestedSize = min(baseSize * perspective, 3.6) * u_pointScale * mix(1.0, 0.34, u_chapter);
       gl_PointSize = clamp(requestedSize, u_pointSizeRange.x, u_pointSizeRange.y);
       v_size = gl_PointSize;
       v_seed = a_seed;
@@ -139,6 +143,7 @@
   class InkSplatter {
     constructor(gl) {
       this.gl = gl;
+      this.chapter = 0;
       this.ready = false;
       this.count = 384;
       this.program = null;
@@ -150,7 +155,7 @@
         this.program = makeProgram(gl);
         this.position = gl.getAttribLocation(this.program, 'a_position');
         this.seed = gl.getAttribLocation(this.program, 'a_seed');
-        this.uniforms = Object.fromEntries(['u_time', 'u_pointer', 'u_aspect', 'u_crop',
+        this.uniforms = Object.fromEntries(['u_time', 'u_pointer', 'u_chapter', 'u_aspect', 'u_crop',
           'u_pointScale', 'u_pointSizeRange', 'u_scene', 'u_resolution']
           .map(name => [name, gl.getUniformLocation(this.program, name)]));
         this.pointSizeRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
@@ -196,7 +201,8 @@
       return this.ready;
     }
 
-    render({ time = 12, x = 0, y = 0, width, height, sceneWidth, sceneHeight, crop = [0, 0, 1, 1], sceneTexture }) {
+    render({ time = 12, x = 0, y = 0, chapter = this.chapter, width, height, sceneWidth, sceneHeight, crop = [0, 0, 1, 1], sceneTexture }) {
+      this.chapter = Math.max(0, Math.min(1, Number(chapter) || 0));
       const gl = this.gl;
       if (!this.program || !sceneTexture || gl.isContextLost() || !(sceneWidth > 0 && sceneHeight > 0)
         || !(crop[2] > 0 && crop[3] > 0) || !this.resize(width, height)) return null;
@@ -246,6 +252,7 @@
         gl.uniform1i(this.uniforms.u_scene, 0);
         gl.uniform1f(this.uniforms.u_time, time);
         gl.uniform2f(this.uniforms.u_pointer, x, y);
+        gl.uniform1f(this.uniforms.u_chapter, this.chapter);
         gl.uniform1f(this.uniforms.u_aspect, sceneWidth / sceneHeight);
         gl.uniform4fv(this.uniforms.u_crop, crop);
         gl.uniform2f(this.uniforms.u_resolution, this.target.width, this.target.height);

@@ -36,9 +36,11 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
   let nextStyle = 'minimal';
   const frames = new Map();
   const timers = new Map();
+  const attempts = [];
   const renders = [];
   const renderers = [];
   const samples = [];
+  const polls = [];
   const media = {
     '(prefers-reduced-motion: reduce)': eventTarget({ matches: reduced }),
     '(pointer: fine)': eventTarget({ matches: true }),
@@ -75,15 +77,19 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
         this.lost = false;
         this.disposed = false;
         this.busy = false;
+        this.frameInterval = 1000 / 30;
+        this.timingResets = 0;
         this.resizes = 0;
         canvas.addEventListener('webglcontextlost', () => { this.ready = false; this.lost = true; });
       }
       resize() { this.resizes++; }
-      resetTiming() {}
+      resetTiming() { this.timingResets++; }
+      pollGpu() { polls.push(now); }
       sampleFrame(timestamp) { samples.push(timestamp); }
       dispose() { this.disposed = true; this.ready = false; }
       setStyle(style) { this.style = style; this.ready = !(deferInk && style === 'ink'); }
       render(time, x, y) {
+        attempts.push({ time, x, y, at: now });
         if (!this.ready || this.lost || this.disposed || this.busy) return false;
         renders.push({ time, x, y, at: now });
         now += renderCost;
@@ -119,7 +125,7 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
     now = time;
   }
   return {
-    renders, layers, renderers, samples,
+    attempts, renders, layers, renderers, samples, polls,
     get renderer() { return renderer; },
     get pendingFrames() { return frames.size; },
     get pendingTimers() { return timers.size; },
@@ -179,6 +185,56 @@ await test('fast, slow and uneven rAF schedules reach the same orbital phase', (
     for (const time of schedule) site.frame(time);
     phase(site.last.time, 13);
   }
+});
+
+await test('the default cadence renders every second 60 Hz frame despite timestamp rounding', () => {
+  const site = browser();
+  for (let index = 1; index <= 60; index++) site.frame(index * 16.666);
+  assert.equal(site.renders.length, 31, 'initial draw plus 30 animated frames');
+  phase(site.last.time, 12.99996);
+});
+
+await test('quality-driven cadence changes reduce draws without changing orbital phase', () => {
+  const site = browser();
+  for (let index = 1; index <= 72; index++) {
+    if (index === 25) site.renderer.frameInterval = 1000 / 15;
+    if (index === 49) site.renderer.frameInterval = 1000 / 20;
+    site.frame(index * 1000 / 60);
+  }
+  assert.equal(site.renders.length, 27, '12 frames at 30 fps, 6 at 15 fps, 8 at 20 fps, plus initial draw');
+  for (const render of site.renders) phase(render.time, 12 + render.at / 1000);
+  phase(site.last.time, 13.2);
+  assert.equal(site.pendingFrames, 1, 'the animation loop remains active at every cadence');
+});
+
+await test('busy animated frames wait for their next cadence slot without a timer bypass', () => {
+  const site = browser();
+  site.renderer.frameInterval = 1000 / 15;
+  site.renderer.busy = true;
+  site.frame(1000 / 15);
+  const attempts = site.attempts.length;
+  assert.equal(site.pendingDrawTasks, 0);
+  site.renderer.busy = false;
+  site.retry(100);
+  site.frame(100);
+  assert.equal(site.attempts.length, attempts, 'neither a retry nor an early rAF submits another draw');
+  site.frame(2000 / 15);
+  assert.equal(site.attempts.length, attempts + 1);
+  phase(site.last.time, 12 + 2 / 15);
+});
+
+await test('GPU completion is polled at display cadence while slow draws and pauses remain bounded', () => {
+  const site = browser();
+  site.renderer.frameInterval = 1000 / 15;
+  for (let index = 1; index <= 60; index++) site.frame(index * 1000 / 60);
+  assert.equal(site.polls.length, 60);
+  assert.equal(site.renders.length, 16, 'polling does not submit extra frames');
+  const resets = site.renderer.timingResets;
+  site.visible(1100, false);
+  assert.equal(site.renderer.timingResets, resets + 1, 'pausing invalidates stale GPU timing observations');
+  site.frame(2000);
+  assert.equal(site.polls.length, 60, 'an offscreen scene does not poll the GPU');
+  assert.equal(site.renders.length, 16);
 });
 
 await test('a pointer storm changes the camera but not the orbital speed on slow frames', () => {
@@ -404,6 +460,23 @@ await test('a busy reduced-motion resize retries one draw without starting the s
   assert.equal(site.renders.length, 2);
   assert.equal(site.pendingFrames, 0);
   phase(site.last.time, 12);
+});
+
+await test('resuming animation cancels static retries, including an already queued callback', () => {
+  const site = browser({ reduced: true });
+  site.renderer.frameInterval = 1000 / 15;
+  site.renderer.busy = true;
+  site.resize(100);
+  const queued = site.queuedDrawTasks();
+  assert.equal(queued.length, 1);
+  site.motion(120, false);
+  assert.equal(site.pendingDrawTasks, 0);
+  const attempts = site.attempts.length;
+  site.renderer.busy = false;
+  for (const callback of queued) callback();
+  assert.equal(site.attempts.length, attempts, 'an obsolete static retry cannot enter the animation schedule');
+  site.frame(200);
+  phase(site.last.time, 12.08);
 });
 
 await test('offscreen, hidden and pagehide stops cancel busy-GPU draw retries', () => {

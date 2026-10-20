@@ -55,17 +55,62 @@
   if (!postsList || !Array.isArray(window.BLOG_POSTS)) return;
 
   const posts = window.BLOG_POSTS.filter(post => post && typeof post.title === 'string');
-  if (!posts.length) {
-    for (const element of [searchForm, filterList, resultsCount, emptyState, loadMore]) {
-      if (element) element.hidden = true;
-    }
-    return;
-  }
   if (!searchForm || !searchInput || !filterList) return;
 
   searchForm.hidden = false;
-  filterList.hidden = false;
+  filterList.hidden = posts.length === 0;
   if (resultsCount) resultsCount.hidden = false;
+
+  const searchToggle = searchForm.querySelector('.header-search-toggle');
+  const searchFields = searchForm.querySelector('.header-search-fields');
+  if (searchToggle && searchFields) {
+    let hovering = false;
+    let revealOnClick = false;
+    function setSearchExpanded(expanded) {
+      // Keep the flex layout intact while the text fades and the form contracts.
+      searchFields.hidden = false;
+      searchFields.inert = !expanded;
+      searchFields.setAttribute('aria-hidden', String(!expanded));
+      searchForm.classList.toggle('is-expanded', expanded);
+      searchToggle.setAttribute('aria-expanded', String(expanded));
+    }
+    searchForm.addEventListener('pointerenter', event => {
+      if (event.pointerType === 'touch') return;
+      hovering = true;
+      setSearchExpanded(true);
+    });
+    searchForm.addEventListener('pointerleave', event => {
+      if (event.pointerType === 'touch') return;
+      hovering = false;
+      if (!searchForm.contains(document.activeElement)) setSearchExpanded(false);
+    });
+    searchForm.addEventListener('focusin', () => setSearchExpanded(true));
+    searchForm.addEventListener('focusout', () => {
+      // Clearing a query can hide the focused clear button before returning to the input.
+      queueMicrotask(() => {
+        if (!hovering && !searchForm.contains(document.activeElement)) setSearchExpanded(false);
+      });
+    });
+    searchToggle.addEventListener('pointerdown', () => {
+      revealOnClick = searchFields.inert;
+    });
+    searchToggle.addEventListener('click', event => {
+      const firstTap = event.detail > 0 && revealOnClick;
+      const emptyButton = document.activeElement !== searchInput && !searchInput.value.trim();
+      if (firstTap || emptyButton) event.preventDefault();
+      revealOnClick = false;
+      setSearchExpanded(true);
+      searchInput.focus({ preventScroll: true });
+    });
+    searchForm.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      hovering = false;
+      searchToggle.focus({ preventScroll: true });
+      setSearchExpanded(false);
+    });
+    setSearchExpanded(false);
+  }
 
   const pageSize = 6;
   const categories = [...new Set(posts.map(post => post.category).filter(Boolean))];
@@ -163,6 +208,14 @@
   }
 
   function render(append = false) {
+    // Keep the authored welcome panel while the first article is still pending.
+    if (!posts.length) {
+      if (clearSearch) clearSearch.hidden = searchInput.value.length === 0;
+      if (resultsCount) resultsCount.textContent = '暂无已发布的文章';
+      if (emptyState) emptyState.hidden = true;
+      if (loadMore) loadMore.hidden = true;
+      return;
+    }
     const matches = matchingPosts();
     const start = append ? displayedCount : 0;
     const visiblePosts = matches.slice(start, state.limit);
@@ -272,6 +325,6 @@
   });
   window.addEventListener('popstate', restoreFromUrl);
 
-  createFilters();
+  if (posts.length) createFilters();
   restoreFromUrl();
 })();

@@ -9,7 +9,8 @@ const source = (await Promise.all(['particle-sky', 'black-hole'].map(name =>
 // This WebGL double models the destructive effect of canvas resizing and the
 // asynchronous GPU queue. The real renderer runs unchanged; no browser or GPU
 // is needed to prove that a presented frame survives deferred work.
-async function browser({ timerQuery = false, webgl2 = false, style = 'minimal' } = {}) {
+async function browser({ timerQuery = false, webgl2 = false, style = 'minimal', viewport = [1440, 900], dpr = 1,
+  drawMilliseconds = 0, pollMilliseconds = 0 } = {}) {
   let id = 0;
   let framebuffer = null;
   let presented = false;
@@ -29,7 +30,7 @@ async function browser({ timerQuery = false, webgl2 = false, style = 'minimal' }
   const warnings = [];
   const textureUnits = new Map();
   const drawBindings = [];
-  const bounds = { left: 0, top: 0, right: 1440, bottom: 900, width: 1440, height: 900 };
+  const bounds = { left: 0, top: 0, right: viewport[0], bottom: viewport[1], width: viewport[0], height: viewport[1] };
   const heading = { left: 120, top: 150, width: 550, height: 300 };
   const record = (name, ...args) => calls.push({ name, args });
   const create = type => {
@@ -111,6 +112,7 @@ async function browser({ timerQuery = false, webgl2 = false, style = 'minimal' }
       });
       drawBindings.push({ program: activeProgram, framebuffer, samplers });
       record('draw', framebuffer, mode, first, count);
+      now += drawMilliseconds;
       if (mode === gl.POINTS) record('particleDraw', framebuffer, count);
       if (framebuffer === null) presented = true;
     },
@@ -132,6 +134,7 @@ async function browser({ timerQuery = false, webgl2 = false, style = 'minimal' }
       assert.equal(flags, 0, 'polling must not ask the driver to synchronously flush');
       assert.equal(timeout, 0, 'animation must only perform nonblocking fence polls');
       record('clientWaitSync', sync, flags, timeout);
+      now += pollMilliseconds;
       return sync.status;
     },
     deleteSync(sync) {
@@ -197,7 +200,7 @@ async function browser({ timerQuery = false, webgl2 = false, style = 'minimal' }
   };
   const window = {};
   runInNewContext(source, {
-    window, devicePixelRatio: 1,
+    window, devicePixelRatio: dpr,
     performance: { now: () => now },
     Image: class { set src(value) { this.url = value; Promise.resolve().then(() => this.onload()); } },
     console: { warn: (...args) => warnings.push(args.map(String).join(' ')) },
@@ -240,6 +243,43 @@ async function browser({ timerQuery = false, webgl2 = false, style = 'minimal' }
   };
 }
 
+function costWindow(site, lower, upper = lower, step = 50) {
+  for (let i = 0; i < 8; i++) {
+    site.advance(step);
+    site.renderer.recordGpuCost(lower, upper);
+  }
+}
+
+await test('WebGL 2 preserves native 1080p and 1440p detail while bounding high-DPI work', async () => {
+  for (const viewport of [[1920, 1080], [2560, 1440]]) {
+    const site = await browser({ webgl2: true, viewport });
+    assert.equal(site.renderer.render(12, 0, 0), true);
+    assert.equal(site.canvas.width, viewport[0]);
+    assert.equal(site.canvas.height, viewport[1]);
+    assert.equal(site.renderer.frameInterval, 1000 / 30);
+    site.renderer.dispose();
+  }
+  const dense = await browser({ webgl2: true, viewport: [2560, 1440], dpr: 3 });
+  dense.renderer.render(12, 0, 0);
+  assert.ok(dense.canvas.width <= 3200);
+  assert.ok(dense.canvas.width * dense.canvas.height < 3705000,
+    'a high-DPI display must not bypass the bounded pixel budget');
+  assert.ok(dense.canvas.width >= 2560, 'the high-DPI cap must retain native desktop detail');
+  dense.renderer.dispose();
+  const small = await browser({ webgl2: true, viewport: [390, 844], dpr: 3 });
+  small.renderer.render(12, 0, 0);
+  assert.equal(small.canvas.width, 780, 'small screens should stop at 2x device resolution');
+  assert.equal(small.canvas.height, 1688);
+  small.renderer.dispose();
+  for (const [timerQuery, budget] of [[true, 1800000], [false, 900000]]) {
+    const legacy = await browser({ timerQuery, viewport: [2560, 1440], dpr: 2 });
+    legacy.renderer.render(12, 0, 0);
+    assert.ok(legacy.canvas.width * legacy.canvas.height <= budget + 3000,
+      'higher native detail must not increase legacy-context GPU budgets');
+    legacy.renderer.dispose();
+  }
+});
+
 await test('adaptive resizing keeps the presented frame until its replacement is drawn', async () => {
   const site = await browser();
   const { renderer } = site;
@@ -247,8 +287,14 @@ await test('adaptive resizing keeps the presented frame until its replacement is
   const width = site.canvas.width;
   const allocations = site.count('texImage2D');
   const clears = site.count('canvasWidth');
-  for (let i = 0; i <= 45; i++) renderer.sampleFrame(1 + i * 50);
-  assert.ok(renderer.quality < 1, 'slow frames should request a lower resolution');
+  renderer.sampleFrame(1);
+  for (let i = 1; i <= 135; i++) {
+    site.advance(120);
+    renderer.sampleFrame(1 + i * 120);
+  }
+  assert.equal(renderer.frameInterval, 1000 / 15);
+  assert.ok(renderer.quality >= 0.7 && renderer.quality < 1,
+    'the legacy fallback should lower resolution only after reducing cadence');
   assert.equal(site.canvas.width, width);
   assert.equal(site.count('canvasWidth'), clears);
   assert.equal(site.count('texImage2D'), allocations);
@@ -351,20 +397,42 @@ await test('disjoint GPU timing discards even an unfinished query instead of sta
   renderer.dispose();
 });
 
-await test('valid GPU duration lowers resolution before drawing the replacement frame', async () => {
+await test('sustained GPU overload lowers cadence before resolution and respects the cooldown', async () => {
   const site = await browser({ timerQuery: true });
   const { renderer } = site;
   renderer.render(12, 0, 0);
   const width = site.canvas.width;
   for (let i = 0; i < 8; i++) {
+    site.advance(50);
     site.complete(50);
     assert.equal(renderer.render(13 + i, 0, 0), true);
     assert.equal(site.presented, true);
   }
-  assert.ok(site.canvas.width < width);
-  assert.ok(renderer.quality >= 0.5);
+  assert.equal(renderer.frameInterval, 1000 / 20);
+  assert.equal(renderer.quality, 1, 'the first sustained overload should preserve fine detail');
+  assert.equal(site.canvas.width, width);
   assert.equal(site.resultReads, 8);
   assert.equal(site.queries.size, 1);
+  costWindow(site, 80);
+  assert.equal(renderer.frameInterval, 1000 / 20, 'changes must not repeat during the cooldown');
+  site.advance(2000);
+  costWindow(site, 80);
+  assert.equal(renderer.frameInterval, 1000 / 15);
+  assert.equal(renderer.quality, 1, 'resolution remains intact until the slowest cadence is reached');
+  site.advance(2000);
+  costWindow(site, 80);
+  assert.ok(renderer.quality >= 0.9 && renderer.quality < 1,
+    'one resolution step must be no larger than 10 percent');
+  assert.equal(site.canvas.width, width, 'the displayed frame must survive a pending resolution change');
+  site.complete(80);
+  renderer.render(24, 0, 0);
+  assert.ok(site.canvas.width < width);
+  assert.equal(site.presented, true);
+  for (let i = 0; i < 12; i++) {
+    site.advance(2000);
+    costWindow(site, 200);
+  }
+  assert.ok(renderer.quality >= 0.7, 'sustained overload must not halve the image resolution');
   renderer.dispose();
 });
 
@@ -377,6 +445,80 @@ await test('one driver stall does not permanently lower rendering quality', asyn
     renderer.render(13 + i, 0, 0);
   }
   assert.equal(renderer.quality, 1);
+  assert.equal(renderer.frameInterval, 1000 / 30);
+  renderer.dispose();
+});
+
+await test('recovery uses completion upper bounds and sustained headroom, restoring detail before cadence', async () => {
+  const site = await browser({ webgl2: true });
+  const { renderer } = site;
+  renderer.quality = 0.8;
+  renderer.frameInterval = 1000 / 15;
+  renderer.resize();
+  renderer.render(12, 0, 0);
+  const width = site.canvas.width;
+  for (let i = 0; i < 16; i++) costWindow(site, 0, 50);
+  assert.equal(renderer.quality, 0.8,
+    'a completed first poll is not zero-cost evidence when its upper bound has insufficient headroom');
+  for (let i = 0; i < 12; i++) costWindow(site, 4, 8);
+  assert.equal(renderer.quality, 0.8, 'recovery must wait at least five seconds of good samples');
+  for (let i = 0; i < 2; i++) costWindow(site, 4, 8);
+  assert.ok(Math.abs(renderer.quality - 0.85) < 1e-9);
+  assert.equal(renderer.frameInterval, 1000 / 15, 'recover detail before increasing animation rate');
+  assert.equal(site.canvas.width, width, 'upscaling must keep the old frame intact until its replacement');
+  assert.equal(site.presented, true);
+  site.complete();
+  renderer.render(13, 0, 0);
+  assert.ok(site.canvas.width > width);
+  assert.equal(site.presented, true);
+  for (let i = 0; i < 5; i++) costWindow(site, 4, 8);
+  assert.ok(Math.abs(renderer.quality - 0.85) < 1e-9,
+    'good samples within the cooldown cannot cause another immediate upscale');
+  for (let i = 0; i < 80; i++) costWindow(site, 4, 8);
+  assert.equal(renderer.quality, 1);
+  assert.equal(renderer.frameInterval, 1000 / 20,
+    'cadence should recover one tier only after detail reaches full quality');
+  for (let i = 0; i < 20; i++) costWindow(site, 4, 8);
+  assert.equal(renderer.frameInterval, 1000 / 30);
+  renderer.dispose();
+});
+
+await test('near-threshold timing interrupts recovery instead of causing resolution oscillation', async () => {
+  const site = await browser({ webgl2: true });
+  const { renderer } = site;
+  renderer.quality = 0.8;
+  renderer.frameInterval = 50;
+  for (let i = 0; i < 12; i++) costWindow(site, 4, 8);
+  costWindow(site, 30, 35);
+  for (let i = 0; i < 12; i++) costWindow(site, 4, 8);
+  assert.equal(renderer.quality, 0.8, 'headroom must be sustained rather than accumulated across busy windows');
+  assert.equal(renderer.frameInterval, 50);
+  renderer.dispose();
+});
+
+await test('recovery budgets the additional pixels instead of only checking current GPU cost', async () => {
+  const site = await browser({ webgl2: true });
+  const { renderer } = site;
+  renderer.quality = 0.8;
+  renderer.frameInterval = 50;
+  for (let i = 0; i < 20; i++) costWindow(site, 4, 30);
+  assert.equal(renderer.quality, 0.8,
+    'a cost below the current headroom threshold can still be too high after the proposed upscale');
+  assert.equal(renderer.frameInterval, 50);
+  renderer.dispose();
+});
+
+await test('legacy JS frame cadence alone cannot prove enough GPU headroom to raise quality', async () => {
+  const site = await browser();
+  const { renderer } = site;
+  renderer.quality = 0.8;
+  renderer.frameInterval = 1000 / 15;
+  for (let i = 0; i < 600; i++) {
+    site.advance(16);
+    renderer.sampleFrame(1 + i * 16);
+  }
+  assert.equal(renderer.quality, 0.8);
+  assert.equal(renderer.frameInterval, 1000 / 15);
   renderer.dispose();
 });
 
@@ -431,6 +573,108 @@ await test('WebGL 2 uses one completion fence after all passes without enabling 
   assert.equal(frame.filter(call => call.name === 'fenceSync').length, 1);
   assert.equal(site.count('createQuery'), 0);
   assert.equal(site.syncs.size, 1);
+  renderer.dispose();
+});
+
+await test('completion polling measures both timing bounds without drawing or reallocating', async () => {
+  const site = await browser({ webgl2: true });
+  const { renderer } = site;
+  const samples = [];
+  renderer.recordGpuCost = (...sample) => samples.push(sample);
+  renderer.render(12, 0, 0);
+  const draws = site.count('draw');
+  const allocations = site.count('texImage2D');
+  site.advance(12);
+  assert.equal(renderer.pollGpu(), false);
+  site.advance(6);
+  site.complete();
+  assert.equal(renderer.pollGpu(), true);
+  assert.deepEqual(samples, [[12, 18]],
+    'the last unfinished poll and first completed poll must bracket GPU completion');
+  assert.equal(site.count('draw'), draws);
+  assert.equal(site.count('texImage2D'), allocations);
+  assert.equal(site.syncs.size, 0);
+  assert.equal(site.presented, true);
+  renderer.render(13, 0, 0);
+  site.advance(16);
+  site.complete();
+  renderer.pollGpu();
+  assert.deepEqual(samples[1], [0, 16],
+    'an already complete first poll still has a nonzero cost upper bound');
+  renderer.dispose();
+  const calls = site.calls.length;
+  assert.equal(renderer.pollGpu(), false);
+  assert.equal(site.calls.length, calls, 'polling a disposed renderer must not touch GL');
+});
+
+await test('completion upper bounds include overlapping draw submission and the native fence poll', async () => {
+  const site = await browser({ webgl2: true, drawMilliseconds: 5, pollMilliseconds: 7 });
+  const { renderer } = site;
+  const samples = [];
+  renderer.recordGpuCost = (...sample) => samples.push(sample);
+  renderer.render(12, 0, 0);
+  assert.equal(site.count('draw'), 4, 'all four passes contribute submission time');
+  site.advance(16);
+  site.complete();
+  assert.equal(renderer.pollGpu(), true);
+  assert.deepEqual(samples, [[0, 43]],
+    'upper bound must cover 20 ms of draw submission, 16 ms until polling and 7 ms inside the native poll');
+  renderer.render(13, 0, 0);
+  site.advance(12);
+  assert.equal(renderer.pollGpu(), false);
+  site.advance(6);
+  site.complete();
+  assert.equal(renderer.pollGpu(), true);
+  assert.deepEqual(samples[1], [12, 52],
+    'an unfinished poll keeps its conservative post-fence lower bound while the upper includes both native calls');
+  renderer.dispose();
+});
+
+await test('resetting timing discards stale samples while retaining cadence, quality and the in-flight fence', async () => {
+  const site = await browser({ webgl2: true });
+  const { renderer } = site;
+  renderer.quality = 0.8;
+  renderer.frameInterval = 50;
+  renderer.resize();
+  renderer.render(12, 0, 0);
+  const fence = renderer.gpuSync;
+  costWindow(site, 4, 8);
+  renderer.recordGpuCost(4, 8);
+  assert.notEqual(renderer.headroomSince, null);
+  assert.equal(renderer.gpuTimes.length, 1);
+  renderer.resetTiming();
+  assert.equal(renderer.quality, 0.8);
+  assert.equal(renderer.frameInterval, 50);
+  assert.equal(renderer.gpuSync, fence, 'pausing must not discard the GPU submission gate');
+  assert.equal(renderer.gpuTimes.length, 0);
+  assert.equal(renderer.gpuUpperTimes.length, 0);
+  assert.equal(renderer.headroomSince, null);
+  site.advance(60000);
+  assert.equal(renderer.pollGpu(), false, 'the pending frame remains gated after a pause');
+  site.complete();
+  assert.equal(renderer.pollGpu(), true);
+  assert.equal(renderer.gpuTimes.length, 0, 'the stale frame must never enter adaptation');
+  for (let i = 0; i < 12; i++) costWindow(site, 4, 8);
+  assert.equal(renderer.quality, 0.8, 'time spent paused must not count toward recovery');
+  renderer.dispose();
+});
+
+await test('a long scheduling gap discards partial recovery evidence even without a lifecycle callback', async () => {
+  const site = await browser({ webgl2: true });
+  const { renderer } = site;
+  renderer.quality = 0.8;
+  renderer.frameInterval = 50;
+  costWindow(site, 4, 8);
+  renderer.recordGpuCost(4, 8);
+  renderer.render(12, 0, 0);
+  site.advance(10000);
+  site.complete();
+  assert.equal(renderer.pollGpu(), true);
+  assert.equal(renderer.gpuTimes.length, 0);
+  assert.equal(renderer.gpuUpperTimes.length, 0);
+  assert.equal(renderer.headroomSince, null, 'scheduler suspension is not evidence of idle GPU capacity');
+  for (let i = 0; i < 12; i++) costWindow(site, 4, 8);
+  assert.equal(renderer.quality, 0.8);
   renderer.dispose();
 });
 
@@ -523,7 +767,7 @@ await test('failure to create a completion fence restores fallback and stops fur
   renderer.dispose();
 });
 
-await test('repeated observed unfinished fences reduce quality while preserving the displayed frame', async () => {
+await test('repeated observed unfinished fences lower cadence while preserving the displayed detail', async () => {
   const site = await browser({ webgl2: true });
   const { renderer } = site;
   renderer.render(12, 0, 0);
@@ -536,8 +780,9 @@ await test('repeated observed unfinished fences reduce quality while preserving 
     assert.equal(renderer.render(13 + i, 0, 0), true);
     assert.equal(site.presented, true);
   }
-  assert.ok(renderer.quality >= 0.5 && renderer.quality < 1);
-  assert.ok(site.canvas.width < width);
+  assert.equal(renderer.frameInterval, 1000 / 20);
+  assert.equal(renderer.quality, 1);
+  assert.equal(site.canvas.width, width);
   assert.equal(site.syncs.size, 1);
   renderer.dispose();
 });
@@ -595,5 +840,93 @@ await test('ink-only rendering binds a safe inactive star sampler even when no p
     assert.notEqual(inactiveStars.texture, renderer.sceneTarget.texture);
   }
   assert.equal(site.count('particleDraw'), 0);
+  renderer.dispose();
+});
+
+await test('chapter bloom mipmaps share one GPU fence, defer while busy, and restore hero filtering after resize', async () => {
+  const site = await browser({ webgl2: true });
+  const { renderer } = site;
+  const gl = renderer.gl;
+  const bloomOperations = () => {
+    let unit = gl.TEXTURE0;
+    const bindings = new Map();
+    return site.calls.flatMap((call, index) => {
+      if (call.name === 'activeTexture') unit = call.args[0];
+      if (call.name === 'bindTexture') bindings.set(unit, call.args[1]);
+      return bindings.get(unit) === renderer.bloomTarget.texture
+        && ['generateMipmap', 'texParameteri'].includes(call.name) ? [{ ...call, index }] : [];
+    });
+  };
+
+  assert.equal(renderer.render(12, 0, 0, 0), true);
+  const heroDraws = site.count('drawArrays');
+  assert.equal(bloomOperations().filter(call => call.name === 'generateMipmap').length, 0);
+  site.complete();
+
+  const chapterStart = site.calls.length;
+  const fencesBefore = site.count('fenceSync');
+  assert.equal(renderer.render(13, 0, 0, 1), true);
+  assert.equal(site.count('drawArrays') - heroDraws, heroDraws,
+    'chapter glow must reuse the existing render passes');
+  const chapterBloom = bloomOperations().filter(call => call.index >= chapterStart);
+  const mipmaps = chapterBloom.filter(call => call.name === 'generateMipmap');
+  assert.equal(mipmaps.length, 1, 'the filtered bloom gets one mip chain per submitted chapter frame');
+  assert.ok(chapterBloom.some(call => call.name === 'texParameteri'
+    && call.args[1] === gl.TEXTURE_MIN_FILTER && call.args[2] === gl.LINEAR_MIPMAP_LINEAR));
+  assert.equal(site.count('fenceSync') - fencesBefore, 1);
+  assert.equal(site.syncs.size, 1, 'chapter bloom cannot create a second in-flight frame');
+  assert.ok(site.calls.findLastIndex(call => call.name === 'fenceSync') > mipmaps[0].index,
+    'the completion fence must cover bloom mipmap generation');
+
+  site.bounds.width = site.bounds.right = 1001;
+  renderer.resize();
+  const busyCounts = ['drawArrays', 'generateMipmap', 'texImage2D', 'canvasWidth', 'fenceSync']
+    .map(name => [name, site.count(name)]);
+  assert.equal(renderer.render(14, 0, 0, 1), false);
+  for (const [name, count] of busyCounts) {
+    assert.equal(site.count(name), count, `a busy chapter frame must defer ${name}`);
+  }
+
+  site.complete();
+  const heroStart = site.calls.length;
+  assert.equal(renderer.render(15, 0, 0, 0), true);
+  assert.equal(site.canvas.width, 1001, 'the returning hero frame applies the pending resize');
+  const heroBloom = bloomOperations().filter(call => call.index >= heroStart);
+  assert.equal(heroBloom.filter(call => call.name === 'generateMipmap').length, 0);
+  assert.ok(heroBloom.some(call => call.name === 'texParameteri'
+    && call.args[1] === gl.TEXTURE_MIN_FILTER && call.args[2] === gl.LINEAR),
+    'resized hero bloom must not require an ungenerated mip chain');
+  assert.ok(site.calls.slice(heroStart).some(call => call.name === 'uniform1f'
+    && call.args[0]?.name === 'u_softGlow' && call.args[1] === 0));
+  renderer.dispose();
+});
+
+await test('legacy chapter rendering never requests mipmaps for a non-power-of-two bloom target', async () => {
+  const site = await browser({ viewport: [1001, 777] });
+  const { renderer } = site;
+  const gl = renderer.gl;
+  const initialMipmaps = site.count('generateMipmap');
+  assert.equal(renderer.render(12, 0, 0, 0), true);
+  assert.notEqual(renderer.bloomTarget.width & (renderer.bloomTarget.width - 1), 0);
+  assert.notEqual(renderer.bloomTarget.height & (renderer.bloomTarget.height - 1), 0);
+  const heroMipmaps = site.count('generateMipmap') - initialMipmaps;
+  const beforeChapterMipmaps = site.count('generateMipmap');
+  const chapterStart = site.calls.length;
+  assert.equal(renderer.render(13, 0, 0, 1), true);
+  assert.equal(site.count('generateMipmap') - beforeChapterMipmaps, heroMipmaps,
+    'the chapter must not add bloom mipmaps to the existing particle-atlas filtering');
+  let unit = gl.TEXTURE0;
+  const bindings = new Map();
+  for (const call of site.calls) {
+    if (call.name === 'activeTexture') unit = call.args[0];
+    if (call.name === 'bindTexture') bindings.set(unit, call.args[1]);
+    if (bindings.get(unit) !== renderer.bloomTarget.texture) continue;
+    assert.notEqual(call.name, 'generateMipmap', 'WebGL 1 cannot mipmap this NPOT bloom texture');
+    if (call.name === 'texParameteri' && call.args[1] === gl.TEXTURE_MIN_FILTER) {
+      assert.equal(call.args[2], gl.LINEAR, 'legacy bloom must retain a complete, non-mipmapped sampler');
+    }
+  }
+  assert.ok(site.calls.slice(chapterStart).some(call => call.name === 'uniform1f'
+    && call.args[0]?.name === 'u_softGlow' && call.args[1] === 0));
   renderer.dispose();
 });

@@ -26,6 +26,7 @@
     uniform vec4 u_quiet;
     uniform float u_time;
     uniform float u_ink;
+    uniform float u_chapter;
     uniform sampler2D u_inkAtlas;
     uniform sampler2D u_inkLight;
     uniform sampler2D u_starSky;
@@ -47,18 +48,23 @@
       // Filter each harmonic against both screen axes. A pulse's base
       // frequency alone misses the fine edges that alias before the lanes do.
       float frequency = max(abs(gradient.x), abs(gradient.y));
+      float filtered = max(smoothstep(0.04, 0.08, frequency), smoothstep(0.5, 1.0, frequency / duty));
+      if (filtered == 0.0) return coverage;
+      // A positive, normalized Fejer kernel avoids negative Fourier ringing.
+      // Clipping that ringing would recreate the frequencies just removed.
+      float bandwidth = min(17.0, 0.48 / max(frequency, 0.0001));
       float bandLimited = duty;
-      for (int harmonic = 1; harmonic <= 8; harmonic++) {
+      for (int harmonic = 1; harmonic <= 16; harmonic++) {
         float n = float(harmonic);
-        float weight = exp(-2.0 * PI * PI * 0.1444 * n * n * dot(gradient, gradient))
-          * (1.0 - smoothstep(0.38, 0.5, n * frequency));
+        if (n >= bandwidth) break;
+        float weight = exp(-2.0 * PI * PI * 0.0625 * n * n * dot(gradient, gradient))
+          * max(0.0, 1.0 - n / bandwidth);
         bandLimited += 2.0 * sin(PI * n * duty) / (PI * n)
           * cos(2.0 * PI * n * (fract(phase) - 0.5)) * weight;
       }
-      // Wide, resolved strands keep their original profile. Only compressed
-      // strands use the band-limited profile instead of flickering between pixels.
-      return mix(clamp(coverage, 0.0, 1.0), clamp(bandLimited, 0.0, 1.0),
-        smoothstep(0.04, 0.08, frequency));
+      // Blend by both spacing and actual strand width. Widely spaced lines
+      // can still be narrower than a pixel; resolved strands keep their profile.
+      return mix(coverage, bandLimited, filtered);
     }
     vec3 acceleration(vec3 p, float h2) {
       float r2 = dot(p, p);
@@ -99,7 +105,6 @@
       vec2 flowGradient = phaseGradient * 3.0 + radialGradient * 0.85;
       float flowFilter = exp(-0.5 * dot(flowGradient, flowGradient));
       float flow = 0.76 + 0.24 * sin(flowPhase) * flowFilter;
-      float filamentLight = (0.055 + 0.12 * bundles + filament * (0.28 + 1.15 * bundles)) * flow;
 
       // Local orbital velocity; -ray is the emitted photon's direction.
       vec3 tangent = normalize(vec3(-p.z, 0.0, p.x));
@@ -133,10 +138,21 @@
       float shoulder = exp(-0.5 * pow((r - 10.15) / filteredShoulder, 2.0)) * shoulderWidth / filteredShoulder;
       float edgeFacing = 0.72 - 0.22 * sin(phi);
       vec3 edgeLight = mix(pearl, white, 0.35) * (rim * 0.40 + shoulder * 0.15) * edgeFacing;
-      // Lift the minimalist disk before tone mapping, so dim strands become
-      // clearer while the brightest lanes keep their smooth highlight rolloff.
-      const float diskExposure = 1.22;
-      return (color * energy * filamentLight * innerEdge + edgeLight) * diskExposure;
+      // A small material-light lift keeps the distant disk readable. Apply it
+      // before tone mapping and lane filtering so narrow strands stay stable.
+      float chapterLight = mix(1.0, 1.18, u_chapter);
+      energy *= chapterLight;
+      edgeLight *= chapterLight;
+      // Keep the disk luminous after removing the false brightness introduced
+      // by tone-mapping an already averaged stripe. Endpoints retain soft highlights.
+      const float diskExposure = 1.42;
+      vec3 baseLight = (color * energy * (0.055 + 0.12 * bundles) * flow * innerEdge + edgeLight) * diskExposure;
+      vec3 strandLight = color * energy * (0.28 + 1.15 * bundles) * flow * innerEdge * diskExposure;
+      // Integrate displayed radiance: applying the nonlinear tone curve AFTER
+      // averaging narrow stripes recreates harmonics and changes their mean.
+      vec3 baseColor = 1.0 - exp(-baseLight * 1.45);
+      vec3 strandColor = 1.0 - exp(-(baseLight + strandLight) * 1.45);
+      return mix(baseColor, strandColor, filament);
     }
     float pigmentNoise(vec2 p) {
       vec2 cell = floor(p), f = fract(p);
@@ -184,7 +200,7 @@
       // remain continuous. This grain follows the orbit instead of boiling.
       float dry = smoothstep(0.27, 0.61, coarse * 0.65 + fine * 0.35);
       float density = clamp(painted * mix(0.95, 1.04, dry), 0.0, 0.99);
-      vec3 color = vec3(1.06, 1.0, 0.88) * density;
+      vec3 color = vec3(1.06, 1.0, 0.88) * density * mix(1.0, 1.18, u_chapter);
       // Discontinuous dry-brush ends belong to the rotating material itself.
       // Lighting changes the ink's color, never its holes or silhouette.
       float edgeRadius = 11.1 + (rawPainted - 0.5) * 0.6 + (coarse - 0.5) * 1.1
@@ -236,13 +252,7 @@
         // remain defined. The padded longitude seam keeps filtering local.
         vec3 light = texture2D(u_starSky, uv).rgb;
       #endif
-      // Broad stationary ambient light; individual stars are never procedural.
-      vec2 sky = vec2(phi, asin(clamp(d.y, -0.9999, 0.9999)));
-      vec2 warmOffset = (sky - vec2(0.12, -0.07)) / vec2(0.17, 0.11);
-      vec2 coolOffset = (sky - vec2(-0.19, 0.11)) / vec2(0.13, 0.09);
-      float dust = mix(0.25, 1.0, pigmentNoise(sky * 18.0 + 8.0));
-      light += vec3(0.043, 0.032, 0.019) * exp(-dot(warmOffset, warmOffset)) * dust;
-      light += vec3(0.015, 0.024, 0.035) * exp(-dot(coolOffset, coolOffset)) * dust;
+      // Leave genuine dark space between the compact stellar cores.
       return light;
     }
     struct RayHit {
@@ -254,14 +264,9 @@
     };
     RayHit orientSky(RayHit hit, vec3 origin, vec3 direction, vec3 right, vec3 up, vec3 forward, float roll) {
       if (u_ink < 0.5 && hit.material < -0.5) {
-        // Background-only art direction: keep the strong lens close to the
-        // shadow, then smoothly return to round, undistorted distant stars.
-        // A broad C2 transition avoids a new ring at the cutoff. The disk's
-        // intersections and light paths retain their full gravitational bend.
-        float impact = length(cross(origin, direction));
-        float t = clamp((impact - 3.5) / 3.5, 0.0, 1.0);
-        float lens = 1.0 - t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-        vec3 backgroundRay = normalize(mix(direction, hit.ray, lens));
+        // Use the escaped light direction at every impact parameter. Blending
+        // it back to the camera ray would compress images and magnification.
+        vec3 backgroundRay = normalize(hit.ray);
         vec3 local = vec3(dot(backgroundRay, right), dot(backgroundRay, up), -dot(backgroundRay, forward));
         local.xy = mat2(cos(roll), sin(roll), -sin(roll), cos(roll)) * local.xy;
         // The XYZ particle observer uses this unrolled local camera frame.
@@ -280,7 +285,9 @@
       vec3 p = origin, v = direction;
       vec3 angular = cross(p, v);
       float h2 = dot(angular, angular);
-      if (h2 > mix(140.0, 210.0, u_ink)) {
+      // The ink illustration keeps its existing distant-background shortcut.
+      // Minimal sky rays must all bend: a radius cutoff creates a visible seam.
+      if (u_ink > 0.5 && h2 > 210.0) {
         hit.material = -1.0;
       }
       else {
@@ -347,7 +354,7 @@
       vec3 emission = vec3(0.0);
       float alpha = hit.alpha;
       if (u_ink > 0.5 && hit.material > 0.5) return inkEmission(hit.point, pointDx, pointDy, hit.order, hit.ray);
-      if (hit.material > 0.5) emission = diskEmission(hit.point, hit.ray, pointDx, pointDy);
+      if (hit.material > 0.5) return vec4(diskEmission(hit.point, hit.ray, pointDx, pointDy) * alpha, alpha);
       if (hit.material < -0.5) {
         if (u_ink < 0.5) return skyLight;
         emission = distantStars(hit.ray);
@@ -359,12 +366,15 @@
     void main() {
       float aspect = u_resolution.x / u_resolution.y;
       vec2 sceneUV = u_crop.xy + v_uv * u_crop.zw;
-      vec2 cameraPointer = u_pointer;
-      vec2 screen = (sceneUV - vec2(0.50)) * vec2(aspect, 1.0) * 2.0;
-      screen -= vec2(0.06, -0.01) * u_ink;
+      vec2 cameraPointer = u_pointer * (1.0 - u_chapter);
+      // Move the existing camera composition into the visible stage's centre.
+      // The virtual figure rectangle stays fixed throughout the transition.
+      vec2 screenOrigin = mix(vec2(0.50), u_crop.xy + u_crop.zw * 0.5, u_chapter);
+      vec2 screen = (sceneUV - screenOrigin) * vec2(aspect, 1.0) * 2.0;
+      screen -= vec2(0.06, -0.01) * u_ink * (1.0 - u_chapter);
       screen -= cameraPointer * vec2(0.012, 0.009);
       // Screen roll controls composition independently of the disk's 3D inclination.
-      float screenRoll = (18.0 + cameraPointer.x * 1.4) * PI / 180.0;
+      float screenRoll = (18.0 * (1.0 - u_chapter) + cameraPointer.x * 1.4) * PI / 180.0;
       screen = mat2(cos(screenRoll), -sin(screenRoll), sin(screenRoll), cos(screenRoll)) * screen;
       // Inclination is measured from the disk normal: 0° face-on, 90° edge-on.
       float diskInclination = (mix(81.0, 83.0, u_ink) + cameraPointer.y * 3.8) * PI / 180.0;
@@ -377,7 +387,7 @@
       vec3 forward = normalize(-origin);
       vec3 right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
       vec3 up = cross(right, forward);
-      float focal = mix(4.05, 3.70, u_ink);
+      float focal = mix(4.05, 3.70, u_ink) * mix(1.0, 0.34, u_chapter);
       vec3 direction = normalize(forward * focal + screen.x * right + screen.y * up);
       RayHit hit = traceRay(origin, direction);
       hit = orientSky(hit, origin, direction, right, up, forward, screenRoll);
@@ -431,6 +441,7 @@
           primarySky ? skyDx : beneathSkyDx, primarySky ? skyDy : beneathSkyDy);
         vec2 quiet = (v_uv - u_quiet.xy) / max(u_quiet.zw, vec2(0.001));
         float room = u_quiet.z > 0.0 ? mix(0.14, 1.0, smoothstep(0.55, 1.25, length(quiet))) : 1.0;
+        room = mix(room, 1.0, u_chapter);
         radiance = (1.0 - exp(-radiance * 1.25)) * room;
         // Already premultiplied: do not square dim starlight by multiplying
         // it by its own opacity for a second time.
@@ -486,6 +497,7 @@
       // to straight alpha exactly once for the transparent WebGL canvas.
       if (u_ink < 0.5 && hit.material > -0.5) {
         float fade = 1.0 - smoothstep(0.70, 1.0, length((sceneUV - 0.5) * 1.7));
+        fade = mix(fade, 1.0, u_chapter);
         // Fade foreground coverage into the escaped sky, rather than fading
         // the already composited background and leaving a dark outer seam.
         light = light * fade + skyLight * (1.0 - fade);
@@ -508,8 +520,17 @@
         float x = float(i);
         float w = exp(-x * x / 8.0);
         for (int j = -1; j <= 1; j++) {
-          vec3 c = texture2D(u_scene, v_uv + vec2(x, float(j)) * u_texel).rgb;
-          light += max(c - 0.22, 0.0) * w;
+          vec4 sampleLight = texture2D(u_scene, v_uv + vec2(x, float(j)) * u_texel);
+          float peak = max(sampleLight.r, max(sampleLight.g, sampleLight.b));
+          // Escaped sky stores alpha = peak radiance, while foreground
+          // coverage exceeds its emitted light. Use that excess only here,
+          // leaving the scene's premultiplied coverage entirely untouched.
+          float foreground = smoothstep(0.001, 0.008, sampleLight.a - peak);
+          // Saturated opaque disk strands can have almost no excess. Keep
+          // their bloom: the normalized RGB8 sky, including ambient light,
+          // stays below 0.74 after its 1.25-exposure tone map.
+          foreground = max(foreground, smoothstep(0.78, 0.94, sampleLight.a));
+          light += max(sampleLight.rgb - 0.22, 0.0) * foreground * w;
           weights += w;
         }
       }
@@ -527,6 +548,8 @@
     uniform vec2 u_texel;
     uniform vec4 u_crop;
     uniform float u_ink;
+    uniform float u_chapter;
+    uniform float u_softGlow;
     void main() {
       vec4 scene = texture2D(u_scene, v_uv);
       if (u_ink > 0.5) {
@@ -537,6 +560,7 @@
         vec2 sceneUV = u_crop.xy + v_uv * u_crop.zw;
         vec2 border = min(sceneUV, 1.0 - sceneUV);
         float fade = smoothstep(0.0, 0.035, min(border.x, border.y));
+        fade = mix(fade, 1.0, u_chapter);
         float grain = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
         gl_FragColor = vec4(scene.rgb * (0.94 + grain * 0.12) / max(scene.a, 0.001), scene.a * fade);
         return;
@@ -551,7 +575,29 @@
       }
       vec2 sceneUV = u_crop.xy + v_uv * u_crop.zw;
       float fade = 1.0 - smoothstep(0.70, 1.0, length((sceneUV - 0.5) * 1.7));
-      glow = glow / weights * 0.30 * fade;
+      fade = mix(fade, 1.0, u_chapter);
+      glow = glow / weights * mix(0.30, 0.42, u_chapter) * fade;
+      #ifdef HAS_TEXTURE_LOD
+        if (u_softGlow > 0.5 && u_chapter > 0.0) {
+          // Coarse levels come from the already filtered, disk-only bloom.
+          // Nine overlapping samples spread its actual light, without
+          // amplifying the star atlas or adding another full-screen pass.
+          vec3 halo = vec3(0.0);
+          float haloWeights = 0.0;
+          for (int x = -1; x <= 1; x++) {
+            for (int y = -1; y <= 1; y++) {
+              vec2 offset = vec2(float(x), float(y));
+              float weight = exp(-dot(offset, offset) * 0.65);
+              halo += texture2DLodEXT(u_bloom, v_uv + offset * u_texel * 12.0, 3.0).rgb * weight;
+              haloWeights += weight;
+            }
+          }
+          vec2 centerUV = mix((vec2(0.5) - u_crop.xy) / u_crop.zw, vec2(0.5), u_chapter);
+          vec2 local = (v_uv - centerUV) * vec2(u_texel.y / u_texel.x, 1.0);
+          float localFade = 1.0 - smoothstep(0.34, 0.65, length(local));
+          glow += halo / haloWeights * (0.85 * u_chapter * localFade);
+        }
+      #endif
       vec3 color = 1.0 - (1.0 - scene.rgb) * exp(-glow * 1.2);
       float alpha = max(scene.a, max(color.r, max(color.g, color.b)));
       // Straight-alpha output; the light remains luminous over the star field.
@@ -562,6 +608,7 @@
   class BlackHole {
     constructor(canvas, { style = 'minimal' } = {}) {
       this.canvas = canvas;
+      this.chapter = 0;
       this.setStyle(style);
       const options = { alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'low-power' };
       this.gl = canvas.getContext('webgl2', options) || canvas.getContext('webgl', options);
@@ -569,6 +616,9 @@
       this.ready = false;
       this.lost = false;
       this.quality = 1;
+      this.frameInterval = 1000 / 30;
+      this.adaptAfter = 0;
+      this.headroomSince = null;
       this.frameTimes = [];
       this.lastSample = 0;
       this.resources = [];
@@ -578,7 +628,11 @@
       this.gpuQuery = null;
       this.gpuSync = null;
       this.gpuPendingSince = this.gpuWaitMs = 0;
+      this.gpuFrameStartedAt = 0;
+      this.gpuLastPollAt = 0;
+      this.gpuTimingValid = false;
       this.gpuTimes = [];
+      this.gpuUpperTimes = [];
       if (!this.gl) return;
       this.initialize().catch(error => console.warn('Using the static black-hole illustration.', error));
       this.handleContextLost = event => {
@@ -711,7 +765,8 @@
       this.gpuQuery = null;
       this.gpuSync = null;
       this.gpuPendingSince = this.gpuWaitMs = 0;
-      this.gpuTimes = [];
+      this.gpuLastPollAt = 0;
+      this.resetTiming();
       this.resizePending = false;
       this.maxTexture = 0;
       // A fixed-width approximation cannot safely filter the lensed filaments.
@@ -772,6 +827,7 @@
     }
 
     async activateStyle() {
+      this.resetTiming();
       const style = this.style, generation = this.generation;
       const request = ++this.styleRequest;
       this.ready = false;
@@ -856,9 +912,10 @@
       const gl = this.gl;
       const figure = this.canvas.parentElement;
       const rect = figure.getBoundingClientRect();
-      const heroElement = figure.closest('.hero');
+      const stage = figure.closest('.hero-stage');
+      const heroElement = stage || figure.closest('.hero');
       const hero = heroElement.getBoundingClientRect();
-      const fullSky = this.style !== 'ink';
+      const fullSky = Boolean(stage) || this.style !== 'ink';
       const left = fullSky ? hero.left : Math.max(rect.left, hero.left);
       const top = fullSky ? hero.top : Math.max(rect.top, hero.top);
       const visibleWidth = fullSky ? hero.width : Math.max(1, Math.min(rect.right, hero.right) - left);
@@ -875,18 +932,19 @@
         (heading.width * 0.65 + 30) / visibleWidth,
         (heading.height * 0.65 + 30) / visibleHeight,
       ] : [0, 0, 0, 0];
-      // The minimal sky covers the whole hero, using the same virtual camera
-      // rectangle as before. Negative crop coordinates extend the sky without
-      // moving or scaling the disk. Ink retains its original clipped target.
+      // A fixed stage holds both themes through chapter transitions. Negative
+      // crop coordinates extend the canvas without moving the virtual camera.
+      // Older hero-only layouts retain their original ink clipping.
       Object.assign(this.canvas.style, {
         left: `${offsetX}px`, top: `${offsetY}px`,
         width: `${visibleWidth}px`, height: `${visibleHeight}px`,
       });
-      // Bound cold-start work on high-DPI screens. The GPU's measured cost
-      // subsequently controls scale, independently of fast JS submission.
+      // Cover native 1080p/1440p and useful high-DPI detail. The completion
+      // fence still bounds queued work; sustained load lowers cadence first.
       const maxTexture = this.maxTexture ||= gl.getParameter(gl.MAX_TEXTURE_SIZE);
-      const pixelBudget = this.webgl2 ? 1300000 : this.timerQuery ? 1800000 : 900000;
-      const scale = Math.min(devicePixelRatio || 1, 1.5, 2400 / visibleWidth,
+      const pixelBudget = this.webgl2 ? 3700000 : this.timerQuery ? 1800000 : 900000;
+      const scale = Math.min(devicePixelRatio || 1, this.webgl2 ? 2 : 1.5,
+        (this.webgl2 ? 3200 : 2400) / visibleWidth,
         maxTexture / visibleWidth, maxTexture / visibleHeight,
         Math.sqrt(pixelBudget / (visibleWidth * visibleHeight))) * this.quality;
       this.nextWidth = Math.max(2, Math.round(visibleWidth * scale));
@@ -941,25 +999,29 @@
       gl.uniform1i(program.uniforms[name], index);
     }
 
-    render(time, x, y) {
+    render(time, x, y, chapter = this.chapter) {
+      this.chapter = Math.max(0, Math.min(1, Number(chapter) || 0));
       if (!this.ready || this.lost || this.disposed) return false;
       // Completion-capable contexts keep at most one frame in flight. Poll
       // without waiting; preserve the last presented frame while GPU is busy.
       if (!this.gpuAvailable()) return false;
+      const frameStartedAt = performance.now();
       this.allocateTargets();
       if (!this.ready) return false;
       const gl = this.gl;
       if (this.timerQuery) {
         this.gpuQuery = this.timerQuery.createQueryEXT();
         this.timerQuery.beginQueryEXT(this.timerQuery.TIME_ELAPSED_EXT, this.gpuQuery);
+        this.gpuTimingValid = true;
       }
-      if (this.style !== 'ink') this.particleSky.render(time, x, y);
+      if (this.style !== 'ink') this.particleSky.render(time, x * (1 - this.chapter), y * (1 - this.chapter));
       this.use(this.scene, this.sceneTarget);
       gl.uniform2f(this.scene.uniforms.u_resolution, this.sceneWidth, this.sceneHeight);
       gl.uniform4fv(this.scene.uniforms.u_crop, this.crop);
       gl.uniform2f(this.scene.uniforms.u_pointer, x, y);
       gl.uniform4fv(this.scene.uniforms.u_quiet, this.quiet);
       gl.uniform1f(this.scene.uniforms.u_time, time);
+      gl.uniform1f(this.scene.uniforms.u_chapter, this.chapter);
       // ANGLE can retain samplers from an unreachable theme branch. Bind all
       // reflected samplers explicitly so none keeps unit 0's previous scene
       // attachment, which would form a feedback loop on the next draw.
@@ -969,15 +1031,21 @@
       if (this.particleSky) gl.uniform1f(this.scene.uniforms.u_starInset, this.particleSky.inset);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
+      const hasSoftGlow = this.style !== 'ink' && this.webgl2 && this.chapter > 0;
       if (this.style !== 'ink') {
         this.use(this.bloom, this.bloomTarget);
         this.texture(this.bloom, 'u_scene', this.sceneTarget.texture, 0);
         gl.uniform2f(this.bloom.uniforms.u_texel, 1 / this.width, 1 / this.height);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
+        // WebGL 2 supports mipmaps for these viewport-sized, NPOT targets.
+        // Their generation is inside the existing completion/timing budget.
+        gl.bindTexture(gl.TEXTURE_2D, this.bloomTarget.texture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, hasSoftGlow ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+        if (hasSoftGlow) gl.generateMipmap(gl.TEXTURE_2D);
       }
 
       const splatter = this.style === 'ink' ? this.inkSplatter?.render({
-        time, x, y, width: this.width, height: this.height,
+        time, x, y, chapter: this.chapter, width: this.width, height: this.height,
         sceneWidth: this.sceneWidth, sceneHeight: this.sceneHeight,
         crop: this.crop, sceneTexture: this.sceneTarget.texture,
       }) : null;
@@ -988,12 +1056,17 @@
       gl.uniform1f(this.composite.uniforms.u_hasSplatter, splatter ? 1 : 0);
       gl.uniform2f(this.composite.uniforms.u_texel, 1 / this.width, 1 / this.height);
       gl.uniform4fv(this.composite.uniforms.u_crop, this.crop);
+      gl.uniform1f(this.composite.uniforms.u_chapter, this.chapter);
+      gl.uniform1f(this.composite.uniforms.u_softGlow, hasSoftGlow ? 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       if (this.gpuQuery) this.timerQuery.endQueryEXT(this.timerQuery.TIME_ELAPSED_EXT);
       if (this.webgl2) {
         this.gpuSync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
         if (!this.gpuSync) return this.gpuFailed();
         this.gpuPendingSince = performance.now();
+        this.gpuFrameStartedAt = frameStartedAt;
+        this.gpuLastPollAt = this.gpuPendingSince;
+        this.gpuTimingValid = true;
         this.gpuWaitMs = 0;
         // Submit the fence without waiting. Completion is polled on a later
         // animation tick, with a zero timeout, before another frame is queued.
@@ -1007,18 +1080,21 @@
       if (this.webgl2) {
         if (!this.gpuSync) return true;
         const gl = this.gl;
+        const now = performance.now();
+        // A suspended tab or a very delayed callback cannot establish a
+        // useful completion bound. Keep the fence, discard only its timing.
+        if (now - this.gpuLastPollAt > 250) this.resetTiming();
+        this.gpuLastPollAt = now;
         const status = gl.clientWaitSync(this.gpuSync, 0, 0);
+        const completedAt = performance.now();
         if (status === gl.TIMEOUT_EXPIRED) {
-          // Only an observed unfinished fence proves a lower bound on GPU
-          // work. A finished first poll after a hidden tab contributes zero,
-          // rather than mistaking the time spent hidden for rendering cost.
-          this.gpuWaitMs = Math.max(this.gpuWaitMs, performance.now() - this.gpuPendingSince);
+          this.gpuWaitMs = Math.max(this.gpuWaitMs, now - this.gpuPendingSince);
           return false;
         }
         gl.deleteSync(this.gpuSync);
         this.gpuSync = null;
         if (status !== gl.ALREADY_SIGNALED && status !== gl.CONDITION_SATISFIED) return this.gpuFailed();
-        this.recordGpuCost(this.gpuWaitMs);
+        if (this.gpuTimingValid) this.recordGpuCost(this.gpuWaitMs, completedAt - this.gpuFrameStartedAt);
         return true;
       }
       if (!this.gpuQuery) return true;
@@ -1029,11 +1105,13 @@
         ext.deleteQueryEXT(this.gpuQuery);
         this.gpuQuery = null;
         this.gpuTimes = [];
+        this.gpuUpperTimes = [];
+        this.headroomSince = null;
         return true;
       }
       if (!ext.getQueryObjectEXT(this.gpuQuery, ext.QUERY_RESULT_AVAILABLE_EXT)) return false;
       const milliseconds = ext.getQueryObjectEXT(this.gpuQuery, ext.QUERY_RESULT_EXT) / 1000000;
-      this.recordGpuCost(milliseconds);
+      if (this.gpuTimingValid) this.recordGpuCost(milliseconds);
       ext.deleteQueryEXT(this.gpuQuery);
       this.gpuQuery = null;
       return true;
@@ -1045,20 +1123,52 @@
       return false;
     }
 
-    recordGpuCost(milliseconds) {
-      this.gpuTimes.push(milliseconds);
+    pollGpu() {
+      if (!this.ready || this.lost || this.disposed) return false;
+      return this.gpuAvailable();
+    }
+
+    recordGpuCost(lower, upper = lower) {
+      this.gpuTimes.push(lower);
+      this.gpuUpperTimes.push(upper);
       if (this.gpuTimes.length >= 8) {
-        // A cold first draw or a one-off driver stall must not permanently
-        // soften the scene. Adapt to sustained cost, using the window median.
-        const ordered = this.gpuTimes.sort((a, b) => a - b);
-        const cost = (ordered[3] + ordered[4]) * 0.5;
+        const median = values => {
+          const sorted = values.sort((a, b) => a - b);
+          return (sorted[3] + sorted[4]) * 0.5;
+        };
+        // Incomplete polls prove a lower bound; completion proves an upper
+        // bound. Never interpret a first completed poll as zero-cost work.
+        const cost = median(this.gpuTimes), ceiling = median(this.gpuUpperTimes);
         this.gpuTimes = [];
-        // Leave headroom for compositing and the rest of the browser. A
-        // quality change is one-way within a visit, avoiding oscillation.
-        if (cost > 28 && this.quality > 0.5) {
-          this.quality = Math.max(0.5, this.quality * Math.max(0.75, Math.sqrt(24 / cost)));
-          this.resize();
+        this.gpuUpperTimes = [];
+        const now = performance.now();
+        if (cost > this.frameInterval * 0.8) {
+          this.headroomSince = null;
+          if (now < this.adaptAfter) return;
+          if (this.frameInterval < 49) this.frameInterval = 50;
+          else if (this.frameInterval < 66) this.frameInterval = 1000 / 15;
+          else if (this.quality > 0.7) {
+            this.quality = Math.max(0.7, this.quality * 0.9);
+            this.resize();
+          }
+          this.adaptAfter = now + 2000;
+          return;
         }
+        // Recover detail before frame rate. Predict the next resolution's
+        // area cost, and require sustained headroom with a separate threshold.
+        const nextQuality = Math.min(1, this.quality + 0.05);
+        const nextInterval = this.frameInterval > 50 ? 50 : 1000 / 30;
+        const predicted = ceiling * (nextQuality / this.quality) ** 2;
+        const canRecover = this.quality < 1
+          ? predicted <= this.frameInterval * 0.65
+          : this.frameInterval > nextInterval && ceiling <= nextInterval * 0.65;
+        if (!canRecover || now < this.adaptAfter) { this.headroomSince = null; return; }
+        if (this.headroomSince === null) this.headroomSince = now;
+        if (now - this.headroomSince < 5000) return;
+        if (this.quality < 1) { this.quality = nextQuality; this.resize(); }
+        else this.frameInterval = nextInterval;
+        this.adaptAfter = now + 2000;
+        this.headroomSince = null;
       }
     }
 
@@ -1069,9 +1179,11 @@
       if (this.frameTimes.length < 45) return;
       const average = this.frameTimes.reduce((sum, ms) => sum + ms, 0) / this.frameTimes.length;
       this.frameTimes = [];
-      if (average > 48 && this.quality > 0.5) {
-        this.quality = Math.max(0.5, this.quality * 0.9);
-        this.resize();
+      if (average > this.frameInterval * 1.6) {
+        // Without a completion/timing facility, on-time JS submissions do
+        // not prove GPU headroom. Use slow cadence only for conservative load
+        // reduction, not automatic upscaling on this legacy fallback.
+        for (let i = 0; i < 8; i++) this.recordGpuCost(average, Infinity);
       }
     }
 
@@ -1108,7 +1220,14 @@
       this.themePrograms?.clear();
     }
 
-    resetTiming() { this.lastSample = 0; this.frameTimes = []; }
+    resetTiming() {
+      this.lastSample = 0;
+      this.frameTimes = [];
+      this.gpuTimes = [];
+      this.gpuUpperTimes = [];
+      this.headroomSince = null;
+      this.gpuTimingValid = false;
+    }
     setStyle(style) {
       const next = style === 'ink' ? 'ink' : 'minimal';
       if (next === this.style && this.ready) return;

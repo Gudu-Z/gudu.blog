@@ -1,6 +1,7 @@
 (() => {
   'use strict';
   const hero = document.querySelector('.hero');
+  const stage = document.querySelector('#hero-stage') || hero;
   const stars = document.querySelector('#starfield');
   const context = stars.getContext('2d');
   const blackHoleCanvas = document.querySelector('#black-hole-canvas');
@@ -37,6 +38,7 @@
   let width = 0;
   let height = 0;
   let starList = [];
+  let chapterProgress = 0;
 
   function finishIntro() {
     hero.classList.add('intro-complete');
@@ -83,7 +85,7 @@
   }
 
   function updateTitleBlink() {
-    if (!pageActive || !titlePeriod || loading || paused || !visible || document.hidden
+    if (!pageActive || !titlePeriod || loading || paused || !visible || document.hidden || chapterProgress > 0.1
         || document.documentElement.classList.contains('has-site-intro')) {
       stopTitleBlink();
       return;
@@ -136,7 +138,7 @@
 
   function resize() {
     if (!pageActive || document.hidden) return;
-    const bounds = hero.getBoundingClientRect();
+    const bounds = stage.getBoundingClientRect();
     width = bounds.width;
     height = bounds.height;
     const dpr = Math.min(devicePixelRatio || 1, 2);
@@ -183,13 +185,13 @@
       layer.style.setProperty('--pointer-x', `${-pointer.x * depth * 8}px`);
       layer.style.setProperty('--pointer-y', `${-pointer.y * depth * 6}px`);
     }
-    const submitted = blackHole?.render(sceneTime(), pointer.x, -pointer.y);
-    // A busy GPU can also defer a static/reduced-motion resize. Keep just one
-    // retry, without starting the animation clock or waiting for pointer input.
-    if (submitted === false && blackHole?.ready && !blackHole.lost && visible) {
+    const submitted = blackHole?.render(sceneTime(), pointer.x, -pointer.y, chapterProgress);
+    // Animation retries on its next scheduled frame. A separate timer would
+    // bypass a slower GPU-requested cadence; only a static scene needs one.
+    if (submitted === false && blackHole?.ready && !blackHole.lost && visible && (paused || loading)) {
       drawTimer = setTimeout(function retryDraw() {
         drawTimer = 0;
-        if (pageActive && !document.hidden && visible) draw();
+        if (pageActive && !document.hidden && visible && (paused || loading)) draw();
       }, 32);
     }
     return submitted;
@@ -214,6 +216,9 @@
   function tick(timestamp) {
     frame = 0;
     if (!pageActive || loading || paused || !visible || document.hidden) { stop(); return; }
+    // Observe completion at display cadence even when expensive draws run less
+    // often. This is a zero-timeout poll; it never submits or waits for a frame.
+    blackHole?.pollGpu?.();
     const animated = blackHole?.ready && !blackHole.lost;
     if (animated) resumeSceneClock(); else pauseSceneClock();
     const delta = lastTime ? Math.min(timestamp - lastTime, 100) : 16;
@@ -226,12 +231,15 @@
       pointer.x = pointer.targetX;
       pointer.y = pointer.targetY;
     }
-    if (timestamp - lastRender >= 30 || (!animated && settled)) {
+    const frameInterval = animated && Number.isFinite(blackHole.frameInterval) && blackHole.frameInterval > 0
+      ? blackHole.frameInterval : 1000 / 30;
+    // A small tolerance keeps a 33.33 ms target aligned with two 60 Hz frames.
+    if (timestamp - lastRender >= frameInterval - 1 || (!animated && settled)) {
       const submitted = draw();
       if (animated && submitted !== false) blackHole.sampleFrame(timestamp);
       lastRender = timestamp;
     }
-    // Visible WebGL keeps the disk flowing at about 30 fps; the fallback rests.
+    // Rendering may slow under GPU load, but the active scene clock keeps time.
     if (animated || !settled) frame = requestAnimationFrame(tick);
     else lastTime = 0;
   }
@@ -241,6 +249,8 @@
     if (!pageActive || frame || loading || paused || !visible || document.hidden) return;
     const animated = blackHole?.ready && !blackHole.lost;
     if (!animated && pointer.x === pointer.targetX && pointer.y === pointer.targetY) return;
+    clearTimeout(drawTimer);
+    drawTimer = 0;
     if (animated) resumeSceneClock(); else pauseSceneClock();
     lastTime = 0;
     lastRender = 0;
@@ -254,6 +264,7 @@
     clearTimeout(drawTimer);
     drawTimer = 0;
     pauseSceneClock();
+    blackHole?.resetTiming?.();
     cancelAnimationFrame(frame);
     frame = 0;
     lastTime = 0;
@@ -264,6 +275,15 @@
     if (paused) { stop(); scheduleRenderer(); } else start();
     updateTitleBlink();
   }
+
+  window.addEventListener('site:chapter', event => {
+    chapterProgress = Math.max(0, Math.min(1, Number(event.detail?.progress) || 0));
+    if (chapterProgress > 0) pointer.targetX = pointer.targetY = 0;
+    updateTitleBlink();
+    // Reduced-motion users still need a fresh static frame at the destination.
+    if (paused || !frame) draw();
+    start();
+  });
 
   hero.addEventListener('pointermove', event => {
     if (!pageActive || document.hidden || loading || paused || !finePointer.matches || event.pointerType === 'touch') return;
@@ -293,9 +313,9 @@
     visible = entries[0].isIntersecting;
     if (visible) start(); else stop();
     updateTitleBlink();
-  }).observe(hero);
+  }).observe(stage);
   const sceneResize = new ResizeObserver(resize);
-  sceneResize.observe(hero);
+  sceneResize.observe(stage);
   // A late web font changes the heading's quiet zone without resizing the hero.
   const heading = document.querySelector('.hero-heading');
   if (heading) sceneResize.observe(heading);
