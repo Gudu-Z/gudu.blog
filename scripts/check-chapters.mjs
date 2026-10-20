@@ -37,7 +37,7 @@ function classList(initial = []) {
 
 // Only browser surfaces used by the chapter controller are modeled. The real
 // controller executes unmodified; assertions inspect scrolls, URLs and events.
-function browser({ reduced = false, url = 'https://gudu.blog/', loading = false, viewportWidth = 1200, roundScroll = false, initialPanelWidth = null } = {}) {
+function browser({ reduced = false, url = 'https://gudu.blog/', loading = false, hidden = false, viewportWidth = 1200, roundScroll = false, initialPanelWidth = null } = {}) {
   let now = 0;
   let sequence = 0;
   let scrollY = 0;
@@ -49,6 +49,7 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
   const chapterEvents = [];
   const historyEntries = [];
   const resizeObservers = [];
+  let layoutReads = 0;
   const nodes = [];
   const height = 800;
   let document;
@@ -100,13 +101,15 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
       else this.removeAttribute('disabled');
     }
     get offsetLeft() {
+      layoutReads++;
       return this.chapterIndex === undefined ? 0 : (viewWidth() - panelWidth()) / 2 + this.chapterIndex * panelStep();
     }
-    get offsetWidth() { return this.chapterIndex === undefined ? viewWidth() : panelWidth(); }
+    get offsetWidth() { layoutReads++; return this.chapterIndex === undefined ? viewWidth() : panelWidth(); }
     get href() { return new URL(this.getAttribute('href') || '', location).href; }
     set href(value) { this.setAttribute('href', value); }
     get hash() { return new URL(this.href).hash; }
     getBoundingClientRect() {
+      layoutReads++;
       const top = this.chapterIndex === undefined ? this.top - scrollY : Math.max(0, height - scrollY);
       const translation = parseFloat(html.style.getPropertyValue('--chapter-x')) || 0;
       const left = this.chapterIndex === undefined ? 0 : this.offsetLeft + translation;
@@ -209,7 +212,7 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
     documentElement: html,
     body,
     activeElement: body,
-    hidden: false,
+    hidden,
     readyState: 'complete',
     querySelector: selector => html.querySelector(selector),
     querySelectorAll: selector => html.querySelectorAll(selector),
@@ -303,6 +306,10 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
     get url() { return location; },
     get pendingFrames() { return frames.size; },
     get pendingTimers() { return timers.size; },
+    get layoutReads() { return layoutReads; },
+    get observedTargets() { return resizeObservers.reduce((count, observer) => count + observer.targets.size, 0); },
+    queuedFrames() { return [...frames.values()]; },
+    lateResize() { for (const observer of resizeObservers) observer.callback(); },
     wheel(deltaY = 80, properties = {}) { return dispatch('wheel', { deltaY, deltaX: 0, deltaMode: 0, ctrlKey: false, ...properties }); },
     key(key, properties = {}) { return dispatch('keydown', { key, code: key === ' ' ? 'Space' : key, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false, ...properties }); },
     click(link) { return dispatch('click', { target: link, button: 0, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false }); },
@@ -889,6 +896,79 @@ await test('pagehide cancels entrance, anchor navigation and continuous damping'
     assert.equal(animated.pendingFrames, 0);
     assert.equal(animated.wheel(80).defaultPrevented, false);
   }
+});
+
+await test('suspended chapters reject late layout and frame callbacks, then recover their fractional position', () => {
+  for (const lifecycle of ['hidden', 'pagehide']) {
+    const site = browser({ url: 'https://gudu.blog/?q=space#series' });
+    site.wheel(350);
+    site.advance(48);
+    const queuedFrames = site.queuedFrames();
+    if (lifecycle === 'hidden') {
+      site.document.hidden = true;
+      site.event('visibilitychange');
+    } else site.event('pagehide', { persisted: true });
+    const fraction = (site.top - site.destination('about')) / site.step;
+    const snapshot = () => [site.top, site.layoutReads, site.scrolls.length, site.chapterEvents.length, site.pendingFrames, site.pendingTimers];
+    const suspended = snapshot();
+    assert.equal(site.observedTargets, 0, lifecycle);
+    site.window.innerWidth = 600;
+    site.event('resize');
+    site.lateResize();
+    site.event('site:revealed');
+    site.event('scroll');
+    site.event('popstate');
+    site.media.dispatchEvent({ type: 'change' });
+    for (const callback of queuedFrames) callback(5000);
+    assert.equal(site.wheel(80).defaultPrevented, false);
+    site.advance(1400);
+    assert.deepEqual(snapshot(), suspended, `${lifecycle} leaves no layout, scroll, scene event or new scheduled work`);
+
+    site.document.hidden = false;
+    site.event('visibilitychange');
+    if (lifecycle === 'pagehide') {
+      assert.deepEqual(snapshot(), suspended, 'visibility alone cannot reopen a page after pagehide');
+      site.event('pageshow', { persisted: true });
+    }
+    assert.ok(Math.abs(site.top - (site.destination('about') + fraction * site.step)) < 0.001, lifecycle);
+    assert.equal(site.observedTargets, 2, 'resuming reconnects the viewport and panel observers');
+    assert.equal(site.url.searchParams.get('q'), 'space');
+    site.advance(1400);
+    assert.equal(site.pendingFrames, 0);
+    assert.equal(site.pendingTimers, 0);
+  }
+});
+
+await test('background initialization and deferred hashes are positioned only after the page resumes', () => {
+  const background = browser({ url: 'https://gudu.blog/?q=space#series', hidden: true });
+  assert.equal(background.layoutReads, 0, 'background startup does not measure layout');
+  assert.equal(background.scrolls.length, 0);
+  background.event('pageshow');
+  background.event('site:revealed');
+  background.lateResize();
+  assert.equal(background.layoutReads, 0);
+  assert.equal(background.pendingFrames, 0);
+  background.document.hidden = false;
+  // The head-script loader resumes before the chapter visibility listener.
+  background.event('site:revealed');
+  background.event('visibilitychange');
+  assert.equal(background.top, background.destination('series'));
+  assert.equal(background.series.inert, false);
+  assert.equal(background.url.searchParams.get('q'), 'space');
+
+  const cached = browser({ url: 'https://gudu.blog/?q=space#series' });
+  cached.event('pagehide', { persisted: true });
+  const reads = cached.layoutReads;
+  const scrollCount = cached.scrolls.length;
+  cached.window.innerWidth = 600;
+  cached.hash('#journal');
+  cached.event('site:revealed');
+  assert.equal(cached.layoutReads, reads);
+  assert.equal(cached.scrolls.length, scrollCount);
+  cached.event('pageshow', { persisted: true });
+  assert.equal(cached.top, cached.destination('journal'), 'remeasuring must not replace a deferred hash with the previous chapter');
+  assert.equal(cached.url.hash, '#journal');
+  assert.equal(cached.url.searchParams.get('q'), 'space');
 });
 
 await test('initial and changed hashes open the corresponding chapter without dropping query state', () => {

@@ -719,6 +719,42 @@ await test('disposing with a pending WebGL 2 fence deletes it once and never pol
   assert.equal(site.calls.length, calls);
 });
 
+await test('page-exit disposal abandons pending fences and queries without any GPU calls', async () => {
+  for (const options of [{ webgl2: true }, { timerQuery: true }]) {
+    const site = await browser(options);
+    const { renderer } = site;
+    assert.equal(renderer.render(12, 0, 0), true);
+    assert.ok(renderer.gpuSync || renderer.gpuQuery, 'a frame must still be in flight at exit');
+    const lost = renderer.handleContextLost;
+    const restored = renderer.handleContextRestored;
+    const calls = site.calls.length;
+    for (const api of [renderer.gl, renderer.timerQuery].filter(Boolean)) {
+      for (const [name, value] of Object.entries(api)) {
+        if (typeof value === 'function') api[name] = () => assert.fail(`page exit must not call ${name}`);
+      }
+    }
+    renderer.dispose({ releaseGpu: false });
+    assert.equal(renderer.disposed, true);
+    assert.equal(renderer.ready, false);
+    assert.equal(renderer.initialized, false);
+    assert.equal(renderer.gpuSync, null);
+    assert.equal(renderer.gpuQuery, null);
+    assert.equal(renderer.resources.length, 0);
+    assert.equal(renderer.themePrograms.size, 0);
+    assert.equal(renderer.particleSky, null);
+    assert.equal(site.events.size, 0);
+    assert.equal(site.syncs.size + site.queries.size, 1,
+      'the discarded context retains its handles for browser-owned cleanup');
+    renderer.dispose({ releaseGpu: false });
+    renderer.dispose();
+    lost({ preventDefault() { assert.fail('disposed listeners must be inert'); } });
+    restored();
+    assert.equal(renderer.render(13, 0, 0), false);
+    renderer.resize();
+    assert.equal(site.calls.length, calls, 'exit and late callbacks must not touch the GPU or canvas');
+  }
+});
+
 await test('context loss invalidates a pending fence without polling or deleting lost-context objects', async () => {
   const site = await browser({ webgl2: true });
   const { renderer } = site;

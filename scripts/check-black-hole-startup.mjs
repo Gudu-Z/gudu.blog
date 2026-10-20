@@ -175,6 +175,62 @@ await test('disposing during compilation cancels polling and prevents late setup
   assert.deepEqual(site.warnings, []);
 });
 
+await test('page exit cancels pending compilation without entering the GPU driver', async () => {
+  const site = browser();
+  await site.tick();
+  assert.equal(site.pendingPolls, 1);
+  const oldRestore = site.renderer.handleContextRestored;
+  const calls = site.calls.length;
+  for (const [name, value] of Object.entries(site.renderer.gl)) {
+    if (typeof value === 'function') site.renderer.gl[name] = () => assert.fail(`page exit must not call ${name}`);
+  }
+  site.renderer.dispose({ releaseGpu: false });
+  assert.equal(site.pendingPolls, 0);
+  assert.equal(site.listeners, 0);
+  assert.equal(site.renderer.ready, false);
+  assert.equal(site.renderer.resources.length, 0);
+  assert.equal(site.renderer.themePrograms.size, 0);
+  site.complete();
+  oldRestore();
+  await site.tick();
+  site.renderer.dispose({ releaseGpu: false });
+  site.renderer.dispose();
+  assert.equal(site.renderer.ready, false);
+  assert.equal(site.renderer.initialized, false);
+  assert.equal(site.readySignals, 0);
+  assert.equal(site.pendingPolls, 0);
+  assert.equal(site.calls.length, calls, 'cancelled compilation must never resume setup or delete GPU handles');
+  assert.deepEqual(site.warnings, []);
+});
+
+await test('late ink image success or failure after page exit cannot upload or restore the scene', async () => {
+  for (const outcome of ['onload', 'onerror']) {
+    const site = browser({ parallel: false, style: 'ink' });
+    await site.tick();
+    assert.equal(site.images.length, 2);
+    assert.equal(site.renderer.ready, false);
+    const images = site.images.splice(0);
+    const calls = site.calls.length;
+    for (const [name, value] of Object.entries(site.renderer.gl)) {
+      if (typeof value === 'function') site.renderer.gl[name] = () => assert.fail(`late images must not call ${name}`);
+    }
+    site.renderer.dispose({ releaseGpu: false });
+    for (const image of images) image[outcome]();
+    await site.tick();
+    site.renderer.dispose();
+    assert.equal(site.renderer.disposed, true);
+    assert.equal(site.renderer.ready, false);
+    assert.equal(site.renderer.initialized, false);
+    assert.equal(site.renderer.inkLoaded, false);
+    assert.equal(site.renderer.inkSplatter, null);
+    assert.equal(site.readySignals, 0);
+    assert.equal(site.pendingPolls, 0);
+    assert.equal(site.listeners, 0);
+    assert.equal(site.calls.length, calls, 'late images must not enter upload, mipmap or disposal work');
+    assert.deepEqual(site.warnings, []);
+  }
+});
+
 await test('an ink-only visit compiles only ink shaders and never allocates particle geometry', async () => {
   const site = browser({ style: 'ink' });
   await site.tick();

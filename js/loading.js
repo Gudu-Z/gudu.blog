@@ -5,10 +5,13 @@
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   let visibleSince = null;
   let released = false;
+  let active = true;
+  let revealPending = false;
   let closing = false;
   let readyRequested = false;
   let closeTimer = 0;
   let exitTimer = 0;
+  let readyFrame = 0;
   root.classList.add('is-loading', 'has-site-intro');
 
   // Measure the short logo intro from its first paint, not the head-script download.
@@ -19,19 +22,28 @@
   }
   document.addEventListener('animationstart', introStarted);
 
-  function release() {
+  function announceReveal() {
+    if (!revealPending || !active || document.hidden) return;
+    revealPending = false;
+    window.dispatchEvent(new Event('site:revealed'));
+  }
+
+  function release({ notify = !document.hidden } = {}) {
     if (released) return;
     released = true;
+    revealPending = true;
     clearTimeout(deadline);
     clearTimeout(closeTimer);
     clearTimeout(exitTimer);
+    cancelAnimationFrame(readyFrame);
+    readyFrame = 0;
     document.removeEventListener('animationstart', introStarted);
-    if (reducedMotion.matches || document.hidden || !root.classList.contains('is-loading-exit')) {
+    if (!notify || reducedMotion.matches || document.hidden || !root.classList.contains('is-loading-exit')) {
       root.classList.remove('has-site-intro');
     }
     root.classList.remove('is-loading', 'is-loading-exit');
     document.querySelector('#site-loader')?.remove();
-    window.dispatchEvent(new Event('site:revealed'));
+    if (notify) announceReveal();
   }
 
   // Finish the fade once the page has requested readiness; a cold WebGL
@@ -40,13 +52,14 @@
   const deadline = setTimeout(() => { if (readyRequested) dismiss(); else release(); }, 4000);
 
   function dismiss() {
-    if (released || closing) return;
+    if (!active || released || closing) return;
     closing = true;
     if (reducedMotion.matches || document.hidden) { release(); return; }
     // Resource readiness may arrive before the browser delivers animationstart.
     visibleSince ??= performance.now();
     function finishIntro() {
-      if (released) return;
+      if (!active || released) return;
+      if (document.hidden) { release({ notify: false }); return; }
       const remaining = 1100 - (performance.now() - visibleSince);
       if (remaining > 0) {
         closeTimer = setTimeout(finishIntro, remaining);
@@ -74,14 +87,26 @@
     const sceneReady = document.querySelector('.black-hole')?.classList.contains('is-ready');
     const visual = sceneReady ? Promise.resolve() : image?.decode?.();
     Promise.allSettled([font, visual]).then(() => {
-      if (released) return;
+      if (!active || released) return;
       if (document.hidden || reducedMotion.matches) dismiss();
-      else requestAnimationFrame(() => requestAnimationFrame(dismiss));
+      else readyFrame = requestAnimationFrame(() => {
+        readyFrame = 0;
+        if (!active || released) return;
+        if (document.hidden || reducedMotion.matches) { dismiss(); return; }
+        readyFrame = requestAnimationFrame(() => {
+          readyFrame = 0;
+          if (active && !released) dismiss();
+        });
+      });
     });
   }
 
   window.SiteLoader = { ready };
-  window.addEventListener('pagehide', release, { once: true });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
+  window.addEventListener('pagehide', () => { active = false; release({ notify: false }); });
+  window.addEventListener('pageshow', () => { active = true; announceReveal(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) release({ notify: false });
+    else announceReveal();
+  });
   reducedMotion.addEventListener('change', () => { if (reducedMotion.matches) release(); });
 })();

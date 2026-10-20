@@ -1200,7 +1200,7 @@
       this.compileWait = null;
     }
 
-    dispose() {
+    dispose({ releaseGpu = true } = {}) {
       if (this.disposed) return;
       this.disposed = true;
       this.ready = this.initialized = false;
@@ -1210,15 +1210,15 @@
       this.canvas.removeEventListener('webglcontextlost', this.handleContextLost);
       this.canvas.removeEventListener('webglcontextrestored', this.handleContextRestored);
       const gl = this.gl;
-      if (gl && !this.lost) {
+      // A discarded page leaves GPU cleanup to the browser. Even deleting
+      // handles can enter a busy driver and delay closing the tab.
+      if (releaseGpu && gl && !this.lost) {
         if (this.gpuSync) gl.deleteSync(this.gpuSync);
         if (this.gpuQuery) this.timerQuery.deleteQueryEXT(this.gpuQuery);
         this.inkSplatter?.dispose();
         const remove = { program: 'deleteProgram', texture: 'deleteTexture', framebuffer: 'deleteFramebuffer', buffer: 'deleteBuffer' };
         for (const { type, value } of this.resources) gl[remove[type]](value);
-        // Delete handles without a synchronous finish/readback/context-loss.
-        // Forced loseContext() can block the Intel/ANGLE driver for seconds;
-        // let the browser retire the context as the document is discarded.
+        // Explicit disposal still avoids finish/readback/forced context loss.
       }
       this.resources = [];
       this.gpuQuery = this.gpuSync = this.inkSplatter = null;

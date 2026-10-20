@@ -48,9 +48,13 @@
   let idleTimer = 0;
   let lastIdleActivity = performance.now();
   let touching = false;
+  let suspendedPosition = null;
+  let pendingHash = false;
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const y = () => window.scrollY || 0;
+  const available = () => active && !document.hidden;
+  const position = () => y() >= entry ? 1 + (y() - entry) / Math.max(width, 1) : y() / Math.max(entry, 1);
   const blocked = () => root.classList.contains('is-loading') || document.body.dataset.menuOpen === 'true';
   const interactive = target => target?.closest?.('input, textarea, select, button, [contenteditable="true"], [role="slider"]');
 
@@ -143,7 +147,6 @@
   }
 
   function update(syncHash = true) {
-    updateFrame = 0;
     if (!active || !positions.length) return;
     const scroll = y();
     const progress = clamp(scroll / Math.max(1, entry), 0, 1);
@@ -182,7 +185,7 @@
   }
 
   function measure() {
-    if (measuring) return;
+    if (!available() || measuring) return;
     measuring = true;
     // Read the actual panel stride, including the fixed gap between chapters.
     width = chapters.length > 1
@@ -208,7 +211,10 @@
   }
 
   function queueUpdate() {
-    if (active && !updateFrame) updateFrame = requestAnimationFrame(() => update());
+    if (available() && !updateFrame) updateFrame = requestAnimationFrame(() => {
+      updateFrame = 0;
+      if (available()) update();
+    });
   }
 
   function stop() {
@@ -236,7 +242,7 @@
   }
 
   function goTo(index, { historyMode = 'push', focus = false, instant = false, entrance = false } = {}) {
-    if (!active || index < 0 || index >= sections.length) return;
+    if (!available() || index < 0 || index >= sections.length) return;
     const previousDirection = transition?.direction;
     const previousPhase = transitionPhase;
     stop();
@@ -273,7 +279,7 @@
     }
     const duration = Math.max(1, Math.round((direction === 'entering' ? 900 : direction === 'leaving' ? 680 : 640) * (1 - phaseStart)));
     function step(now) {
-      if (!active || !transition) return;
+      if (!available() || !transition) return;
       const t = clamp((now - started) / duration, 0, 1);
       if (direction) setTransitionPhase(phaseStart + (1 - phaseStart) * t, direction, pulseEnabled);
       setScroll(start + (destination - start) * (1 - Math.pow(1 - t, 4)));
@@ -285,7 +291,7 @@
 
   function smoothTick(now) {
     frame = 0;
-    if (!active) return;
+    if (!available()) return;
     const elapsed = lastFrame ? Math.min(64, now - lastFrame) : 16;
     lastFrame = now;
     // Keep subpixel state: browsers can round scrollY to whole CSS pixels.
@@ -325,6 +331,7 @@
   }
 
   window.addEventListener('wheel', event => {
+    if (!available()) return;
     noteIdleActivity();
     scheduleIdle();
     if (!active || blocked() || event.ctrlKey || event.metaKey || interactive(event.target)) return;
@@ -358,6 +365,7 @@
   }, { passive: false });
 
   document.addEventListener('keydown', event => {
+    if (!available()) return;
     if (['Home', 'End', 'ArrowDown', 'ArrowRight', 'PageDown', 'Space', 'ArrowUp', 'ArrowLeft', 'PageUp'].includes(event.code)) {
       noteIdleActivity();
       scheduleIdle();
@@ -392,6 +400,7 @@
   });
 
   window.addEventListener('touchstart', event => {
+    if (!available()) return;
     touching = event.touches.length > 0;
     noteIdleActivity();
     touch = event.touches.length === 1 && !interactive(event.target) && !blocked()
@@ -399,6 +408,7 @@
     if (touch && !transition?.entrance) stop();
   }, { passive: true });
   window.addEventListener('touchmove', event => {
+    if (!available()) return;
     noteIdleActivity();
     if (!active || !touch || blocked() || event.touches.length !== 1) return;
     const dx = touch.x - event.touches[0].clientX;
@@ -424,6 +434,7 @@
     if (advance(destination - (frame ? targetY : y()))) touch.entrance = true;
   }, { passive: false });
   const endTouch = event => {
+    if (!available()) return;
     touch = null;
     touching = Boolean(event.touches?.length);
     noteIdleActivity();
@@ -433,7 +444,7 @@
   window.addEventListener('touchcancel', endTouch, { passive: true });
 
   document.addEventListener('click', event => {
-    if (!active || event.defaultPrevented || event.button > 0 || event.metaKey || event.ctrlKey
+    if (!available() || event.defaultPrevented || event.button > 0 || event.metaKey || event.ctrlKey
         || event.shiftKey || event.altKey) return;
     const link = event.target.closest?.('a[href]');
     if (!link || link.hasAttribute('download') || link.target === '_blank') return;
@@ -447,7 +458,7 @@
   });
 
   document.addEventListener('submit', event => {
-    if (!active || blocked() || event.target.id !== 'post-search') return;
+    if (!available() || blocked() || event.target.id !== 'post-search') return;
     const index = sections.findIndex(section => section.id === 'journal');
     if (index < 0) return;
     event.preventDefault();
@@ -456,13 +467,18 @@
   });
 
   function restoreHash() {
+    if (!available()) { pendingHash = true; return; }
+    pendingHash = false;
     const index = sections.findIndex(section => `#${section.id}` === window.location.hash);
     if (index >= 0) goTo(index, { historyMode: null, instant: true });
     else { stop(); queueUpdate(); }
   }
 
   function reflow() {
-    const position = y() >= entry ? 1 + (y() - entry) / Math.max(width, 1) : y() / Math.max(entry, 1);
+    if (!available()) return;
+    if (!positions.length) { measure(); return; }
+    const previousPosition = suspendedPosition ?? position();
+    suspendedPosition = null;
     const navigation = transition;
     stop();
     measure();
@@ -473,9 +489,22 @@
         instant: Boolean(navigation.direction),
       });
     } else {
-      const destination = position >= 1 ? entry + (position - 1) * width : position * entry;
+      const destination = previousPosition >= 1 ? entry + (previousPosition - 1) * width : previousPosition * entry;
       if (Math.abs(destination - y()) > 0.5) setScroll(destination);
     }
+  }
+
+  function resumeLayout() {
+    if (!available()) return;
+    const firstMeasure = !positions.length;
+    noteIdleActivity();
+    if (pendingHash || (firstMeasure && window.location.hash)) {
+      suspendedPosition = null;
+      measure();
+      restoreHash();
+    } else reflow();
+    layoutObserver.observe(viewport);
+    layoutObserver.observe(chapters[0]);
   }
 
   root.style.setProperty('--chapter-count', String(chapters.length));
@@ -485,19 +514,26 @@
   if (window.location.hash) restoreHash();
   initialized = true;
   scheduleIdle();
-  window.addEventListener('scroll', () => { noteIdleActivity(); queueUpdate(); }, { passive: true });
+  window.addEventListener('scroll', () => { if (available()) { noteIdleActivity(); queueUpdate(); } }, { passive: true });
   document.addEventListener('scroll', event => {
-    if (!event.target?.closest?.('.chapter-section')) return;
+    if (!available() || !event.target?.closest?.('.chapter-section')) return;
     noteIdleActivity();
     scheduleIdle();
   }, { passive: true, capture: true });
   window.addEventListener('resize', reflow, { passive: true });
   window.addEventListener('hashchange', restoreHash);
-  window.addEventListener('popstate', () => { stop(); queueUpdate(); });
-  window.addEventListener('site:revealed', () => { noteIdleActivity(); measure(); if (window.location.hash) restoreHash(); });
-  window.addEventListener('pageshow', () => { active = true; noteIdleActivity(); measure(); });
+  window.addEventListener('popstate', () => { if (available()) { stop(); queueUpdate(); } });
+  window.addEventListener('site:revealed', () => {
+    if (!available()) return;
+    if (suspendedPosition !== null || !positions.length) { resumeLayout(); return; }
+    noteIdleActivity(); measure(); if (window.location.hash) restoreHash();
+  });
+  window.addEventListener('pageshow', () => { active = true; resumeLayout(); });
   window.addEventListener('pagehide', () => {
+    if (!active) return;
+    if (positions.length) suspendedPosition = position();
     active = false;
+    layoutObserver.disconnect();
     stop();
     clearProgressFeedback();
     cancelAnimationFrame(updateFrame);
@@ -506,13 +542,16 @@
     touching = false;
   });
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) { noteIdleActivity(); scheduleIdle(); return; }
+    if (!document.hidden) { resumeLayout(); return; }
+    if (!active) return;
+    layoutObserver.disconnect();
     const destination = transition?.destination ?? targetY;
     const focusIndex = transition?.focus ? transition.index : null;
     const wasMoving = Boolean(frame || transition);
     stop();
     if (wasMoving) setScroll(destination);
     if (focusIndex !== null) focusSection(focusIndex);
+    if (positions.length) suspendedPosition = position();
     clearProgressFeedback();
     cancelAnimationFrame(updateFrame);
     updateFrame = 0;
@@ -520,6 +559,7 @@
     touching = false;
   });
   motion.addEventListener('change', () => {
+    if (!available()) return;
     noteIdleActivity();
     if (motion.matches) clearProgressFeedback();
     if (motion.matches && frame) {
@@ -532,7 +572,9 @@
     scheduleIdle();
   });
   const layoutObserver = new ResizeObserver(reflow);
-  layoutObserver.observe(viewport);
-  // Fonts and intrinsic flex layout can settle after the fixed viewport does.
-  layoutObserver.observe(chapters[0]);
+  if (available()) {
+    layoutObserver.observe(viewport);
+    // Fonts and intrinsic flex layout can settle after the fixed viewport does.
+    layoutObserver.observe(chapters[0]);
+  }
 })();

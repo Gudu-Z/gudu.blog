@@ -327,7 +327,7 @@
   blackHoleCanvas?.addEventListener('webglcontextlost', () => { stop(); drawStars(true); });
   window.addEventListener('pagehide', event => {
     // pagehide can precede visibilitychange. Gate every late completion before
-    // releasing GPU resources, while preserving the renderer for BFCache.
+    // retiring the renderer, while preserving it for BFCache.
     pageActive = false;
     stop();
     stopClock();
@@ -335,7 +335,9 @@
     finishIntro();
     stopTitleBlink();
     if (!event.persisted) {
-      blackHole?.dispose?.();
+      // Do not send deletion commands into a busy driver while the tab closes.
+      // The browser owns context retirement once this document is discarded.
+      blackHole?.dispose?.({ releaseGpu: false });
       blackHole = null;
       rendererStarted = false;
     }

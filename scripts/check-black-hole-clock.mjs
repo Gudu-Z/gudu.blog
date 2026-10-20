@@ -86,7 +86,7 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
       resetTiming() { this.timingResets++; }
       pollGpu() { polls.push(now); }
       sampleFrame(timestamp) { samples.push(timestamp); }
-      dispose() { this.disposed = true; this.ready = false; }
+      dispose(options) { this.disposeOptions = options; this.disposed = true; this.ready = false; }
       setStyle(style) { this.style = style; this.ready = !(deferInk && style === 'ink'); }
       render(time, x, y, chapter = 0, entranceGlow = 0) {
         attempts.push({ time, x, y, chapter, entranceGlow, at: now });
@@ -375,12 +375,13 @@ await test('pointer-only fallback and asynchronous theme loading do not advance 
   phase(site.last.time, 13.25);
 });
 
-await test('pagehide disposes the renderer and rejects late initialization, input and timer callbacks', () => {
+await test('pagehide avoids GPU teardown and rejects late initialization, input and timer callbacks', () => {
   const site = browser({ deferReady: true });
   const oldRenderer = site.renderer;
   const queuedTimers = site.queuedTimers();
   site.page(500, 'pagehide', { persisted: false });
   assert.equal(oldRenderer.disposed, true);
+  assert.equal(oldRenderer.disposeOptions?.releaseGpu, false, 'closing the document must leave GPU retirement to the browser');
   assert.equal(site.pendingFrames, 0);
   assert.equal(site.pendingTimers, 0);
   site.restore(1000, oldRenderer);
@@ -414,6 +415,7 @@ await test('BFCache preserves the renderer, freezes late callbacks and resumes w
   const renderer = site.renderer;
   site.page(750, 'pagehide', { persisted: true });
   assert.equal(renderer.disposed, false);
+  assert.equal(renderer.disposeOptions, undefined, 'BFCache keeps the existing GPU resources for restoration');
   const renderCount = site.renders.length;
   const resizeCount = renderer.resizes;
   site.restore(1000);
