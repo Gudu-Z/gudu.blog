@@ -550,6 +550,7 @@
     uniform float u_ink;
     uniform float u_chapter;
     uniform float u_softGlow;
+    uniform float u_entranceGlow;
     void main() {
       vec4 scene = texture2D(u_scene, v_uv);
       if (u_ink > 0.5) {
@@ -598,6 +599,9 @@
           glow += halo / haloWeights * (0.85 * u_chapter * localFade);
         }
       #endif
+      // The entrance accent only amplifies light extracted from the disk.
+      // The scene, star field and camera keep their ordinary chapter values.
+      glow *= 1.0 + 0.30 * u_entranceGlow;
       vec3 color = 1.0 - (1.0 - scene.rgb) * exp(-glow * 1.2);
       float alpha = max(scene.a, max(color.r, max(color.g, color.b)));
       // Straight-alpha output; the light remains luminous over the star field.
@@ -999,8 +1003,9 @@
       gl.uniform1i(program.uniforms[name], index);
     }
 
-    render(time, x, y, chapter = this.chapter) {
+    render(time, x, y, chapter = this.chapter, entranceGlow = 0) {
       this.chapter = Math.max(0, Math.min(1, Number(chapter) || 0));
+      entranceGlow = Math.max(0, Math.min(1, Number(entranceGlow) || 0));
       if (!this.ready || this.lost || this.disposed) return false;
       // Completion-capable contexts keep at most one frame in flight. Poll
       // without waiting; preserve the last presented frame while GPU is busy.
@@ -1058,6 +1063,7 @@
       gl.uniform4fv(this.composite.uniforms.u_crop, this.crop);
       gl.uniform1f(this.composite.uniforms.u_chapter, this.chapter);
       gl.uniform1f(this.composite.uniforms.u_softGlow, hasSoftGlow ? 1 : 0);
+      gl.uniform1f(this.composite.uniforms.u_entranceGlow, entranceGlow);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       if (this.gpuQuery) this.timerQuery.endQueryEXT(this.timerQuery.TIME_ELAPSED_EXT);
       if (this.webgl2) {

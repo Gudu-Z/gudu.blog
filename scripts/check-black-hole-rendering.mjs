@@ -859,14 +859,14 @@ await test('chapter bloom mipmaps share one GPU fence, defer while busy, and res
   };
 
   assert.equal(renderer.render(12, 0, 0, 0), true);
-  const heroDraws = site.count('drawArrays');
+  const heroDraws = site.count('draw');
   assert.equal(bloomOperations().filter(call => call.name === 'generateMipmap').length, 0);
   site.complete();
 
   const chapterStart = site.calls.length;
   const fencesBefore = site.count('fenceSync');
   assert.equal(renderer.render(13, 0, 0, 1), true);
-  assert.equal(site.count('drawArrays') - heroDraws, heroDraws,
+  assert.equal(site.count('draw') - heroDraws, heroDraws,
     'chapter glow must reuse the existing render passes');
   const chapterBloom = bloomOperations().filter(call => call.index >= chapterStart);
   const mipmaps = chapterBloom.filter(call => call.name === 'generateMipmap');
@@ -880,7 +880,7 @@ await test('chapter bloom mipmaps share one GPU fence, defer while busy, and res
 
   site.bounds.width = site.bounds.right = 1001;
   renderer.resize();
-  const busyCounts = ['drawArrays', 'generateMipmap', 'texImage2D', 'canvasWidth', 'fenceSync']
+  const busyCounts = ['draw', 'generateMipmap', 'texImage2D', 'canvasWidth', 'fenceSync']
     .map(name => [name, site.count(name)]);
   assert.equal(renderer.render(14, 0, 0, 1), false);
   for (const [name, count] of busyCounts) {
@@ -929,4 +929,43 @@ await test('legacy chapter rendering never requests mipmaps for a non-power-of-t
   assert.ok(site.calls.slice(chapterStart).some(call => call.name === 'uniform1f'
     && call.args[0]?.name === 'u_softGlow' && call.args[1] === 0));
   renderer.dispose();
+});
+
+await test('entrance light is a clamped composite-only input that resets by default and keeps the frame budget', async () => {
+  for (const webgl2 of [false, true]) {
+    const site = await browser({ webgl2 });
+    const { renderer } = site;
+    const capture = glow => {
+      if (webgl2 && renderer.gpuSync) site.complete();
+      const start = site.calls.length;
+      assert.equal(renderer.render(12, 0.2, -0.3, 0.5, glow), true);
+      return site.calls.slice(start);
+    };
+    const upload = calls => calls.find(call => call.name === 'uniform1f'
+      && call.args[0]?.name === 'u_entranceGlow');
+    const sceneInputs = calls => calls.filter(call => call.name.startsWith('uniform')
+      && call.args[0]?.program === renderer.scene.value)
+      .map(call => [call.name, call.args[0].name, ...call.args.slice(1)]);
+    const base = capture(0);
+    const pulse = capture(1);
+    assert.equal(upload(pulse).args[1], 1);
+    assert.equal(upload(pulse).args[0].program, renderer.composite.value);
+    assert.equal(renderer.scene.uniforms.u_entranceGlow, undefined);
+    assert.deepEqual(sceneInputs(pulse), sceneInputs(base),
+      'the accent cannot alter disk geometry, scene emission, sky inputs, or camera uniforms');
+    for (const name of ['draw', 'generateMipmap', 'fenceSync']) {
+      assert.equal(pulse.filter(call => call.name === name).length, base.filter(call => call.name === name).length,
+        `the pulse cannot add ${name} operations`);
+    }
+    if (webgl2) {
+      const before = site.calls.length;
+      assert.equal(renderer.render(12, 0.2, -0.3, 0.5, 0), false);
+      assert.equal(upload(site.calls.slice(before)), undefined, 'a busy GPU defers the composite update');
+    }
+    assert.equal(upload(capture(undefined)).args[1], 0, 'omitting the transient input must clear the previous pulse');
+    assert.equal(upload(capture(4)).args[1], 1);
+    assert.equal(upload(capture(-1)).args[1], 0);
+    assert.equal(upload(capture(Number.NaN)).args[1], 0);
+    renderer.dispose();
+  }
 });

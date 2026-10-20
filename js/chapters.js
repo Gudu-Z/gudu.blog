@@ -16,7 +16,7 @@
   const progressMarker = document.querySelector('.chapter-progress-marker');
   const currentLabel = document.querySelector('[data-chapter-current]');
   const links = [...document.querySelectorAll('[data-chapter-link]')];
-  const heroText = [...stage.querySelectorAll('.hero-heading, .hero-bottom')];
+  const heroText = [...stage.querySelectorAll('.hero-heading')];
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
   let positions = [];
   let panelBounds = [];
@@ -36,12 +36,18 @@
   let entryGesture = false;
   let touch = null;
   let lastProgress = -1;
+  let transitionPhase = 0;
+  let entranceGlow = 0;
+  let lastEntranceGlow = -1;
   let currentIndex = -1;
   let measuring = false;
   let lastIndicatorX = null;
   let movingTimer = 0;
   let arrivalTimer = 0;
   let arrivingLink = null;
+  let idleTimer = 0;
+  let lastIdleActivity = performance.now();
+  let touching = false;
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const y = () => window.scrollY || 0;
@@ -71,10 +77,51 @@
     clearArrival();
   }
 
+  function clearIdle() {
+    clearTimeout(idleTimer);
+    idleTimer = 0;
+    progressNav?.classList.remove('is-chapter-idle');
+  }
+
+  function noteIdleActivity() {
+    lastIdleActivity = performance.now();
+    clearIdle();
+  }
+
+  function canIdle() {
+    return progressNav && active && initialized && !document.hidden && !motion.matches
+      && !blocked() && !frame && !lastFrame && !transition && !touching && y() >= entry - 1;
+  }
+
+  function scheduleIdle() {
+    if (!canIdle()) { clearIdle(); return; }
+    if (idleTimer || progressNav.classList.contains('is-chapter-idle')) return;
+    idleTimer = setTimeout(() => {
+      idleTimer = 0;
+      if (canIdle()) progressNav.classList.add('is-chapter-idle');
+    }, Math.max(0, 1000 - (performance.now() - lastIdleActivity)));
+  }
+
+  function emitChapterState(progress = clamp(y() / Math.max(1, entry), 0, 1)) {
+    if (progress === lastProgress && entranceGlow === lastEntranceGlow) return;
+    lastProgress = progress;
+    lastEntranceGlow = entranceGlow;
+    window.dispatchEvent(new CustomEvent('site:chapter', { detail: { progress, entranceGlow } }));
+  }
+
+  function setTransitionPhase(phase, direction, pulseEnabled = false) {
+    transitionPhase = phase;
+    root.style.setProperty('--chapter-transition-phase', phase.toFixed(4));
+    const pulse = (phase - 0.18) / 0.6;
+    entranceGlow = pulseEnabled && direction === 'entering' && pulse > 0 && pulse < 1
+      ? Math.sin(Math.PI * pulse) ** 2 : 0;
+    root.style.setProperty('--chapter-entrance-glow', entranceGlow.toFixed(5));
+  }
+
   function updateProgressFeedback(x, visible, changed, index) {
     const moved = lastIndicatorX !== null && Math.abs(x - lastIndicatorX) > 0.01;
     lastIndicatorX = x;
-    if (!progressNav || !initialized || !visible || motion.matches || document.hidden) {
+    if (!progressNav || !initialized || !visible || motion.matches || document.hidden || transition?.direction) {
       clearProgressFeedback();
       return;
     }
@@ -117,11 +164,9 @@
       const bounds = panelBounds[index];
       chapter.inert = !visible || bounds.left + bounds.width - x <= 1 || bounds.left - x >= window.innerWidth - 1;
     });
-    if (progress !== lastProgress) {
-      lastProgress = progress;
-      window.dispatchEvent(new CustomEvent('site:chapter', { detail: { progress } }));
-    }
+    emitChapterState(progress);
     const index = visible ? Math.min(chapters.length, 1 + Math.round(x / Math.max(width, 1))) : 0;
+    root.style.setProperty('--chapter-active-index', String(clamp(index - 1, 0, chapters.length - 1)));
     const changed = index !== currentIndex;
     if (changed) {
       currentIndex = index;
@@ -132,6 +177,7 @@
       }
     }
     updateProgressFeedback(x, visible, changed, index);
+    scheduleIdle();
     if (syncHash && initialized && !transition && (scroll >= entry - 1 || scroll <= 1)) writeHash(index);
   }
 
@@ -166,13 +212,16 @@
   }
 
   function stop() {
+    noteIdleActivity();
     cancelAnimationFrame(frame);
     frame = 0;
     lastFrame = 0;
     transition = null;
     targetY = y();
     smoothY = targetY;
-    root.classList.remove('is-chapter-transitioning');
+    root.classList.remove('is-chapter-transitioning', 'is-chapter-entering', 'is-chapter-leaving');
+    setTransitionPhase(0);
+    emitChapterState();
   }
 
   function setScroll(top) {
@@ -188,6 +237,8 @@
 
   function goTo(index, { historyMode = 'push', focus = false, instant = false, entrance = false } = {}) {
     if (!active || index < 0 || index >= sections.length) return;
+    const previousDirection = transition?.direction;
+    const previousPhase = transitionPhase;
     stop();
     measure();
     if (historyMode) writeHash(index, historyMode);
@@ -195,19 +246,36 @@
     const destination = positions[index];
     const started = performance.now();
     entrance = entrance || index === 0 || (start < entry - 2 && index > 0);
+    const direction = index === 0 && (start > 1 || previousDirection) ? 'leaving'
+      : index > 0 && (start < entry - 2 || previousDirection) ? 'entering' : null;
+    entrance = entrance || Boolean(direction);
+    // Both CSS directions share one visual coordinate. Preserve it when a new
+    // destination interrupts the layered transition, including a quick reversal.
+    const phaseStart = direction && previousDirection
+      ? direction === previousDirection ? previousPhase : 1 - previousPhase : 0;
+    const pulseEnabled = direction === 'entering' && !previousDirection && start <= 1;
     targetY = destination;
-    transition = { index, destination, focus, entrance };
+    transition = { index, destination, focus, entrance, direction };
+    clearIdle();
     const finish = () => {
       setScroll(destination);
       stop();
       update(false);
       if (focus) focusSection(index);
     };
-    if (instant || motion.matches || Math.abs(start - destination) < 1) { finish(); return; }
+    if (instant || motion.matches || document.hidden || (!previousDirection && Math.abs(start - destination) < 1)) { finish(); return; }
     root.classList.add('is-chapter-transitioning');
+    if (direction) {
+      setTransitionPhase(phaseStart, direction, pulseEnabled);
+      root.classList.add(`is-chapter-${direction}`);
+      clearProgressFeedback();
+      emitChapterState();
+    }
+    const duration = Math.max(1, Math.round((direction === 'entering' ? 900 : direction === 'leaving' ? 680 : 640) * (1 - phaseStart)));
     function step(now) {
       if (!active || !transition) return;
-      const t = clamp((now - started) / (entrance ? 720 : 640), 0, 1);
+      const t = clamp((now - started) / duration, 0, 1);
+      if (direction) setTransitionPhase(phaseStart + (1 - phaseStart) * t, direction, pulseEnabled);
       setScroll(start + (destination - start) * (1 - Math.pow(1 - t, 4)));
       if (t < 1) frame = requestAnimationFrame(step);
       else finish();
@@ -226,6 +294,7 @@
     if (Math.abs(targetY - next) < 0.6) {
       setScroll(targetY);
       lastFrame = 0;
+      scheduleIdle();
     } else {
       setScroll(next);
       frame = requestAnimationFrame(smoothTick);
@@ -256,6 +325,8 @@
   }
 
   window.addEventListener('wheel', event => {
+    noteIdleActivity();
+    scheduleIdle();
     if (!active || blocked() || event.ctrlKey || event.metaKey || interactive(event.target)) return;
     const vertical = Math.abs(event.deltaY) >= Math.abs(event.deltaX);
     const raw = vertical ? event.deltaY : event.deltaX;
@@ -279,6 +350,7 @@
     }
     if (vertical && scrollableChapter(event.target, Math.sign(delta))) {
       stop();
+      scheduleIdle();
       return;
     }
     event.preventDefault();
@@ -286,6 +358,10 @@
   }, { passive: false });
 
   document.addEventListener('keydown', event => {
+    if (['Home', 'End', 'ArrowDown', 'ArrowRight', 'PageDown', 'Space', 'ArrowUp', 'ArrowLeft', 'PageUp'].includes(event.code)) {
+      noteIdleActivity();
+      scheduleIdle();
+    }
     if (!active || event.defaultPrevented || blocked() || interactive(event.target)
         || event.altKey || event.ctrlKey || event.metaKey) return;
     if (event.code === 'Space' && event.target?.closest?.('a')) return;
@@ -311,15 +387,19 @@
       stop();
       const readingDistance = event.code.startsWith('Arrow') ? 100 : inside.clientHeight * 0.65;
       inside.scrollBy({ top: direction * readingDistance, behavior: motion.matches ? 'instant' : 'smooth' });
+      scheduleIdle();
     } else if (advance(direction * distance)) entryGesture = true;
   });
 
   window.addEventListener('touchstart', event => {
+    touching = event.touches.length > 0;
+    noteIdleActivity();
     touch = event.touches.length === 1 && !interactive(event.target) && !blocked()
       ? { x: event.touches[0].clientX, y: event.touches[0].clientY, scroll: y(), axis: null, entrance: false, native: false } : null;
     if (touch && !transition?.entrance) stop();
   }, { passive: true });
   window.addEventListener('touchmove', event => {
+    noteIdleActivity();
     if (!active || !touch || blocked() || event.touches.length !== 1) return;
     const dx = touch.x - event.touches[0].clientX;
     const dy = touch.y - event.touches[0].clientY;
@@ -343,7 +423,12 @@
     const destination = clamp(touch.scroll + (touch.axis === 'x' ? dx : dy), 0, maximum);
     if (advance(destination - (frame ? targetY : y()))) touch.entrance = true;
   }, { passive: false });
-  const endTouch = () => { touch = null; };
+  const endTouch = event => {
+    touch = null;
+    touching = Boolean(event.touches?.length);
+    noteIdleActivity();
+    scheduleIdle();
+  };
   window.addEventListener('touchend', endTouch, { passive: true });
   window.addEventListener('touchcancel', endTouch, { passive: true });
 
@@ -382,7 +467,11 @@
     stop();
     measure();
     if (navigation) {
-      goTo(navigation.index, { historyMode: null, focus: navigation.focus, entrance: navigation.entrance });
+      goTo(navigation.index, {
+        historyMode: null, focus: navigation.focus, entrance: navigation.entrance,
+        // A changed viewport finishes the layered entrance instead of replaying it.
+        instant: Boolean(navigation.direction),
+      });
     } else {
       const destination = position >= 1 ? entry + (position - 1) * width : position * entry;
       if (Math.abs(destination - y()) > 0.5) setScroll(destination);
@@ -390,16 +479,23 @@
   }
 
   root.style.setProperty('--chapter-count', String(chapters.length));
+  setTransitionPhase(0);
   root.classList.add('has-chapters');
   measure();
   if (window.location.hash) restoreHash();
   initialized = true;
-  window.addEventListener('scroll', queueUpdate, { passive: true });
+  scheduleIdle();
+  window.addEventListener('scroll', () => { noteIdleActivity(); queueUpdate(); }, { passive: true });
+  document.addEventListener('scroll', event => {
+    if (!event.target?.closest?.('.chapter-section')) return;
+    noteIdleActivity();
+    scheduleIdle();
+  }, { passive: true, capture: true });
   window.addEventListener('resize', reflow, { passive: true });
   window.addEventListener('hashchange', restoreHash);
   window.addEventListener('popstate', () => { stop(); queueUpdate(); });
-  window.addEventListener('site:revealed', () => { measure(); if (window.location.hash) restoreHash(); });
-  window.addEventListener('pageshow', () => { active = true; measure(); });
+  window.addEventListener('site:revealed', () => { noteIdleActivity(); measure(); if (window.location.hash) restoreHash(); });
+  window.addEventListener('pageshow', () => { active = true; noteIdleActivity(); measure(); });
   window.addEventListener('pagehide', () => {
     active = false;
     stop();
@@ -407,11 +503,24 @@
     cancelAnimationFrame(updateFrame);
     updateFrame = 0;
     touch = null;
+    touching = false;
   });
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) clearProgressFeedback();
+    if (!document.hidden) { noteIdleActivity(); scheduleIdle(); return; }
+    const destination = transition?.destination ?? targetY;
+    const focusIndex = transition?.focus ? transition.index : null;
+    const wasMoving = Boolean(frame || transition);
+    stop();
+    if (wasMoving) setScroll(destination);
+    if (focusIndex !== null) focusSection(focusIndex);
+    clearProgressFeedback();
+    cancelAnimationFrame(updateFrame);
+    updateFrame = 0;
+    touch = null;
+    touching = false;
   });
   motion.addEventListener('change', () => {
+    noteIdleActivity();
     if (motion.matches) clearProgressFeedback();
     if (motion.matches && frame) {
       const destination = transition?.destination ?? targetY;
@@ -420,6 +529,7 @@
       setScroll(destination);
       if (focusIndex !== null) focusSection(focusIndex);
     }
+    scheduleIdle();
   });
   const layoutObserver = new ResizeObserver(reflow);
   layoutObserver.observe(viewport);

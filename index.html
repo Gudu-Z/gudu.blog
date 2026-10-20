@@ -16,21 +16,28 @@
     <link rel="preload" href="./assets/fonts/barlow-condensed-black-latin.woff2" as="font" type="font/woff2" crossorigin />
     <script src="./js/loading.js?v=20261018-soft-reveal"></script>
     <script src="./js/black-hole-theme.js?v=20261020-continuous-lens"></script>
-    <link rel="stylesheet" href="./css/style.css?v=20261018-hidden-scrollbar" />
-    <link rel="stylesheet" href="./css/blog.css?v=20261018-logo" />
-    <link rel="stylesheet" href="./css/chapters.css?v=20261020-precision-progress" />
+    <link rel="stylesheet" href="./css/style.css?v=20261020-clean-hero" />
+    <link rel="stylesheet" href="./css/blog.css?v=20261020-clean-hero" />
+    <link rel="stylesheet" href="./css/chapters.css?v=20261020-centered-axis" />
     <script src="./js/ink-splatter.js?v=20261020-camera-preserved" defer></script>
     <script src="./js/particle-sky.js?v=20261020-original-stars" defer></script>
-    <script src="./js/black-hole.js?v=20261020-camera-preserved" defer></script>
-    <script src="./js/main.js?v=20261020-chapters" defer></script>
+    <script src="./js/black-hole.js?v=20261020-chapter-entrance" defer></script>
+    <script src="./js/main.js?v=20261020-chapter-entrance" defer></script>
     <script src="./js/posts-data.js?v=20261014-1" defer></script>
     <script src="./js/blog.js?v=20261020-search-icon" defer></script>
-    <script src="./js/chapters.js?v=20261020-precision-progress" defer></script>
+    <script src="./js/chapters.js?v=20261020-idle-progress" defer></script>
   </head>
   <body class="home-page">
     <a class="skip-link" href="#about">跳到主要内容</a>
     <header class="site-header">
-      <a class="site-brand" href="#home" aria-label="Gudu，返回首页"><img class="brand-logo" src="./assets/brand/gudu-logo-light.svg?v=20261018-logo" width="56" height="56" alt="GUDU" /><span class="header-brand-coordinate" aria-hidden="true"><span>GUDU / BLOG</span><span>IN MY OWN ORBIT</span></span></a>
+      <a class="site-brand" href="#home" aria-label="Gudu，返回首页">
+        <img class="brand-logo" src="./assets/brand/gudu-logo-light.svg?v=20261018-logo" width="56" height="56" alt="GUDU" />
+        <span class="header-brand-coordinate" aria-hidden="true">
+          <span class="header-brand-name"><span>GUDU</span><span class="header-brand-slash">/</span><span class="header-brand-kind">BLOG</span></span>
+          <span class="header-brand-motto">IN MY OWN ORBIT</span>
+          <span class="header-brand-calibration"></span>
+        </span>
+      </a>
       <nav class="header-tools" aria-label="站点工具">
         <form class="post-search header-search" id="post-search" role="search" hidden>
           <button class="header-search-toggle" type="submit" aria-label="搜索文章" aria-expanded="false" aria-controls="header-search-fields"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg></button>
@@ -131,10 +138,6 @@
             <canvas id="black-hole-canvas" aria-hidden="true"></canvas>
           </figure>
         </div>
-        <div class="hero-bottom">
-          <p>在自己的轨道上<span>记录思考、生活与一切未知</span></p>
-          <a class="scroll-link" href="#about"><span>向下探索</span><span class="scroll-arrow" aria-hidden="true">↓</span></a>
-        </div>
         </div>
       </section>
       <div class="chapter-scroll" id="chapter-scroll">
@@ -223,7 +226,7 @@
       </div>
     </main>
     <nav class="chapter-progress" aria-label="网站章节">
-      <div class="chapter-progress-track" aria-hidden="true"><span class="chapter-progress-marker"></span></div>
+      <div class="chapter-progress-track" aria-hidden="true"><span class="chapter-progress-scan"></span><span class="chapter-progress-marker"></span></div>
       <div class="chapter-progress-links">
         <a href="#about" data-chapter-link><span class="chapter-station-index">01</span><strong class="chapter-station-title">关于</strong><small class="chapter-station-subtitle">ABOUT ME</small></a>
         <a href="#series" data-chapter-link><span class="chapter-station-index">02</span><strong class="chapter-station-title">专题</strong><small class="chapter-station-subtitle">TOPICS</small></a>

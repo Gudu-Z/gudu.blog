@@ -88,10 +88,10 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
       sampleFrame(timestamp) { samples.push(timestamp); }
       dispose() { this.disposed = true; this.ready = false; }
       setStyle(style) { this.style = style; this.ready = !(deferInk && style === 'ink'); }
-      render(time, x, y) {
-        attempts.push({ time, x, y, at: now });
+      render(time, x, y, chapter = 0, entranceGlow = 0) {
+        attempts.push({ time, x, y, chapter, entranceGlow, at: now });
         if (!this.ready || this.lost || this.disposed || this.busy) return false;
-        renders.push({ time, x, y, at: now });
+        renders.push({ time, x, y, chapter, entranceGlow, at: now });
         now += renderCost;
         return true;
       }
@@ -151,7 +151,7 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
       media['(prefers-reduced-motion: reduce)'].emit('change');
     },
     page(time, event, detail = {}) { at(time); window.emit(event, detail); setupRenderer(); },
-    finishIntro(time) { at(time); hero.emit('animationend', { animationName: 'hero-scroll-enter' }); setupRenderer(); },
+    finishIntro(time) { at(time); hero.emit('animationend', { animationName: 'title-period-enter' }); setupRenderer(); },
     theme(time, style) { at(time); nextStyle = style; window.emit('popstate'); },
     lose(time) { at(time); canvas.emit('webglcontextlost'); },
     restore(time, target = renderer) { at(time); target.ready = true; target.lost = false; target.onRestore(); },
@@ -499,5 +499,75 @@ await test('offscreen, hidden and pagehide stops cancel busy-GPU draw retries', 
     assert.equal(site.renders.length, 1, 'an already queued retry must remain stopped');
     assert.equal(site.pendingDrawTasks, 0);
     assert.equal(site.pendingFrames, 0);
+  }
+});
+
+await test('chapter entrance light follows its event and clears without altering orbital time or camera', () => {
+  const site = browser();
+  const control = browser();
+  for (const [time, progress, glow] of [[100, 0.4, 0.75], [200, 1, 0], [300, 0.6, 1], [400, 0.6, undefined]]) {
+    site.page(time, 'site:chapter', { detail: { progress, entranceGlow: glow } });
+    control.page(time, 'site:chapter', { detail: { progress } });
+    site.frame(time + 20);
+    control.frame(time + 20);
+    assert.equal(site.last.entranceGlow, glow ?? 0);
+    assert.equal(site.last.chapter, progress);
+    assert.deepEqual([site.last.time, site.last.x, site.last.y],
+      [control.last.time, control.last.x, control.last.y],
+      'the light accent must not change orbital phase or pointer camera motion');
+  }
+});
+
+await test('a busy entrance frame cannot replay its pulse after the cleanup event', () => {
+  const site = browser();
+  site.renderer.busy = true;
+  site.page(100, 'site:chapter', { detail: { progress: 0.4, entranceGlow: 1 } });
+  site.frame(120);
+  assert.equal(site.attempts.at(-1).entranceGlow, 1);
+  assert.equal(site.renders.length, 1);
+  site.page(200, 'site:chapter', { detail: { progress: 1, entranceGlow: 0 } });
+  site.frame(220);
+  assert.equal(site.attempts.at(-1).entranceGlow, 0);
+  assert.equal(site.pendingDrawTasks, 0, 'the pulse must not bypass the animation frame budget');
+  site.renderer.busy = false;
+  site.frame(260);
+  assert.equal(site.last.entranceGlow, 0);
+  assert.equal(site.last.chapter, 1);
+  phase(site.last.time, 12.26);
+});
+
+await test('reduced motion applies chapter destinations without animating the entrance light or clock', () => {
+  const site = browser({ reduced: true });
+  site.page(100, 'site:chapter', { detail: { progress: 0.5, entranceGlow: 1 } });
+  assert.equal(site.last.chapter, 0.5);
+  assert.equal(site.last.entranceGlow, 0);
+  assert.equal(site.pendingFrames, 0);
+  phase(site.last.time, 12);
+  site.page(1000, 'site:chapter', { detail: { progress: 1, entranceGlow: 0 } });
+  assert.equal(site.last.chapter, 1);
+  assert.equal(site.last.entranceGlow, 0);
+  phase(site.last.time, 12);
+});
+
+await test('hidden, offscreen and cached pages discard entrance pulses until the scene is visible again', () => {
+  const lifecycles = [
+    [site => site.hidden(150, true), site => site.hidden(200, false)],
+    [site => site.visible(150, false), site => site.visible(200, true)],
+    [site => site.page(150, 'pagehide', { persisted: true }), site => site.page(200, 'pageshow', { persisted: true })],
+  ];
+  for (const [suspend, resume] of lifecycles) {
+    const site = browser();
+    site.page(100, 'site:chapter', { detail: { progress: 0.4, entranceGlow: 1 } });
+    site.frame(120);
+    assert.equal(site.last.entranceGlow, 1);
+    suspend(site);
+    const attempts = site.attempts.length;
+    site.page(160, 'site:chapter', { detail: { progress: 0.8, entranceGlow: 0.7 } });
+    assert.equal(site.attempts.length, attempts, 'late entrance events must not render an inactive scene');
+    assert.equal(site.pendingFrames, 0);
+    resume(site);
+    site.frame(240);
+    assert.equal(site.last.chapter, 0.8);
+    assert.equal(site.last.entranceGlow, 0, 'resuming must not flash a stale entrance accent');
   }
 });

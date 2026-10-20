@@ -23,12 +23,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .site-nav .nav-rss { font: 11px "Consolas", monospace; color: var(--muted); border-left: 1px solid var(--line); padding-left: 32px; }
 .nav-rss span { margin-left: 5px; color: var(--red); }
 .menu-toggle { display: none; }
-.hero-bottom { position: absolute; z-index: 4; bottom: 52px; left: 7.5%; right: 7.5%; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
-.hero-bottom p { margin: 0; color: #b3bac3; font-size: 12px; letter-spacing: 0.13em; line-height: 1.9; }
-.hero-bottom p span { display: block; color: #737e89; font-size: 10px; letter-spacing: 0.11em; margin-top: 6px; }
-.scroll-link { display: flex; align-items: center; gap: 18px; color: #a5aeb9; font-size: 11px; letter-spacing: 0.1em; }
-.scroll-arrow { display: grid; place-items: center; width: 34px; height: 42px; border: 1px solid #d7e6ee26; transition: transform 200ms, border-color 200ms; font-size: 17px; }
-.scroll-link:hover .scroll-arrow { transform: translateY(4px); border-color: var(--red); }
 .section-wrap { width: min(var(--content-width), 85%); margin-inline: auto; }
 .journal-section { padding: 112px 0 102px; }
 .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 40px; margin-bottom: 55px; }
@@ -198,7 +192,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .not-found p { color: var(--muted); font-size: 14px; line-height: 2; }
 .not-found .text-link, .not-found .outline-button { margin-top: 20px; }
 
-@media (min-width: 1700px) { .hero-bottom { width: min(1200px, 85%); left: 50%; right: auto; transform: translateX(-50%); } }
 @media (max-width: 1000px) {
   .journal-layout { grid-template-columns: minmax(0, 1fr) 210px; gap: 36px; }
   .about-section { gap: 60px; }
@@ -221,11 +214,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
   .menu-enhanced .site-nav { display: none; position: absolute; top: 64px; left: 0; right: 0; padding: 18px 7% 25px; background: #0d1117; border-bottom: 1px solid var(--line); gap: 8px; }
   .menu-enhanced .site-nav.is-open { display: flex; flex-direction: column; align-items: stretch; }
   .menu-enhanced .site-nav a { padding: 13px 0; font-size: 13px; }
-  .hero-bottom { bottom: 38px; left: 9%; right: 9%; gap: 15px; }
-  .hero-bottom p { font-size: 11px; letter-spacing: 0.08em; }
-  .hero-bottom p span { font-size: 9px; letter-spacing: 0; }
-  .scroll-link { gap: 11px; font-size: 10px; }
-  .scroll-arrow { width: 29px; height: 36px; }
   .section-wrap { width: 86%; }
   .journal-section { padding: 72px 0 65px; }
   .section-heading { display: block; margin-bottom: 35px; }

@@ -39,6 +39,7 @@
   let height = 0;
   let starList = [];
   let chapterProgress = 0;
+  let entranceGlow = 0;
 
   function finishIntro() {
     hero.classList.add('intro-complete');
@@ -50,7 +51,8 @@
   window.addEventListener('site:revealed', revealScene);
   if (reducedMotion.matches) finishIntro();
   hero.addEventListener('animationend', event => {
-    if (event.animationName === 'hero-scroll-enter') { finishIntro(); start(); }
+    // The title's period is the final remaining entrance animation.
+    if (event.animationName === 'title-period-enter') { finishIntro(); start(); }
   });
 
   // The decoded fallback carries the logo and entrance. GPU setup starts only
@@ -185,7 +187,7 @@
       layer.style.setProperty('--pointer-x', `${-pointer.x * depth * 8}px`);
       layer.style.setProperty('--pointer-y', `${-pointer.y * depth * 6}px`);
     }
-    const submitted = blackHole?.render(sceneTime(), pointer.x, -pointer.y, chapterProgress);
+    const submitted = blackHole?.render(sceneTime(), pointer.x, -pointer.y, chapterProgress, entranceGlow);
     // Animation retries on its next scheduled frame. A separate timer would
     // bypass a slower GPU-requested cadence; only a static scene needs one.
     if (submitted === false && blackHole?.ready && !blackHole.lost && visible && (paused || loading)) {
@@ -263,6 +265,7 @@
     rendererTimer = 0;
     clearTimeout(drawTimer);
     drawTimer = 0;
+    entranceGlow = 0;
     pauseSceneClock();
     blackHole?.resetTiming?.();
     cancelAnimationFrame(frame);
@@ -278,10 +281,12 @@
 
   window.addEventListener('site:chapter', event => {
     chapterProgress = Math.max(0, Math.min(1, Number(event.detail?.progress) || 0));
+    entranceGlow = pageActive && visible && !document.hidden && !paused
+      ? Math.max(0, Math.min(1, Number(event.detail?.entranceGlow) || 0)) : 0;
     if (chapterProgress > 0) pointer.targetX = pointer.targetY = 0;
     updateTitleBlink();
     // Reduced-motion users still need a fresh static frame at the destination.
-    if (paused || !frame) draw();
+    if (pageActive && visible && !document.hidden && (paused || !frame)) draw();
     start();
   });
 

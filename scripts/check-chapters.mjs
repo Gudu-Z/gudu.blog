@@ -180,7 +180,6 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
   const progressLinks = new Element('div', { classes: ['chapter-progress-links'] });
   const progressCurrent = new Element('span', { id: 'chapter-current', dataset: { chapterCurrent: '' } });
   const heroHeading = new Element('div', { classes: ['hero-heading'] });
-  const heroBottom = new Element('div', { classes: ['hero-bottom'] });
   const searchForm = new Element('form', { id: 'post-search' });
   const input = new Element('input', { id: 'search-input' });
   const chapters = [hero, about, series, journal, archive];
@@ -199,7 +198,7 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
   viewport.append(track);
   track.append(about, series, journal, archive);
   hero.append(stage);
-  stage.append(heroHeading, heroBottom, blackHole);
+  stage.append(heroHeading, blackHole);
   progress.append(progressTrack, progressLinks, progressCurrent);
   progressTrack.append(progressFill, progressMarker);
   Object.defineProperty(html, 'scrollHeight', { get: () => height + (parseFloat(runway.style.height) || height) });
@@ -296,7 +295,7 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
   advance(32);
   return {
     html, body, window, document, chapters, about, journal, series, archive, navLinks, searchForm, input, media, header, progress, progressCurrent,
-    runway, viewport, track, progressMarker, heroHeading, heroBottom, scrolls, innerScrolls, chapterEvents, historyEntries,
+    runway, viewport, track, progressMarker, heroHeading, scrolls, innerScrolls, chapterEvents, historyEntries,
     get top() { return scrollY; },
     get step() { return panelStep(); },
     destination(id) { return id === 'home' ? 0 : height + chapters.find(chapter => chapter.id === id).chapterIndex * panelStep(); },
@@ -363,6 +362,185 @@ await test('only the opening wheel snaps to About and its momentum tail cannot s
   assert.equal(site.x, -60);
 });
 
+await test('the layered entrance lasts 900ms, pulses only in the middle, and returns in 680ms', () => {
+  const site = browser();
+  site.wheel(60);
+  assert.equal(site.html.classList.contains('is-chapter-entering'), true);
+  assert.equal(site.html.classList.contains('is-chapter-leaving'), false);
+  assert.equal(Number(site.html.style.getPropertyValue('--chapter-transition-phase')), 0);
+  assert.equal(site.chapterEvents.at(-1).entranceGlow, 0);
+  site.advance(450);
+  assert.equal(Number(site.html.style.getPropertyValue('--chapter-transition-phase')), 0.5);
+  assert.ok(site.chapterEvents.at(-1).entranceGlow > 0.95);
+  assert.ok(Math.abs(Number(site.html.style.getPropertyValue('--chapter-entrance-glow')) - site.chapterEvents.at(-1).entranceGlow) < 0.00001);
+  assert.equal(site.progress.classList.contains('is-chapter-moving'), false);
+  assert.equal(site.progressMarker.classList.contains('is-arriving'), false, 'the layered entrance does not also flash the ruler');
+  site.advance(449);
+  assert.equal(site.html.classList.contains('is-chapter-entering'), true, 'the entrance is still running immediately before its deadline');
+  assert.equal(site.chapterEvents.at(-1).entranceGlow, 0, 'the pulse has faded before the final pose');
+  site.advance(1);
+  assert.equal(site.top, site.destination('about'));
+  assert.equal(site.html.classList.contains('is-chapter-entering'), false);
+  assert.equal(site.html.classList.contains('is-chapter-transitioning'), false);
+  assert.equal(Number(site.html.style.getPropertyValue('--chapter-transition-phase')), 0);
+
+  const returnEvents = site.chapterEvents.length;
+  site.wheel(-60);
+  assert.equal(site.html.classList.contains('is-chapter-leaving'), true);
+  site.advance(679);
+  assert.equal(site.html.classList.contains('is-chapter-leaving'), true);
+  site.advance(1);
+  assert.equal(site.top, 0);
+  assert.equal(site.html.classList.contains('is-chapter-leaving'), false);
+  assert.ok(site.chapterEvents.slice(returnEvents).every(event => event.entranceGlow === 0), 'returning to the hero never emits an entrance pulse');
+  assert.ok(site.chapterEvents.every(event => event.entranceGlow >= 0 && event.entranceGlow <= 1));
+  site.advance(32);
+  assert.equal(site.pendingFrames, 0);
+});
+
+await test('entrance glow continues after scene progress reaches one, while content navigation remains 640ms', () => {
+  const site = browser({ url: 'https://gudu.blog/?q=space' });
+  site.click(site.link('#archive'));
+  site.advance(450);
+  assert.equal(site.chapterEvents.at(-1).progress, 1);
+  const peak = site.chapterEvents.at(-1).entranceGlow;
+  const eventCount = site.chapterEvents.length;
+  assert.ok(peak > 0.95);
+  site.advance(100);
+  assert.ok(site.chapterEvents.length > eventCount, 'glow updates are emitted even when scroll-based scene progress remains one');
+  assert.equal(site.chapterEvents.at(-1).progress, 1);
+  assert.ok(site.chapterEvents.at(-1).entranceGlow < peak);
+  site.advance(350);
+  assert.equal(site.top, site.destination('archive'));
+  assert.equal(site.document.activeElement, site.archive);
+  assert.equal(site.chapterEvents.at(-1).entranceGlow, 0);
+  assert.equal(site.url.searchParams.get('q'), 'space');
+
+  const contentEvents = site.chapterEvents.length;
+  site.click(site.navLinks[1]);
+  assert.equal(site.html.classList.contains('is-chapter-entering'), false);
+  assert.equal(site.html.classList.contains('is-chapter-leaving'), false);
+  site.advance(639);
+  assert.equal(site.html.classList.contains('is-chapter-transitioning'), true);
+  site.advance(1);
+  assert.equal(site.top, site.destination('series'));
+  assert.equal(site.document.activeElement, site.series);
+  assert.equal(site.html.classList.contains('is-chapter-transitioning'), false);
+  assert.ok(site.chapterEvents.slice(contentEvents).every(event => event.entranceGlow === 0));
+
+  for (const options of [{ url: 'https://gudu.blog/#archive' }, { reduced: true }]) {
+    const immediate = browser(options);
+    if (options.reduced) immediate.click(immediate.link('#archive'));
+    assert.equal(immediate.top, immediate.destination('archive'));
+    assert.equal(immediate.html.classList.contains('is-chapter-entering'), false);
+    assert.equal(immediate.html.classList.contains('is-chapter-leaving'), false);
+    assert.ok(immediate.chapterEvents.every(event => event.entranceGlow === 0), 'hash restoration and reduced motion do not play the layered effect');
+  }
+});
+
+await test('hash jumps, reduced motion, resize and page lifecycle clear an active entrance pulse', () => {
+  for (const interruption of ['hash', 'reduced', 'resize', 'hidden', 'pagehide']) {
+    const site = browser({ url: 'https://gudu.blog/?q=space' });
+    site.click(site.link('#archive'));
+    site.advance(400);
+    assert.ok(site.chapterEvents.at(-1).entranceGlow > 0.8);
+    const stoppedAt = site.top;
+    const eventCount = site.chapterEvents.length;
+    if (interruption === 'hash') site.hash('#series');
+    if (interruption === 'reduced') {
+      site.media.matches = true;
+      site.media.dispatchEvent({ type: 'change' });
+    }
+    if (interruption === 'resize') site.resizeWidth(600);
+    if (interruption === 'hidden') {
+      site.document.hidden = true;
+      site.event('visibilitychange');
+    }
+    if (interruption === 'pagehide') site.event('pagehide');
+    assert.equal(site.html.classList.contains('is-chapter-entering'), false, interruption);
+    assert.equal(site.html.classList.contains('is-chapter-leaving'), false, interruption);
+    assert.equal(site.html.classList.contains('is-chapter-transitioning'), false, interruption);
+    assert.equal(Number(site.html.style.getPropertyValue('--chapter-transition-phase')), 0, interruption);
+    assert.equal(Number(site.html.style.getPropertyValue('--chapter-entrance-glow')), 0, interruption);
+    assert.equal(site.chapterEvents.at(-1).entranceGlow, 0, `${interruption} notifies the renderer immediately`);
+    const destination = interruption === 'pagehide' ? stoppedAt : site.destination(interruption === 'hash' ? 'series' : 'archive');
+    assert.equal(site.top, destination, interruption);
+    if (['reduced', 'resize', 'hidden'].includes(interruption)) assert.equal(site.document.activeElement, site.archive);
+    site.advance(1200);
+    assert.equal(site.top, destination);
+    assert.equal(site.pendingFrames, 0);
+    assert.ok(site.chapterEvents.slice(eventCount).every(event => event.entranceGlow === 0), `${interruption} does not replay the cleared pulse`);
+    assert.equal(site.url.searchParams.get('q'), 'space');
+  }
+});
+
+await test('reversing or retargeting a hero transition preserves the visible phase without replaying its pulse', () => {
+  const visualPhase = site => {
+    const phase = Number(site.html.style.getPropertyValue('--chapter-transition-phase'));
+    return site.html.classList.contains('is-chapter-leaving') ? 1 - phase : phase;
+  };
+  const site = browser({ url: 'https://gudu.blog/?q=space' });
+  site.click(site.link('#about'));
+  site.advance(450);
+  assert.ok(site.chapterEvents.at(-1).entranceGlow > 0.95);
+  const enteringVisual = visualPhase(site);
+  const enteringScroll = site.top;
+  const reversalEvents = site.chapterEvents.length;
+  site.key('Home');
+  assert.equal(site.html.classList.contains('is-chapter-entering'), false);
+  assert.equal(site.html.classList.contains('is-chapter-leaving'), true);
+  assert.equal(visualPhase(site), enteringVisual, 'the return begins at the same visible layer position');
+  assert.equal(site.top, enteringScroll, 'reversing does not jump the camera scroll position');
+  assert.equal(site.chapterEvents.at(-1).entranceGlow, 0);
+  site.advance(180);
+  const leavingVisual = visualPhase(site);
+  const leavingScroll = site.top;
+  assert.ok(leavingVisual > 0 && leavingVisual < enteringVisual);
+  site.click(site.link('#about'));
+  assert.equal(site.html.classList.contains('is-chapter-leaving'), false);
+  assert.equal(site.html.classList.contains('is-chapter-entering'), true);
+  assert.ok(Math.abs(visualPhase(site) - leavingVisual) < 0.00011, 're-entry preserves the partially hidden layers');
+  assert.equal(site.top, leavingScroll);
+  site.advance(690);
+  assert.equal(site.top, site.destination('about'));
+  assert.equal(site.document.activeElement, site.about);
+  assert.equal(site.url.hash, '#about');
+  assert.equal(site.url.searchParams.get('q'), 'space');
+  assert.ok(site.chapterEvents.slice(reversalEvents).every(event => event.entranceGlow === 0), 'an interrupted entrance never flashes a new pulse at its midpoint');
+  assert.equal(site.html.classList.contains('is-chapter-entering'), false);
+  site.advance(32);
+  assert.equal(site.pendingFrames, 0);
+
+  const retargeted = browser();
+  retargeted.click(retargeted.link('#archive'));
+  retargeted.advance(300);
+  assert.equal(retargeted.chapterEvents.at(-1).progress, 1, 'the camera can finish before the visual layers');
+  const previousVisual = visualPhase(retargeted);
+  const previousScroll = retargeted.top;
+  retargeted.click(retargeted.link('#journal'));
+  assert.equal(retargeted.html.classList.contains('is-chapter-entering'), true);
+  assert.equal(visualPhase(retargeted), previousVisual, 'changing a content target continues unfinished entrance layers');
+  assert.equal(retargeted.top, previousScroll);
+  assert.equal(retargeted.wheel(120).defaultPrevented, true, 'the unfinished layered entrance still absorbs wheel momentum');
+  retargeted.advance(599);
+  assert.equal(retargeted.html.classList.contains('is-chapter-entering'), true);
+  retargeted.advance(1);
+  assert.equal(retargeted.html.classList.contains('is-chapter-entering'), false, 'a same-direction retarget keeps only the remaining entrance duration');
+  assert.equal(retargeted.top, retargeted.destination('journal'));
+  assert.equal(retargeted.document.activeElement, retargeted.journal);
+
+  const nearDestination = browser();
+  nearDestination.click(nearDestination.link('#about'));
+  nearDestination.advance(760);
+  assert.ok(Math.abs(nearDestination.top - nearDestination.destination('about')) < 1);
+  const nearVisual = visualPhase(nearDestination);
+  nearDestination.click(nearDestination.link('#about'));
+  assert.equal(nearDestination.html.classList.contains('is-chapter-entering'), true, 'a subpixel scroll remainder does not skip unfinished visual layers');
+  assert.equal(visualPhase(nearDestination), nearVisual);
+  nearDestination.advance(140);
+  assert.equal(nearDestination.html.classList.contains('is-chapter-entering'), false);
+});
+
 await test('continuous wheel input accumulates distance across panel boundaries without another snap', () => {
   const site = browser({ url: 'https://gudu.blog/#about' });
   for (let index = 0; index < 15; index++) {
@@ -393,13 +571,14 @@ await test('minimal progress readout tracks movement and arrivals, then clears f
   assert.equal(site.document.querySelector('[data-chapter-coordinate]'), null);
   assert.equal(moving(), false);
   assert.equal(arriving(site.progressMarker), false, 'restoring an initial hash does not announce an arrival');
+  site.advance(1000);
   assert.equal(site.pendingTimers, 0);
 
   site.wheel(80);
   site.advance(32);
   assert.equal(moving(), true, 'feedback follows actual horizontal movement');
   assert.equal(arriving(site.progressMarker), false, 'movement within one chapter does not trigger an arrival');
-  site.advance(1200);
+  site.advance(1800);
   assert.equal(moving(), false);
   assert.equal(site.pendingTimers, 0, 'settled movement does not leave a polling timer');
 
@@ -420,6 +599,7 @@ await test('minimal progress readout tracks movement and arrivals, then clears f
   assert.equal(moving(), false);
   assert.equal(arriving(site.navLinks[2]), false);
   assert.equal(arriving(site.progressMarker), false, 'stationary scroll updates do not restart the arrival pulse');
+  site.advance(1000);
   assert.equal(site.pendingTimers, 0);
 
   site.hash('#archive');
@@ -463,6 +643,150 @@ await test('reduced motion suppresses progress feedback and cancels feedback alr
   animated.advance(1000);
   assert.equal(animated.pendingFrames, 0);
   assert.equal(animated.pendingTimers, 0);
+});
+
+await test('idle decoration starts one second after content settles and stops immediately for navigation', () => {
+  const site = browser({ url: 'https://gudu.blog/#about' });
+  const idle = () => site.progress.classList.contains('is-chapter-idle');
+  assert.equal(idle(), false);
+  assert.equal(site.pendingTimers, 1, 'initial content owns one pending idle timeout');
+  site.advance(967);
+  assert.equal(idle(), false);
+  site.advance(1);
+  assert.equal(idle(), true);
+  assert.equal(site.pendingTimers, 0, 'CSS takes over after the single timeout');
+  site.advance(10000);
+  assert.equal(site.pendingTimers, 0, 'breathing and scan cycles do not use recurring timers');
+  assert.equal(site.pendingFrames, 0, 'idle decoration does not keep a JS animation loop alive');
+
+  site.wheel(200);
+  assert.equal(idle(), false, 'wheel activity hides decoration before the next frame');
+  site.advance(1800);
+  assert.equal(idle(), true);
+  assert.equal(site.pendingTimers, 0);
+  site.click(site.navLinks[1]);
+  assert.equal(idle(), false);
+  site.advance(640);
+  assert.equal(site.top, site.destination('series'));
+  assert.equal(site.html.style.getPropertyValue('--chapter-active-index'), '1');
+  site.advance(999);
+  assert.equal(idle(), false, 'the delay starts after navigation finishes');
+  site.advance(1);
+  assert.equal(idle(), true);
+  assert.equal(site.pendingTimers, 0);
+  site.key('Home');
+  assert.equal(idle(), false);
+  site.advance(2000);
+  assert.equal(idle(), false, 'the hero never starts content decoration');
+  assert.equal(site.pendingTimers, 0);
+
+  site.wheel(60);
+  site.advance(900);
+  assert.equal(idle(), false);
+  site.advance(999);
+  assert.equal(idle(), false);
+  site.advance(1);
+  assert.equal(idle(), true, 'the layered entrance also waits one second after completion');
+  assert.equal(site.pendingTimers, 0);
+});
+
+await test('native reading, reading keys and a held touch suspend idle decoration without taking over inputs', () => {
+  const site = browser({ url: 'https://gudu.blog/?q=space#journal' });
+  const idle = () => site.progress.classList.contains('is-chapter-idle');
+  site.advance(1000);
+  assert.equal(idle(), true);
+  const horizontalPosition = site.top;
+  site.journal.scrollTop = 200;
+  site.document.dispatchEvent({ type: 'scroll', target: site.journal });
+  assert.equal(idle(), false, 'captured non-bubbling chapter scroll stops decoration immediately');
+  site.advance(800);
+  site.journal.scrollTop = 300;
+  site.document.dispatchEvent({ type: 'scroll', target: site.journal });
+  site.advance(999);
+  assert.equal(idle(), false, 'continued native scrolling restarts the quiet period');
+  site.advance(1);
+  assert.equal(idle(), true);
+  assert.equal(site.top, horizontalPosition);
+  assert.equal(site.pendingTimers, 0);
+
+  assert.equal(site.wheel(80, { target: site.journal }).defaultPrevented, false);
+  assert.equal(idle(), false);
+  site.advance(1000);
+  assert.equal(idle(), true);
+  site.key('PageDown', { target: site.journal });
+  assert.equal(idle(), false);
+  assert.ok(site.journal.scrollTop > 300, 'reading keys still scroll the chapter itself');
+  assert.equal(site.top, horizontalPosition);
+  site.advance(1000);
+  assert.equal(idle(), true);
+
+  site.input.focus();
+  assert.equal(site.key('Home', { target: site.input }).defaultPrevented, false);
+  assert.equal(idle(), false);
+  assert.equal(site.document.activeElement, site.input);
+  assert.equal(site.top, horizontalPosition);
+  site.advance(1000);
+  assert.equal(idle(), true);
+
+  site.journal.scrollTop = 200;
+  const finger = clientY => ({ clientX: 100, clientY });
+  site.event('touchstart', { target: site.journal, touches: [finger(600)] });
+  assert.equal(idle(), false);
+  site.advance(1500);
+  assert.equal(idle(), false, 'a stationary held touch is still an active interaction');
+  assert.equal(site.pendingTimers, 0);
+  assert.equal(site.event('touchmove', { target: site.journal, touches: [finger(550)] }).defaultPrevented, false);
+  site.event('touchend', { touches: [] });
+  site.advance(999);
+  assert.equal(idle(), false);
+  site.advance(1);
+  assert.equal(idle(), true);
+  assert.equal(site.top, horizontalPosition);
+  assert.equal(site.url.searchParams.get('q'), 'space');
+  assert.equal(site.pendingTimers, 0);
+  assert.equal(site.pendingFrames, 0);
+});
+
+await test('visibility, page lifecycle and reduced motion cancel idle work and restart a fresh quiet period', () => {
+  for (const lifecycle of ['hidden', 'pagehide', 'reduced']) {
+    const site = browser({ url: 'https://gudu.blog/#series' });
+    const idle = () => site.progress.classList.contains('is-chapter-idle');
+    site.advance(1000);
+    assert.equal(idle(), true);
+    if (lifecycle === 'hidden') {
+      site.document.hidden = true;
+      site.event('visibilitychange');
+    } else if (lifecycle === 'pagehide') site.event('pagehide');
+    else {
+      site.media.matches = true;
+      site.media.dispatchEvent({ type: 'change' });
+    }
+    assert.equal(idle(), false, lifecycle);
+    assert.equal(site.pendingTimers, 0, `${lifecycle} removes pending idle work immediately`);
+    site.advance(2000);
+    assert.equal(idle(), false);
+    assert.equal(site.pendingFrames, 0);
+    if (lifecycle === 'hidden') {
+      site.document.hidden = false;
+      site.event('visibilitychange');
+    } else if (lifecycle === 'pagehide') site.event('pageshow');
+    else {
+      site.media.matches = false;
+      site.media.dispatchEvent({ type: 'change' });
+    }
+    assert.equal(site.pendingTimers, 1, `${lifecycle} recovery schedules one new quiet period`);
+    site.advance(999);
+    assert.equal(idle(), false);
+    site.advance(1);
+    assert.equal(idle(), true);
+    assert.equal(site.pendingTimers, 0);
+  }
+
+  const reduced = browser({ reduced: true, url: 'https://gudu.blog/#series' });
+  reduced.advance(10000);
+  assert.equal(reduced.progress.classList.contains('is-chapter-idle'), false);
+  assert.equal(reduced.pendingTimers, 0, 'reduced motion never schedules idle decoration');
+  assert.equal(reduced.pendingFrames, 0);
 });
 
 await test('long panels read vertically before their edge passes wheel movement to the strip', () => {
@@ -713,6 +1037,7 @@ await test('all positions follow measured panel gaps while progress counts only 
     site.hash(`#${id}`);
     assert.equal(site.top, site.destination(id));
     assert.equal(site.progressCurrent.textContent, String(Math.max(index, 1)).padStart(2, '0'));
+    assert.equal(site.html.style.getPropertyValue('--chapter-active-index'), String(Math.max(index - 1, 0)));
     assert.equal(Number(site.html.style.getPropertyValue('--site-progress')), Number((Math.max(index - 1, 0) / 3).toFixed(5)));
   }
   assert.equal(site.url.hash, '#archive');
