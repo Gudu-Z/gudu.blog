@@ -136,6 +136,63 @@ function ray(impact, ink = 0) {
 }
 const angle = value => Math.atan2(value.x, -value.z);
 
+test('reusing Verlet acceleration preserves every hit while removing repeated force evaluations', () => {
+  // Derive a reference from the real shader that restores the previous
+  // per-step recalculation. All other integration and intersection code stays
+  // shared, so this comparison isolates reuse rather than model differences.
+  const trace = shaderFunction('traceLayers');
+  const initial = 'vec3 a = acceleration(p, h2);';
+  assert.equal(trace.split(initial).length, 2);
+  assert(trace.indexOf(initial) < trace.indexOf('for (int i'));
+  assert(trace.includes('a = nextA;'));
+  const uncached = trace.replace('traceLayers(', 'traceLayersUncached(')
+    .replace(initial, '')
+    .replace('vec3 next =', `${initial}\n          vec3 next =`)
+    .replace('a = nextA;', '');
+  vm.runInContext(javaScript(uncached), context);
+  const acceleration = context.acceleration;
+  let calls = 0, beforeCalls = 0, afterCalls = 0;
+  const materials = new Set();
+  context.acceleration = (...args) => { calls++; return acceleration(...args); };
+  try {
+    for (const ink of [0, 1]) {
+      context.u_ink = ink;
+      const pitch = (ink ? 83 : 81) * Math.PI / 180;
+      const camera = vector(0, radius * Math.cos(pitch), radius * Math.sin(pitch));
+      const ahead = normalize(mul(camera, -1));
+      const above = context.cross(right, ahead);
+      for (const chapter of [0, 1]) {
+        const focal = (ink ? 3.7 : 4.05) * (1 - 0.66 * chapter);
+        for (let row = 0; row < 8; row++) for (let column = 0; column < 12; column++) {
+          const x = ((column + 0.5) / 12 - 0.5) * 2 * (16 / 9) / (1.85 / 1.5);
+          const y = ((row + 0.5) / 8 - 0.5) * 2 / (1.85 / 1.5);
+          const direction = normalize(add(mul(ahead, focal), add(mul(right, x), mul(above, y))));
+          context.u_time = 12 + ((row * 12 + column) % 19) * 1.75;
+          for (const skip of [0, 1]) {
+            calls = 0;
+            const before = context.traceLayersUncached(camera, direction, skip);
+            const uncachedCalls = calls;
+            beforeCalls += calls;
+            calls = 0;
+            const after = context.traceLayers(camera, direction, skip);
+            afterCalls += calls;
+            materials.add(after.material);
+            assert.deepEqual(structuredClone(after), structuredClone(before));
+            assert.equal(calls, uncachedCalls ? uncachedCalls / 2 + 1 : 0,
+              'traced rays need one initial force plus one per step; ink shortcuts need none');
+          }
+        }
+      }
+    }
+    assert.deepEqual([...materials].sort(), [-1, 0, 1], 'cover escaping sky, capture and disk intersections');
+    assert(afterCalls < beforeCalls * 0.55, 'the comparison must eliminate nearly half the force evaluations');
+  } finally {
+    context.acceleration = acceleration;
+    context.u_ink = 0;
+    context.u_time = 12;
+  }
+});
+
 test('background mapping is continuous across the former distant-ray shortcut', () => {
   // Historical cutoff is a regression location, not a current implementation parameter.
   const boundary = Math.sqrt(140), delta = 0.0001;

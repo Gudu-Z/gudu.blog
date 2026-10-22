@@ -13,6 +13,7 @@
   const sections = [hero, ...chapters];
   const header = document.querySelector('.site-header');
   const progressNav = document.querySelector('.chapter-progress');
+  const progressTrack = document.querySelector('.chapter-progress-track');
   const progressMarker = document.querySelector('.chapter-progress-marker');
   const currentLabel = document.querySelector('[data-chapter-current]');
   const links = [...document.querySelectorAll('[data-chapter-link]')];
@@ -24,6 +25,7 @@
   let width = 0;
   let travel = 0;
   let maximum = 0;
+  let progressTrackWidth = 0;
   let targetY = 0;
   let smoothY = 0;
   let frame = 0;
@@ -50,6 +52,9 @@
   let touching = false;
   let suspendedPosition = null;
   let pendingHash = false;
+  let settingScroll = false;
+  let renderedScroll = null;
+  const styleValues = new WeakMap();
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const y = () => window.scrollY || 0;
@@ -58,7 +63,25 @@
   const blocked = () => root.classList.contains('is-loading') || document.body.dataset.menuOpen === 'true';
   const interactive = target => target?.closest?.('input, textarea, select, button, [contenteditable="true"], [role="slider"]');
 
+  function setStyle(element, name, value) {
+    if (!element) return;
+    let values = styleValues.get(element);
+    if (!values) { values = new Map(); styleValues.set(element, values); }
+    if (values.get(name) === value) return;
+    values.set(name, value);
+    element.style.setProperty(name, value);
+  }
+
+  function setClass(element, name, enabled) {
+    if (element && element.classList.contains(name) !== enabled) element.classList.toggle(name, enabled);
+  }
+
+  function setInert(element, inert) {
+    if (element && element.inert !== inert) element.inert = inert;
+  }
+
   function writeHash(index, mode = 'replace') {
+    if (window.location.hash === `#${sections[index].id}`) return;
     const url = new URL(window.location.href);
     url.hash = sections[index].id;
     if (url.href !== window.location.href) {
@@ -69,22 +92,22 @@
   function clearArrival() {
     clearTimeout(arrivalTimer);
     arrivalTimer = 0;
-    arrivingLink?.classList.remove('is-arriving');
+    setClass(arrivingLink, 'is-arriving', false);
     arrivingLink = null;
-    progressMarker?.classList.remove('is-arriving');
+    setClass(progressMarker, 'is-arriving', false);
   }
 
   function clearProgressFeedback() {
     clearTimeout(movingTimer);
     movingTimer = 0;
-    progressNav?.classList.remove('is-chapter-moving');
+    setClass(progressNav, 'is-chapter-moving', false);
     clearArrival();
   }
 
   function clearIdle() {
     clearTimeout(idleTimer);
     idleTimer = 0;
-    progressNav?.classList.remove('is-chapter-idle');
+    setClass(progressNav, 'is-chapter-idle', false);
   }
 
   function noteIdleActivity() {
@@ -102,7 +125,7 @@
     if (idleTimer || progressNav.classList.contains('is-chapter-idle')) return;
     idleTimer = setTimeout(() => {
       idleTimer = 0;
-      if (canIdle()) progressNav.classList.add('is-chapter-idle');
+      if (canIdle()) setClass(progressNav, 'is-chapter-idle', true);
     }, Math.max(0, 1000 - (performance.now() - lastIdleActivity)));
   }
 
@@ -115,11 +138,11 @@
 
   function setTransitionPhase(phase, direction, pulseEnabled = false) {
     transitionPhase = phase;
-    root.style.setProperty('--chapter-transition-phase', phase.toFixed(4));
+    setStyle(root, '--chapter-transition-phase', phase.toFixed(4));
     const pulse = (phase - 0.18) / 0.6;
     entranceGlow = pulseEnabled && direction === 'entering' && pulse > 0 && pulse < 1
       ? Math.sin(Math.PI * pulse) ** 2 : 0;
-    root.style.setProperty('--chapter-entrance-glow', entranceGlow.toFixed(5));
+    setStyle(root, '--chapter-entrance-glow', entranceGlow.toFixed(5));
   }
 
   function updateProgressFeedback(x, visible, changed, index) {
@@ -130,18 +153,18 @@
       return;
     }
     if (moved) {
-      progressNav.classList.add('is-chapter-moving');
+      setClass(progressNav, 'is-chapter-moving', true);
       clearTimeout(movingTimer);
       movingTimer = setTimeout(() => {
         movingTimer = 0;
-        progressNav.classList.remove('is-chapter-moving');
+        setClass(progressNav, 'is-chapter-moving', false);
       }, 140);
     }
     if (changed && index > 0) {
       clearArrival();
       arrivingLink = links.find(link => link.hash === `#${sections[index].id}`) || null;
-      arrivingLink?.classList.add('is-arriving');
-      progressMarker?.classList.add('is-arriving');
+      setClass(arrivingLink, 'is-arriving', true);
+      setClass(progressMarker, 'is-arriving', true);
       arrivalTimer = setTimeout(clearArrival, 400);
     }
   }
@@ -149,27 +172,31 @@
   function update(syncHash = true) {
     if (!active || !positions.length) return;
     const scroll = y();
+    renderedScroll = scroll;
     const progress = clamp(scroll / Math.max(1, entry), 0, 1);
     const x = clamp(scroll - entry, 0, travel);
     const chapterPosition = x / Math.max(width, 1);
     const siteProgress = travel ? x / travel : 0;
     const visible = progress > 0.55;
-    root.style.setProperty('--chapter-progress', progress.toFixed(4));
-    root.style.setProperty('--chapter-x', `${-x.toFixed(3)}px`);
-    root.style.setProperty('--chapter-position', chapterPosition.toFixed(5));
-    root.style.setProperty('--site-progress', siteProgress.toFixed(5));
-    root.classList.toggle('is-content', visible);
-    if (header) header.inert = !visible;
-    if (progressNav) progressNav.inert = !visible;
-    for (const element of heroText) element.inert = progress > 0.12;
+    setStyle(root, '--chapter-progress', progress.toFixed(4));
+    // A local transform avoids inheriting a changing custom property through
+    // every panel; navigation-only values belong to the small progress subtree.
+    setStyle(track, 'transform', `translate3d(${-x.toFixed(3)}px, 0, 0)`);
+    setStyle(progressNav, '--chapter-position', chapterPosition.toFixed(5));
+    setStyle(progressNav, '--site-progress', siteProgress.toFixed(5));
+    setStyle(progressMarker, '--chapter-marker-x', `${((chapterPosition + 0.5) * progressTrackWidth / chapters.length).toFixed(3)}px`);
+    setClass(root, 'is-content', visible);
+    setInert(header, !visible);
+    setInert(progressNav, !visible);
+    for (const element of heroText) setInert(element, progress > 0.12);
     // Offscreen panels cannot take keyboard focus and scroll the clipping box.
     chapters.forEach((chapter, index) => {
       const bounds = panelBounds[index];
-      chapter.inert = !visible || bounds.left + bounds.width - x <= 1 || bounds.left - x >= window.innerWidth - 1;
+      setInert(chapter, !visible || bounds.left + bounds.width - x <= 1 || bounds.left - x >= window.innerWidth - 1);
     });
     emitChapterState(progress);
     const index = visible ? Math.min(chapters.length, 1 + Math.round(x / Math.max(width, 1))) : 0;
-    root.style.setProperty('--chapter-active-index', String(clamp(index - 1, 0, chapters.length - 1)));
+    setStyle(progressNav, '--chapter-active-index', String(clamp(index - 1, 0, chapters.length - 1)));
     const changed = index !== currentIndex;
     if (changed) {
       currentIndex = index;
@@ -195,15 +222,17 @@
     panelBounds = chapters.map(chapter => ({ left: chapter.offsetLeft, width: chapter.offsetWidth }));
     entry = runway.getBoundingClientRect().top + y();
     travel = width * (chapters.length - 1);
+    // Finish geometry reads before changing the runway height.
+    const figure = document.querySelector('#black-hole')?.getBoundingClientRect();
+    const scene = stage.getBoundingClientRect();
+    progressTrackWidth = progressTrack?.getBoundingClientRect().width || 0;
     const runwayHeight = `${window.innerHeight + travel}px`;
     if (runway.style.height !== runwayHeight) runway.style.height = runwayHeight;
     positions = [0, ...chapters.map((_, index) => entry + index * width)];
     maximum = entry + travel;
-    const figure = document.querySelector('#black-hole')?.getBoundingClientRect();
-    const scene = stage.getBoundingClientRect();
     if (figure) {
-      root.style.setProperty('--fallback-shift-x', `${scene.left + scene.width / 2 - figure.left - figure.width / 2}px`);
-      root.style.setProperty('--fallback-shift-y', `${scene.top + scene.height / 2 - figure.top - figure.height / 2}px`);
+      setStyle(root, '--fallback-shift-x', `${scene.left + scene.width / 2 - figure.left - figure.width / 2}px`);
+      setStyle(root, '--fallback-shift-y', `${scene.top + scene.height / 2 - figure.top - figure.height / 2}px`);
     }
     targetY = clamp(frame ? targetY : y(), 0, maximum);
     measuring = false;
@@ -225,13 +254,18 @@
     transition = null;
     targetY = y();
     smoothY = targetY;
-    root.classList.remove('is-chapter-transitioning', 'is-chapter-entering', 'is-chapter-leaving');
+    for (const name of ['is-chapter-transitioning', 'is-chapter-entering', 'is-chapter-leaving']) setClass(root, name, false);
     setTransitionPhase(0);
     emitChapterState();
   }
 
   function setScroll(top) {
+    noteIdleActivity();
+    settingScroll = true;
     window.scrollTo({ top, behavior: 'instant' });
+    settingScroll = false;
+    cancelAnimationFrame(updateFrame);
+    updateFrame = 0;
     update();
   }
 
@@ -507,14 +541,20 @@
     layoutObserver.observe(chapters[0]);
   }
 
-  root.style.setProperty('--chapter-count', String(chapters.length));
+  setStyle(root, '--chapter-count', String(chapters.length));
   setTransitionPhase(0);
   root.classList.add('has-chapters');
   measure();
   if (window.location.hash) restoreHash();
   initialized = true;
   scheduleIdle();
-  window.addEventListener('scroll', () => { if (available()) { noteIdleActivity(); queueUpdate(); } }, { passive: true });
+  window.addEventListener('scroll', () => {
+    // Programmatic movement updates synchronously. Its later native scroll
+    // event must not create a second animation chain for the same position.
+    if (!available() || settingScroll || y() === renderedScroll) return;
+    noteIdleActivity();
+    queueUpdate();
+  }, { passive: true });
   document.addEventListener('scroll', event => {
     if (!available() || !event.target?.closest?.('.chapter-section')) return;
     noteIdleActivity();

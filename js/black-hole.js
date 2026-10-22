@@ -291,6 +291,9 @@
         hit.material = -1.0;
       }
       else {
+        // The next point becomes the following step's origin, so its
+        // acceleration can be reused without changing the Verlet trajectory.
+        vec3 a = acceleration(p, h2);
         for (int i = 0; i < 180; i++) {
           float r = length(p);
           if (r < 1.015) { hit.alpha = 1.0; break; }
@@ -300,9 +303,9 @@
             break;
           }
           float dt = clamp(r * 0.095, 0.055, 1.8);
-          vec3 a = acceleration(p, h2);
           vec3 next = p + v * dt + 0.5 * a * dt * dt;
-          vec3 nextV = v + 0.5 * (a + acceleration(next, h2)) * dt;
+          vec3 nextA = acceleration(next, h2);
+          vec3 nextV = v + 0.5 * (a + nextA) * dt;
           float planeFrom = p.y, planeTo = next.y;
           if (u_ink > 0.5 && (abs(p.y) < 0.25 || abs(next.y) < 0.25 || p.y * next.y < 0.0)) {
             planeFrom -= inkHeight(p);
@@ -330,6 +333,7 @@
           }
           p = next;
           v = nextV;
+          a = nextA;
         }
       }
       return hit;

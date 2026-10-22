@@ -41,6 +41,7 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
   const renderers = [];
   const samples = [];
   const polls = [];
+  const work = { canvasClears: 0, canvasResizes: 0, starDraws: 0, layerWrites: 0 };
   const media = {
     '(prefers-reduced-motion: reduce)': eventTarget({ matches: reduced }),
     '(pointer: fine)': eventTarget({ matches: true }),
@@ -50,15 +51,22 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 640, height: 480 }),
   });
   const canvas = eventTarget({ parentElement: { classList: classes() } });
-  const context = { setTransform() {}, clearRect() {}, beginPath() {}, arc() {}, fill() {} };
-  const stars = { getContext: () => context };
+  const context = { setTransform() {}, clearRect() { work.canvasClears++; }, beginPath() {}, arc() {}, fill() { work.starDraws++; } };
+  let starWidth = 0, starHeight = 0;
+  const stars = {
+    getContext: () => context,
+    get width() { return starWidth; },
+    set width(value) { starWidth = value; work.canvasResizes++; },
+    get height() { return starHeight; },
+    set height(value) { starHeight = value; work.canvasResizes++; },
+  };
   const clockParts = [{ textContent: '' }, { textContent: '' }];
   const clock = {
     querySelector: name => clockParts[name === '[data-clock-date]' ? 0 : 1],
     setAttribute() {},
   };
   const layers = ['1', '2'].map(depth => ({
-    dataset: { depth }, style: { values: {}, setProperty(name, value) { this.values[name] = value; } },
+    dataset: { depth }, style: { values: {}, setProperty(name, value) { work.layerWrites++; this.values[name] = value; } },
   }));
   const nodes = { '.hero': hero, '#starfield': stars, '#black-hole-canvas': canvas, '#local-time': clock };
   const document = eventTarget({
@@ -125,7 +133,7 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
     now = time;
   }
   return {
-    attempts, renders, layers, renderers, samples, polls,
+    attempts, renders, layers, renderers, samples, polls, work,
     get renderer() { return renderer; },
     get pendingFrames() { return frames.size; },
     get pendingTimers() { return timers.size; },
@@ -192,6 +200,38 @@ await test('the default cadence renders every second 60 Hz frame despite timesta
   for (let index = 1; index <= 60; index++) site.frame(index * 16.666);
   assert.equal(site.renders.length, 31, 'initial draw plus 30 animated frames');
   phase(site.last.time, 12.99996);
+});
+
+await test('settled live animation does not repaint the empty star canvas or rewrite parallax layers', () => {
+  const site = browser();
+  const before = { ...site.work };
+  for (let index = 1; index <= 60; index++) site.frame(index * 16.666);
+  assert.equal(site.renders.length, 31, 'the black hole keeps its animation cadence');
+  assert.deepEqual(site.work, before, 'unchanged 2D and DOM layers do no per-frame work');
+  site.resize(1100);
+  assert.deepEqual(site.work, before, 'a heading-only resize must not reset the full-screen 2D buffer');
+  site.move(1200);
+  site.frame(1250);
+  assert.ok(site.work.layerWrites > before.layerWrites, 'pointer parallax still updates when the camera moves');
+  assert.equal(site.work.canvasClears, before.canvasClears, 'the live minimal sky keeps the edge canvas empty');
+});
+
+await test('cached edge stars repaint for fallback and theme changes, then stop when unchanged', () => {
+  const site = browser();
+  const before = site.work.starDraws;
+  site.lose(100);
+  assert.ok(site.work.starDraws > before, 'context loss restores the visible fallback stars');
+  const fallback = { ...site.work };
+  site.resize(200);
+  assert.deepEqual(site.work, fallback, 'an unchanged fallback retains its pixels');
+  site.restore(300);
+  assert.equal(site.work.canvasClears, fallback.canvasClears + 1, 'live recovery clears the fallback once');
+  const recovered = site.work.starDraws;
+  site.theme(400, 'ink');
+  assert.ok(site.work.starDraws > recovered, 'ink keeps its edge stars');
+  const ink = { ...site.work };
+  site.frame(450);
+  assert.deepEqual(site.work, ink, 'stationary ink stars are not repainted every scene frame');
 });
 
 await test('quality-driven cadence changes reduce draws without changing orbital phase', () => {

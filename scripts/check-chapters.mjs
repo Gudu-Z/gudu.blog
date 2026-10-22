@@ -21,13 +21,14 @@ function eventTarget(extra = {}) {
   };
 }
 
-function classList(initial = []) {
+function classList(initial = [], onWrite = () => {}) {
   const values = new Set(initial);
   return {
     contains: name => values.has(name),
-    add: (...names) => names.forEach(name => values.add(name)),
-    remove: (...names) => names.forEach(name => values.delete(name)),
+    add: (...names) => { onWrite(); names.forEach(name => values.add(name)); },
+    remove: (...names) => { onWrite(); names.forEach(name => values.delete(name)); },
     toggle(name, force = !values.has(name)) {
+      onWrite();
       if (force) values.add(name);
       else values.delete(name);
       return force;
@@ -50,6 +51,8 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
   const historyEntries = [];
   const resizeObservers = [];
   let layoutReads = 0;
+  let requestedFrames = 0;
+  const domWrites = [];
   const nodes = [];
   const height = 800;
   let document;
@@ -59,13 +62,14 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
   const panelWidth = () => panelWidthOverride ?? Number((viewWidth() <= 720 ? viewWidth() * 0.88 : Math.min(1200, viewWidth() * 0.82)).toFixed(4));
   const panelGap = () => viewWidth() <= 720 ? 20 : 32;
   const panelStep = () => panelWidth() + panelGap();
+  const rulerWidth = () => viewWidth() * (viewWidth() <= 720 ? 0.92 : 0.89);
 
   class Element {
     constructor(tag = 'div', options = {}) {
       Object.assign(this, eventTarget());
       this.tagName = tag.toUpperCase();
       this.id = options.id || '';
-      this.classList = classList(options.classes || []);
+      this.classList = classList(options.classes || [], () => domWrites.push({ target: this, kind: 'class' }));
       this.dataset = options.dataset || {};
       this.attributes = new Map();
       this.children = [];
@@ -81,15 +85,18 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
       this.scrollHeight = this.offsetHeight;
       this.clientHeight = this.offsetHeight;
       this.scrollTop = 0;
+      const target = this;
       this.style = {
         values: new Map(),
-        setProperty(name, value) { this.values.set(name, String(value)); },
+        setProperty(name, value) { domWrites.push({ target, kind: 'style', name }); this.values.set(name, String(value)); },
         getPropertyValue(name) { return this.values.get(name) || ''; },
         removeProperty(name) { this.values.delete(name); },
       };
       nodes.push(this);
     }
     get offsetTop() { return this.top; }
+    get inert() { return this._inert; }
+    set inert(value) { domWrites.push({ target: this, kind: 'inert' }); this._inert = value; }
     get hidden() { return this.hasAttribute('hidden'); }
     set hidden(value) {
       if (value) this.setAttribute('hidden', '');
@@ -104,14 +111,18 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
       layoutReads++;
       return this.chapterIndex === undefined ? 0 : (viewWidth() - panelWidth()) / 2 + this.chapterIndex * panelStep();
     }
-    get offsetWidth() { layoutReads++; return this.chapterIndex === undefined ? viewWidth() : panelWidth(); }
+    get offsetWidth() {
+      layoutReads++;
+      if (this.classList.contains('chapter-progress-track')) return rulerWidth();
+      return this.chapterIndex === undefined ? viewWidth() : panelWidth();
+    }
     get href() { return new URL(this.getAttribute('href') || '', location).href; }
     set href(value) { this.setAttribute('href', value); }
     get hash() { return new URL(this.href).hash; }
     getBoundingClientRect() {
       layoutReads++;
       const top = this.chapterIndex === undefined ? this.top - scrollY : Math.max(0, height - scrollY);
-      const translation = parseFloat(html.style.getPropertyValue('--chapter-x')) || 0;
+      const translation = Number(track.style.getPropertyValue('transform').match(/translate3d\(([-\d.]+)px/)?.[1]) || 0;
       const left = this.chapterIndex === undefined ? 0 : this.offsetLeft + translation;
       return { top, bottom: top + this.offsetHeight, left, right: left + this.offsetWidth, width: this.offsetWidth, height: this.offsetHeight };
     }
@@ -218,7 +229,7 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
     querySelectorAll: selector => html.querySelectorAll(selector),
     getElementById: id => nodes.find(node => node.id === id) || null,
   });
-  const requestAnimationFrame = callback => { const id = ++sequence; frames.set(id, callback); return id; };
+  const requestAnimationFrame = callback => { requestedFrames++; const id = ++sequence; frames.set(id, callback); return id; };
   const cancelAnimationFrame = id => frames.delete(id);
   const setTimeout = (callback, delay = 0) => { const id = ++sequence; timers.set(id, { at: now + delay, callback }); return id; };
   const clearTimeout = id => timers.delete(id);
@@ -298,15 +309,18 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
   advance(32);
   return {
     html, body, window, document, chapters, about, journal, series, archive, navLinks, searchForm, input, media, header, progress, progressCurrent,
-    runway, viewport, track, progressMarker, heroHeading, scrolls, innerScrolls, chapterEvents, historyEntries,
+    runway, viewport, track, progressMarker, heroHeading, scrolls, innerScrolls, chapterEvents, historyEntries, domWrites,
     get top() { return scrollY; },
     get step() { return panelStep(); },
     destination(id) { return id === 'home' ? 0 : height + chapters.find(chapter => chapter.id === id).chapterIndex * panelStep(); },
-    get x() { return parseFloat(html.style.getPropertyValue('--chapter-x')); },
+    get x() { return Number(track.style.getPropertyValue('transform').match(/translate3d\(([-\d.]+)px/)?.[1]) || 0; },
+    get markerX() { return parseFloat(progressMarker.style.getPropertyValue('--chapter-marker-x')); },
+    get rulerWidth() { return rulerWidth(); },
     get url() { return location; },
     get pendingFrames() { return frames.size; },
     get pendingTimers() { return timers.size; },
     get layoutReads() { return layoutReads; },
+    get requestedFrames() { return requestedFrames; },
     get observedTargets() { return resizeObservers.reduce((count, observer) => count + observer.targets.size, 0); },
     queuedFrames() { return [...frames.values()]; },
     lateResize() { for (const observer of resizeObservers) observer.callback(); },
@@ -557,9 +571,10 @@ await test('continuous wheel input accumulates distance across panel boundaries 
   site.advance(1000);
   assert.equal(site.top, 2300);
   assert.equal(site.x, -1500);
+  assert.ok(Math.abs(site.markerX - (1500 / site.step + 0.5) * site.rulerWidth / 4) < 0.001, 'the marker follows continuous movement inside its own track');
   assert.equal(site.url.hash, '#series');
   assert.equal(site.progressCurrent.textContent, '02');
-  assert.equal(Number(site.html.style.getPropertyValue('--site-progress')), Number((1500 / (site.step * 3)).toFixed(5)));
+  assert.equal(Number(site.progress.style.getPropertyValue('--site-progress')), Number((1500 / (site.step * 3)).toFixed(5)));
   assert.equal(site.html.classList.contains('is-chapter-transitioning'), false);
   assert.equal(site.heroHeading.inert, true);
   assert.equal(site.header.inert, false);
@@ -568,6 +583,32 @@ await test('continuous wheel input accumulates distance across panel boundaries 
   site.wheel(0, { deltaX: -200 });
   site.advance(1000);
   assert.equal(site.x, -1300, 'horizontal trackpad input also moves the horizontal strip');
+});
+
+await test('continuous scrolling updates only changing local styles and uses one animation chain', t => {
+  const site = browser({ url: 'https://gudu.blog/#about' });
+  site.advance(1200);
+  const before = { writes: site.domWrites.length, frames: site.requestedFrames, scrolls: site.scrolls.length, reads: site.layoutReads };
+  site.wheel(120);
+  site.advance(1600);
+  const writes = site.domWrites.slice(before.writes);
+  const metrics = {
+    rootStyles: writes.filter(write => write.target === site.html && write.kind === 'style').length,
+    rootClasses: writes.filter(write => write.target === site.html && write.kind === 'class').length,
+    inertWrites: writes.filter(write => write.kind === 'inert').length,
+    layoutReads: site.layoutReads - before.reads,
+    frames: site.requestedFrames - before.frames,
+    scrolls: site.scrolls.length - before.scrolls,
+  };
+  t.diagnostic(`120px content scroll: ${JSON.stringify(metrics)}`);
+  assert.deepEqual([metrics.rootStyles, metrics.rootClasses, metrics.inertWrites, metrics.layoutReads], [0, 0, 0, 0], JSON.stringify(metrics));
+  assert.ok(metrics.frames <= metrics.scrolls + 1, `scroll events must not add a second update loop: ${JSON.stringify(metrics)}`);
+  assert.equal(site.x, -120);
+  assert.equal(site.top, site.destination('about') + 120);
+  const settled = [site.domWrites.length, site.requestedFrames];
+  site.event('scroll');
+  site.advance(32);
+  assert.deepEqual([site.domWrites.length, site.requestedFrames], settled, 'a delayed scroll event for the already rendered position does no work');
 });
 
 await test('minimal progress readout tracks movement and arrivals, then clears feedback when idle or leaving', () => {
@@ -675,7 +716,7 @@ await test('idle decoration starts one second after content settles and stops im
   assert.equal(idle(), false);
   site.advance(640);
   assert.equal(site.top, site.destination('series'));
-  assert.equal(site.html.style.getPropertyValue('--chapter-active-index'), '1');
+  assert.equal(site.progress.style.getPropertyValue('--chapter-active-index'), '1');
   site.advance(999);
   assert.equal(idle(), false, 'the delay starts after navigation finishes');
   site.advance(1);
@@ -1061,9 +1102,11 @@ await test('resizing preserves the fractional horizontal position and recalculat
   const site = browser({ url: 'https://gudu.blog/#about' });
   site.jump(800 + site.step * 0.5);
   assert.equal(site.x, -site.step * 0.5);
+  assert.equal(site.markerX, site.rulerWidth / 4);
   site.resizeWidth(600);
   assert.equal(site.top, 800 + site.step * 0.5);
   assert.equal(site.x, -site.step * 0.5);
+  assert.equal(site.markerX, site.rulerWidth / 4, 'resizing remeasures the ruler while preserving its fractional station position');
   assert.equal(site.runway.style.height, `${800 + 3 * site.step}px`);
   site.click(site.link('#archive'));
   site.advance(1000);
@@ -1117,8 +1160,9 @@ await test('all positions follow measured panel gaps while progress counts only 
     site.hash(`#${id}`);
     assert.equal(site.top, site.destination(id));
     assert.equal(site.progressCurrent.textContent, String(Math.max(index, 1)).padStart(2, '0'));
-    assert.equal(site.html.style.getPropertyValue('--chapter-active-index'), String(Math.max(index - 1, 0)));
-    assert.equal(Number(site.html.style.getPropertyValue('--site-progress')), Number((Math.max(index - 1, 0) / 3).toFixed(5)));
+    assert.equal(site.progress.style.getPropertyValue('--chapter-active-index'), String(Math.max(index - 1, 0)));
+    assert.equal(Number(site.progress.style.getPropertyValue('--site-progress')), Number((Math.max(index - 1, 0) / 3).toFixed(5)));
+    assert.ok(Math.abs(site.markerX - (Math.max(index - 1, 0) + 0.5) * site.rulerWidth / 4) < 0.001, `${id} aligns the marker with its station center`);
   }
   assert.equal(site.url.hash, '#archive');
   assert.equal(site.x, -site.step * 3);

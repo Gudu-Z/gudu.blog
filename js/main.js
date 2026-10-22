@@ -11,7 +11,7 @@
   let rendererStarted = false;
   let rendererTimer = 0;
   let drawTimer = 0;
-  const layers = [...document.querySelectorAll('[data-depth]')];
+  const layers = [...document.querySelectorAll('[data-depth]')].map(element => ({ element, depth: Number(element.dataset.depth) }));
   const titlePeriod = document.querySelector('.title-period');
   const clock = document.querySelector('#local-time');
   const clockDate = clock.querySelector('[data-clock-date]');
@@ -38,6 +38,9 @@
   let width = 0;
   let height = 0;
   let starList = [];
+  let starFrame = null;
+  let layerX = NaN;
+  let layerY = NaN;
   let chapterProgress = 0;
   let entranceGlow = 0;
 
@@ -141,30 +144,44 @@
   function resize() {
     if (!pageActive || document.hidden) return;
     const bounds = stage.getBoundingClientRect();
+    const dimensionsChanged = width !== bounds.width || height !== bounds.height;
     width = bounds.width;
     height = bounds.height;
     const dpr = Math.min(devicePixelRatio || 1, 2);
-    stars.width = Math.round(width * dpr);
-    stars.height = Math.round(height * dpr);
+    const bufferWidth = Math.round(width * dpr), bufferHeight = Math.round(height * dpr);
+    // ResizeObserver also reports font/heading changes. Resetting an unchanged
+    // full-screen canvas clears its pixels and reallocates its backing store.
+    if (stars.width !== bufferWidth || stars.height !== bufferHeight) {
+      if (stars.width !== bufferWidth) stars.width = bufferWidth;
+      if (stars.height !== bufferHeight) stars.height = bufferHeight;
+      starFrame = null;
+    }
     context?.setTransform(dpr, 0, 0, dpr, 0, 0);
     // The shader owns the lensed background; these few dim points fill its edges.
-    starList = Array.from({ length: Math.round(width * height / 24000) }, (_, i) => ({
-      x: random(i * 5 + 1) * width,
-      y: random(i * 5 + 2) * height,
-      radius: 0.35 + random(i * 5 + 3) * 0.65,
-      light: 0.04 + random(i * 5 + 4) * 0.12,
-      depth: 0.2 + random(i * 5 + 5) * 1.2,
-    }));
+    if (dimensionsChanged) {
+      starList = Array.from({ length: Math.round(width * height / 24000) }, (_, i) => ({
+        x: random(i * 5 + 1) * width,
+        y: random(i * 5 + 2) * height,
+        radius: 0.35 + random(i * 5 + 3) * 0.65,
+        light: 0.04 + random(i * 5 + 4) * 0.12,
+        depth: 0.2 + random(i * 5 + 5) * 1.2,
+      }));
+      starFrame = null;
+    }
     blackHole?.resize();
     draw();
   }
 
   function drawStars(fallback = false) {
     if (!pageActive || document.hidden || !context) return;
-    context.clearRect(0, 0, width, height);
     // The live minimal renderer supplies one continuous, lensed sky across
     // the hero. Keep the old edge stars for ink and the static fallback only.
-    if (!fallback && blackHoleStyle === 'minimal' && blackHole?.ready && !blackHole.lost) return;
+    const show = fallback || blackHoleStyle !== 'minimal' || !blackHole?.ready || blackHole.lost;
+    if (starFrame && starFrame.show === show && (!show || (starFrame.x === pointer.x
+        && starFrame.y === pointer.y && starFrame.style === blackHoleStyle))) return;
+    starFrame = { show, x: pointer.x, y: pointer.y, style: blackHoleStyle };
+    context.clearRect(0, 0, width, height);
+    if (!show) return;
     for (const star of starList) {
       const x = star.x + pointer.x * star.depth * 13;
       const y = star.y + pointer.y * star.depth * 10;
@@ -182,10 +199,13 @@
     drawTimer = 0;
     if (!pageActive || document.hidden) return false;
     drawStars();
-    for (const layer of layers) {
-      const depth = Number(layer.dataset.depth);
-      layer.style.setProperty('--pointer-x', `${-pointer.x * depth * 8}px`);
-      layer.style.setProperty('--pointer-y', `${-pointer.y * depth * 6}px`);
+    if (pointer.x !== layerX || pointer.y !== layerY) {
+      layerX = pointer.x;
+      layerY = pointer.y;
+      for (const { element, depth } of layers) {
+        element.style.setProperty('--pointer-x', `${-pointer.x * depth * 8}px`);
+        element.style.setProperty('--pointer-y', `${-pointer.y * depth * 6}px`);
+      }
     }
     const submitted = blackHole?.render(sceneTime(), pointer.x, -pointer.y, chapterProgress, entranceGlow);
     // Animation retries on its next scheduled frame. A separate timer would
