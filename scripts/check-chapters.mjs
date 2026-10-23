@@ -48,6 +48,7 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
   const scrolls = [];
   const innerScrolls = [];
   const chapterEvents = [];
+  const interactionEvents = [];
   const historyEntries = [];
   const resizeObservers = [];
   let layoutReads = 0;
@@ -258,6 +259,10 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
     pageYOffset: { get: () => scrollY },
   });
   window.addEventListener('site:chapter', event => chapterEvents.push(event.detail));
+  window.addEventListener('site:interaction', event => interactionEvents.push({
+    active: event.detail.active, kind: event.detail.kind, top: scrollY,
+    transform: track.style.getPropertyValue('transform'), scrollCount: scrolls.length,
+  }));
   class CustomEvent {
     constructor(type, options = {}) { this.type = type; Object.assign(this, options); }
   }
@@ -309,7 +314,7 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
   advance(32);
   return {
     html, body, window, document, chapters, about, journal, series, archive, navLinks, searchForm, input, media, header, progress, progressCurrent,
-    runway, viewport, track, progressMarker, heroHeading, scrolls, innerScrolls, chapterEvents, historyEntries, domWrites,
+    runway, viewport, track, progressMarker, heroHeading, scrolls, innerScrolls, chapterEvents, interactionEvents, historyEntries, domWrites,
     get top() { return scrollY; },
     get step() { return panelStep(); },
     destination(id) { return id === 'home' ? 0 : height + chapters.find(chapter => chapter.id === id).chapterIndex * panelStep(); },
@@ -609,6 +614,129 @@ await test('continuous scrolling updates only changing local styles and uses one
   site.event('scroll');
   site.advance(32);
   assert.deepEqual([site.domWrites.length, site.requestedFrames], settled, 'a delayed scroll event for the already rendered position does no work');
+});
+
+await test('interaction events bracket real motion before its first step and after its final position', () => {
+  for (const kind of ['hero', 'content']) {
+    const site = browser({ url: kind === 'hero' ? 'https://gudu.blog/' : 'https://gudu.blog/#about' });
+    assert.equal(site.interactionEvents.length, 0, 'initial hash positioning is not an animated interaction');
+    const start = site.top;
+    const scrollCount = site.scrolls.length;
+    site.wheel(120);
+    assert.deepEqual(site.interactionEvents.map(event => [event.active, event.kind]), [[true, kind]]);
+    assert.equal(site.interactionEvents[0].top, start);
+    assert.equal(site.interactionEvents[0].scrollCount, scrollCount, 'main is notified before the first controlled scroll');
+    site.advance(80);
+    assert.ok(site.top > start);
+    site.wheel(80);
+    site.advance(80);
+    assert.equal(site.interactionEvents.length, 1, 'frames and repeated wheel inputs do not repeat active notifications');
+    site.advance(1600);
+    assert.deepEqual(site.interactionEvents.map(event => [event.active, event.kind]), [[true, kind], [false, kind]]);
+    const end = site.interactionEvents.at(-1);
+    assert.equal(end.top, kind === 'hero' ? site.destination('about') : site.destination('about') + 200);
+    assert.equal(end.scrollCount, site.scrolls.length, 'the last scroll is committed before notifying main that drawing may resume');
+    assert.equal(end.transform, site.track.style.getPropertyValue('transform'));
+  }
+  const navigation = browser({ url: 'https://gudu.blog/#about' });
+  const beforeNavigation = navigation.scrolls.length;
+  navigation.click(navigation.link('#archive'));
+  assert.equal(navigation.interactionEvents[0].scrollCount, beforeNavigation, 'anchor activity is announced before its first scroll too');
+  navigation.advance(80);
+  navigation.resizeWidth(600);
+  assert.deepEqual(navigation.interactionEvents.map(event => [event.active, event.kind]), [[true, 'content']], 'resizing a continuing anchor animation keeps its activity uninterrupted');
+  navigation.advance(1000);
+  assert.deepEqual(navigation.interactionEvents.map(event => [event.active, event.kind]), [[true, 'content'], [false, 'content']]);
+  assert.equal(navigation.interactionEvents.at(-1).top, navigation.destination('archive'));
+  assert.equal(navigation.interactionEvents.at(-1).scrollCount, navigation.scrolls.length);
+});
+
+await test('horizontal touches crossing the hero keep its camera active without changing drag behavior', () => {
+  for (const distance of [300, 1000]) {
+    const site = browser();
+    const finger = x => ({ clientX: x, clientY: 600 });
+    site.event('touchstart', { touches: [finger(1100)] });
+    const beforeDrag = site.scrolls.length;
+    assert.equal(site.event('touchmove', { touches: [finger(1100 - distance)] }).defaultPrevented, true);
+    assert.deepEqual(site.interactionEvents.map(event => [event.active, event.kind]), [[true, 'hero']]);
+    assert.equal(site.interactionEvents[0].scrollCount, beforeDrag, 'hero classification precedes the first drag step');
+    assert.equal(site.html.classList.contains('is-chapter-entering'), false, 'a horizontal drag retains continuous movement instead of acquiring an entrance snap');
+    site.advance(80);
+    assert.ok(site.top > 0 && site.top < site.destination('about'), 'the initial path changes the hero camera even when its destination is content');
+    site.advance(1200);
+    assert.equal(site.top, distance, 'horizontal drag distance remains unchanged');
+    assert.deepEqual(site.interactionEvents.map(event => [event.active, event.kind]), [[true, 'hero'], [false, 'hero']]);
+    assert.equal(site.interactionEvents.at(-1).top, distance);
+    site.event('touchend', { touches: [] });
+    if (distance > site.destination('about')) {
+      site.event('touchstart', { touches: [finger(400)] });
+      site.event('touchmove', { touches: [finger(300)] });
+      assert.equal(site.interactionEvents.at(-1).kind, 'content', 'a subsequent path entirely inside content may yield the background');
+      site.advance(1200);
+      assert.deepEqual(site.interactionEvents.slice(-2).map(event => [event.active, event.kind]), [[true, 'content'], [false, 'content']]);
+    }
+  }
+});
+
+await test('retargeting and quick reversals switch interaction kind without a false inactive pulse', () => {
+  const site = browser({ url: 'https://gudu.blog/#about' });
+  site.wheel(500);
+  site.advance(80);
+  site.click(site.link('#archive'));
+  site.advance(80);
+  assert.deepEqual(site.interactionEvents.map(event => [event.active, event.kind]), [[true, 'content']]);
+  site.click(site.link('#home'));
+  assert.deepEqual(site.interactionEvents.map(event => [event.active, event.kind]), [[true, 'content'], [true, 'hero']]);
+  site.advance(80);
+  site.click(site.link('#series'));
+  assert.equal(site.interactionEvents.length, 2, 'reversing a layered hero transition keeps one active hero interaction');
+  site.advance(1200);
+  assert.deepEqual(site.interactionEvents.map(event => [event.active, event.kind]), [[true, 'content'], [true, 'hero'], [false, 'hero']]);
+  assert.equal(site.interactionEvents.at(-1).top, site.destination('series'));
+});
+
+await test('interruptions release interaction state after settling, without later reactivation', () => {
+  for (const kind of ['hero', 'content']) {
+    for (const interruption of ['hash', 'resize', 'hidden', 'pagehide', 'reduced']) {
+      const site = browser({ url: kind === 'hero' ? 'https://gudu.blog/' : 'https://gudu.blog/#about' });
+      site.wheel(300);
+      site.advance(80);
+      const staleFrames = site.queuedFrames();
+      if (interruption === 'hash') site.hash('#journal');
+      if (interruption === 'resize') site.resizeWidth(600);
+      if (interruption === 'hidden') { site.document.hidden = true; site.event('visibilitychange'); }
+      if (interruption === 'pagehide') site.event('pagehide');
+      if (interruption === 'reduced') { site.media.matches = true; site.media.dispatchEvent({ type: 'change' }); }
+      assert.deepEqual(site.interactionEvents.map(event => [event.active, event.kind]), [[true, kind], [false, kind]], `${kind}: ${interruption}`);
+      assert.equal(site.interactionEvents.at(-1).top, site.top, `${interruption} reports its settled position`);
+      if (['hidden', 'pagehide'].includes(interruption)) for (const callback of staleFrames) callback(5000);
+      site.advance(1600);
+      assert.equal(site.interactionEvents.length, 2, 'canceled work never reopens the interaction');
+      assert.equal(site.pendingFrames, 0);
+    }
+  }
+});
+
+await test('instant positioning, clamped movement and native reading do not claim controller activity', () => {
+  const edge = browser({ url: 'https://gudu.blog/#archive' });
+  edge.wheel(100);
+  edge.advance(32);
+  assert.equal(edge.interactionEvents.length, 0);
+  assert.equal(edge.pendingFrames, 0, 'the end of the rail does not start an empty animation');
+  const reduced = browser({ reduced: true, url: 'https://gudu.blog/#about' });
+  reduced.wheel(100);
+  reduced.click(reduced.link('#archive'));
+  assert.equal(reduced.interactionEvents.length, 0);
+  const reading = browser({ url: 'https://gudu.blog/#journal' });
+  assert.equal(reading.wheel(100, { target: reading.journal }).defaultPrevented, false);
+  reading.event('scroll', { target: reading.journal });
+  reading.event('touchstart', { target: reading.journal, touches: [{ clientX: 100, clientY: 400 }] });
+  assert.equal(reading.interactionEvents.length, 0, 'native reading and a stationary touch are not horizontal animation');
+  reading.event('touchend', { touches: [] });
+  reading.wheel(100);
+  reading.advance(64);
+  reading.wheel(100, { target: reading.journal });
+  assert.deepEqual(reading.interactionEvents.map(event => [event.active, event.kind]), [[true, 'content'], [false, 'content']], 'handing movement back to native reading releases the background');
 });
 
 await test('minimal progress readout tracks movement and arrivals, then clears feedback when idle or leaving', () => {

@@ -54,6 +54,7 @@
   let pendingHash = false;
   let settingScroll = false;
   let renderedScroll = null;
+  let interactionKind = null;
   const styleValues = new WeakMap();
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -134,6 +135,15 @@
     lastProgress = progress;
     lastEntranceGlow = entranceGlow;
     window.dispatchEvent(new CustomEvent('site:chapter', { detail: { progress, entranceGlow } }));
+  }
+
+  function setInteraction(kind) {
+    if (kind === interactionKind) return;
+    const previous = interactionKind;
+    interactionKind = kind;
+    window.dispatchEvent(new CustomEvent('site:interaction', {
+      detail: { active: kind !== null, kind: kind || previous },
+    }));
   }
 
   function setTransitionPhase(phase, direction, pulseEnabled = false) {
@@ -246,7 +256,7 @@
     });
   }
 
-  function stop() {
+  function stop({ preserveInteraction = false } = {}) {
     noteIdleActivity();
     cancelAnimationFrame(frame);
     frame = 0;
@@ -257,6 +267,7 @@
     for (const name of ['is-chapter-transitioning', 'is-chapter-entering', 'is-chapter-leaving']) setClass(root, name, false);
     setTransitionPhase(0);
     emitChapterState();
+    if (!preserveInteraction) setInteraction(null);
   }
 
   function setScroll(top) {
@@ -279,7 +290,9 @@
     if (!available() || index < 0 || index >= sections.length) return;
     const previousDirection = transition?.direction;
     const previousPhase = transitionPhase;
-    stop();
+    // Retargeting an animation keeps its activity continuous until the new
+    // mode is known; main must not briefly resume a paused background frame.
+    stop({ preserveInteraction: true });
     measure();
     if (historyMode) writeHash(index, historyMode);
     const start = y();
@@ -304,6 +317,7 @@
       if (focus) focusSection(index);
     };
     if (instant || motion.matches || document.hidden || (!previousDirection && Math.abs(start - destination) < 1)) { finish(); return; }
+    setInteraction(direction ? 'hero' : 'content');
     root.classList.add('is-chapter-transitioning');
     if (direction) {
       setTransitionPhase(phaseStart, direction, pulseEnabled);
@@ -334,6 +348,7 @@
     if (Math.abs(targetY - next) < 0.6) {
       setScroll(targetY);
       lastFrame = 0;
+      setInteraction(null);
       scheduleIdle();
     } else {
       setScroll(next);
@@ -348,11 +363,15 @@
       goTo(0, { historyMode: 'replace', entrance: true });
       return true;
     }
-    if (transition) stop();
+    if (transition) stop({ preserveInteraction: true });
     if (!frame) smoothY = y();
     // Add to the intended position so quick wheel events retain their distance.
     targetY = clamp((frame ? targetY : y()) + delta, 0, maximum);
-    if (motion.matches) { setScroll(targetY); return; }
+    if (motion.matches) { setScroll(targetY); setInteraction(null); return; }
+    if (targetY === y()) { stop(); scheduleIdle(); return false; }
+    // A horizontal touch can move through the hero without taking its vertical
+    // entrance snap. Keep its camera live while either end is in that range.
+    setInteraction(y() < entry || targetY < entry ? 'hero' : 'content');
     if (!frame) frame = requestAnimationFrame(smoothTick);
     return false;
   }
@@ -514,7 +533,7 @@
     const previousPosition = suspendedPosition ?? position();
     suspendedPosition = null;
     const navigation = transition;
-    stop();
+    stop({ preserveInteraction: true });
     measure();
     if (navigation) {
       goTo(navigation.index, {
@@ -525,6 +544,7 @@
     } else {
       const destination = previousPosition >= 1 ? entry + (previousPosition - 1) * width : previousPosition * entry;
       if (Math.abs(destination - y()) > 0.5) setScroll(destination);
+      setInteraction(null);
     }
   }
 
@@ -588,8 +608,9 @@
     const destination = transition?.destination ?? targetY;
     const focusIndex = transition?.focus ? transition.index : null;
     const wasMoving = Boolean(frame || transition);
-    stop();
+    stop({ preserveInteraction: true });
     if (wasMoving) setScroll(destination);
+    setInteraction(null);
     if (focusIndex !== null) focusSection(focusIndex);
     if (positions.length) suspendedPosition = position();
     clearProgressFeedback();
@@ -605,8 +626,9 @@
     if (motion.matches && frame) {
       const destination = transition?.destination ?? targetY;
       const focusIndex = transition?.focus ? transition.index : null;
-      stop();
+      stop({ preserveInteraction: true });
       setScroll(destination);
+      setInteraction(null);
       if (focusIndex !== null) focusSection(focusIndex);
     }
     scheduleIdle();

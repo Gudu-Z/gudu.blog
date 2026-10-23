@@ -11,6 +11,11 @@
   let rendererStarted = false;
   let rendererTimer = 0;
   let drawTimer = 0;
+  let preparationTimer = 0;
+  let firstFrameSubmitted = false;
+  let sceneSettled = false;
+  let resolveScene;
+  const scenePreparation = new Promise(resolve => { resolveScene = resolve; });
   const layers = [...document.querySelectorAll('[data-depth]')].map(element => ({ element, depth: Number(element.dataset.depth) }));
   const titlePeriod = document.querySelector('.title-period');
   const clock = document.querySelector('#local-time');
@@ -43,13 +48,39 @@
   let layerY = NaN;
   let chapterProgress = 0;
   let entranceGlow = 0;
+  let contentMoving = false;
+  let heldForInteraction = false;
+  let busySince = null;
+
+  function settleScene(ready) {
+    if (sceneSettled) return;
+    sceneSettled = true;
+    clearTimeout(preparationTimer);
+    preparationTimer = 0;
+    resolveScene(ready);
+  }
+
+  function checkFirstFrame() {
+    preparationTimer = 0;
+    if (sceneSettled || !pageActive || document.hidden || !firstFrameSubmitted) return;
+    if (!blackHole?.ready || blackHole.lost) { settleScene(false); return; }
+    if (blackHole.pollGpu?.() !== false) { settleScene(true); return; }
+    preparationTimer = setTimeout(checkFirstFrame, 32);
+  }
 
   function finishIntro() {
     hero.classList.add('intro-complete');
     document.documentElement.classList.remove('has-site-intro');
     updateTitleBlink();
   }
-  function revealScene() { loading = false; start(); updateTitleBlink(); }
+  function revealScene() {
+    // A loader timeout may deliberately reveal the fallback. Late GPU setup
+    // can still replace it, but no startup waiter should outlive the loader.
+    settleScene(false);
+    loading = false;
+    start();
+    updateTitleBlink();
+  }
   window.addEventListener('site:revealing', revealScene);
   window.addEventListener('site:revealed', revealScene);
   if (reducedMotion.matches) finishIntro();
@@ -58,16 +89,14 @@
     if (event.animationName === 'title-period-enter') { finishIntro(); start(); }
   });
 
-  // The decoded fallback carries the logo and entrance. GPU setup starts only
-  // after those animations, so a cold driver cannot freeze their SVG strokes.
+  // Prepare behind the loader after the logo strokes, rather than waiting for
+  // the page entrance to finish. Readiness is the first completed scene frame.
   function scheduleRenderer() {
     if (!pageActive || rendererStarted || rendererTimer || !blackHoleCanvas || !window.BlackHole
-        || loading || !visible || document.hidden
-        || document.documentElement.classList.contains('has-site-intro')) return;
+        || !visible || document.hidden) return;
     rendererTimer = setTimeout(function initializeRenderer() {
       rendererTimer = 0;
-      if (!pageActive || loading || !visible || document.hidden
-          || document.documentElement.classList.contains('has-site-intro')) return;
+      if (!pageActive || !visible || document.hidden) return;
       rendererStarted = true;
       try {
         const renderer = new window.BlackHole(blackHoleCanvas, { style: blackHoleStyle });
@@ -79,10 +108,15 @@
         };
         // Also support an already-ready renderer (including older cached builds).
         if (blackHole.ready) { draw(); start(); }
+        renderer.initialization?.then(ready => {
+          if (!pageActive || document.hidden || blackHole !== renderer) return;
+          if (!ready && !renderer.ready) settleScene(false);
+        });
       } catch (error) {
+        settleScene(false);
         console.warn('Using the static black-hole illustration.', error);
       }
-    }, 32);
+    }, loading ? 1100 : 32);
   }
 
   function stopTitleBlink() {
@@ -198,6 +232,7 @@
     clearTimeout(drawTimer);
     drawTimer = 0;
     if (!pageActive || document.hidden) return false;
+    if (shouldHoldScene()) { holdScene(); return false; }
     drawStars();
     if (pointer.x !== layerX || pointer.y !== layerY) {
       layerX = pointer.x;
@@ -208,6 +243,11 @@
       }
     }
     const submitted = blackHole?.render(sceneTime(), pointer.x, -pointer.y, chapterProgress, entranceGlow);
+    if (submitted === true && !sceneSettled) {
+      firstFrameSubmitted = true;
+      // Let the submitted commands reach the GPU before the first zero-wait poll.
+      if (!preparationTimer) preparationTimer = setTimeout(checkFirstFrame, 32);
+    }
     // Animation retries on its next scheduled frame. A separate timer would
     // bypass a slower GPU-requested cadence; only a static scene needs one.
     if (submitted === false && blackHole?.ready && !blackHole.lost && visible && (paused || loading)) {
@@ -235,12 +275,28 @@
     activeSince = null;
   }
 
+  function shouldHoldScene() {
+    return !paused && chapterProgress >= 1 && contentMoving && (blackHole?.quality < 0.95 || blackHole?.frameInterval >= 49
+      || (busySince !== null && performance.now() - busySince >= 80));
+  }
+
+  function holdScene() {
+    heldForInteraction = true;
+    pauseSceneClock();
+    cancelAnimationFrame(frame);
+    frame = 0;
+    lastTime = lastRender = 0;
+  }
+
   function tick(timestamp) {
     frame = 0;
     if (!pageActive || loading || paused || !visible || document.hidden) { stop(); return; }
     // Observe completion at display cadence even when expensive draws run less
     // often. This is a zero-timeout poll; it never submits or waits for a frame.
-    blackHole?.pollGpu?.();
+    const gpuAvailable = blackHole?.pollGpu?.();
+    if (gpuAvailable === false && blackHole?.ready) busySince ??= performance.now();
+    else busySince = null;
+    if (shouldHoldScene()) { holdScene(); return; }
     const animated = blackHole?.ready && !blackHole.lost;
     if (animated) resumeSceneClock(); else pauseSceneClock();
     const delta = lastTime ? Math.min(timestamp - lastTime, 100) : 16;
@@ -269,6 +325,8 @@
   function start() {
     scheduleRenderer();
     if (!pageActive || frame || loading || paused || !visible || document.hidden) return;
+    if (shouldHoldScene()) { holdScene(); return; }
+    heldForInteraction = false;
     const animated = blackHole?.ready && !blackHole.lost;
     if (!animated && pointer.x === pointer.targetX && pointer.y === pointer.targetY) return;
     clearTimeout(drawTimer);
@@ -285,6 +343,10 @@
     rendererTimer = 0;
     clearTimeout(drawTimer);
     drawTimer = 0;
+    clearTimeout(preparationTimer);
+    preparationTimer = 0;
+    busySince = null;
+    heldForInteraction = false;
     entranceGlow = 0;
     pauseSceneClock();
     blackHole?.resetTiming?.();
@@ -298,6 +360,13 @@
     if (paused) { stop(); scheduleRenderer(); } else start();
     updateTitleBlink();
   }
+
+  window.addEventListener('site:interaction', event => {
+    contentMoving = Boolean(event.detail?.active && event.detail?.kind === 'content');
+    if (!pageActive || document.hidden) return;
+    if (shouldHoldScene()) holdScene();
+    else if (heldForInteraction) { busySince = null; start(); }
+  });
 
   window.addEventListener('site:chapter', event => {
     chapterProgress = Math.max(0, Math.min(1, Number(event.detail?.progress) || 0));
@@ -344,7 +413,7 @@
   // A late web font changes the heading's quiet zone without resizing the hero.
   const heading = document.querySelector('.hero-heading');
   if (heading) sceneResize.observe(heading);
-  blackHoleCanvas?.addEventListener('webglcontextlost', () => { stop(); drawStars(true); });
+  blackHoleCanvas?.addEventListener('webglcontextlost', () => { stop(); settleScene(false); drawStars(true); });
   window.addEventListener('pagehide', event => {
     // pagehide can precede visibilitychange. Gate every late completion before
     // retiring the renderer, while preserving it for BFCache.
@@ -360,6 +429,7 @@
       blackHole?.dispose?.({ releaseGpu: false });
       blackHole = null;
       rendererStarted = false;
+      settleScene(false);
     }
   });
   window.addEventListener('pageshow', () => {
@@ -371,11 +441,12 @@
     updateTitleBlink();
   });
   window.addEventListener('popstate', updateBlackHoleTheme);
-  // Prepare the lightweight page first; loading.js waits for the fallback
-  // image instead of tying the logo animation to shader compilation.
+  // The loader bounds this wait; unsupported or slow GPUs retain the decoded
+  // illustration instead of trapping navigation behind shader compilation.
   resize();
   updateMotion();
   updateClock();
   updateBlackHoleTheme();
-  window.SiteLoader?.ready();
+  if (!blackHoleCanvas || !window.BlackHole) settleScene(false);
+  window.SiteLoader?.ready({ scene: scenePreparation });
 })();

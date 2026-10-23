@@ -584,23 +584,25 @@
       glow = glow / weights * mix(0.30, 0.42, u_chapter) * fade;
       #ifdef HAS_TEXTURE_LOD
         if (u_softGlow > 0.5 && u_chapter > 0.0) {
-          // Coarse levels come from the already filtered, disk-only bloom.
-          // Nine overlapping samples spread its actual light, without
-          // amplifying the star atlas or adding another full-screen pass.
-          vec3 halo = vec3(0.0);
-          float haloWeights = 0.0;
-          for (int x = -1; x <= 1; x++) {
-            for (int y = -1; y <= 1; y++) {
-              vec2 offset = vec2(float(x), float(y));
-              float weight = exp(-dot(offset, offset) * 0.65);
-              halo += texture2DLodEXT(u_bloom, v_uv + offset * u_texel * 12.0, 3.0).rgb * weight;
-              haloWeights += weight;
-            }
-          }
           vec2 centerUV = mix((vec2(0.5) - u_crop.xy) / u_crop.zw, vec2(0.5), u_chapter);
           vec2 local = (v_uv - centerUV) * vec2(u_texel.y / u_texel.x, 1.0);
           float localFade = 1.0 - smoothstep(0.34, 0.65, length(local));
-          glow += halo / haloWeights * (0.85 * u_chapter * localFade);
+          // Coarse levels come from the already filtered, disk-only bloom.
+          // Nine overlapping samples spread its actual light, without
+          // amplifying the star atlas or adding another full-screen pass.
+          if (localFade > 0.0) {
+            vec3 halo = vec3(0.0);
+            float haloWeights = 0.0;
+            for (int x = -1; x <= 1; x++) {
+              for (int y = -1; y <= 1; y++) {
+                vec2 offset = vec2(float(x), float(y));
+                float weight = exp(-dot(offset, offset) * 0.65);
+                halo += texture2DLodEXT(u_bloom, v_uv + offset * u_texel * 12.0, 3.0).rgb * weight;
+                haloWeights += weight;
+              }
+            }
+            glow += halo / haloWeights * (0.85 * u_chapter * localFade);
+          }
         }
       #endif
       // The entrance accent only amplifies light extracted from the disk.
@@ -641,8 +643,10 @@
       this.gpuTimingValid = false;
       this.gpuTimes = [];
       this.gpuUpperTimes = [];
+      this.unavailable = !this.gl;
+      this.initialization = Promise.resolve(false);
       if (!this.gl) return;
-      this.initialize().catch(error => console.warn('Using the static black-hole illustration.', error));
+      this.trackInitialization(this.initialize(), 'Using the static black-hole illustration.');
       this.handleContextLost = event => {
         if (this.disposed) return;
         event.preventDefault();
@@ -657,10 +661,19 @@
         if (this.disposed) return;
         this.resources = [];
         this.lost = false;
-        this.initialize().catch(error => console.warn('The static illustration remains available.', error));
+        this.trackInitialization(this.initialize(), 'The static illustration remains available.');
       };
       canvas.addEventListener('webglcontextlost', this.handleContextLost);
       canvas.addEventListener('webglcontextrestored', this.handleContextRestored);
+    }
+
+    trackInitialization(pending, message) {
+      const generation = this.generation;
+      const current = () => !this.disposed && !this.lost && generation === this.generation;
+      this.initialization = pending.then(() => current() && this.ready, error => {
+        if (current()) console.warn(message, error);
+        return false;
+      });
     }
 
     static shaderSource(gl, type, source) {
@@ -751,6 +764,7 @@
     async initialize() {
       if (this.disposed) return;
       const gl = this.gl;
+      this.unavailable = false;
       this.cancelCompileWait();
       this.ready = false;
       this.initialized = false;
@@ -779,7 +793,10 @@
       this.maxTexture = 0;
       // A fixed-width approximation cannot safely filter the lensed filaments.
       // Older devices without derivatives use the matching rendered fallback.
-      if (!this.webgl2 && !gl.getExtension('OES_standard_derivatives')) return;
+      if (!this.webgl2 && !gl.getExtension('OES_standard_derivatives')) {
+        this.unavailable = true;
+        return;
+      }
       const generation = this.generation;
       if (!await this.prepareTheme(this.style, generation)
           || this.disposed || this.lost || generation !== this.generation) return;
@@ -948,7 +965,7 @@
         width: `${visibleWidth}px`, height: `${visibleHeight}px`,
       });
       // Cover native 1080p/1440p and useful high-DPI detail. The completion
-      // fence still bounds queued work; sustained load lowers cadence first.
+      // fence bounds queued work; measured load reduces pixel cost first.
       const maxTexture = this.maxTexture ||= gl.getParameter(gl.MAX_TEXTURE_SIZE);
       const pixelBudget = this.webgl2 ? 3700000 : this.timerQuery ? 1800000 : 900000;
       const scale = Math.min(devicePixelRatio || 1, this.webgl2 ? 2 : 1.5,
@@ -1152,30 +1169,40 @@
         this.gpuTimes = [];
         this.gpuUpperTimes = [];
         const now = performance.now();
+        const measured = this.webgl2 || Boolean(this.timerQuery);
         if (cost > this.frameInterval * 0.8) {
           this.headroomSince = null;
           if (now < this.adaptAfter) return;
-          if (this.frameInterval < 49) this.frameInterval = 50;
+          if (measured && this.quality > 0.6) {
+            // Pixel work scales with area. Respond to sustained GPU pressure
+            // before sacrificing motion, with bounded steps and a quality floor.
+            const ratio = Math.sqrt(((1000 / 30) * 0.8) / cost);
+            this.quality = Math.max(0.6, this.quality * Math.max(0.75, Math.min(0.9, ratio)));
+            this.resize();
+          }
+          else if (this.frameInterval < 49) this.frameInterval = 50;
           else if (this.frameInterval < 66) this.frameInterval = 1000 / 15;
-          else if (this.quality > 0.7) {
+          else if (!measured && this.quality > 0.7) {
             this.quality = Math.max(0.7, this.quality * 0.9);
             this.resize();
           }
-          this.adaptAfter = now + 2000;
+          this.adaptAfter = now + (measured ? 750 : 2000);
           return;
         }
-        // Recover detail before frame rate. Predict the next resolution's
-        // area cost, and require sustained headroom with a separate threshold.
+        // Restore motion before detail on measured contexts. Every recovery
+        // still needs sustained upper-bound headroom and a separate threshold.
         const nextQuality = Math.min(1, this.quality + 0.05);
         const nextInterval = this.frameInterval > 50 ? 50 : 1000 / 30;
         const predicted = ceiling * (nextQuality / this.quality) ** 2;
-        const canRecover = this.quality < 1
+        const recoverCadence = measured && this.frameInterval > nextInterval;
+        const canRecover = recoverCadence ? ceiling <= nextInterval * 0.65 : this.quality < 1
           ? predicted <= this.frameInterval * 0.65
           : this.frameInterval > nextInterval && ceiling <= nextInterval * 0.65;
         if (!canRecover || now < this.adaptAfter) { this.headroomSince = null; return; }
         if (this.headroomSince === null) this.headroomSince = now;
         if (now - this.headroomSince < 5000) return;
-        if (this.quality < 1) { this.quality = nextQuality; this.resize(); }
+        if (recoverCadence) this.frameInterval = nextInterval;
+        else if (this.quality < 1) { this.quality = nextQuality; this.resize(); }
         else this.frameInterval = nextInterval;
         this.adaptAfter = now + 2000;
         this.headroomSince = null;
@@ -1243,7 +1270,7 @@
       if (next === this.style && this.ready) return;
       this.style = next;
       if (!this.initialized || this.lost || this.disposed) return;
-      this.activateStyle().catch(error => console.warn('Using the requested black-hole illustration.', error));
+      this.trackInitialization(this.activateStyle(), 'Using the requested black-hole illustration.');
     }
   }
   window.BlackHole = BlackHole;

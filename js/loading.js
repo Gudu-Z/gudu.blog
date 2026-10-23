@@ -9,6 +9,7 @@
   let revealPending = false;
   let closing = false;
   let readyRequested = false;
+  let waitingForScene = false;
   let closeTimer = 0;
   let exitTimer = 0;
   let readyFrame = 0;
@@ -32,6 +33,7 @@
     if (released) return;
     released = true;
     revealPending = true;
+    clearTimeout(softDeadline);
     clearTimeout(deadline);
     clearTimeout(closeTimer);
     clearTimeout(exitTimer);
@@ -46,10 +48,11 @@
     if (notify) announceReveal();
   }
 
-  // Finish the fade once the page has requested readiness; a cold WebGL
-  // first frame can delay timers and must not cut the animation off midway.
-  // A missing main script still releases the page immediately at the deadline.
-  const deadline = setTimeout(() => { if (readyRequested) dismiss(); else release(); }, 4000);
+  // Give a slow scene a chance to become interactive behind the logo. Begin
+  // fallback dismissal early enough to finish its fade before the hard limit;
+  // neither a pending resource nor a skipped transition can trap the page.
+  const softDeadline = setTimeout(() => { if (readyRequested) dismiss(); }, 3450);
+  const deadline = setTimeout(release, 4000);
 
   function dismiss() {
     if (!active || released || closing) return;
@@ -78,15 +81,21 @@
     finishIntro();
   }
 
-  function ready() {
+  function ready({ scene } = {}) {
     if (released || readyRequested) return;
     readyRequested = true;
-    const font = document.fonts?.load('900 1em "Barlow Condensed"');
+    waitingForScene = scene !== undefined;
+    const font = Promise.resolve().then(() => document.fonts?.load('900 1em "Barlow Condensed"'));
     const image = document.querySelector('.black-hole-fallback');
-    // The renderer adds .is-ready only after submitting its first scene frame.
+    // Decode the fallback in parallel so a failed renderer never starts a new
+    // image wait. A live first frame need not wait for an unused fallback.
+    const fallback = Promise.resolve().then(() => image?.decode?.()).catch(() => {});
     const sceneReady = document.querySelector('.black-hole')?.classList.contains('is-ready');
-    const visual = sceneReady ? Promise.resolve() : image?.decode?.();
+    const visual = waitingForScene
+      ? Promise.resolve(scene).then(ready => ready === true ? undefined : fallback, () => fallback)
+      : sceneReady ? Promise.resolve() : fallback;
     Promise.allSettled([font, visual]).then(() => {
+      waitingForScene = false;
       if (!active || released) return;
       if (document.hidden || reducedMotion.matches) dismiss();
       else readyFrame = requestAnimationFrame(() => {
@@ -108,5 +117,7 @@
     if (document.hidden) release({ notify: false });
     else announceReveal();
   });
-  reducedMotion.addEventListener('change', () => { if (reducedMotion.matches) release(); });
+  reducedMotion.addEventListener('change', () => {
+    if (reducedMotion.matches && !waitingForScene) release();
+  });
 })();

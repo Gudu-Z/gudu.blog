@@ -6,7 +6,7 @@ import { runInNewContext } from 'node:vm';
 const source = (await Promise.all(['particle-sky', 'black-hole'].map(name =>
   readFile(new URL(`../js/${name}.js`, import.meta.url), 'utf8')))).join('\n');
 
-function browser({ parallel = true, broken = false, style = 'minimal' } = {}) {
+function browser({ parallel = true, broken = false, style = 'minimal', contextAvailable = true, derivatives = true } = {}) {
   let complete = !parallel;
   let id = 0;
   const calls = [];
@@ -27,7 +27,8 @@ function browser({ parallel = true, broken = false, style = 'minimal' } = {}) {
     getExtension(name) {
       if (name === 'KHR_parallel_shader_compile') return parallel ? extension : null;
       if (name === 'WEBGL_lose_context') return { loseContext: () => calls.push('lose-context') };
-      if (name === 'OES_standard_derivatives' || name === 'EXT_shader_texture_lod') return {};
+      if (name === 'OES_standard_derivatives') return derivatives ? {} : null;
+      if (name === 'EXT_shader_texture_lod') return {};
       return null;
     },
     createShader: () => ({ id: ++id }),
@@ -59,7 +60,7 @@ function browser({ parallel = true, broken = false, style = 'minimal' } = {}) {
   }
   gl.shaderSource = (shader, text) => { calls.push('shaderSource'); shaderSources.push(text); };
   const canvas = {
-    getContext: type => type === 'webgl' ? gl : null,
+    getContext: type => contextAvailable && type === 'webgl' ? gl : null,
     parentElement: { classList: { remove() {} } },
     addEventListener: (name, fn) => events.set(name, fn),
     removeEventListener: (name, fn) => { if (events.get(name) === fn) events.delete(name); },
@@ -112,6 +113,7 @@ await test('cold compilation returns control before querying link status or allo
   await site.tick();
   assert.equal(site.renderer.ready, true);
   assert.equal(site.renderer.initialized, true);
+  assert.equal(await site.renderer.initialization, true);
   assert.equal(site.readySignals, 1);
   assert.equal(site.calls.filter(name => name === 'link-status').length, 4);
   assert.deepEqual(site.warnings, []);
@@ -119,10 +121,13 @@ await test('cold compilation returns control before querying link status or allo
 
 await test('a lost context cancels its pending compile and only the restored generation becomes ready', async () => {
   const site = browser();
+  const originalInitialization = site.renderer.initialization;
   site.lose();
   site.restore();
   site.complete();
   await site.tick();
+  assert.equal(await originalInitialization, false, 'an obsolete generation cannot announce successful initialization');
+  assert.equal(await site.renderer.initialization, true);
   assert.equal(site.readySignals, 1);
   assert.equal(site.renderer.ready, true);
   assert.equal(site.renderer.generation, 2);
@@ -135,6 +140,7 @@ await test('a failed link keeps the fallback and never announces a usable scene'
   site.complete();
   await site.tick();
   assert.equal(site.renderer.ready, false);
+  assert.equal(await site.renderer.initialization, false);
   assert.equal(site.readySignals, 0);
   assert.equal(site.pendingPolls, 0);
   assert.equal(site.warnings.length, 1);
@@ -148,6 +154,36 @@ await test('browsers without parallel compilation still finish deferred setup', 
   assert.equal(site.readySignals, 1);
   assert.equal(site.pendingPolls, 0);
   assert.deepEqual(site.warnings, []);
+});
+
+await test('unsupported contexts resolve initialization immediately without shader work', async () => {
+  for (const options of [{ contextAvailable: false }, { derivatives: false }]) {
+    const site = browser(options);
+    assert.equal(site.renderer.unavailable, true);
+    assert.equal(await site.renderer.initialization, false);
+    assert.equal(site.renderer.ready, false);
+    assert.equal(site.pendingPolls, 0);
+    assert.equal(site.calls.includes('compileShader'), false);
+    assert.deepEqual(site.warnings, []);
+    site.renderer.dispose({ releaseGpu: false });
+  }
+});
+
+await test('failed ink images resolve initialization false without waiting for unrelated image requests', async () => {
+  const site = browser({ parallel: false, style: 'ink' });
+  await site.tick();
+  assert.equal(site.images.length, 2);
+  site.images[0].onerror();
+  await site.tick();
+  assert.equal(await site.renderer.initialization, false);
+  assert.equal(site.renderer.ready, false);
+  assert.equal(site.readySignals, 0);
+  assert.equal(site.warnings.length, 1);
+  const calls = site.calls.length;
+  site.images[1].onload();
+  await site.tick();
+  assert.equal(site.calls.length, calls, 'a later image must not revive failed initialization');
+  site.renderer.dispose();
 });
 
 await test('disposing during compilation cancels polling and prevents late setup or restoration', async () => {
@@ -165,6 +201,7 @@ await test('disposing during compilation cancels polling and prevents late setup
   site.complete();
   oldRestore();
   await site.tick();
+  assert.equal(await site.renderer.initialization, false);
   assert.equal(site.calls.includes('link-status'), false);
   assert.equal(site.calls.includes('resize'), false);
   assert.equal(site.readySignals, 0);
@@ -217,6 +254,7 @@ await test('late ink image success or failure after page exit cannot upload or r
     site.renderer.dispose({ releaseGpu: false });
     for (const image of images) image[outcome]();
     await site.tick();
+    assert.equal(await site.renderer.initialization, false);
     site.renderer.dispose();
     assert.equal(site.renderer.disposed, true);
     assert.equal(site.renderer.ready, false);

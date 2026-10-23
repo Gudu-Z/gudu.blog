@@ -397,7 +397,7 @@ await test('disjoint GPU timing discards even an unfinished query instead of sta
   renderer.dispose();
 });
 
-await test('sustained GPU overload lowers cadence before resolution and respects the cooldown', async () => {
+await test('sustained measured GPU overload reduces pixels before cadence and respects the cooldown', async () => {
   const site = await browser({ timerQuery: true });
   const { renderer } = site;
   renderer.render(12, 0, 0);
@@ -408,22 +408,25 @@ await test('sustained GPU overload lowers cadence before resolution and respects
     assert.equal(renderer.render(13 + i, 0, 0), true);
     assert.equal(site.presented, true);
   }
-  assert.equal(renderer.frameInterval, 1000 / 20);
-  assert.equal(renderer.quality, 1, 'the first sustained overload should preserve fine detail');
-  assert.equal(site.canvas.width, width);
+  assert.equal(renderer.frameInterval, 1000 / 30);
+  assert.equal(renderer.quality, 0.75, 'measured pressure should reduce pixel work on its first sample window');
+  assert.ok(site.canvas.width < width);
+  const reducedWidth = site.canvas.width;
   assert.equal(site.resultReads, 8);
   assert.equal(site.queries.size, 1);
   costWindow(site, 80);
-  assert.equal(renderer.frameInterval, 1000 / 20, 'changes must not repeat during the cooldown');
-  site.advance(2000);
+  assert.equal(renderer.quality, 0.75, 'changes must not repeat during the cooldown');
+  site.advance(750);
+  costWindow(site, 80);
+  assert.equal(renderer.frameInterval, 1000 / 30);
+  assert.equal(renderer.quality, 0.6, 'heavy pressure reaches the bounded pixel floor before slowing motion');
+  assert.equal(site.canvas.width, reducedWidth, 'a scheduled resize must preserve the displayed frame');
+  site.advance(750);
+  costWindow(site, 80);
+  assert.equal(renderer.frameInterval, 1000 / 20, 'cadence is the fallback once pixel work reaches its floor');
+  site.advance(750);
   costWindow(site, 80);
   assert.equal(renderer.frameInterval, 1000 / 15);
-  assert.equal(renderer.quality, 1, 'resolution remains intact until the slowest cadence is reached');
-  site.advance(2000);
-  costWindow(site, 80);
-  assert.ok(renderer.quality >= 0.9 && renderer.quality < 1,
-    'one resolution step must be no larger than 10 percent');
-  assert.equal(site.canvas.width, width, 'the displayed frame must survive a pending resolution change');
   site.complete(80);
   renderer.render(24, 0, 0);
   assert.ok(site.canvas.width < width);
@@ -432,7 +435,7 @@ await test('sustained GPU overload lowers cadence before resolution and respects
     site.advance(2000);
     costWindow(site, 200);
   }
-  assert.ok(renderer.quality >= 0.7, 'sustained overload must not halve the image resolution');
+  assert.equal(renderer.quality, 0.6, 'continued overload must respect the measured-context quality floor');
   renderer.dispose();
 });
 
@@ -449,22 +452,27 @@ await test('one driver stall does not permanently lower rendering quality', asyn
   renderer.dispose();
 });
 
-await test('recovery uses completion upper bounds and sustained headroom, restoring detail before cadence', async () => {
+await test('recovery uses sustained upper-bound headroom to restore cadence before detail', async () => {
   const site = await browser({ webgl2: true });
   const { renderer } = site;
-  renderer.quality = 0.8;
+  renderer.quality = 0.6;
   renderer.frameInterval = 1000 / 15;
   renderer.resize();
   renderer.render(12, 0, 0);
   const width = site.canvas.width;
   for (let i = 0; i < 16; i++) costWindow(site, 0, 50);
-  assert.equal(renderer.quality, 0.8,
+  assert.equal(renderer.quality, 0.6,
     'a completed first poll is not zero-cost evidence when its upper bound has insufficient headroom');
   for (let i = 0; i < 12; i++) costWindow(site, 4, 8);
-  assert.equal(renderer.quality, 0.8, 'recovery must wait at least five seconds of good samples');
+  assert.equal(renderer.frameInterval, 1000 / 15, 'recovery must wait at least five seconds of good samples');
   for (let i = 0; i < 2; i++) costWindow(site, 4, 8);
-  assert.ok(Math.abs(renderer.quality - 0.85) < 1e-9);
-  assert.equal(renderer.frameInterval, 1000 / 15, 'recover detail before increasing animation rate');
+  assert.equal(renderer.frameInterval, 1000 / 20);
+  assert.equal(renderer.quality, 0.6, 'motion must recover before restoring pixel density');
+  for (let i = 0; i < 20; i++) costWindow(site, 4, 8);
+  assert.equal(renderer.frameInterval, 1000 / 30);
+  assert.equal(renderer.quality, 0.6);
+  for (let i = 0; i < 20; i++) costWindow(site, 4, 8);
+  assert.ok(Math.abs(renderer.quality - 0.65) < 1e-9);
   assert.equal(site.canvas.width, width, 'upscaling must keep the old frame intact until its replacement');
   assert.equal(site.presented, true);
   site.complete();
@@ -472,13 +480,10 @@ await test('recovery uses completion upper bounds and sustained headroom, restor
   assert.ok(site.canvas.width > width);
   assert.equal(site.presented, true);
   for (let i = 0; i < 5; i++) costWindow(site, 4, 8);
-  assert.ok(Math.abs(renderer.quality - 0.85) < 1e-9,
+  assert.ok(Math.abs(renderer.quality - 0.65) < 1e-9,
     'good samples within the cooldown cannot cause another immediate upscale');
-  for (let i = 0; i < 80; i++) costWindow(site, 4, 8);
+  for (let i = 0; i < 180; i++) costWindow(site, 4, 8);
   assert.equal(renderer.quality, 1);
-  assert.equal(renderer.frameInterval, 1000 / 20,
-    'cadence should recover one tier only after detail reaches full quality');
-  for (let i = 0; i < 20; i++) costWindow(site, 4, 8);
   assert.equal(renderer.frameInterval, 1000 / 30);
   renderer.dispose();
 });
@@ -500,11 +505,11 @@ await test('recovery budgets the additional pixels instead of only checking curr
   const site = await browser({ webgl2: true });
   const { renderer } = site;
   renderer.quality = 0.8;
-  renderer.frameInterval = 50;
-  for (let i = 0; i < 20; i++) costWindow(site, 4, 30);
+  renderer.frameInterval = 1000 / 30;
+  for (let i = 0; i < 20; i++) costWindow(site, 4, 20);
   assert.equal(renderer.quality, 0.8,
     'a cost below the current headroom threshold can still be too high after the proposed upscale');
-  assert.equal(renderer.frameInterval, 50);
+  assert.equal(renderer.frameInterval, 1000 / 30);
   renderer.dispose();
 });
 
@@ -803,7 +808,7 @@ await test('failure to create a completion fence restores fallback and stops fur
   renderer.dispose();
 });
 
-await test('repeated observed unfinished fences lower cadence while preserving the displayed detail', async () => {
+await test('repeated unfinished fences reduce pixels while preserving cadence and the displayed frame', async () => {
   const site = await browser({ webgl2: true });
   const { renderer } = site;
   renderer.render(12, 0, 0);
@@ -816,9 +821,9 @@ await test('repeated observed unfinished fences lower cadence while preserving t
     assert.equal(renderer.render(13 + i, 0, 0), true);
     assert.equal(site.presented, true);
   }
-  assert.equal(renderer.frameInterval, 1000 / 20);
-  assert.equal(renderer.quality, 1);
-  assert.equal(site.canvas.width, width);
+  assert.equal(renderer.frameInterval, 1000 / 30);
+  assert.equal(renderer.quality, 0.75);
+  assert.ok(site.canvas.width < width);
   assert.equal(site.syncs.size, 1);
   renderer.dispose();
 });

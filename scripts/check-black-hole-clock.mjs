@@ -26,7 +26,7 @@ function classes(initial = []) {
 
 // Execute the real main.js against controlled browser events and a monotonic
 // clock. Assertions observe the time and camera passed to the renderer.
-function browser({ reduced = false, loading = false, deferInk = false, deferReady = false } = {}) {
+function browser({ reduced = false, loading = false, deferInk = false, deferReady = false, unavailable = false } = {}) {
   let now = 0;
   let sequence = 0;
   let renderCost = 0;
@@ -34,6 +34,7 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
   let intersection;
   let resize;
   let nextStyle = 'minimal';
+  let preparation;
   const frames = new Map();
   const timers = new Map();
   const attempts = [];
@@ -75,24 +76,27 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
     querySelector: name => nodes[name], querySelectorAll: () => layers,
   });
   const window = eventTarget({
+    SiteLoader: { ready({ scene }) { preparation = scene; } },
     BlackHoleTheme: { apply: style => style || nextStyle, resolve: () => nextStyle },
     BlackHole: class {
       constructor(_canvas, options) {
         renderer = this;
         renderers.push(this);
         this.style = options.style;
-        this.ready = !deferReady;
+        this.ready = !deferReady && !unavailable;
         this.lost = false;
         this.disposed = false;
         this.busy = false;
         this.frameInterval = 1000 / 30;
+        this.quality = 1;
+        this.initialization = unavailable ? Promise.resolve(false) : new Promise(() => {});
         this.timingResets = 0;
         this.resizes = 0;
         canvas.addEventListener('webglcontextlost', () => { this.ready = false; this.lost = true; });
       }
       resize() { this.resizes++; }
       resetTiming() { this.timingResets++; }
-      pollGpu() { polls.push(now); }
+      pollGpu() { polls.push(now); return !this.busy; }
       sampleFrame(timestamp) { samples.push(timestamp); }
       dispose(options) { this.disposeOptions = options; this.disposed = true; this.ready = false; }
       setStyle(style) { this.style = style; this.ready = !(deferInk && style === 'ink'); }
@@ -134,10 +138,13 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
   }
   return {
     attempts, renders, layers, renderers, samples, polls, work,
+    get preparation() { return preparation; },
     get renderer() { return renderer; },
     get pendingFrames() { return frames.size; },
     get pendingTimers() { return timers.size; },
     get pendingDrawTasks() { return [...timers.values()].filter(timer => timer.callback.name === 'retryDraw').length; },
+    get pendingPreparationTasks() { return [...timers.values()].filter(timer => timer.callback.name === 'checkFirstFrame').length; },
+    get rendererDelay() { return [...timers.values()].find(timer => timer.callback.name === 'initializeRenderer')?.delay; },
     get last() { return renders.at(-1); },
     set renderCost(value) { renderCost = value; },
     frame(time) {
@@ -159,6 +166,16 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
       media['(prefers-reduced-motion: reduce)'].emit('change');
     },
     page(time, event, detail = {}) { at(time); window.emit(event, detail); setupRenderer(); },
+    warmup(time) { at(time); setupRenderer(); },
+    checkPreparation(time) {
+      at(time);
+      for (const [id, timer] of [...timers]) {
+        if (timer.callback.name !== 'checkFirstFrame') continue;
+        timers.delete(id);
+        timer.callback();
+      }
+    },
+    interaction(time, active, kind = 'content') { at(time); window.emit('site:interaction', { detail: { active, kind } }); },
     finishIntro(time) { at(time); hero.emit('animationend', { animationName: 'title-period-enter' }); setupRenderer(); },
     theme(time, style) { at(time); nextStyle = style; window.emit('popstate'); },
     lose(time) { at(time); canvas.emit('webglcontextlost'); },
@@ -355,33 +372,141 @@ await test('reduced motion freezes the scene and resuming adds no synthetic firs
   phase(site.last.time, 13.25);
 });
 
-await test('loading and entrance time are excluded from the scene clock', () => {
+await test('GPU preparation stays behind the loader and the scene responds as soon as revealing starts', async () => {
   const site = browser({ loading: true });
   site.move(1000);
   assert.equal(site.pendingFrames, 0);
-  site.page(5000, 'site:revealed');
-  assert.equal(site.renderer, undefined);
-  site.finishIntro(5500);
-  site.frame(6000);
+  assert.equal(site.rendererDelay, 1100, 'logo strokes finish before cold GPU setup begins');
+  site.warmup(1100);
+  phase(site.last.time, 12);
+  assert.equal(site.pendingFrames, 0, 'preparation submits only the first still frame');
+  site.checkPreparation(1200);
+  assert.equal(await site.preparation, true);
+  site.page(1250, 'site:revealing');
+  site.move(1300);
+  site.frame(1750);
   phase(site.last.time, 12.5);
+  assert.ok(site.last.x > 0, 'camera input works before the title entrance finishes');
 });
 
-await test('cold renderer initialization waits until the logo and page entrance finish', () => {
+await test('loading waits for first GPU completion, and repeated reveal events do not recreate the renderer', async () => {
   const site = browser({ loading: true });
-  assert.equal(site.pendingFrames, 0);
-  site.page(5000, 'site:revealing');
-  site.frame(5250);
-  assert.equal(site.renderer, undefined);
-  assert.equal(site.renders.length, 0);
-  site.page(5420, 'site:revealed');
-  assert.equal(site.renderer, undefined);
-  site.finishIntro(6000);
-  phase(site.last.time, 12);
+  site.warmup(1100);
+  site.renderer.busy = true;
+  let prepared = false;
+  site.preparation.then(() => { prepared = true; });
+  site.checkPreparation(1200);
+  await Promise.resolve();
+  assert.equal(prepared, false, 'submission alone does not release the loader');
+  assert.equal(site.pendingPreparationTasks, 1);
+  assert.equal(site.renders.length, 1, 'waiting never queues extra scene frames');
+  site.renderer.busy = false;
+  site.checkPreparation(1250);
+  assert.equal(await site.preparation, true);
+  assert.equal(site.pendingPreparationTasks, 0);
   const firstRenderer = site.renderer;
-  site.page(6500, 'site:revealed');
-  site.frame(7000);
+  site.page(1300, 'site:revealing');
+  site.page(1720, 'site:revealed');
+  site.finishIntro(2200);
+  site.frame(2300);
   assert.equal(site.renderer, firstRenderer);
   phase(site.last.time, 13);
+});
+
+await test('failed, timed-out and closed startup waits resolve to fallback without late GPU work', async () => {
+  const failed = browser({ loading: true, unavailable: true });
+  failed.warmup(1100);
+  assert.equal(await failed.preparation, false);
+  assert.equal(failed.renders.length, 0);
+  const delayed = browser({ loading: true, deferReady: true });
+  delayed.warmup(1100);
+  delayed.page(3450, 'site:revealing');
+  assert.equal(await delayed.preparation, false);
+  delayed.restore(5000);
+  delayed.frame(5100);
+  assert.ok(delayed.renders.length > 0, 'late readiness can upgrade the fallback');
+  const closed = browser({ loading: true });
+  closed.warmup(1100);
+  const callbacks = closed.queuedTimers();
+  closed.page(1150, 'pagehide', { persisted: false });
+  assert.equal(await closed.preparation, false);
+  const polls = closed.polls.length;
+  callbacks.forEach(callback => callback());
+  assert.equal(closed.polls.length, polls);
+  assert.equal(closed.pendingTimers, 0);
+});
+
+await test('constrained GPUs yield the content drag to the UI and resume without an orbital jump', () => {
+  const site = browser();
+  site.page(0, 'site:chapter', { detail: { progress: 1 } });
+  site.frame(500);
+  site.renderer.quality = 0.85;
+  site.interaction(600, true);
+  const renders = site.renders.length;
+  assert.equal(site.pendingFrames, 0, 'holding the background also stops its CPU animation loop');
+  site.frame(1600);
+  site.resize(1700);
+  assert.equal(site.renders.length, renders);
+  site.interaction(2000, false);
+  site.frame(2100);
+  phase(site.last.time, 12.7);
+  site.interaction(2200, true, 'hero');
+  site.frame(2300);
+  phase(site.last.time, 12.9);
+  assert.equal(site.pendingFrames, 1, 'hero camera transitions continue to animate');
+});
+
+await test('healthy GPUs keep animating during scrolling, while sustained busy frames yield until input ends', () => {
+  const site = browser();
+  site.page(0, 'site:chapter', { detail: { progress: 1 } });
+  site.interaction(100, true);
+  site.frame(150);
+  assert.equal(site.pendingFrames, 1);
+  site.renderer.busy = true;
+  site.frame(200);
+  site.frame(250);
+  site.frame(300);
+  assert.equal(site.pendingFrames, 0, 'a long pending frame is enough to protect UI before adaptation catches up');
+  site.renderer.busy = false;
+  site.interaction(500, false);
+  site.frame(550);
+  phase(site.last.time, 12.35);
+});
+
+await test('the hero camera never freezes during a gesture before reaching the content boundary', () => {
+  const site = browser();
+  site.renderer.quality = 0.85;
+  site.interaction(100, true);
+  site.page(200, 'site:chapter', { detail: { progress: 0.5 } });
+  site.frame(300);
+  assert.equal(site.last.chapter, 0.5);
+  assert.equal(site.pendingFrames, 1);
+  // A rapid reversal switches the motion kind before the chapter position.
+  site.page(400, 'site:chapter', { detail: { progress: 1 } });
+  site.frame(450);
+  assert.equal(site.pendingFrames, 0);
+  site.interaction(500, true, 'hero');
+  site.page(550, 'site:chapter', { detail: { progress: 0.8 } });
+  site.frame(600);
+  assert.equal(site.last.chapter, 0.8);
+  assert.equal(site.pendingFrames, 1);
+});
+
+await test('context loss during first-frame preparation releases the fallback without waiting for timeout', async () => {
+  const site = browser({ loading: true });
+  site.warmup(1100);
+  site.renderer.busy = true;
+  site.checkPreparation(1150);
+  assert.equal(site.pendingPreparationTasks, 1);
+  site.lose(1200);
+  assert.equal(await site.preparation, false);
+  assert.equal(site.pendingPreparationTasks, 0);
+  site.page(1250, 'site:revealing');
+  site.renderer.busy = false;
+  site.restore(1300);
+  site.frame(1400);
+  assert.equal(site.pendingFrames, 1);
+  assert.ok(site.renders.length > 1, 'the recovered context can still upgrade the fallback');
 });
 
 await test('context loss pauses immediately, and restoration while hidden stays frozen', () => {

@@ -37,8 +37,9 @@ function classList(initial = []) {
 
 function deferred() {
   let resolve;
-  const promise = new Promise(accept => { resolve = accept; });
-  return { promise, resolve };
+  let reject;
+  const promise = new Promise((accept, fail) => { resolve = accept; reject = fail; });
+  return { promise, resolve, reject };
 }
 
 // Execute the real head script. Browser timing stays controllable so a callback
@@ -94,9 +95,11 @@ function browser({ reduced = false, hidden = false, pendingResources = false } =
     get removed() { return removed; },
     async flushPromises() {
       // Includes Promise.allSettled's handlers and its final continuation.
-      for (let i = 0; i < 6; i += 1) await Promise.resolve();
+      for (let i = 0; i < 12; i += 1) await Promise.resolve();
     },
     resolveResources() { font.resolve(); image.resolve(); },
+    resolveFont() { font.resolve(); },
+    resolveImage() { image.resolve(); },
     frame() {
       now += 16;
       const callbacks = [...frames.values()];
@@ -187,6 +190,122 @@ test('deadline and reduced motion still release a visible page without trapping 
   changed.reduce();
   assertReleased(changed);
   assert.deepEqual(changed.events, ['site:revealed']);
+});
+
+test('scene readiness holds the loader until the first live frame without waiting for an unused fallback', async () => {
+  const page = browser({ pendingResources: true });
+  const scene = deferred();
+  page.startIntro();
+  page.window.SiteLoader.ready({ scene: scene.promise });
+  page.resolveFont();
+  await page.flushPromises();
+  page.advance(1200);
+  assert.equal(page.frames.size, 0, 'font readiness cannot expose an unprepared live scene');
+  assert.deepEqual(page.events, []);
+  scene.resolve(true);
+  await page.flushPromises();
+  assert.equal(page.frames.size, 1, 'a live frame bypasses the still-pending fallback decode');
+  page.frame();
+  page.frame();
+  assert.deepEqual(page.events, ['site:revealing']);
+  page.finishFade();
+  assertReleased(page);
+  assert.deepEqual(page.events, ['site:revealing', 'site:revealed']);
+});
+
+test('unavailable or rejected scenes wait for the fallback already decoding in parallel', async () => {
+  for (const rejected of [false, true]) {
+    const page = browser({ pendingResources: true });
+    const scene = deferred();
+    page.startIntro();
+    page.window.SiteLoader.ready({ scene: scene.promise });
+    page.resolveFont();
+    if (rejected) scene.reject(new Error('renderer unavailable'));
+    else scene.resolve(false);
+    await page.flushPromises();
+    page.advance(1200);
+    assert.equal(page.frames.size, 0, 'failed WebGL must keep the fallback readiness gate');
+    page.resolveImage();
+    await page.flushPromises();
+    page.frame();
+    page.frame();
+    page.finishFade();
+    assertReleased(page);
+    assert.deepEqual(page.events, ['site:revealing', 'site:revealed']);
+  }
+});
+
+test('a stalled scene or font starts fallback dismissal at 3450ms and is released by 4000ms', async () => {
+  for (const stalled of ['scene', 'font']) {
+    const page = browser({ pendingResources: stalled === 'font' });
+    const scene = deferred();
+    page.startIntro();
+    page.window.SiteLoader.ready({ scene: scene.promise });
+    if (stalled === 'font') scene.resolve(true);
+    await page.flushPromises();
+    page.advance(3449);
+    assert.deepEqual(page.events, []);
+    page.advance(1);
+    assert.deepEqual(page.events, ['site:revealing']);
+    page.advance(549);
+    assert.equal(page.removed, false);
+    page.advance(1);
+    assertReleased(page);
+    assert.deepEqual(page.events, ['site:revealing', 'site:revealed']);
+    scene.resolve(true);
+    page.resolveResources();
+    await page.flushPromises();
+    assertReleased(page);
+    assert.deepEqual(page.events, ['site:revealing', 'site:revealed'], 'late resources cannot restart dismissal');
+  }
+});
+
+test('the hard deadline also bounds an intro whose first animation event arrives late', async () => {
+  const page = browser({ pendingResources: true });
+  page.window.SiteLoader.ready({ scene: deferred().promise });
+  page.advance(3600);
+  page.startIntro();
+  page.advance(400);
+  assertReleased(page);
+  assert.equal(page.root.classList.contains('has-site-intro'), false);
+  assert.deepEqual(page.events, ['site:revealed']);
+});
+
+test('reduced motion still prepares the scene but skips the animated dismissal', async () => {
+  for (const initiallyReduced of [false, true]) {
+    const page = browser({ reduced: initiallyReduced });
+    const scene = deferred();
+    page.window.SiteLoader.ready({ scene: scene.promise });
+    if (!initiallyReduced) page.reduce();
+    await page.flushPromises();
+    assert.equal(page.removed, false, 'reduced motion must not reveal a pending live scene');
+    scene.resolve(true);
+    await page.flushPromises();
+    assertReleased(page);
+    assert.deepEqual(page.events, ['site:revealed']);
+    assert.equal(page.root.classList.contains('has-site-intro'), false);
+  }
+  const stalled = browser({ reduced: true });
+  stalled.window.SiteLoader.ready({ scene: deferred().promise });
+  stalled.advance(3450);
+  assertReleased(stalled);
+  assert.deepEqual(stalled.events, ['site:revealed']);
+});
+
+test('a late live first frame after pagehide remains silent and restores only one reveal', async () => {
+  const page = browser();
+  const scene = deferred();
+  page.window.SiteLoader.ready({ scene: scene.promise });
+  page.pagehide();
+  assertReleased(page);
+  scene.resolve(true);
+  await page.flushPromises();
+  page.advance(5000);
+  assertReleased(page);
+  assert.deepEqual(page.events, []);
+  page.pageshow();
+  page.pageshow();
+  assert.deepEqual(page.events, ['site:revealed']);
 });
 
 test('an early loader pagehide listener cannot wake downstream startup while closing', () => {
