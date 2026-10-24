@@ -70,6 +70,34 @@
       float r2 = dot(p, p);
       return -1.5 * h2 * p / (r2 * r2 * sqrt(r2));
     }
+    float orbitalRibbon(float r, float phi, float radialVariance, float angularVariance,
+        float covariance, float center, float offset) {
+      float width = 0.05 + center * 0.023;
+      float filteredWidth = sqrt(width * width + radialVariance);
+      float distanceInWidths = (r - center) / filteredWidth;
+      // Outside its narrow annulus the arc contributes less than 1/25000.
+      // Skip its angular work instead of evaluating three arcs at every hit.
+      if (abs(distanceInWidths) > 4.5) return 0.0;
+      float radial = exp(-0.5 * distanceInWidths * distanceInWidths) * width / filteredWidth;
+      // Each short-lived ribbon fades completely before its bounded age wraps.
+      // This retains differential rotation without winding finer forever.
+      float age = mod(u_time + offset, 24.0);
+      float envelope = pow(sin(PI * age / 24.0), 2.0);
+      float phase = phi - offset * 1.7 - age * 3.2 / pow(r, 1.5);
+      float shear = age * 4.8 / pow(r, 2.5);
+      float variance = max(0.0, angularVariance + shear * shear * radialVariance
+        + 2.0 * shear * covariance);
+      // Exact four-harmonic raised cosine, filtered before adding radiance.
+      // Its angular integral is constant as the highlight moves around the disk.
+      // Recurrences keep the same four harmonics with one cos and one exp.
+      float c1 = cos(phase), c2 = 2.0 * c1 * c1 - 1.0;
+      float c3 = 2.0 * c1 * c2 - c1, c4 = 2.0 * c2 * c2 - 1.0;
+      float a1 = exp(-0.5 * variance), a2 = a1 * a1;
+      float a4 = a2 * a2, a8 = a4 * a4;
+      float arc = (70.0 + 112.0 * c1 * a1 + 56.0 * c2 * a4
+        + 16.0 * c3 * a8 * a1 + 2.0 * c4 * a8 * a8) / 256.0;
+      return radial * envelope * arc;
+    }
     vec3 diskEmission(vec3 p, vec3 ray, vec3 pointDx, vec3 pointDy) {
       float r = length(p.xz);
       float phi = atan(p.z, p.x);
@@ -81,7 +109,18 @@
       // between bundles. Periodic angular coordinates avoid a texture seam.
       float phase = phi - u_time * 3.2 / pow(r, 1.5);
       vec2 phaseGradient = angularGradient + (4.8 * u_time / pow(r, 2.5)) * radialGradient;
-      float bundles = 0.5 + 0.5 * cos(r * 2.35)
+      // Gentle coherent bends preserve the existing bundles and line count.
+      // These broad modes stay resolved even after a long-running animation.
+      float bendPhase = phi * 2.0 + r * 0.65 - u_time * 0.12;
+      float curlPhase = phi * 3.0 - r * 0.9 + u_time * 0.075;
+      vec2 bendGradient = angularGradient * 2.0 + radialGradient * 0.65;
+      vec2 curlGradient = angularGradient * 3.0 - radialGradient * 0.9;
+      float bendFilter = exp(-0.5 * dot(bendGradient, bendGradient));
+      float curlFilter = exp(-0.5 * dot(curlGradient, curlGradient));
+      float laneRadius = r + 0.028 * sin(bendPhase) * bendFilter + 0.014 * sin(curlPhase) * curlFilter;
+      vec2 laneGradient = radialGradient + 0.028 * cos(bendPhase) * bendFilter * bendGradient
+        + 0.014 * cos(curlPhase) * curlFilter * curlGradient;
+      float bundles = 0.5 + 0.5 * cos(laneRadius * 2.35)
         * exp(-0.5 * pow(radialFootprint * 2.35, 2.0));
       // Shear eventually compresses the small orbital ripples below a pixel.
       // Filter those ripples BEFORE they warp the main radial bands, otherwise
@@ -90,21 +129,25 @@
       vec2 warpGradient = phaseGradient * 2.0 + radialGradient * 1.4;
       float warpFilter = exp(-0.5 * dot(warpGradient, warpGradient));
       float phaseFilter = exp(-0.5 * dot(phaseGradient, phaseGradient));
-      float streakPhase = r * 25.0 + 6.2 * sin(r * 2.35) + 0.9 * sin(r * 5.0)
+      float streakPhase = laneRadius * 25.0 + 6.2 * sin(laneRadius * 2.35) + 0.9 * sin(laneRadius * 5.0)
         + 0.65 * sin(warpPhase) * warpFilter + 0.25 * sin(phase) * phaseFilter;
-      float laneWidth = mix(0.018, 0.065, bundles);
-      vec2 streakGradient = (25.0 + 14.57 * cos(r * 2.35) + 4.5 * cos(r * 5.0)) * radialGradient
+      float widthPhase = phi * 3.0 + r * 1.3 - u_time * 0.15;
+      vec2 widthGradient = angularGradient * 3.0 + radialGradient * 1.3;
+      float widthVariation = 1.0 + 0.12 * sin(widthPhase) * exp(-0.5 * dot(widthGradient, widthGradient));
+      float laneWidth = mix(0.020, 0.072, bundles) * widthVariation;
+      vec2 streakGradient = (25.0 + 14.57 * cos(laneRadius * 2.35) + 4.5 * cos(laneRadius * 5.0)) * laneGradient
         + 0.65 * cos(warpPhase) * warpFilter * warpGradient
         + 0.25 * cos(phase) * phaseFilter * phaseGradient;
       float filament = filteredLane(streakPhase / (2.0 * PI), laneWidth * 2.0,
         streakGradient / (2.0 * PI));
-      // Broad, slowly travelling illumination reveals depth without grain.
-      float flowPhase = phase * 3.0 + r * 0.85;
-      // Analytic gradients include orbital shear at long running times and
-      // remain continuous through atan's wrap and multiple sine periods.
-      vec2 flowGradient = phaseGradient * 3.0 + radialGradient * 0.85;
-      float flowFilter = exp(-0.5 * dot(flowGradient, flowGradient));
-      float flow = 0.76 + 0.24 * sin(flowPhase) * flowFilter;
+      float radialVariance = dot(radialGradient, radialGradient) / 12.0;
+      float angularVariance = dot(angularGradient, angularGradient) / 12.0;
+      float covariance = dot(radialGradient, angularGradient) / 12.0;
+      float ribbons = orbitalRibbon(r, phi, radialVariance, angularVariance, covariance, 4.6, 3.7)
+        + orbitalRibbon(r, phi, radialVariance, angularVariance, covariance, 6.8, 12.1)
+        + orbitalRibbon(r, phi, radialVariance, angularVariance, covariance, 8.9, 20.6);
+      // Local material highlights move; the broad illumination stays stationary.
+      float flow = 1.0 + 0.8 * ribbons;
 
       // Local orbital velocity; -ray is the emitted photon's direction.
       vec3 tangent = normalize(vec3(-p.z, 0.0, p.x));
@@ -145,9 +188,9 @@
       edgeLight *= chapterLight;
       // Keep the disk luminous after removing the false brightness introduced
       // by tone-mapping an already averaged stripe. Endpoints retain soft highlights.
-      const float diskExposure = 1.42;
-      vec3 baseLight = (color * energy * (0.055 + 0.12 * bundles) * flow * innerEdge + edgeLight) * diskExposure;
-      vec3 strandLight = color * energy * (0.28 + 1.15 * bundles) * flow * innerEdge * diskExposure;
+      const float diskExposure = 1.80;
+      vec3 baseLight = (color * energy * (0.040 + 0.090 * bundles + 0.055 * (flow - 1.0)) * innerEdge + edgeLight) * diskExposure;
+      vec3 strandLight = color * energy * (0.34 + 1.38 * bundles) * flow * innerEdge * diskExposure;
       // Integrate displayed radiance: applying the nonlinear tone curve AFTER
       // averaging narrow stripes recreates harmonics and changes their mean.
       vec3 baseColor = 1.0 - exp(-baseLight * 1.45);
@@ -398,6 +441,7 @@
       vec3 pointDx = vec3(0.0), pointDy = vec3(0.0);
       vec3 skyDx = vec3(0.0), skyDy = vec3(0.0);
       vec2 screenDx = vec2(0.0), screenDy = vec2(0.0);
+      float silhouetteAA = 0.0;
       #ifdef HAS_DERIVATIVES
         // Every fragment reconverges here. Never evaluate derivatives inside
         // a ray-march or a material branch with different per-pixel control flow.
@@ -407,6 +451,9 @@
         screenDy = dFdy(screen);
         skyDx = dFdx(hit.ray);
         skyDy = dFdy(hit.ray);
+        // The disk's inner silhouette lies outside the critical curve too.
+        // Mark both sides of material boundaries before correcting derivatives.
+        silhouetteAA = min(1.0, abs(dFdx(hit.material)) + abs(dFdy(hit.material)));
       #endif
       vec3 rayDx = normalize(forward * focal + (screen.x + screenDx.x) * right + (screen.y + screenDx.y) * up);
       vec3 rayDy = normalize(forward * focal + (screen.x + screenDy.x) * right + (screen.y + screenDy.y) * up);
@@ -455,17 +502,30 @@
       if (throughDisk) light += shadeHit(beneath, beneathDx, beneathDy, skyLight) * (1.0 - light.a);
       vec3 angular = cross(origin, direction);
       float h2 = dot(angular, angular);
-      // Only the critical-curve neighbourhood needs geometry supersampling.
-      // Four rotated subpixel rays smooth the thin higher-order silhouettes;
+      // Supersample only the critical curve and detected material silhouettes.
+      // Eight fixed subpixel rays smooth minimal's thin higher-order silhouettes;
       // the rest of the disk keeps its analytically filtered, distinct strands.
       float edgeAA = smoothstep(5.5, 5.9, h2) * (1.0 - smoothstep(8.1, 8.5, h2));
+      edgeAA = max(edgeAA, silhouetteAA * (1.0 - u_ink));
       if (edgeAA > 0.0) {
         vec4 samples = vec4(0.0);
-        for (int sampleIndex = 0; sampleIndex < 4; sampleIndex++) {
+        float sampleCount = mix(8.0, 4.0, u_ink);
+        for (int sampleIndex = 0; sampleIndex < 8; sampleIndex++) {
+          if (float(sampleIndex) >= sampleCount) break;
           vec2 offset = vec2(-0.375, -0.125);
           if (sampleIndex == 1) offset = vec2(0.125, -0.375);
           if (sampleIndex == 2) offset = vec2(0.375, 0.125);
           if (sampleIndex == 3) offset = vec2(-0.125, 0.375);
+          if (u_ink < 0.5) {
+            offset = vec2(0.0625, -0.1875);
+            if (sampleIndex == 1) offset = vec2(-0.0625, 0.1875);
+            if (sampleIndex == 2) offset = vec2(0.3125, 0.0625);
+            if (sampleIndex == 3) offset = vec2(-0.1875, -0.3125);
+            if (sampleIndex == 4) offset = vec2(-0.3125, 0.3125);
+            if (sampleIndex == 5) offset = vec2(-0.4375, -0.0625);
+            if (sampleIndex == 6) offset = vec2(0.1875, 0.4375);
+            if (sampleIndex == 7) offset = vec2(0.4375, -0.4375);
+          }
           vec2 subScreen = screen + screenDx * offset.x + screenDy * offset.y;
           vec3 subRay = normalize(forward * focal + subScreen.x * right + subScreen.y * up);
           RayHit subHit = traceRay(origin, subRay);
@@ -495,7 +555,7 @@
           }
           samples += subLight;
         }
-        light = mix(light, samples * 0.25, edgeAA);
+        light = mix(light, samples / sampleCount, edgeAA);
       }
       // Internal targets contain premultiplied light. The final pass converts
       // to straight alpha exactly once for the transparent WebGL canvas.
@@ -581,7 +641,7 @@
       vec2 sceneUV = u_crop.xy + v_uv * u_crop.zw;
       float fade = 1.0 - smoothstep(0.70, 1.0, length((sceneUV - 0.5) * 1.7));
       fade = mix(fade, 1.0, u_chapter);
-      glow = glow / weights * mix(0.30, 0.42, u_chapter) * fade;
+      glow = glow / weights * mix(0.23, 0.42, u_chapter) * fade;
       #ifdef HAS_TEXTURE_LOD
         if (u_softGlow > 0.5 && u_chapter > 0.0) {
           vec2 centerUV = mix((vec2(0.5) - u_crop.xy) / u_crop.zw, vec2(0.5), u_chapter);
@@ -1153,6 +1213,13 @@
     pollGpu() {
       if (!this.ready || this.lost || this.disposed) return false;
       return this.gpuAvailable();
+    }
+
+    getFrameInterval(cameraMoving = false) {
+      // Only interactive camera motion requests 60 fps. Keep idle load low,
+      // honour adaptive slowdowns, and never boost an unbounded legacy queue.
+      return cameraMoving && (this.webgl2 || this.timerQuery) && this.frameInterval <= 1000 / 30
+        ? 1000 / 60 : this.frameInterval;
     }
 
     recordGpuCost(lower, upper = lower) {

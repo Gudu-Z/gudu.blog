@@ -97,6 +97,7 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
       resize() { this.resizes++; }
       resetTiming() { this.timingResets++; }
       pollGpu() { polls.push(now); return !this.busy; }
+      getFrameInterval(cameraMoving) { return cameraMoving ? this.cameraInterval ?? this.frameInterval : this.frameInterval; }
       sampleFrame(timestamp) { samples.push(timestamp); }
       dispose(options) { this.disposeOptions = options; this.disposed = true; this.ready = false; }
       setStyle(style) { this.style = style; this.ready = !(deferInk && style === 'ink'); }
@@ -264,20 +265,70 @@ await test('quality-driven cadence changes reduce draws without changing orbital
   assert.equal(site.pendingFrames, 1, 'the animation loop remains active at every cadence');
 });
 
-await test('busy animated frames wait for their next cadence slot without a timer bypass', () => {
+await test('a busy GPU defers a due frame until the first free display tick without wasting a cadence slot', () => {
   const site = browser();
   site.renderer.frameInterval = 1000 / 15;
   site.renderer.busy = true;
-  site.frame(1000 / 15);
   const attempts = site.attempts.length;
+  site.frame(1000 / 15);
+  assert.equal(site.attempts.length, attempts, 'busy polling never submits another frame');
   assert.equal(site.pendingDrawTasks, 0);
   site.renderer.busy = false;
   site.retry(100);
+  assert.equal(site.attempts.length, attempts, 'no timer bypass');
   site.frame(100);
-  assert.equal(site.attempts.length, attempts, 'neither a retry nor an early rAF submits another draw');
+  assert.equal(site.attempts.length, attempts + 1, 'the overdue frame uses the latest available display tick');
+  phase(site.last.time, 12.1);
+  site.frame(116);
+  assert.equal(site.attempts.length, attempts + 1, 'one late frame does not start a catch-up burst');
   site.frame(2000 / 15);
-  assert.equal(site.attempts.length, attempts + 1);
+  assert.equal(site.attempts.length, attempts + 2);
   phase(site.last.time, 12 + 2 / 15);
+});
+
+await test('fractional display rates preserve the requested idle cadence instead of slowing it down', () => {
+  for (const hz of [60, 75, 120, 144]) {
+    const site = browser();
+    for (let index = 1; index <= hz * 2; index++) site.frame(index * 1000 / hz);
+    assert.equal(site.renders.length, 61, `expected 30 fps on a ${hz} Hz display`);
+    phase(site.last.time, 14);
+  }
+});
+
+await test('camera motion uses the interactive cadence, responds promptly and returns to idle without changing orbital speed', () => {
+  for (const hz of [60, 75, 120, 144]) {
+    const site = browser();
+    site.renderer.cameraInterval = 1000 / 60;
+    site.move(0, 576, 120); // target x = 0.8
+    for (let index = 1; index <= hz * 2; index++) site.frame(index * 1000 / hz);
+    const response = site.renders.find(render => render.x >= 0.72);
+    assert(response && response.at <= 280, `slow pointer response at ${hz} Hz`);
+    const early = site.renders.filter(render => render.at > 0 && render.at <= 500);
+    assert(early.length >= 29 && early.length <= 30, `expected 60 fps within one display tick at ${hz} Hz`);
+    const idle = site.renders.filter(render => render.at > 1000);
+    assert.equal(idle.length, 30, 'settled camera returns to the 30 fps budget');
+    for (const render of site.renders) phase(render.time, 12 + render.at / 1000);
+    assert.equal(site.pendingFrames, 1, 'input must not create another animation loop');
+  }
+});
+
+await test('parallax layers keep easing during busy GPU frames and a recovered frame uses the current camera', () => {
+  const site = browser();
+  site.renderer.cameraInterval = 1000 / 60;
+  site.renderer.busy = true;
+  const attempts = site.attempts.length;
+  site.move(0, 576, 120);
+  site.frame(1000 / 60);
+  const first = Number.parseFloat(site.layers[0].style.values['--pointer-x']);
+  site.frame(2000 / 60);
+  assert(Number.parseFloat(site.layers[0].style.values['--pointer-x']) < first);
+  assert.equal(site.attempts.length, attempts, 'busy GPU work stays bounded');
+  assert.equal(site.pendingDrawTasks, 0);
+  site.renderer.busy = false;
+  site.frame(50);
+  assert.equal(site.attempts.length, attempts + 1);
+  assert(site.last.x > 0.25, 'the recovered render should use current eased input');
+  phase(site.last.time, 12.05);
 });
 
 await test('GPU completion is polled at display cadence while slow draws and pauses remain bounded', () => {
@@ -690,11 +741,11 @@ await test('a busy entrance frame cannot replay its pulse after the cleanup even
   site.renderer.busy = true;
   site.page(100, 'site:chapter', { detail: { progress: 0.4, entranceGlow: 1 } });
   site.frame(120);
-  assert.equal(site.attempts.at(-1).entranceGlow, 1);
+  assert.equal(site.attempts.length, 1, 'busy frames wait without submitting a stale entrance pulse');
   assert.equal(site.renders.length, 1);
   site.page(200, 'site:chapter', { detail: { progress: 1, entranceGlow: 0 } });
   site.frame(220);
-  assert.equal(site.attempts.at(-1).entranceGlow, 0);
+  assert.equal(site.attempts.length, 1);
   assert.equal(site.pendingDrawTasks, 0, 'the pulse must not bypass the animation frame budget');
   site.renderer.busy = false;
   site.frame(260);

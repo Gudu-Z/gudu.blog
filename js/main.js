@@ -228,11 +228,7 @@
     }
   }
 
-  function draw() {
-    clearTimeout(drawTimer);
-    drawTimer = 0;
-    if (!pageActive || document.hidden) return false;
-    if (shouldHoldScene()) { holdScene(); return false; }
+  function drawParallax() {
     drawStars();
     if (pointer.x !== layerX || pointer.y !== layerY) {
       layerX = pointer.x;
@@ -242,6 +238,14 @@
         element.style.setProperty('--pointer-y', `${-pointer.y * depth * 6}px`);
       }
     }
+  }
+
+  function draw() {
+    clearTimeout(drawTimer);
+    drawTimer = 0;
+    if (!pageActive || document.hidden) return false;
+    if (shouldHoldScene()) { holdScene(); return false; }
+    drawParallax();
     const submitted = blackHole?.render(sceneTime(), pointer.x, -pointer.y, chapterProgress, entranceGlow);
     if (submitted === true && !sceneSettled) {
       firstFrameSubmitted = true;
@@ -301,7 +305,8 @@
     if (animated) resumeSceneClock(); else pauseSceneClock();
     const delta = lastTime ? Math.min(timestamp - lastTime, 100) : 16;
     lastTime = timestamp;
-    const ease = 1 - Math.exp(-delta * 0.005);
+    // About 110 ms of damping keeps direction changes responsive at any refresh rate.
+    const ease = 1 - Math.exp(-delta * 0.009);
     pointer.x += (pointer.targetX - pointer.x) * ease;
     pointer.y += (pointer.targetY - pointer.y) * ease;
     const settled = Math.abs(pointer.targetX - pointer.x) < 0.001 && Math.abs(pointer.targetY - pointer.y) < 0.001;
@@ -309,13 +314,21 @@
       pointer.x = pointer.targetX;
       pointer.y = pointer.targetY;
     }
-    const frameInterval = animated && Number.isFinite(blackHole.frameInterval) && blackHole.frameInterval > 0
-      ? blackHole.frameInterval : 1000 / 30;
-    // A small tolerance keeps a 33.33 ms target aligned with two 60 Hz frames.
-    if (timestamp - lastRender >= frameInterval - 1 || (!animated && settled)) {
+    // Lightweight layers follow the display even when the GPU is occupied.
+    drawParallax();
+    const requestedInterval = animated
+      ? blackHole.getFrameInterval?.(!settled && chapterProgress === 0) ?? blackHole.frameInterval : 1000 / 60;
+    const frameInterval = Number.isFinite(requestedInterval) && requestedInterval > 0
+      ? requestedInterval : 1000 / 30;
+    // Retain fractional cadence across 60/75/120/144 Hz displays. A busy GPU
+    // cannot consume a due frame; submit its latest camera on the next free tick.
+    if ((!animated || gpuAvailable !== false)
+        && (timestamp - lastRender >= frameInterval - 1 || (!animated && settled))) {
       const submitted = draw();
-      if (animated && submitted !== false) blackHole.sampleFrame(timestamp);
-      lastRender = timestamp;
+      if (!animated || submitted !== false) {
+        if (animated) blackHole.sampleFrame(timestamp);
+        lastRender += Math.max(1, Math.floor((timestamp - lastRender + 1) / frameInterval)) * frameInterval;
+      }
     }
     // Rendering may slow under GPU load, but the active scene clock keeps time.
     if (animated || !settled) frame = requestAnimationFrame(tick);

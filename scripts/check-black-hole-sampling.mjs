@@ -40,6 +40,8 @@ const context = vm.createContext({
   dot: (a, b) => a.x * b.x + a.y * b.y,
   vec2: (x, y = x) => ({ x, y }),
   fract: value => value - Math.floor(value),
+  mod: (value, period) => value - period * Math.floor(value / period),
+  u_time: 12,
   clamp: (value, low, high) => Math.max(low, Math.min(high, value)),
   mix: (a, b, weight) => a * (1 - weight) + b * weight,
   smoothstep: (low, high, value) => {
@@ -47,9 +49,10 @@ const context = vm.createContext({
     return t * t * (3 - 2 * t);
   },
 });
-vm.runInContext(['laneIntegral', 'filteredLane']
+vm.runInContext(['laneIntegral', 'filteredLane', 'orbitalRibbon']
   .map(name => scalarJavaScript(shaderFunction(name))).join('\n'), context);
 const lane = context.filteredLane;
+const ribbon = context.orbitalRibbon;
 
 // Each color channel follows the same scalar arithmetic in this emission
 // tail. Testing the actual tail catches a nonlinear tone curve accidentally
@@ -151,5 +154,70 @@ test('displayed disk light stays affine in filtered coverage and preserves its c
     assert(aliasRms(values, 0.19) < 1e-8, 'Displayed light reintroduced removed harmonics');
     const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
     assert(Math.abs(mean - (base * 0.87 + full * 0.13)) < 1e-5);
+  }
+});
+
+test('orbital highlights fade continuously through every lifetime boundary', () => {
+  for (const [center, offset] of [[4.6, 3.7], [6.8, 12.1], [8.9, 20.6]]) {
+    for (const cycle of [1, 25, 300]) {
+      for (const delta of [-0.001, 0, 0.001]) {
+        context.u_time = cycle * 24 - offset + delta;
+        for (let angle = -Math.PI; angle < Math.PI; angle += 0.17) {
+          assert(Math.abs(ribbon(center, angle, 0, 0, 0, center, offset)) < 2e-8,
+            'A ribbon resets while still visibly lit');
+        }
+      }
+    }
+  }
+});
+
+test('orbital highlights remain bounded, periodic and resolved during long visits', () => {
+  for (const time of [12, 120.7, 600.3, 7200.1]) {
+    context.u_time = time;
+    let peak = 0;
+    for (const [center, offset] of [[4.6, 3.7], [6.8, 12.1], [8.9, 20.6]]) {
+      for (let angle = -Math.PI; angle < Math.PI; angle += 0.05) {
+        for (const pixel of [0, 0.01, 0.1, 1, 10]) {
+          const value = ribbon(center, angle, pixel, pixel, pixel * 0.3, center, offset);
+          assert(Number.isFinite(value) && value >= -1e-12 && value <= 1);
+          assert(Math.abs(value - ribbon(center, angle + 2 * Math.PI, pixel, pixel, pixel * 0.3, center, offset)) < 1e-12,
+            'The angular seam changes a moving highlight');
+          peak = Math.max(peak, value);
+        }
+      }
+    }
+    assert(peak > 0.5, 'Orbital shear or synchronized fades erased the staggered highlights');
+  }
+});
+
+test('filtering the moving arc preserves its angular mean instead of blinking as it rotates', () => {
+  context.u_time = 19;
+  let expected;
+  for (const variance of [0, 0.02, 0.2, 1, 10]) {
+    const count = 2048;
+    let mean = 0;
+    for (let i = 0; i < count; i++) {
+      mean += ribbon(6.8, i * 2 * Math.PI / count, 0, variance, 0, 6.8, 12.1) / count;
+    }
+    expected ??= mean;
+    assert(Math.abs(mean - expected) < 1e-12, 'Angular filtering changed the arc energy');
+  }
+});
+
+test('optimized harmonics retain the raised-cosine arc and omit only an invisible Gaussian tail', () => {
+  const center = 6.8, offset = 12.1, width = 0.05 + center * 0.023;
+  for (const time of [0, 12, 300.7]) {
+    context.u_time = time;
+    const age = (time + offset) % 24;
+    for (const distance of [-5, -4.51, -4.49, -2, 0, 2, 4.49, 4.51, 5]) {
+      const r = center + distance * width;
+      for (let phi = -Math.PI; phi <= Math.PI; phi += 0.11) {
+        const phase = phi - offset * 1.7 - age * 3.2 / r ** 1.5;
+        const expected = Math.exp(-0.5 * distance ** 2) * Math.sin(Math.PI * age / 24) ** 2
+          * Math.cos(phase / 2) ** 8;
+        const actual = ribbon(r, phi, 0, 0, 0, center, offset);
+        assert(Math.abs(actual - expected) < 0.000041, 'The fast path changed a visible part of the highlight');
+      }
+    }
   }
 });

@@ -9,7 +9,7 @@
   };
   const themes = {
     minimal: {
-      fallback: './assets/black-hole-minimal-fallback.png?v=20261020-continuous-lens',
+      fallback: './assets/black-hole-minimal-fallback.png?v=20261023-disk-refinement',
       label: '实时三维黑洞：暖白与淡琥珀细线流经倾斜的吸积盘，三维星空粒子随远近距离以不同速度漂移并经引力透镜弯曲，冷灰白细小星点衬托深黑阴影，视角随鼠标轻微转动。',
     },
     ink: {

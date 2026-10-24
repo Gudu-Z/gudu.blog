@@ -439,6 +439,23 @@ await test('sustained measured GPU overload reduces pixels before cadence and re
   renderer.dispose();
 });
 
+await test('interactive cadence is bounded by completion support and respects adaptive slowdowns', async () => {
+  for (const options of [{ webgl2: true }, { timerQuery: true }, {}]) {
+    const site = await browser(options);
+    const { renderer } = site;
+    const bounded = options.webgl2 || options.timerQuery;
+    assert.equal(renderer.getFrameInterval(true), bounded ? 1000 / 60 : 1000 / 30);
+    assert.equal(renderer.getFrameInterval(false), 1000 / 30);
+    const quality = renderer.quality;
+    for (const interval of [50, 1000 / 15]) {
+      renderer.frameInterval = interval;
+      assert.equal(renderer.getFrameInterval(true), interval, 'input must not override GPU load reduction');
+    }
+    assert.equal(renderer.quality, quality, 'camera motion must not change render resolution');
+    renderer.dispose();
+  }
+});
+
 await test('one driver stall does not permanently lower rendering quality', async () => {
   const site = await browser({ timerQuery: true });
   const { renderer } = site;
