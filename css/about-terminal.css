@@ -1,0 +1,254 @@
+@charset "UTF-8";
+
+/* About is the first archive surface. Its outer geometry belongs to chapters.css. */
+.home-page .about-section {
+  --about-unit: var(--chapter-content-unit, 1px);
+  --about-code-size: clamp(10px, calc(10 * var(--about-unit)), 11px);
+  --about-soft: #89939c;
+  --chapter-panel: rgb(12 14 17 / 86%);
+}
+.home-page .about-section .chapter-panel {
+  background: linear-gradient(155deg, rgb(236 240 244 / 2.5%), transparent 42%), var(--chapter-panel);
+}
+.home-page .about-section .connection-card:is(:hover, :focus-visible) {
+  background-color: rgb(23 26 29 / 90%);
+}
+.home-page .about-section .about-panel-top {
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: calc(12 * var(--about-unit));
+}
+.home-page .about-section .eyebrow {
+  font-family: var(--chapter-mono);
+  font-size: var(--about-code-size);
+  line-height: 1.5;
+  letter-spacing: 0.12em;
+  color: var(--chapter-muted);
+}
+.home-page .about-section .about-record-label {
+  flex: none;
+  color: #bbc2c8;
+  font-size: var(--about-code-size);
+  line-height: 1.5;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.home-page .about-section .about-record-label > span {
+  margin-left: 5px;
+  color: var(--about-soft);
+  font-family: var(--chapter-mono);
+  letter-spacing: 0.06em;
+}
+.home-page .about-section .about-calibration {
+  position: relative;
+  flex: none;
+  height: 5px;
+  margin-bottom: calc(24 * var(--about-unit));
+  pointer-events: none;
+}
+.home-page .about-section .about-calibration::before {
+  content: "";
+  position: absolute;
+  inset: 2px 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, var(--chapter-signal) 0 20px, var(--chapter-rule) 20px);
+}
+.home-page .about-section .about-calibration > span {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 5px;
+  background: #a8b0b84f;
+}
+.home-page .about-section .about-calibration > span:nth-child(1) { left: 0; background: var(--chapter-signal); }
+.home-page .about-section .about-calibration > span:nth-child(2) { left: 50%; }
+.home-page .about-section .about-calibration > span:nth-child(3) { right: 0; }
+
+/* The original image stays intact. Only two short registration corners surround it. */
+.home-page .about-section .about-portrait { width: 100%; min-width: 0; margin: 0; }
+.home-page .about-section .portrait-registration { position: relative; }
+.home-page .about-section .about-avatar { outline: none; box-shadow: none; }
+.home-page .about-section .portrait-registration::before,
+.home-page .about-section .portrait-registration::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  width: calc(14 * var(--about-unit));
+  height: calc(14 * var(--about-unit));
+  border-color: #c5cbd180;
+  border-style: solid;
+  pointer-events: none;
+}
+.home-page .about-section .portrait-registration::before { top: -5px; left: -5px; border-width: 1px 0 0 1px; }
+.home-page .about-section .portrait-registration::after { right: -5px; bottom: -5px; border-width: 0 1px 1px 0; }
+.home-page .about-section .about-portrait-caption {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 11px;
+  color: var(--about-soft);
+  font: var(--about-code-size)/1.5 var(--chapter-mono);
+  letter-spacing: 0.1em;
+}
+.home-page .about-section .about-portrait-caption > span:last-child { color: #c7cdd2; letter-spacing: 0.16em; }
+.home-page .about-section .about-socials { margin-top: calc(12 * var(--about-unit)); }
+.home-page .about-section .about-socials a {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 10px;
+  min-height: calc(44 * var(--about-unit));
+  padding: calc(11 * var(--about-unit)) 0;
+  font-size: clamp(13px, calc(12 * var(--about-unit)), 16px);
+  line-height: 1.5;
+  border-bottom-color: var(--chapter-rule);
+}
+.home-page .about-section .about-link-index { color: #858e97; font: var(--about-code-size)/1.5 var(--chapter-mono); letter-spacing: 0.05em; }
+.home-page .about-section .about-link-name { color: inherit; }
+.home-page .about-section .about-link-arrow { justify-self: end; font-size: 15px; transition: color 180ms ease, transform 180ms ease; }
+.home-page .about-section .about-socials a:is(:hover, :focus-visible) .about-link-arrow { transform: translate(2px, -2px); }
+.home-page .about-section .about-socials a:focus-visible { outline: 1px solid #c5cbd18c; outline-offset: 4px; }
+
+.home-page .about-section .about-text > .about-identity-line {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: calc(13 * var(--about-unit)) 0 0;
+  max-width: none;
+  color: #a5aeb6;
+  font: var(--about-code-size)/1.5 var(--chapter-mono);
+  letter-spacing: 0.12em;
+}
+.home-page .about-section .about-identity-line > span {
+  flex: none;
+  width: calc(22 * var(--about-unit));
+  height: 1px;
+  background: var(--chapter-signal);
+}
+.home-page .about-section .about-text > .about-lead {
+  margin: calc(20 * var(--about-unit)) 0 calc(14 * var(--about-unit));
+  font-size: clamp(16px, calc(17 * var(--about-unit)), 20px);
+  line-height: 1.85;
+  color: var(--chapter-text);
+}
+.home-page .about-section .about-text > p:not(.about-lead) {
+  margin-bottom: 0;
+  font-size: clamp(13px, calc(12 * var(--about-unit)), 16px);
+  line-height: 2;
+  color: #a8b1b9;
+  text-wrap: pretty;
+}
+.home-page .about-section .about-signature {
+  margin-top: clamp(22px, calc(26 * var(--about-unit)), 36px);
+  padding-top: calc(17 * var(--about-unit));
+}
+.home-page .about-section .about-signature p { font-size: clamp(11px, calc(10 * var(--about-unit)), 13px); line-height: 1.8; color: #aeb6be; }
+.home-page .about-section .about-signature-code { font-size: var(--about-code-size); color: #858f99; }
+
+/* Number, title, description and action follow the same internal columns on every card. */
+.home-page .about-section .connection-heading {
+  font-size: var(--about-code-size);
+  line-height: 1.5;
+  color: #c0c6cd;
+}
+.home-page .about-section .connection-heading > span:last-child { font-size: 10px; letter-spacing: 0.08em; color: var(--about-soft); }
+.home-page .about-section .connection-card { justify-content: center; }
+.home-page .about-section .connection-card-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: calc(10 * var(--about-unit));
+  min-height: 18px;
+}
+.home-page .about-section .connection-number {
+  color: #d3d8dd;
+  font: 500 clamp(13px, calc(13 * var(--about-unit)), 16px)/1 var(--chapter-mono);
+  letter-spacing: 0.04em;
+  transition: color 180ms ease;
+}
+.home-page .about-section .connection-index { color: #a4aeb8; font-size: var(--about-code-size); line-height: 1.4; letter-spacing: 0.1em; white-space: nowrap; }
+.home-page .about-section .connection-arrow { position: static; top: auto; right: auto; margin-left: 4px; color: #abb4bc; font-size: 16px; line-height: 1; }
+.home-page .about-section .connection-rule {
+  position: relative;
+  display: block;
+  flex: none;
+  height: 1px;
+  margin: calc(10 * var(--about-unit)) 0 calc(12 * var(--about-unit));
+  pointer-events: none;
+}
+.home-page .about-section .connection-rule::before { content: ""; position: absolute; inset: 0; background: var(--chapter-rule); }
+.home-page .about-section .connection-rule::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 32px; max-width: 22%; background: var(--chapter-signal); opacity: 0.45; transform: scaleX(0.35); transform-origin: left; transition: opacity 180ms ease, transform 180ms ease; }
+.home-page .about-section .connection-card h3 { margin: 0 0 calc(7 * var(--about-unit)); color: var(--chapter-text); font-size: clamp(18px, calc(19 * var(--about-unit)), 25px); line-height: 1.4; }
+.home-page .about-section .connection-card p { font-size: clamp(13px, calc(11 * var(--about-unit)), 15px); line-height: 1.75; color: #a0aab3; }
+.home-page .about-section .connection-action { margin-top: 0; padding-top: calc(12 * var(--about-unit)); font-size: clamp(11px, calc(10 * var(--about-unit)), 13px); line-height: 1.4; letter-spacing: 0.04em; color: #c0c7ce; }
+.home-page .about-section .connection-action > span:first-child { color: inherit; }
+.home-page .about-section .connection-action > .connection-action-arrow { color: #939da7; transition: color 180ms ease, transform 180ms ease; }
+.home-page .about-section .connection-card:is(:hover, :focus-visible) .connection-number,
+.home-page .about-section .connection-card:is(:hover, :focus-visible) .connection-action-arrow { color: var(--chapter-signal); }
+.home-page .about-section .connection-card:is(:hover, :focus-visible) .connection-action-arrow { transform: translateX(3px); }
+.home-page .about-section .connection-card:is(:hover, :focus-visible) .connection-rule::after { opacity: 0.9; transform: scaleX(1); }
+.home-page .about-section .rss-label { font-size: 10px; }
+.home-page .about-section .connection-footnote { color: #959fa8; font-size: 10px; line-height: 1.6; letter-spacing: 0.05em; }
+
+/* Lines use their own pseudo-element, leaving the reveal layer's translation intact. */
+.home-page .about-section .about-calibration::before,
+.home-page .about-section .connection-rule::before {
+  transform: scaleX(calc(var(--chapter-rule-reveal, 1) * var(--chapter-line-in, 1)));
+  transform-origin: center;
+  transition-property: var(--chapter-line-properties, transform);
+  transition-duration: var(--chapter-reveal-duration, 0ms);
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: calc(var(--chapter-reveal-stagger, 0ms) * (1 - var(--chapter-reveal-reverse, 0)));
+}
+
+@media (max-width: 1200px) {
+  .home-page .about-section .about-body { align-items: start; }
+  .home-page .about-section .about-signature { margin-top: 24px; }
+  .home-page .about-section .connection-card-head { gap: 8px; }
+  .home-page .about-section .connection-card { padding-block: 22px; }
+  .home-page .about-section .connection-action { margin-top: auto; }
+}
+@media (max-width: 720px) {
+  .home-page .about-section .about-panel-top { flex-wrap: wrap; row-gap: 5px; margin-bottom: 13px; }
+  .home-page .about-section .about-calibration { margin-bottom: 25px; }
+  .home-page .about-section .about-portrait-caption { font-size: 10px; letter-spacing: 0.07em; }
+  .home-page .about-section .about-socials a { min-height: 44px; }
+  .home-page .about-section .about-text > .about-identity-line { margin-top: 12px; }
+  .home-page .about-section .about-text > .about-lead { margin-top: 22px; }
+  .home-page .about-section .about-text > p:not(.about-lead) { font-size: 14px; }
+  .home-page .about-section .about-signature { margin-top: 24px; padding-top: 18px; }
+  .home-page .about-section .connection-card { padding-block: 24px; }
+  .home-page .about-section .connection-card h3 { font-size: 20px; }
+  .home-page .about-section .connection-action { padding-top: 15px; }
+}
+@media (max-width: 480px) {
+  .home-page .about-section .about-record-label { font-size: 10px; }
+  .home-page .about-section .about-portrait-caption { gap: 8px; }
+  .home-page .about-section .about-text > .about-identity-line { gap: 9px; letter-spacing: 0.09em; }
+  .home-page .about-section .about-identity-line > span { width: 18px; }
+  .home-page .about-section .connection-heading { flex-wrap: wrap; gap: 5px 12px; }
+}
+@media (max-height: 760px) and (min-width: 721px) {
+  .home-page .about-section .about-panel-top { margin-bottom: 9px; }
+  .home-page .about-section .about-calibration { margin-bottom: 17px; }
+  .home-page .about-section .about-portrait-caption { margin-top: 9px; }
+  .home-page .about-section .about-socials { margin-top: 9px; }
+  .home-page .about-section .about-socials a { min-height: 44px; padding-block: 10px; }
+  .home-page .about-section .about-text > .about-identity-line { margin-top: 9px; }
+  .home-page .about-section .about-text > .about-lead { margin-top: 16px; margin-bottom: 12px; font-size: 16px; }
+  .home-page .about-section .about-text > p:not(.about-lead) { line-height: 1.9; }
+  .home-page .about-section .about-signature { margin-top: 20px; padding-top: 15px; }
+  .home-page .about-section .connection-card { padding-block: 18px; }
+  .home-page .about-section .connection-rule { margin-block: 7px 9px; }
+  .home-page .about-section .connection-card h3 { margin-bottom: 6px; font-size: 17px; }
+  .home-page .about-section .connection-card p { line-height: 1.7; }
+  .home-page .about-section .connection-action { padding-top: 9px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-page .about-section .about-link-arrow,
+  .home-page .about-section .connection-number,
+  .home-page .about-section .connection-action-arrow,
+  .home-page .about-section .connection-rule::after { transition: none; }
+  .home-page .about-section .about-calibration::before,
+  .home-page .about-section .connection-rule::before { transform: none; transition: none; }
+}

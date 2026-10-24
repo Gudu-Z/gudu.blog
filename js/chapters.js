@@ -25,6 +25,7 @@
   let width = 0;
   let travel = 0;
   let maximum = 0;
+  let progressTrackLeft = 0;
   let progressTrackWidth = 0;
   let targetY = 0;
   let smoothY = 0;
@@ -55,6 +56,22 @@
   let settingScroll = false;
   let renderedScroll = null;
   let interactionKind = null;
+  let scrub = null;
+  let scrubFrame = 0;
+  let railSeek = null;
+  let lastSliderValue = null;
+  let lastRevealX = null;
+  let lastRevealTime = 0;
+  const revealGroups = chapters.map(chapter => ({
+    chapter,
+    lastScroll: null,
+    units: [...chapter.querySelectorAll('.chapter-panel, .connection-heading, .connection-footnote, .section-heading, .site-footer')]
+      .filter(element => element.classList.contains('chapter-panel') || !element.closest('.chapter-panel'))
+      .map(element => ({ element, phase: 'preview', seen: false, exitMinimum: null, exitAxis: 'x', bounds: null })),
+  }));
+  const revealUnits = revealGroups.flatMap(group => group.units);
+  let revealViewport = { top: 0, bottom: window.innerHeight };
+  const chapterLabels = chapters.map((chapter, index) => links[index]?.querySelector('.chapter-station-title')?.textContent.trim() || chapter.id);
   const styleValues = new WeakMap();
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -118,7 +135,7 @@
 
   function canIdle() {
     return progressNav && active && initialized && !document.hidden && !motion.matches
-      && !blocked() && !frame && !lastFrame && !transition && !touching && y() >= entry - 1;
+      && !blocked() && !frame && !lastFrame && !transition && !railSeek && !scrub && !touching && y() >= entry - 1;
   }
 
   function scheduleIdle() {
@@ -179,7 +196,135 @@
     }
   }
 
-  function update(syncHash = true) {
+  function settleRevealMotion() {
+    for (const { element } of revealUnits) {
+      setClass(element, 'is-chapter-immediate', true);
+      setClass(element, 'is-chapter-scanning', false);
+    }
+  }
+
+  function measureReveals() {
+    // Layout coordinates exclude each card's animated transform. Positioned
+    // wrappers can sit between a card and its scrollable chapter.
+    for (const { chapter, units } of revealGroups) {
+      for (const unit of units) {
+        let left = 0;
+        let top = 0;
+        for (let node = unit.element; node && node !== chapter; node = node.offsetParent) {
+          left += node.offsetLeft;
+          top += node.offsetTop;
+        }
+        unit.bounds = { left, top, width: unit.element.offsetWidth, height: unit.element.offsetHeight };
+      }
+    }
+    // Use the actual clipping boundary shared with the header and ruler.
+    const inset = getComputedStyle(viewport).clipPath?.match(/^inset\(([^)]+)/)?.[1]
+      .split(/\s+/).map(value => parseFloat(value)) || [];
+    revealViewport = { top: inset[0] || 0, bottom: viewport.clientHeight - (inset[2] ?? inset[0] ?? 0) };
+  }
+
+  function updateReveal(unit, axes, visible, revealVisible, immediate) {
+    const offscreen = axes.x.intersection <= 1 || axes.y.intersection <= 1;
+    const canReveal = Object.values(axes).every(axis => axis.intersection >= Math.min(80, axis.span * 0.1));
+    const closing = Object.values(axes).some(axis => axis.intersection <= Math.min(24, axis.span * 0.03));
+    const outgoingAxis = ['x', 'y'].find(name => axes[name].movement * axes[name].side < 0
+      && axes[name].intersection <= Math.min(320, axes[name].span * 0.35));
+    const previous = unit.phase;
+    let axisName = previous === 'departing' ? unit.exitAxis : outgoingAxis
+      || (axes.y.intersection / axes.y.span < axes.x.intersection / axes.x.span ? 'y' : 'x');
+    let scan = false;
+    if (immediate) {
+      unit.phase = motion.matches || (revealVisible && canReveal) ? 'open' : 'preview';
+      if (!revealVisible || offscreen) unit.seen = false;
+      else if (unit.phase === 'open') unit.seen = true;
+    } else if (offscreen) {
+      unit.phase = 'preview';
+      unit.seen = false;
+    } else if (unit.seen && closing) {
+      unit.phase = 'closing';
+    } else if (previous === 'departing') {
+      const axis = axes[unit.exitAxis];
+      unit.exitMinimum = Math.min(unit.exitMinimum, axis.intersection);
+      const reversal = Math.max(1, Math.min(24, axis.span * 0.1));
+      if (canReveal && (axis.intersection >= unit.exitMinimum + reversal
+        || axis.intersection >= Math.min(320, axis.span * 0.35) + reversal)) unit.phase = 'open';
+    } else if (previous === 'open' && outgoingAxis) {
+      unit.phase = 'departing';
+      unit.exitAxis = axisName = outgoingAxis;
+      unit.exitMinimum = axes[outgoingAxis].intersection;
+    } else if (canReveal) {
+      unit.phase = 'open';
+      scan = !unit.seen;
+      unit.seen = true;
+    }
+    if (unit.phase !== 'departing') unit.exitMinimum = null;
+
+    const { element } = unit;
+    setClass(element, 'chapter-reveal-unit', true);
+    setClass(element, 'has-chapter-reveal', true);
+    if (immediate || offscreen) {
+      setClass(element, 'is-chapter-immediate', true);
+      setClass(element, 'is-chapter-scanning', false);
+    } else if (unit.phase !== previous) {
+      setClass(element, 'is-chapter-immediate', false);
+    }
+    if (scan) setClass(element, 'is-chapter-scanning', true);
+    if (unit.phase !== previous || immediate || offscreen) {
+      setStyle(element, '--chapter-reveal-direction', String(axes[axisName].side));
+    }
+    const readable = unit.phase === 'open' || unit.phase === 'departing';
+    setClass(element, 'is-chapter-revealed', readable);
+    setClass(element, 'is-chapter-departing', unit.phase === 'departing');
+    setClass(element, 'is-chapter-closing', unit.phase === 'closing');
+    setInert(element, !visible || !readable || offscreen);
+  }
+
+  function updateReveals(x, visible, instant) {
+    const now = performance.now();
+    const movement = lastRevealX === null ? 0 : x - lastRevealX;
+    const distance = Math.abs(movement);
+    const fast = distance > width * 0.55 || (scrub?.dragging && distance > width * 0.04
+      && distance / Math.max(16, now - lastRevealTime) > width * 0.0025);
+    lastRevealX = x;
+    lastRevealTime = now;
+    const immediate = instant || fast || !initialized || !available() || blocked()
+      || motion.matches || Boolean(transition?.direction) || !visible;
+    // Hero already owns the entrance opacity. Prepare its content before the
+    // viewport becomes interactive instead of changing reveal targets at 55%.
+    const revealVisible = visible || Boolean(transition?.direction);
+
+    revealGroups.forEach((group, index) => {
+      const { chapter, units } = group;
+      const bounds = panelBounds[index];
+      const left = bounds.left - x;
+      const scroll = chapter.scrollTop;
+      const verticalMovement = group.lastScroll === null ? 0 : scroll - group.lastScroll;
+      group.lastScroll = scroll;
+      // A hidden card must not make its still-visible siblings inert.
+      setInert(chapter, !visible || left + bounds.width <= 1 || left >= window.innerWidth - 1);
+      for (const unit of units) {
+        const card = unit.bounds;
+        const cardLeft = left + card.left;
+        const cardTop = card.top - scroll;
+        updateReveal(unit, {
+          x: {
+            intersection: Math.max(0, Math.min(window.innerWidth, left + bounds.width, cardLeft + card.width) - Math.max(0, left, cardLeft)),
+            span: Math.max(1, Math.min(card.width, window.innerWidth)),
+            side: cardLeft + card.width / 2 >= window.innerWidth / 2 ? 1 : -1,
+            movement,
+          },
+          y: {
+            intersection: Math.max(0, Math.min(revealViewport.bottom, cardTop + card.height) - Math.max(revealViewport.top, cardTop)),
+            span: Math.max(1, Math.min(card.height, revealViewport.bottom - revealViewport.top)),
+            side: cardTop + card.height / 2 >= (revealViewport.top + revealViewport.bottom) / 2 ? 1 : -1,
+            movement: verticalMovement,
+          },
+        }, visible, revealVisible, immediate);
+      }
+    });
+  }
+
+  function update(syncHash = true, instantPanels = false) {
     if (!active || !positions.length) return;
     const scroll = y();
     renderedScroll = scroll;
@@ -194,20 +339,25 @@
     setStyle(track, 'transform', `translate3d(${-x.toFixed(3)}px, 0, 0)`);
     setStyle(progressNav, '--chapter-position', chapterPosition.toFixed(5));
     setStyle(progressNav, '--site-progress', siteProgress.toFixed(5));
-    setStyle(progressMarker, '--chapter-marker-x', `${((chapterPosition + 0.5) * progressTrackWidth / chapters.length).toFixed(3)}px`);
+    const markerX = `${((chapterPosition + 0.5) * progressTrackWidth / chapters.length).toFixed(3)}px`;
+    setStyle(progressMarker, '--chapter-marker-x', markerX);
+    setStyle(progressTrack, '--chapter-marker-x', markerX);
     setClass(root, 'is-content', visible);
     setInert(header, !visible);
     setInert(progressNav, !visible);
     for (const element of heroText) setInert(element, progress > 0.12);
-    // Offscreen panels cannot take keyboard focus and scroll the clipping box.
-    chapters.forEach((chapter, index) => {
-      const bounds = panelBounds[index];
-      setInert(chapter, !visible || bounds.left + bounds.width - x <= 1 || bounds.left - x >= window.innerWidth - 1);
-    });
+    // CSS completes the triggered sequences; geometry uses the existing cache.
+    updateReveals(x, visible, instantPanels);
     emitChapterState(progress);
     const index = visible ? Math.min(chapters.length, 1 + Math.round(x / Math.max(width, 1))) : 0;
     setStyle(progressNav, '--chapter-active-index', String(clamp(index - 1, 0, chapters.length - 1)));
     const changed = index !== currentIndex;
+    const sliderValue = (siteProgress * 100).toFixed(1);
+    if (progressMarker && (sliderValue !== lastSliderValue || changed)) {
+      lastSliderValue = sliderValue;
+      progressMarker.setAttribute('aria-valuenow', sliderValue);
+      progressMarker.setAttribute('aria-valuetext', `${chapterLabels[clamp(index - 1, 0, chapters.length - 1)]}，${Math.round(siteProgress * 100)}%`);
+    }
     if (changed) {
       currentIndex = index;
       if (currentLabel) currentLabel.textContent = String(Math.max(index, 1)).padStart(2, '0');
@@ -230,12 +380,15 @@
       : chapters[0].offsetWidth;
     width = Math.max(width, 1);
     panelBounds = chapters.map(chapter => ({ left: chapter.offsetLeft, width: chapter.offsetWidth }));
+    measureReveals();
     entry = runway.getBoundingClientRect().top + y();
     travel = width * (chapters.length - 1);
     // Finish geometry reads before changing the runway height.
     const figure = document.querySelector('#black-hole')?.getBoundingClientRect();
     const scene = stage.getBoundingClientRect();
-    progressTrackWidth = progressTrack?.getBoundingClientRect().width || 0;
+    const ruler = progressTrack?.getBoundingClientRect();
+    progressTrackLeft = ruler?.left || 0;
+    progressTrackWidth = ruler?.width || 0;
     const runwayHeight = `${window.innerHeight + travel}px`;
     if (runway.style.height !== runwayHeight) runway.style.height = runwayHeight;
     positions = [0, ...chapters.map((_, index) => entry + index * width)];
@@ -246,7 +399,7 @@
     }
     targetY = clamp(frame ? targetY : y(), 0, maximum);
     measuring = false;
-    update(false);
+    update(false, true);
   }
 
   function queueUpdate() {
@@ -257,10 +410,12 @@
   }
 
   function stop({ preserveInteraction = false } = {}) {
+    finishScrub();
     noteIdleActivity();
     cancelAnimationFrame(frame);
     frame = 0;
     lastFrame = 0;
+    railSeek = null;
     transition = null;
     targetY = y();
     smoothY = targetY;
@@ -270,15 +425,155 @@
     if (!preserveInteraction) setInteraction(null);
   }
 
-  function setScroll(top) {
+  function setScroll(top, instantPanels = false) {
     noteIdleActivity();
     settingScroll = true;
     window.scrollTo({ top, behavior: 'instant' });
     settingScroll = false;
     cancelAnimationFrame(updateFrame);
     updateFrame = 0;
-    update();
+    update(true, instantPanels);
   }
+
+  function applyScrub(drag = scrub) {
+    if (!drag || drag !== scrub) return;
+    if (!available() || blocked()) { finishScrub(); return; }
+    // Use the grabbed point as the origin: the large hit target must not jump
+    // the page when pressed away from the tiny visual cursor. Geometry is cached.
+    const top = clamp(drag.startY + (drag.latestX - drag.startX) * drag.scrollPerPixel, entry, maximum);
+    targetY = smoothY = top;
+    if (Math.abs(top - y()) > 0.01) {
+      setInteraction('content');
+      setScroll(top);
+    }
+  }
+
+  function seekRail(destination) {
+    targetY = clamp(destination, entry, maximum);
+    smoothY = y();
+    if (motion.matches || Math.abs(targetY - smoothY) < 0.6) {
+      setScroll(targetY);
+      setInteraction(null);
+      scheduleIdle();
+      return;
+    }
+    const seek = { from: smoothY, to: targetY, started: performance.now() };
+    const duration = 320 + Math.min(210, Math.abs(seek.to - seek.from) / Math.max(width, 1) * 70);
+    railSeek = seek;
+    setInteraction('content');
+    function step(now) {
+      if (railSeek !== seek) return;
+      frame = 0;
+      if (!available() || blocked()) { stop(); return; }
+      const t = clamp((now - seek.started) / duration, 0, 1);
+      // Start and finish at rest; even a distant click has no first-frame leap.
+      const eased = t * t * (3 - 2 * t);
+      smoothY = t === 1 ? seek.to : seek.from + (seek.to - seek.from) * eased;
+      setScroll(smoothY);
+      if (t < 1) frame = requestAnimationFrame(step);
+      else {
+        railSeek = null;
+        setInteraction(null);
+        scheduleIdle();
+      }
+    }
+    frame = requestAnimationFrame(step);
+  }
+
+  function finishScrub({ commit = false } = {}) {
+    if (!scrub) return;
+    const drag = scrub;
+    cancelAnimationFrame(scrubFrame);
+    scrubFrame = 0;
+    const canCommit = commit && available() && !blocked();
+    if (canCommit && drag.dragging) applyScrub(drag);
+    scrub = null;
+    targetY = smoothY = y();
+    setClass(progressNav, 'is-scrubbing', false);
+    if (progressMarker?.hasPointerCapture?.(drag.pointerId)) progressMarker.releasePointerCapture(drag.pointerId);
+    noteIdleActivity();
+    if (canCommit && !drag.dragging) { seekRail(drag.startY); return; }
+    setInteraction(null);
+    scheduleIdle();
+  }
+
+  progressTrack?.addEventListener('pointerdown', event => {
+    if (!progressMarker || !available() || blocked() || scrub || event.isPrimary === false || event.button !== 0
+        || transition?.direction || y() < entry - 1 || !travel || !progressTrackWidth) return;
+    event.preventDefault();
+    stop({ preserveInteraction: true });
+    entryGesture = false;
+    touch = null;
+    // Programmatic focus can inherit keyboard focus-visible state. Pointer
+    // interaction keeps the focus target without drawing its keyboard outline.
+    setClass(progressMarker, 'is-pointer-focused', true);
+    progressMarker.focus({ preventScroll: true });
+    // Cursor endpoints are the centers of the first and last chapter cells.
+    const cursorTravel = progressTrackWidth * (chapters.length - 1) / chapters.length;
+    const grabbedMarker = progressMarker.contains(event.target);
+    // Rail presses seek between chapter centers; label links still navigate
+    // to exact chapter anchors. Keep the outer half-cells within the content.
+    const railPosition = (event.clientX - progressTrackLeft) / progressTrackWidth * chapters.length - 0.5;
+    // Clamp only when applying the position so a drag starting in an outer
+    // half-cell stays aligned with the pointer as it enters the usable range.
+    const startY = grabbedMarker ? y() : entry + railPosition * width;
+    scrub = { pointerId: event.pointerId, startX: event.clientX, latestX: event.clientX, startY, scrollPerPixel: travel / cursorTravel, dragging: grabbedMarker };
+    setClass(progressNav, 'is-scrubbing', grabbedMarker);
+    progressMarker.setPointerCapture(event.pointerId);
+  });
+  progressTrack?.addEventListener('click', event => event.preventDefault());
+
+  window.addEventListener('pointermove', event => {
+    if (!scrub || event.pointerId !== scrub.pointerId) return;
+    if (!available() || blocked()) { finishScrub(); return; }
+    event.preventDefault();
+    scrub.latestX = event.clientX;
+    if (!scrub.dragging) {
+      if (Math.abs(scrub.latestX - scrub.startX) <= 5) return;
+      scrub.dragging = true;
+      setClass(progressNav, 'is-scrubbing', true);
+    }
+    const drag = scrub;
+    if (!scrubFrame) scrubFrame = requestAnimationFrame(() => {
+      if (scrub !== drag) return;
+      scrubFrame = 0;
+      applyScrub(drag);
+    });
+  }, { passive: false });
+  window.addEventListener('pointerup', event => {
+    if (!scrub || event.pointerId !== scrub.pointerId) return;
+    scrub.latestX = event.clientX;
+    if (Math.abs(scrub.latestX - scrub.startX) > 5) scrub.dragging = true;
+    finishScrub({ commit: true });
+  });
+  window.addEventListener('pointercancel', event => {
+    if (scrub?.pointerId === event.pointerId) finishScrub();
+  });
+  progressMarker?.addEventListener('lostpointercapture', event => {
+    if (scrub?.pointerId === event.pointerId) finishScrub();
+  });
+  window.addEventListener('blur', () => finishScrub());
+  progressMarker?.addEventListener('blur', () => setClass(progressMarker, 'is-pointer-focused', false));
+
+  progressMarker?.addEventListener('keydown', event => {
+    if (!['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) setClass(progressMarker, 'is-pointer-focused', false);
+    if (event.code === 'Escape' && scrub) { event.preventDefault(); finishScrub(); return; }
+    if (!available() || blocked() || transition?.direction || y() < entry - 1
+        || event.altKey || event.ctrlKey || event.metaKey) return;
+    const deltas = { ArrowLeft: -width / 20, ArrowDown: -width / 20, ArrowRight: width / 20, ArrowUp: width / 20, PageDown: -width, PageUp: width };
+    if (!(event.code in deltas) && event.code !== 'Home' && event.code !== 'End') return;
+    event.preventDefault();
+    stop();
+    entryGesture = false;
+    const destination = event.code === 'Home' ? entry : event.code === 'End' ? maximum : clamp(y() + deltas[event.code], entry, maximum);
+    targetY = smoothY = destination;
+    if (Math.abs(destination - y()) > 0.01) {
+      setInteraction('content');
+      setScroll(destination);
+      setInteraction(null);
+    }
+    scheduleIdle();
+  });
 
   function focusSection(index) {
     const target = sections[index];
@@ -311,9 +606,9 @@
     transition = { index, destination, focus, entrance, direction };
     clearIdle();
     const finish = () => {
-      setScroll(destination);
+      setScroll(destination, instant || Boolean(direction));
       stop();
-      update(false);
+      update(false, instant || Boolean(direction));
       if (focus) focusSection(index);
     };
     if (instant || motion.matches || document.hidden || (!previousDirection && Math.abs(start - destination) < 1)) { finish(); return; }
@@ -323,6 +618,7 @@
       setTransitionPhase(phaseStart, direction, pulseEnabled);
       root.classList.add(`is-chapter-${direction}`);
       clearProgressFeedback();
+      update(false, true);
       emitChapterState();
     }
     const duration = Math.max(1, Math.round((direction === 'entering' ? 900 : direction === 'leaving' ? 680 : 640) * (1 - phaseStart)));
@@ -357,6 +653,7 @@
   }
 
   function advance(delta) {
+    if (railSeek) stop({ preserveInteraction: true });
     // Only the boundary around the hero snaps; the content rail stays continuous.
     const intended = frame && !transition ? targetY : y();
     if (delta < 0 && intended + delta < entry - 2) {
@@ -385,9 +682,11 @@
 
   window.addEventListener('wheel', event => {
     if (!available()) return;
+    if (scrub) { if (!event.ctrlKey && !event.metaKey) event.preventDefault(); return; }
     noteIdleActivity();
     scheduleIdle();
-    if (!active || blocked() || event.ctrlKey || event.metaKey || interactive(event.target)) return;
+    if (!active || blocked() || event.ctrlKey || event.metaKey
+        || (interactive(event.target) && !event.target.closest('.chapter-progress'))) return;
     const vertical = Math.abs(event.deltaY) >= Math.abs(event.deltaX);
     const raw = vertical ? event.deltaY : event.deltaX;
     if (!raw) return;
@@ -456,7 +755,7 @@
     if (!available()) return;
     touching = event.touches.length > 0;
     noteIdleActivity();
-    touch = event.touches.length === 1 && !interactive(event.target) && !blocked()
+    touch = event.touches.length === 1 && !scrub && !interactive(event.target) && !blocked()
       ? { x: event.touches[0].clientX, y: event.touches[0].clientY, scroll: y(), axis: null, entrance: false, native: false } : null;
     if (touch && !transition?.entrance) stop();
   }, { passive: true });
@@ -543,7 +842,7 @@
       });
     } else {
       const destination = previousPosition >= 1 ? entry + (previousPosition - 1) * width : previousPosition * entry;
-      if (Math.abs(destination - y()) > 0.5) setScroll(destination);
+      if (Math.abs(destination - y()) > 0.5) setScroll(destination, true);
       setInteraction(null);
     }
   }
@@ -557,8 +856,7 @@
       measure();
       restoreHash();
     } else reflow();
-    layoutObserver.observe(viewport);
-    layoutObserver.observe(chapters[0]);
+    observeLayout();
   }
 
   setStyle(root, '--chapter-count', String(chapters.length));
@@ -579,6 +877,7 @@
     if (!available() || !event.target?.closest?.('.chapter-section')) return;
     noteIdleActivity();
     scheduleIdle();
+    queueUpdate();
   }, { passive: true, capture: true });
   window.addEventListener('resize', reflow, { passive: true });
   window.addEventListener('hashchange', restoreHash);
@@ -593,6 +892,7 @@
     if (!active) return;
     if (positions.length) suspendedPosition = position();
     active = false;
+    settleRevealMotion();
     layoutObserver.disconnect();
     stop();
     clearProgressFeedback();
@@ -610,6 +910,7 @@
     const wasMoving = Boolean(frame || transition);
     stop({ preserveInteraction: true });
     if (wasMoving) setScroll(destination);
+    settleRevealMotion();
     setInteraction(null);
     if (focusIndex !== null) focusSection(focusIndex);
     if (positions.length) suspendedPosition = position();
@@ -631,12 +932,14 @@
       setInteraction(null);
       if (focusIndex !== null) focusSection(focusIndex);
     }
-    scheduleIdle();
+    update(false, true);
   });
   const layoutObserver = new ResizeObserver(reflow);
-  if (available()) {
+  function observeLayout() {
     layoutObserver.observe(viewport);
-    // Fonts and intrinsic flex layout can settle after the fixed viewport does.
-    layoutObserver.observe(chapters[0]);
+    for (const chapter of chapters) layoutObserver.observe(chapter);
+    // Content/search results and fonts can resize cards inside a fixed chapter.
+    for (const { element } of revealUnits) layoutObserver.observe(element);
   }
+  if (available()) observeLayout();
 })();

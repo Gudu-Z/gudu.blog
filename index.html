@@ -18,14 +18,15 @@
     <script src="./js/black-hole-theme.js?v=20261023-disk-refinement"></script>
     <link rel="stylesheet" href="./css/style.css?v=20261020-clean-hero" />
     <link rel="stylesheet" href="./css/blog.css?v=20261020-clean-hero" />
-    <link rel="stylesheet" href="./css/chapters.css?v=20261024-panel-proportions" />
+    <link rel="stylesheet" href="./css/chapters.css?v=20261024-about-terminal" />
+    <link rel="stylesheet" href="./css/about-terminal.css?v=20261024-1" />
     <script src="./js/ink-splatter.js?v=20261020-camera-preserved" defer></script>
     <script src="./js/particle-sky.js?v=20261020-original-stars" defer></script>
     <script src="./js/black-hole.js?v=20261023-smooth-parallax" defer></script>
     <script src="./js/main.js?v=20261023-smooth-parallax" defer></script>
     <script src="./js/posts-data.js?v=20261014-1" defer></script>
     <script src="./js/blog.js?v=20261020-search-icon" defer></script>
-    <script src="./js/chapters.js?v=20261023-responsive-startup" defer></script>
+    <script src="./js/chapters.js?v=20261024-panel-reveals" defer></script>
   </head>
   <body class="home-page">
     <a class="skip-link" href="#about">跳到主要内容</a>
@@ -145,17 +146,22 @@
           <div class="chapter-track" id="chapter-track">
       <section class="about-section section-wrap chapter-section" id="about" aria-labelledby="about-title" tabindex="-1">
         <div class="about-copy chapter-panel">
-          <div class="about-panel-top"><p class="eyebrow"><span>01</span> ABOUT ME</p><span class="about-signal" aria-hidden="true"></span></div>
+          <div class="about-panel-top"><p class="eyebrow"><span>01</span> ABOUT ME</p><span class="about-record-label">个人档案 <span aria-hidden="true">/ PROFILE</span></span></div>
+          <div class="about-calibration" aria-hidden="true"><span></span><span></span><span></span></div>
           <div class="about-body">
             <div class="about-profile">
-              <img class="about-avatar" src="./assets/profile/gudu-avatar.jpg" alt="Gudu 的头像：金色戒指与白色羽毛" width="960" height="960" loading="lazy" decoding="async" />
+              <div class="about-portrait">
+                <div class="portrait-registration"><img class="about-avatar" src="./assets/profile/gudu-avatar.jpg" alt="Gudu 的头像：金色戒指与白色羽毛" width="960" height="960" loading="lazy" decoding="async" /></div>
+                <div class="about-portrait-caption" aria-hidden="true"><span>PERSONAL ARCHIVE</span><span>GUDU</span></div>
+              </div>
               <nav class="about-socials" aria-label="我的个人主页">
-                <a href="https://github.com/Gudu-Z" target="_blank" rel="noopener noreferrer" aria-label="Gudu 的 GitHub 主页（新标签页打开）"><span>GitHub</span><span aria-hidden="true">↗</span></a>
-                <a href="https://space.bilibili.com/1747462829" target="_blank" rel="noopener noreferrer" aria-label="Gudu 的哔哩哔哩主页（新标签页打开）"><span>哔哩哔哩</span><span aria-hidden="true">↗</span></a>
+                <a href="https://github.com/Gudu-Z" target="_blank" rel="noopener noreferrer" aria-label="Gudu 的 GitHub 主页（新标签页打开）"><span class="about-link-index" aria-hidden="true">01</span><span class="about-link-name">GitHub</span><span class="about-link-arrow" aria-hidden="true">↗</span></a>
+                <a href="https://space.bilibili.com/1747462829" target="_blank" rel="noopener noreferrer" aria-label="Gudu 的哔哩哔哩主页（新标签页打开）"><span class="about-link-index" aria-hidden="true">02</span><span class="about-link-name">哔哩哔哩</span><span class="about-link-arrow" aria-hidden="true">↗</span></a>
               </nav>
             </div>
             <div class="about-text">
               <h2 id="about-title">你好，我是<br /><span class="about-name">Gudu<span class="accent">.</span></span></h2>
+              <div class="about-identity-line" aria-hidden="true"><span></span>IN MY OWN ORBIT</div>
               <p class="about-lead">这个小小的站点，<br />是我在互联网的一块自留地。</p>
               <p>在自己的轨道上，记录思考、生活与一切未知。把值得留下的想法写下来，让短暂的瞬间有处可寻。</p>
               <div class="about-signature"><span class="about-signature-mark" aria-hidden="true">↗</span><p>不急着抵达，先把沿途记下来。</p><span class="about-signature-code" aria-hidden="true">G / 01</span></div>
@@ -165,16 +171,19 @@
         <div class="about-connections">
           <p class="connection-heading"><span>继续探索</span><span aria-hidden="true">EXPLORE / 03</span></p>
           <a class="connection-card chapter-panel" href="#journal">
-            <span class="connection-index">01 / JOURNAL</span><span class="connection-arrow" aria-hidden="true">↗</span>
-            <h3>最新文章</h3><p>思考、生活，与还未完成的想法。</p><span class="connection-action">阅读文章 <span aria-hidden="true">→</span></span>
+            <div class="connection-card-head"><span class="connection-number" aria-hidden="true">01</span><span class="connection-index" aria-hidden="true">JOURNAL</span><span class="connection-arrow" aria-hidden="true">↗</span></div>
+            <span class="connection-rule" aria-hidden="true"></span>
+            <h3>最新文章</h3><p>思考、生活，与还未完成的想法。</p><span class="connection-action"><span>阅读文章</span><span class="connection-action-arrow" aria-hidden="true">→</span></span>
           </a>
           <a class="connection-card chapter-panel" href="#archive">
-            <span class="connection-index">02 / ARCHIVE</span><span class="connection-arrow" aria-hidden="true">↗</span>
-            <h3>时间的切片</h3><p>沿着时间，寻找文字留下的轨迹。</p><span class="connection-action">浏览归档 <span aria-hidden="true">→</span></span>
+            <div class="connection-card-head"><span class="connection-number" aria-hidden="true">02</span><span class="connection-index" aria-hidden="true">ARCHIVE</span><span class="connection-arrow" aria-hidden="true">↗</span></div>
+            <span class="connection-rule" aria-hidden="true"></span>
+            <h3>时间的切片</h3><p>沿着时间，寻找文字留下的轨迹。</p><span class="connection-action"><span>浏览归档</span><span class="connection-action-arrow" aria-hidden="true">→</span></span>
           </a>
           <a class="connection-card connection-rss chapter-panel" href="./feed.xml">
-            <span class="connection-index">03 / STAY CONNECTED</span><span class="connection-arrow" aria-hidden="true">↗</span>
-            <h3>保持连接 <span class="rss-label">RSS</span></h3><p>让下一篇记录，抵达你的阅读器。</p><span class="connection-action">订阅更新 <span aria-hidden="true">→</span></span>
+            <div class="connection-card-head"><span class="connection-number" aria-hidden="true">03</span><span class="connection-index" aria-hidden="true">RSS FEED</span><span class="connection-arrow" aria-hidden="true">↗</span></div>
+            <span class="connection-rule" aria-hidden="true"></span>
+            <h3>保持连接 <span class="rss-label">RSS</span></h3><p>让下一篇记录，抵达你的阅读器。</p><span class="connection-action"><span>订阅更新</span><span class="connection-action-arrow" aria-hidden="true">→</span></span>
           </a>
           <p class="connection-footnote"><span aria-hidden="true"></span>一直好奇 · 保持探索</p>
         </div>
@@ -237,7 +246,12 @@
       </div>
     </main>
     <nav class="chapter-progress" aria-label="网站章节">
-      <div class="chapter-progress-track" aria-hidden="true"><span class="chapter-progress-scan"></span><span class="chapter-progress-marker"></span></div>
+      <div class="chapter-progress-track">
+        <span class="chapter-progress-rail" aria-hidden="true"></span>
+        <span class="chapter-progress-response" aria-hidden="true"></span>
+        <span class="chapter-progress-scan" aria-hidden="true"></span>
+        <span class="chapter-progress-marker" role="slider" tabindex="0" aria-label="浏览网站章节" aria-controls="chapter-track" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="关于，0%"><span class="chapter-progress-handle" aria-hidden="true"></span></span>
+      </div>
       <div class="chapter-progress-links">
         <a href="#about" data-chapter-link><span class="chapter-station-index">01</span><strong class="chapter-station-title">关于</strong><small class="chapter-station-subtitle">ABOUT ME</small></a>
         <a href="#series" data-chapter-link><span class="chapter-station-index">02</span><strong class="chapter-station-title">专题</strong><small class="chapter-station-subtitle">TOPICS</small></a>
