@@ -19,6 +19,7 @@
   const links = [...document.querySelectorAll('[data-chapter-link]')];
   const heroText = [...stage.querySelectorAll('.hero-heading')];
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
+  const mouseMotion = matchMedia('(hover: hover) and (pointer: fine)');
   let positions = [];
   let panelBounds = [];
   let entry = 0;
@@ -31,6 +32,12 @@
   let smoothY = 0;
   let frame = 0;
   let updateFrame = 0;
+  let updatePending = false;
+  let pointerTime = 0;
+  let pointerPressed = false;
+  let pointerInside = false;
+  let pointerNavX = 0;
+  const pointerLayer = { x: 0, y: 0, targetX: 0, targetY: 0 };
   let lastFrame = 0;
   let active = true;
   let initialized = false;
@@ -66,9 +73,9 @@
     chapter,
     lastScroll: null,
     scrollLimit: 0,
-    units: [...chapter.querySelectorAll('.chapter-panel, .connection-heading, .connection-footnote, .section-heading, .site-footer')]
+    units: [...chapter.querySelectorAll('.chapter-panel, [data-depth-owner]')]
       .filter(element => element.classList.contains('chapter-panel') || !element.closest('.chapter-panel'))
-      .map(element => ({ element, isPanel: element.classList.contains('chapter-panel'), phase: 'preview', seen: false, exitMinimum: null, exitAxis: 'x', bounds: null, calibrationReady: false, calibrated: false })),
+      .map(element => ({ element, isPanel: element.classList.contains('chapter-panel'), hasParallax: element.classList.contains('chapter-panel') && ['series', 'journal', 'archive'].includes(chapter.id), phase: 'preview', seen: false, exitMinimum: null, exitAxis: 'x', bounds: null, calibrationReady: false, calibrated: false })),
   }));
   const groupsByChapter = new Map(revealGroups.map(group => [group.chapter, group]));
   const revealUnits = revealGroups.flatMap(group => group.units);
@@ -78,7 +85,11 @@
   for (const unit of revealUnits) {
     const ownerId = unit.element.dataset.depthOwner;
     const owner = ownerId ? unitsByElement.get(document.getElementById(ownerId)) : null;
-    unit.depthOwner = !unit.isPanel && owner?.isPanel ? owner : unit;
+    const compactOwnerId = unit.element.dataset.depthOwnerCompact;
+    const compactOwner = compactOwnerId ? unitsByElement.get(document.getElementById(compactOwnerId)) : null;
+    unit.wideDepthOwner = !unit.isPanel && owner?.isPanel ? owner : unit;
+    unit.compactDepthOwner = !unit.isPanel && compactOwner?.isPanel ? compactOwner : unit.wideDepthOwner;
+    unit.depthOwner = unit.wideDepthOwner;
   }
   const calibratingPanels = new Set();
   let revealViewport = { top: 0, bottom: window.innerHeight };
@@ -140,6 +151,7 @@
   }
 
   function noteIdleActivity() {
+    resetPointerParallax();
     lastIdleActivity = performance.now();
     clearIdle();
     for (const unit of calibratingPanels) setClass(unit.element, 'is-chapter-calibrating', false);
@@ -222,11 +234,13 @@
   }
 
   function settleRevealMotion() {
+    resetPointerParallax(true);
     for (const unit of revealUnits) {
       const { element } = unit;
       setClass(element, 'is-chapter-immediate', true);
       setClass(element, 'is-chapter-scanning', false);
       setUnitDepth(unit, 0);
+      if (unit.hasParallax) setStyle(element, '--chapter-parallax-x', '0.000px');
     }
   }
 
@@ -307,6 +321,9 @@
     for (const group of revealGroups) {
       const { chapter, units } = group;
       for (const unit of units) {
+        // The journal intro sits over the sidebar on desktop, but above the
+        // main article surface once the two columns stack at the CSS breakpoint.
+        unit.depthOwner = window.innerWidth <= 720 ? unit.compactDepthOwner : unit.wideDepthOwner;
         let left = 0;
         let top = 0;
         for (let node = unit.element; node && node !== chapter; node = node.offsetParent) {
@@ -420,6 +437,11 @@
       const { chapter, units } = group;
       const bounds = panelBounds[index];
       const left = bounds.left - x;
+      // Offset from this chapter's reading stop, rather than the asymmetric
+      // center of each card: all its text rests at the authored layout on arrival.
+      // The Hero displacement shares this coordinate, with no extra animation loop.
+      const parallaxPhase = clamp((index * width - x + heroSlide) / Math.max(1, width), -1, 1);
+      const parallaxX = depthEnabled ? -Math.sin(parallaxPhase * Math.PI / 2) * (window.innerWidth <= 720 ? 5 : 12) : 0;
       const scroll = chapter.scrollTop;
       const verticalMovement = group.lastScroll === null ? 0 : scroll - group.lastScroll;
       group.lastScroll = scroll;
@@ -430,6 +452,7 @@
         const cardLeft = left + card.left;
         const cardTop = card.top - scroll;
         updateUnitDepth(unit, cardLeft + heroSlide, cardTop, depthEnabled);
+        if (unit.hasParallax) setStyle(unit.element, '--chapter-parallax-x', `${parallaxX.toFixed(3)}px`);
         updateReveal(unit, {
           x: {
             intersection: Math.max(0, Math.min(window.innerWidth, left + bounds.width, cardLeft + card.width) - Math.max(0, left, cardLeft)),
@@ -467,7 +490,8 @@
     setStyle(progressMarker, '--chapter-marker-x', markerX);
     setStyle(progressTrack, '--chapter-marker-x', markerX);
     setClass(root, 'is-content', visible);
-    setInert(header, !visible);
+    // A partly assembled toolbar must not accept Tab focus before docking.
+    setInert(header, !visible || Boolean(transition?.direction));
     setInert(progressNav, !visible);
     for (const element of heroText) setInert(element, progress > 0.12);
     // CSS completes the triggered sequences; geometry uses the existing cache.
@@ -511,7 +535,8 @@
     const figure = document.querySelector('#black-hole')?.getBoundingClientRect();
     const scene = stage.getBoundingClientRect();
     const ruler = progressTrack?.getBoundingClientRect();
-    progressTrackLeft = ruler?.left || 0;
+    // Cache the layout origin, not the ruler's current mouse displacement.
+    progressTrackLeft = (ruler?.left || 0) - pointerNavX;
     progressTrackWidth = ruler?.width || 0;
     for (const group of revealGroups) {
       setClass(group.chapter, 'is-chapter-scrollable', group.scrollable);
@@ -530,12 +555,111 @@
     update(false, true);
   }
 
-  function queueUpdate() {
-    if (available() && !updateFrame) updateFrame = requestAnimationFrame(() => {
+  function canPointerParallax() {
+    return available() && initialized && mouseMotion.matches && window.innerWidth > 720
+      && !motion.matches && !blocked() && !frame && !lastFrame && !transition && !railSeek
+      && !scrub && !pointerPressed && !pointerEditing() && !touching && !interactionKind && y() >= entry - 1;
+  }
+
+  function pointerEditing() {
+    return document.activeElement?.matches?.('input, textarea, select, [contenteditable="true"]');
+  }
+
+  function paintPointerParallax() {
+    const { x, y: vertical } = pointerLayer;
+    const moved = x !== 0 || vertical !== 0;
+    // Move only three composed layers. Removing an idle inline translate lets
+    // the existing CSS Hero entrance retain sole control of the track.
+    setStyle(track, 'translate', moved ? `calc(var(--chapter-entrance-x, 0px) + ${x.toFixed(3)}px) ${vertical.toFixed(3)}px` : '');
+    setStyle(header, 'translate', moved ? `${(x * 0.5).toFixed(3)}px ${(vertical * 0.5).toFixed(3)}px` : '');
+    pointerNavX = Number((x * 0.375).toFixed(3));
+    setStyle(progressNav, 'translate', moved ? `${pointerNavX.toFixed(3)}px ${(vertical * 0.4).toFixed(3)}px` : '');
+  }
+
+  function holdPointerParallax() {
+    pointerLayer.targetX = pointerLayer.x;
+    pointerLayer.targetY = pointerLayer.y;
+    pointerTime = 0;
+    if (updateFrame && !updatePending) {
+      cancelAnimationFrame(updateFrame);
       updateFrame = 0;
-      if (available()) update();
+    }
+  }
+
+  function resetPointerParallax(force = false) {
+    if (!force && (pointerPressed || scrub || pointerEditing())) { holdPointerParallax(); return; }
+    if (force) pointerPressed = false;
+    pointerLayer.x = pointerLayer.y = pointerLayer.targetX = pointerLayer.targetY = 0;
+    holdPointerParallax();
+    paintPointerParallax();
+  }
+
+  function releasePointerParallax() {
+    if (pointerPressed || scrub || pointerEditing()) return;
+    pointerLayer.targetX = pointerLayer.targetY = 0;
+    if (pointerLayer.x || pointerLayer.y) queueUpdate(true);
+  }
+
+  function tickPointerParallax(now) {
+    if (pointerPressed || scrub || pointerEditing()) { holdPointerParallax(); return false; }
+    const state = pointerLayer;
+    if (state.x === state.targetX && state.y === state.targetY) return false;
+    if (!canPointerParallax()) { resetPointerParallax(); return false; }
+    const elapsed = pointerTime ? clamp(now - pointerTime, 0, 64) : 16;
+    pointerTime = now;
+    const ease = 1 - Math.exp(-elapsed / 90);
+    state.x += (state.targetX - state.x) * ease;
+    state.y += (state.targetY - state.y) * ease;
+    const settled = Math.max(Math.abs(state.targetX - state.x), Math.abs(state.targetY - state.y)) < 0.015;
+    if (settled) { state.x = state.targetX; state.y = state.targetY; pointerTime = 0; }
+    paintPointerParallax();
+    return !settled;
+  }
+
+  function queueUpdate(pointerOnly = false) {
+    if (!available()) return;
+    if (!pointerOnly) updatePending = true;
+    if (!updateFrame) updateFrame = requestAnimationFrame(now => {
+      updateFrame = 0;
+      if (!available()) { updatePending = false; return; }
+      // Pointer-only frames touch the three interface layers, never re-run navigation
+      // or measure layout. Both inputs share this coalesced frame and then stop.
+      if (updatePending) { updatePending = false; update(); }
+      if (tickPointerParallax(now)) queueUpdate(true);
     });
   }
+
+  window.addEventListener('pointermove', event => {
+    // A release outside the browser can omit pointerup for ordinary buttons.
+    if (pointerPressed && !scrub && event.pointerType === 'mouse' && event.buttons === 0) pointerPressed = false;
+    if (pointerPressed || scrub || pointerEditing()) return;
+    if (event.pointerType !== 'mouse' || event.isPrimary === false || event.buttons || !canPointerParallax()) {
+      resetPointerParallax();
+      return;
+    }
+    pointerInside = true;
+    // The same view coordinate applies over panels, empty sky and both HUDs.
+    pointerLayer.targetX = clamp(event.clientX / Math.max(1, window.innerWidth) * 2 - 1, -1, 1) * 8;
+    pointerLayer.targetY = clamp(event.clientY / Math.max(1, window.innerHeight) * 2 - 1, -1, 1) * 5;
+    queueUpdate(true);
+  }, { passive: true });
+  window.addEventListener('pointerout', event => {
+    if (event.relatedTarget == null) { pointerInside = false; releasePointerParallax(); }
+  }, { passive: true });
+  document.addEventListener('pointerdown', event => {
+    if (event.pointerType !== 'mouse') { resetPointerParallax(true); return; }
+    if (event.isPrimary === false || event.button !== 0) return;
+    pointerPressed = true;
+    holdPointerParallax();
+  }, { passive: true });
+  document.addEventListener('focusin', () => {
+    if (pointerPressed || pointerEditing()) holdPointerParallax();
+    else resetPointerParallax();
+  });
+  document.addEventListener('focusout', releasePointerParallax);
+  window.addEventListener('pointercancel', () => resetPointerParallax(true), { passive: true });
+  window.addEventListener('blur', () => { pointerInside = false; resetPointerParallax(true); });
+  mouseMotion.addEventListener('change', () => { finishScrub(); resetPointerParallax(true); });
 
   function stop({ preserveInteraction = false } = {}) {
     finishScrub();
@@ -562,6 +686,7 @@
     settingScroll = false;
     cancelAnimationFrame(updateFrame);
     updateFrame = 0;
+    updatePending = false;
     update(true, instantPanels);
   }
 
@@ -631,6 +756,10 @@
     if (!progressMarker || !available() || blocked() || scrub || event.isPrimary === false || event.button !== 0
         || transition?.direction || y() < entry - 1 || !travel || !progressTrackWidth) return;
     event.preventDefault();
+    // Freeze before stop() and focus() can run: the pressed ruler must stay
+    // under the mouse through the entire drag, including the initial sample.
+    if (event.pointerType === 'mouse') { pointerPressed = true; holdPointerParallax(); }
+    else resetPointerParallax(true);
     stop({ preserveInteraction: true });
     entryGesture = false;
     touch = null;
@@ -643,7 +772,7 @@
     const grabbedMarker = progressMarker.contains(event.target);
     // Rail presses seek between chapter centers; label links still navigate
     // to exact chapter anchors. Keep the outer half-cells within the content.
-    const railPosition = (event.clientX - progressTrackLeft) / progressTrackWidth * chapters.length - 0.5;
+    const railPosition = (event.clientX - progressTrackLeft - pointerNavX) / progressTrackWidth * chapters.length - 0.5;
     // Clamp only when applying the position so a drag starting in an outer
     // half-cell stays aligned with the pointer as it enters the usable range.
     const startY = grabbedMarker ? y() : entry + railPosition * width;
@@ -676,18 +805,23 @@
     if (Math.abs(scrub.latestX - scrub.startX) > 5) scrub.dragging = true;
     finishScrub({ commit: true });
   });
+  window.addEventListener('pointerup', event => {
+    if (event.isPrimary === false) return;
+    pointerPressed = false;
+    if (!pointerInside) releasePointerParallax();
+  });
   window.addEventListener('pointercancel', event => {
     if (scrub?.pointerId === event.pointerId) finishScrub();
   });
   progressMarker?.addEventListener('lostpointercapture', event => {
-    if (scrub?.pointerId === event.pointerId) finishScrub();
+    if (scrub?.pointerId === event.pointerId) { finishScrub(); resetPointerParallax(true); }
   });
   window.addEventListener('blur', () => finishScrub());
   progressMarker?.addEventListener('blur', () => setClass(progressMarker, 'is-pointer-focused', false));
 
   progressMarker?.addEventListener('keydown', event => {
     if (!['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) setClass(progressMarker, 'is-pointer-focused', false);
-    if (event.code === 'Escape' && scrub) { event.preventDefault(); finishScrub(); return; }
+    if (event.code === 'Escape' && scrub) { event.preventDefault(); finishScrub(); resetPointerParallax(true); return; }
     if (!available() || blocked() || transition?.direction || y() < entry - 1
         || event.altKey || event.ctrlKey || event.metaKey) return;
     const deltas = { ArrowLeft: -width / 20, ArrowDown: -width / 20, ArrowRight: width / 20, ArrowUp: width / 20, PageDown: -width, PageUp: width };
@@ -966,6 +1100,7 @@
 
   function reflow() {
     if (!available()) return;
+    resetPointerParallax(true);
     if (!positions.length) { measure(); return; }
     const previousPosition = suspendedPosition ?? position();
     suspendedPosition = null;
@@ -1040,6 +1175,7 @@
     clearProgressFeedback();
     cancelAnimationFrame(updateFrame);
     updateFrame = 0;
+    updatePending = false;
     touch = null;
     touching = false;
   });
@@ -1059,11 +1195,14 @@
     clearProgressFeedback();
     cancelAnimationFrame(updateFrame);
     updateFrame = 0;
+    updatePending = false;
     touch = null;
     touching = false;
   });
   motion.addEventListener('change', () => {
     if (!available()) return;
+    finishScrub();
+    resetPointerParallax(true);
     noteIdleActivity();
     if (motion.matches) clearProgressFeedback();
     if (motion.matches && frame) {

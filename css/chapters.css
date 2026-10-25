@@ -122,6 +122,8 @@ html.has-chapters .home-page .site-header {
   pointer-events: none;
   transition: opacity 360ms ease, transform 360ms ease, visibility 360ms;
 }
+/* On Hero, hide the parent immediately as its local animation rules detach. */
+html.has-chapters:not(.is-content) .home-page .site-header { transition: none; }
 html.has-chapters.is-content .home-page .site-header {
   visibility: visible;
   opacity: 1;
@@ -326,6 +328,29 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
 .home-page .archive-empty::before { background: var(--chapter-accent); }
 .home-page .site-footer { position: relative; grid-column: 1 / -1; width: 100%; margin: 20px 0 0; padding-block: 26px 0; }
 
+/* Small internal layers move against the track, then return to their exact
+   reading positions. Individual translate leaves reveal/hover transforms intact. */
+@media (prefers-reduced-motion: no-preference) {
+  html.has-chapters .home-page :is(.series-section, .journal-section, .archive-section) .chapter-panel :is(
+    .series-path-mark, .series-empty-label, .series-reading-index, .eyebrow,
+    .empty-orbit, .empty-kicker, .post-number, .post-card-meta,
+    .archive-year > h3, .archive-group > h3, .archive-year time, .archive-item time,
+    .archive-empty, .subscribe-note > svg
+  ) {
+    translate: calc(var(--chapter-parallax-x, 0px) * var(--chapter-parallax-weight, 0.4)) 0;
+  }
+  .home-page .chapter-panel :is(.series-path-mark, .empty-orbit) { --chapter-parallax-weight: 1; }
+  .home-page .chapter-panel :is(.series-empty-label, .series-reading-index, .empty-kicker, .archive-year > h3, .archive-group > h3) { --chapter-parallax-weight: 0.5; }
+  .home-page .chapter-panel :is(.post-number, .subscribe-note > svg) { --chapter-parallax-weight: 0.65; }
+  /* The archive's dot, vertical rule and empty copy remain one connected unit. */
+  .home-page .chapter-panel :is(.post-card-meta, .archive-year time, .archive-item time, .archive-empty) { --chapter-parallax-weight: 0.25; }
+  /* Keep labels inside a focused link in place while the keyboard reader moves. */
+  html.has-chapters .home-page :is(.series-section, .journal-section, .archive-section) .chapter-panel :is(
+    .series-reading-link:focus-within .series-reading-index,
+    .archive-year a:focus-within time, .archive-item a:focus-within time
+  ) { translate: none; }
+}
+
 /* Panel surfaces stay solid. Their text retains its own staggered entrance
    and exit, independently of perspective, spacing and material. */
 @media (prefers-reduced-motion: no-preference) {
@@ -401,7 +426,7 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     .about-panel-top, .about-socials, .about-text > p, .about-dossier, .about-signature,
     .connection-heading, .connection-footnote, .connection-card-head, .connection-action,
     .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3, p, .text-link),
-    .series-empty, .series-reading-link, .journal-section > .section-heading,
+    .series-empty, .series-reading-link, .journal-heading-part,
     .journal-toolbar, .journal-empty, .search-empty, .posts-list > .post-card,
     .archive-year > h3, .archive-year li, .archive-group > h3, .archive-item, .site-footer
   ) {
@@ -426,7 +451,7 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
   }
   html.has-chapters .home-page .chapter-section :where(
     .about-panel-top, .connection-heading, .connection-card-head, .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3),
-    .journal-section > .section-heading, .archive-year > h3, .archive-group > h3
+    .journal-heading-part, .archive-year > h3, .archive-group > h3
   ) { --chapter-layer-stage: 0; }
   html.has-chapters .home-page .chapter-section :where(
     .about-socials, .about-text > p, .about-dossier, .about-signature, .connection-card > p,
@@ -451,7 +476,7 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     .about-panel-top, .about-socials, .about-text > p, .about-dossier, .about-signature,
     .connection-heading, .connection-footnote, .connection-card-head, .connection-action,
     .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3, p, .text-link),
-    .series-empty, .series-reading-link, .journal-section > .section-heading,
+    .series-empty, .series-reading-link, .journal-heading-part,
     .journal-toolbar, .journal-empty, .search-empty, .posts-list > .post-card,
     .archive-year > h3, .archive-year li, .archive-group > h3, .archive-item, .site-footer
   ):focus-within { --chapter-layer-opacity: 1; --chapter-layer-x: 0px; transition: none; }
@@ -776,6 +801,51 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-marker::after { opacity: var(--chapter-entrance-glow, 0); transition: none; }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-route-readout { opacity: var(--chapter-line-in); }
 
+/* Header instruments follow the same reversible Hero clock as the content.
+   Only the individual parts fade; their transparent parent stays fully drawn. */
+@media (prefers-reduced-motion: no-preference) {
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .site-header { opacity: 1; }
+  /* The loader's legacy brand animation cannot run a second entrance clock. */
+  html.has-chapters .home-page .site-header .site-brand { animation: none; }
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .site-header :is(
+    .brand-logo, .header-brand-name, .header-brand-motto, .header-brand-calibration,
+    .header-search, .header-tool[href$="feed.xml"]
+  ) {
+    --header-part-progress: clamp(0, calc((var(--chapter-visual-phase) - var(--header-part-start)) / var(--header-part-duration)), 1);
+    --header-part-ease: calc(var(--header-part-progress) * var(--header-part-progress) * (3 - 2 * var(--header-part-progress)));
+    opacity: var(--header-part-ease);
+    translate: calc(var(--header-part-offset, 0px) * (1 - var(--header-part-ease))) 0;
+    transition: none;
+  }
+  .home-page .site-header .brand-logo { --header-part-start: 0.22; --header-part-duration: 0.25; --header-part-offset: -12px; }
+  .home-page .header-brand-name { --header-part-start: 0.32; --header-part-duration: 0.27; --header-part-offset: -6px; }
+  .home-page .header-brand-motto { --header-part-start: 0.4; --header-part-duration: 0.27; --header-part-offset: -4px; }
+  .home-page .header-brand-calibration { --header-part-start: 0.4; --header-part-duration: 0.32; }
+  .home-page .header-search { --header-part-start: 0.48; --header-part-duration: 0.25; --header-part-offset: 10px; }
+  .home-page .header-tool[href$="feed.xml"] { --header-part-start: 0.55; --header-part-duration: 0.25; --header-part-offset: 10px; }
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page :is(.header-brand-name, .header-brand-motto) {
+    clip-path: inset(0 calc((1 - var(--header-part-ease)) * 100%) 0 0);
+  }
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .header-brand-calibration {
+    scale: var(--header-part-ease) 1;
+    transform-origin: left center;
+  }
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .header-brand-calibration::before {
+    --header-signal-pulse: clamp(0, min(calc((var(--chapter-visual-phase) - 0.48) / 0.12), calc((0.76 - var(--chapter-visual-phase)) / 0.16)), 1);
+    width: calc(10 * var(--header-unit));
+    opacity: calc(0.8 + 0.2 * var(--header-signal-pulse));
+    scale: calc(1 + 0.35 * var(--header-signal-pulse)) 1;
+    transform-origin: left center;
+    transition: none;
+  }
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .header-rss-arc {
+    --header-arc-progress: clamp(0, calc((var(--chapter-visual-phase) - var(--header-arc-start, 0.55)) / 0.2), 1);
+    stroke-dasharray: 1;
+    stroke-dashoffset: calc(1 - var(--header-arc-progress));
+  }
+  .home-page .header-rss-arc-outer { --header-arc-start: 0.6; }
+}
+
 /* Cap wide-screen panels and center the complete chapter, including its sidebar.
    The shared start inset follows this width and keeps both gutters equal. */
 @media (min-width: 1201px) and (min-aspect-ratio: 2/1) {
@@ -963,7 +1033,7 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   .home-page .chapter-progress-marker::after,
   .home-page .chapter-progress-scan { display: none; }
   html.has-chapters .home-page .black-hole-fallback { filter: brightness(calc(1 + var(--chapter-progress, 0) * 0.15)) drop-shadow(0 0 calc(12px * var(--chapter-progress, 0)) rgb(220 220 216 / calc(0.12 * var(--chapter-progress, 0)))); }
-  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page :is(#hero-title, .live-clock, .hero-bottom, .chapter-panel, .chapter-panel > *, .connection-heading, .connection-footnote, .chapter-section > .section-heading, .site-footer, .chapter-progress-links a) { translate: none; }
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page :is(#hero-title, .live-clock, .hero-bottom, .chapter-panel, .chapter-panel > *, .connection-heading, .connection-footnote, .journal-heading-part, .site-footer, .chapter-progress-links a) { translate: none; }
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-track { --chapter-response-x: var(--chapter-marker-x, 0px); background-size: 100% 100%; }
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-track::before { clip-path: none; }
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-links a::before,

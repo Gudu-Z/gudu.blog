@@ -39,7 +39,7 @@ function classList(initial = [], onWrite = () => {}) {
 
 // Only browser surfaces used by the chapter controller are modeled. The real
 // controller executes unmodified; assertions inspect scrolls, URLs and events.
-function browser({ reduced = false, url = 'https://gudu.blog/', loading = false, hidden = false, viewportWidth = 1200, viewportHeight = 800, roundScroll = false, initialPanelWidth = null, multiPanels = false } = {}) {
+function browser({ reduced = false, finePointer = true, url = 'https://gudu.blog/', loading = false, hidden = false, viewportWidth = 1200, viewportHeight = 800, roundScroll = false, initialPanelWidth = null, multiPanels = false } = {}) {
   let now = 0;
   let sequence = 0;
   let scrollY = 0;
@@ -104,7 +104,7 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
     set offsetHeight(value) { this._height = value; }
     get offsetParent() { return this.layoutParent || this.parentElement; }
     get inert() { return this._inert; }
-    set inert(value) { domWrites.push({ target: this, kind: 'inert' }); this._inert = value; }
+    set inert(value) { domWrites.push({ target: this, kind: 'inert', value }); this._inert = value; }
     get hidden() { return this.hasAttribute('hidden'); }
     set hidden(value) {
       if (value) this.setAttribute('hidden', '');
@@ -131,9 +131,11 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
     get hash() { return new URL(this.href).hash; }
     getBoundingClientRect() {
       layoutReads++;
-      const top = this.chapterIndex === undefined ? this.top - scrollY : Math.max(0, height - scrollY);
+      const ruler = this.classList.contains('chapter-progress-track');
+      const displacement = ruler ? layerOffset(progress) : [0, 0];
+      const top = (this.chapterIndex === undefined ? this.top - scrollY : Math.max(0, height - scrollY)) + displacement[1];
       const translation = Number(track.style.getPropertyValue('transform').match(/translate3d\(([-\d.]+)px/)?.[1]) || 0;
-      const left = this.classList.contains('chapter-progress-track') ? (viewWidth() - rulerWidth()) / 2
+      const left = ruler ? (viewWidth() - rulerWidth()) / 2 + displacement[0]
         : this.chapterIndex === undefined ? 0 : this.offsetLeft + translation;
       return { top, bottom: top + this.offsetHeight, left, right: left + this.offsetWidth, width: this.offsetWidth, height: this.offsetHeight };
     }
@@ -246,18 +248,29 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
       id: 'journal-stacked', classes: ['chapter-panel'], offsetParent: column,
       geometry: () => ({ left: 0, top: 740, width: panelWidth() * 0.92, height: 360 }),
     });
-    const heading = new Element('header', {
-      classes: ['section-heading'], dataset: { depthOwner: journalPanels.main.id }, offsetParent: journal,
-      geometry: () => ({ left: 0, top: 60, width: panelWidth(), height: 48 }),
+    const headingLayout = new Element('div', {
+      classes: ['section-heading'], offsetParent: journal,
+      geometry: () => ({ left: 0, top: 60, width: panelWidth(), height: viewWidth() <= 720 ? 96 : 48 }),
+    });
+    const heading = new Element('div', {
+      classes: ['journal-heading-part'], dataset: { depthOwner: journalPanels.main.id }, offsetParent: headingLayout,
+      geometry: () => ({ left: panelWidth() * 0.04, top: 0, width: panelWidth() * 0.58, height: 48 }),
+    });
+    const intro = new Element('p', {
+      classes: ['section-intro', 'journal-heading-part'],
+      dataset: { depthOwner: sidebar.id, depthOwnerCompact: journalPanels.main.id }, offsetParent: headingLayout,
+      geometry: () => ({ left: panelWidth() * (viewWidth() <= 720 ? 0.04 : 0.68), top: viewWidth() <= 720 ? 64 : 20,
+        width: panelWidth() * (viewWidth() <= 720 ? 0.58 : 0.28), height: 28 }),
     });
     const nestedHeading = new Element('header', {
-      classes: ['section-heading'], offsetParent: journalPanels.main,
+      classes: ['journal-heading-part'], dataset: { depthOwner: sidebar.id }, offsetParent: journalPanels.main,
       geometry: () => ({ left: 0, top: 0, width: panelWidth() * 0.58, height: 40 }),
     });
     column.append(journalPanels.main, sidebar, stacked);
     journalPanels.main.append(nestedHeading);
-    journal.append(heading);
-    Object.assign(journalPanels, { sidebar, stacked, heading, nestedHeading });
+    headingLayout.append(heading, intro);
+    journal.append(headingLayout);
+    Object.assign(journalPanels, { sidebar, stacked, headingLayout, heading, intro, nestedHeading });
   }
   const chapterTitles = ['关于', '分类', '最新文章', '归档'];
   const chapterSubtitles = ['ABOUT ME', 'CATEGORIES', 'LATEST ARTICLES', 'ARCHIVE'];
@@ -290,6 +303,10 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
   html.clientHeight = body.clientHeight = height;
 
   const media = eventTarget({ matches: reduced });
+  const pointerMedia = eventTarget({ matches: finePointer });
+  const matchMedia = query => query === '(prefers-reduced-motion: reduce)' ? media
+    : query === '(hover: hover) and (pointer: fine)' ? pointerMedia
+      : assert.fail(`unmodeled media query: ${query}`);
   document = eventTarget({
     documentElement: html,
     body,
@@ -313,7 +330,7 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
     innerWidth: viewportWidth,
     innerHeight: height,
     history,
-    matchMedia: () => media,
+    matchMedia,
     requestAnimationFrame, cancelAnimationFrame, setTimeout, clearTimeout,
     scrollTo(options, y) {
       const requested = typeof options === 'number' ? y : options.top;
@@ -348,7 +365,7 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
   runInNewContext(source, {
     window, document, console, URL, Element, HTMLElement: Element, CustomEvent,
     location, history, performance: { now: () => now },
-    matchMedia: () => media, getComputedStyle,
+    matchMedia, getComputedStyle,
     requestAnimationFrame, cancelAnimationFrame, setTimeout, clearTimeout,
     ResizeObserver: class {
       constructor(callback) { this.callback = callback; this.targets = new Set(); resizeObservers.push(this); }
@@ -391,7 +408,7 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
   }
   advance(32);
   return {
-    html, body, window, document, chapters, panels, journalPanels, about, journal, series, archive, navLinks, searchForm, input, media, header, progress, progressCurrent,
+    html, body, window, document, chapters, panels, journalPanels, about, journal, series, archive, navLinks, searchForm, input, media, pointerMedia, header, progress, progressCurrent,
     runway, viewport, track, progressTrack, progressRail, progressMarker, progressHitbox, heroHeading, scrolls, innerScrolls, chapterEvents, interactionEvents, historyEntries, domWrites,
     get top() { return scrollY; },
     get step() { return panelStep(); },
@@ -470,34 +487,48 @@ await test('only the opening wheel snaps to About and its momentum tail cannot s
 
 await test('the layered entrance lasts 900ms, pulses only in the middle, and returns in 680ms', () => {
   const site = browser();
+  assert.equal(site.header.inert, true, 'the hidden header cannot receive keyboard focus on the hero');
   site.wheel(60);
   assert.equal(site.html.classList.contains('is-chapter-entering'), true);
   assert.equal(site.html.classList.contains('is-chapter-leaving'), false);
   assert.equal(Number(site.html.style.getPropertyValue('--chapter-transition-phase')), 0);
   assert.equal(site.chapterEvents.at(-1).entranceGlow, 0);
-  site.advance(450);
+  assert.equal(site.header.inert, true);
+  site.advance(200);
+  assert.equal(site.html.classList.contains('is-content'), true, 'the camera reaches content before the header layers finish');
+  assert.equal(site.header.inert, true, 'transparent header controls stay outside keyboard navigation after the content threshold');
+  site.advance(250);
   assert.equal(Number(site.html.style.getPropertyValue('--chapter-transition-phase')), 0.5);
+  assert.equal(site.header.inert, true, 'the partly assembled header remains inaccessible');
   assert.ok(site.chapterEvents.at(-1).entranceGlow > 0.95);
   assert.ok(Math.abs(Number(site.html.style.getPropertyValue('--chapter-entrance-glow')) - site.chapterEvents.at(-1).entranceGlow) < 0.00001);
   assert.equal(site.progress.classList.contains('is-chapter-moving'), false);
   assert.equal(site.progressMarker.classList.contains('is-arriving'), false, 'the layered entrance does not also flash the ruler');
   site.advance(449);
   assert.equal(site.html.classList.contains('is-chapter-entering'), true, 'the entrance is still running immediately before its deadline');
+  assert.equal(site.header.inert, true, 'the header waits for the complete layered entrance');
   assert.equal(site.chapterEvents.at(-1).entranceGlow, 0, 'the pulse has faded before the final pose');
   site.advance(1);
   assert.equal(site.top, site.destination('about'));
   assert.equal(site.html.classList.contains('is-chapter-entering'), false);
   assert.equal(site.html.classList.contains('is-chapter-transitioning'), false);
   assert.equal(Number(site.html.style.getPropertyValue('--chapter-transition-phase')), 0);
+  assert.equal(site.header.inert, false, 'finishing the entrance restores the header controls');
 
   const returnEvents = site.chapterEvents.length;
   site.wheel(-60);
   assert.equal(site.html.classList.contains('is-chapter-leaving'), true);
-  site.advance(679);
+  assert.equal(site.header.inert, true, 'returning to the hero immediately removes the header from keyboard navigation');
+  site.advance(80);
+  assert.equal(site.html.classList.contains('is-content'), true, 'the header gate also applies before the returning camera leaves content');
+  assert.equal(site.header.inert, true);
+  site.advance(599);
   assert.equal(site.html.classList.contains('is-chapter-leaving'), true);
+  assert.equal(site.header.inert, true);
   site.advance(1);
   assert.equal(site.top, 0);
   assert.equal(site.html.classList.contains('is-chapter-leaving'), false);
+  assert.equal(site.header.inert, true, 'the returned hero keeps the hidden header inaccessible');
   assert.ok(site.chapterEvents.slice(returnEvents).every(event => event.entranceGlow === 0), 'returning to the hero never emits an entrance pulse');
   assert.ok(site.chapterEvents.every(event => event.entranceGlow >= 0 && event.entranceGlow <= 1));
   site.advance(32);
@@ -542,6 +573,7 @@ await test('entrance glow continues after scene progress reaches one, while cont
     assert.equal(immediate.html.classList.contains('is-chapter-leaving'), false);
     assert.equal(entranceShift(immediate), 0, 'instant navigation has no side-entry displacement');
     assert.equal(immediate.viewport.inert, false);
+    assert.equal(immediate.header.inert, false, 'direct hash and reduced-motion content have immediately usable header controls');
     assert.ok(immediate.chapterEvents.every(event => event.entranceGlow === 0), 'hash restoration and reduced motion do not play the layered effect');
   }
 });
@@ -552,6 +584,7 @@ await test('hash jumps, reduced motion, resize and page lifecycle clear an activ
     site.click(site.link('#archive'));
     site.advance(400);
     assert.ok(site.chapterEvents.at(-1).entranceGlow > 0.8);
+    assert.equal(site.header.inert, true, `${interruption} starts while header interaction is suspended`);
     const stoppedAt = site.top;
     const eventCount = site.chapterEvents.length;
     if (interruption === 'hash') site.hash('#series');
@@ -571,7 +604,10 @@ await test('hash jumps, reduced motion, resize and page lifecycle clear an activ
     assert.equal(Number(site.html.style.getPropertyValue('--chapter-transition-phase')), 0, interruption);
     assert.equal(Number(site.html.style.getPropertyValue('--chapter-entrance-glow')), 0, interruption);
     assert.equal(entranceShift(site), 0, `${interruption} clears the side-entry displacement`);
-    if (['hash', 'reduced', 'resize'].includes(interruption)) assert.equal(site.viewport.inert, false, `${interruption} restores content interaction`);
+    if (['hash', 'reduced', 'resize'].includes(interruption)) {
+      assert.equal(site.viewport.inert, false, `${interruption} restores content interaction`);
+      assert.equal(site.header.inert, false, `${interruption} restores header interaction without waiting for an abandoned animation`);
+    }
     assert.equal(site.chapterEvents.at(-1).entranceGlow, 0, `${interruption} notifies the renderer immediately`);
     if (['reduced', 'hidden', 'pagehide'].includes(interruption)) {
       for (const panel of site.panels) assertFlatDepth(panel, `${interruption} also clears the interrupted hero plane transform`);
@@ -584,6 +620,15 @@ await test('hash jumps, reduced motion, resize and page lifecycle clear an activ
     assert.equal(site.pendingFrames, 0);
     assert.ok(site.chapterEvents.slice(eventCount).every(event => event.entranceGlow === 0), `${interruption} does not replay the cleared pulse`);
     assert.equal(site.url.searchParams.get('q'), 'space');
+    if (interruption === 'hidden') {
+      site.document.hidden = false;
+      site.event('visibilitychange');
+    }
+    if (interruption === 'pagehide') site.event('pageshow');
+    site.advance(32);
+    assert.equal(site.header.inert, false, `${interruption} leaves the resumed content header usable`);
+    assert.equal(site.html.classList.contains('is-chapter-entering'), false);
+    assert.equal(site.html.classList.contains('is-chapter-leaving'), false);
   }
 });
 
@@ -609,6 +654,7 @@ await test('reversing or retargeting a hero transition preserves the visible pha
   assert.deepEqual([depthState(site.about), depthState(site.series)], enteringDepth, 'reversing preserves each complete rigid-plane pose');
   assert.equal(entranceShift(site), enteringShift, 'reversing preserves the actual side-entry position');
   assert.equal(site.viewport.inert, true, 'reversing cannot activate panels in transit');
+  assert.equal(site.header.inert, true, 'reversing cannot activate partly assembled header controls');
   assert.equal(site.chapterEvents.at(-1).entranceGlow, 0);
   site.advance(180);
   const leavingVisual = visualPhase(site);
@@ -623,6 +669,7 @@ await test('reversing or retargeting a hero transition preserves the visible pha
   assert.equal(site.top, leavingScroll);
   assert.deepEqual([depthState(site.about), depthState(site.series)], leavingDepth, 're-entry resumes the exact partially returned panel pose');
   assert.equal(entranceShift(site), leavingShift, 're-entry also preserves its side-entry displacement');
+  assert.equal(site.header.inert, true, 're-entry does not release the header between directions');
   site.advance(690);
   assert.equal(site.top, site.destination('about'));
   assert.equal(site.document.activeElement, site.about);
@@ -630,6 +677,7 @@ await test('reversing or retargeting a hero transition preserves the visible pha
   assert.equal(site.url.searchParams.get('q'), 'space');
   assert.ok(site.chapterEvents.slice(reversalEvents).every(event => event.entranceGlow === 0), 'an interrupted entrance never flashes a new pulse at its midpoint');
   assert.equal(site.html.classList.contains('is-chapter-entering'), false);
+  assert.equal(site.header.inert, false, 'the resumed entrance restores header interaction when finished');
   site.advance(32);
   assert.equal(site.pendingFrames, 0);
 
@@ -647,6 +695,7 @@ await test('reversing or retargeting a hero transition preserves the visible pha
   assert.equal(retargeted.top, previousScroll);
   assert.deepEqual(retargeted.panels.map(depthState), previousDepth, 'retargeting unfinished entrance layers preserves each current panel pose');
   assert.equal(entranceShift(retargeted), previousShift, 'retargeting does not restart the side slide');
+  assert.equal(retargeted.header.inert, true, 'retargeting content during Hero travel keeps the header suspended');
   assert.equal(retargeted.wheel(120).defaultPrevented, true, 'the unfinished layered entrance still absorbs wheel momentum');
   retargeted.advance(599);
   assert.equal(retargeted.html.classList.contains('is-chapter-entering'), true);
@@ -759,6 +808,29 @@ function depthState(node) {
   };
 }
 
+function parallaxX(node) {
+  return 0 + parseFloat(revealUnit(node).style.getPropertyValue('--chapter-parallax-x'));
+}
+
+function layerOffset(node) {
+  const value = node.style.getPropertyValue('translate');
+  if (!value) return [0, 0];
+  const match = value.startsWith('calc(')
+    ? value.match(/^calc\(var\(--chapter-entrance-x, 0px\) \+ ([-\d.]+)px\) ([-\d.]+)px$/)
+    : value.match(/^([-\d.]+)px ([-\d.]+)px$/);
+  assert.ok(match, `unexpected interface translation: ${value}`);
+  return match.slice(1).map(Number);
+}
+
+function interfaceOffsets(site) {
+  return [site.track, site.header, site.progress].map(layerOffset);
+}
+
+function movePointer(site, target, properties = {}) {
+  return site.event('pointermove', { target, pointerType: 'mouse', pointerId: 9, isPrimary: true,
+    buttons: 0, clientX: site.window.innerWidth, clientY: site.window.innerHeight, ...properties });
+}
+
 function entranceShift(site) {
   return parseFloat(site.track.style.getPropertyValue('--chapter-entrance-x'));
 }
@@ -816,6 +888,20 @@ function projectedPanel(site, node, layout) {
     top: Math.min(...points.map(point => point.y)), bottom: Math.max(...points.map(point => point.y)), points };
 }
 
+function assertOnOwnerPlane(site, copy, owner) {
+  const layout = panelLayout(copy);
+  const ownerLayout = panelLayout(owner);
+  for (const key of ['yaw', 'z', 'shift', 'span']) {
+    assert.equal(depthState(copy)[key], depthState(owner)[key], `${key} belongs to this text's own surface`);
+  }
+  assert.deepEqual(cameraOffset(copy), cameraOffset(owner), 'text and owner use the same viewport camera');
+  for (const [x, y] of [[0, 0], [layout.width, 0], [layout.width, layout.height], [0, layout.height]]) {
+    const actual = projectedPoint(site, copy, layout, x, y);
+    const expected = projectedPoint(site, owner, ownerLayout, x + layout.left - ownerLayout.left, y + layout.top - ownerLayout.top);
+    assert.ok(Math.hypot(actual.x - expected.x, actual.y - expected.y) < 0.003, 'each text corner lies on the correct extended owner plane');
+  }
+}
+
 function revealThresholds(site, chapter) {
   const visibleWidth = Math.min(revealUnit(chapter).offsetWidth, site.window.innerWidth);
   const enter = Math.min(80, visibleWidth * 0.1);
@@ -841,6 +927,138 @@ function moveToVisiblePixels(site, chapter, visibleWidth, side = 'right') {
   }
   site.jump(target);
 }
+
+await test('internal parallax rests at each chapter stop and moves every card together with bounded reversible travel', () => {
+  for (const viewportWidth of [1200, 600]) {
+    const limit = viewportWidth <= 720 ? 5 : 12;
+    const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true, viewportWidth });
+    const { main, sidebar, stacked, heading, nestedHeading } = site.journalPanels;
+    const cards = [main, sidebar, stacked];
+    for (const id of ['series', 'journal', 'archive']) {
+      site.hash(`#${id}`);
+      const chapterCards = site[id].querySelectorAll('.chapter-panel');
+      assert.ok(chapterCards.length > 0);
+      assert.ok(chapterCards.every(card => parallaxX(card) === 0), `${id}: its authored reading position has no internal offset`);
+    }
+    const sample = offset => {
+      site.jump(site.destination('journal') + site.step * offset);
+      const values = cards.map(parallaxX);
+      assert.ok(values.every(value => Number.isFinite(value) && Math.abs(value) <= limit));
+      assert.deepEqual(values, Array(cards.length).fill(values[0]), 'asymmetric main, sidebar and stacked cards share their chapter reading stop');
+      return values[0];
+    };
+    const before = sample(-0.5);
+    assert.ok(before < 0 && before > -limit, 'approaching content has an opposite internal offset to its track motion');
+    assert.equal(sample(0), 0);
+    const after = sample(0.5);
+    assert.equal(after, -before, 'equal distances either side of the stop produce opposite internal offsets');
+    assert.equal(sample(-0.5), before, 'reversal restores exactly the same internal pose');
+    assert.equal(sample(-1), -limit);
+    assert.equal(sample(1), limit);
+    for (const node of [site.html, site.track, site.about, revealUnit(site.about), heading, nestedHeading]) {
+      assert.equal(node.style.getPropertyValue('--chapter-parallax-x'), '', 'About, outside headings and ancestors do not receive an internal parallax variable');
+    }
+  }
+});
+
+await test('internal parallax shares the existing scroll frame and stays still during native vertical reading', () => {
+  const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true });
+  site.jump(site.destination('journal') - site.step * 0.3);
+  site.advance(1200);
+  const { main, sidebar, stacked } = site.journalPanels;
+  const allowed = new Set([revealUnit(site.series), main, sidebar, stacked, revealUnit(site.archive)]);
+  const before = { reads: site.layoutReads, frames: site.requestedFrames, scrolls: site.scrolls.length, writes: site.domWrites.length };
+  site.wheel(120);
+  site.advance(1000);
+  const writes = site.domWrites.slice(before.writes).filter(write => write.name === '--chapter-parallax-x');
+  assert.ok(writes.length > 0, 'continuous horizontal travel updates internal layers');
+  assert.ok(writes.every(write => allowed.has(write.target)), 'writes stay local to the three eligible chapter surfaces');
+  assert.equal(site.layoutReads, before.reads, 'internal motion uses the existing measured layout');
+  assert.ok(site.requestedFrames - before.frames <= site.scrolls.length - before.scrolls + 1, 'parallax does not start a second animation chain');
+  assert.equal(site.pendingFrames, 0);
+  const pose = [main, sidebar, stacked].map(parallaxX);
+  const horizontal = site.top;
+  const count = site.domWrites.filter(write => write.name === '--chapter-parallax-x').length;
+  const nativeReads = site.layoutReads;
+  site.journal.scrollTop = 120;
+  site.event('scroll', { target: site.journal });
+  site.advance(32);
+  assert.equal(site.journal.scrollTop, 120);
+  assert.equal(site.top, horizontal, 'native reading keeps its horizontal station');
+  assert.deepEqual([main, sidebar, stacked].map(parallaxX), pose, 'reading vertically cannot drift the internal horizontal layers');
+  assert.equal(site.layoutReads, nativeReads);
+  site.event('popstate');
+  site.advance(32);
+  assert.equal(site.domWrites.filter(write => write.name === '--chapter-parallax-x').length, count, 'vertical and stationary updates do not rewrite unchanged internal offsets');
+});
+
+await test('internal parallax clears on motion limits or suspension and resumes correctly across viewport sizes', () => {
+  for (const interruption of ['reduced', 'blocked', 'hidden', 'pagehide']) {
+    const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true });
+    site.jump(site.destination('journal') - site.step * 0.4);
+    site.advance(1200);
+    const cards = [revealUnit(site.series), site.journalPanels.main, site.journalPanels.sidebar, site.journalPanels.stacked, revealUnit(site.archive)];
+    const original = cards.map(parallaxX);
+    assert.ok(original.some(value => Math.abs(value) > 1));
+    if (interruption === 'reduced') { site.media.matches = true; site.media.dispatchEvent({ type: 'change' }); }
+    if (interruption === 'blocked') { site.html.classList.add('is-loading'); site.event('popstate'); site.advance(32); }
+    if (interruption === 'hidden') { site.document.hidden = true; site.event('visibilitychange'); }
+    if (interruption === 'pagehide') site.event('pagehide');
+    assert.deepEqual(cards.map(parallaxX), Array(cards.length).fill(0), `${interruption} clears every internal offset`);
+    const settled = { frames: site.requestedFrames, reads: site.layoutReads };
+    site.advance(1200);
+    assert.equal(site.requestedFrames, settled.frames, `${interruption} leaves no independent parallax loop`);
+    assert.equal(site.layoutReads, settled.reads);
+    if (interruption === 'reduced') { site.media.matches = false; site.media.dispatchEvent({ type: 'change' }); }
+    if (interruption === 'blocked') { site.html.classList.remove('is-loading'); site.event('popstate'); site.advance(32); }
+    if (interruption === 'hidden') { site.document.hidden = false; site.event('visibilitychange'); }
+    if (interruption === 'pagehide') site.event('pageshow');
+    assert.deepEqual(cards.map(parallaxX), original, `${interruption} resumes at the original reading coordinate`);
+  }
+  const responsive = browser({ url: 'https://gudu.blog/#journal' });
+  responsive.jump(responsive.destination('journal') + responsive.step * 0.5);
+  const desktop = parallaxX(responsive.journal);
+  responsive.resizeWidth(600);
+  assert.ok(Math.abs(parallaxX(responsive.journal) - desktop * 5 / 12) < 0.001, 'compact screens retain the same travel phase at a gentler amplitude');
+  responsive.resizeWidth(1200);
+  assert.equal(parallaxX(responsive.journal), desktop, 'restoring viewport size restores the original fractional pose');
+  const reduced = browser({ reduced: true, url: 'https://gudu.blog/#journal' });
+  assert.ok([reduced.series, reduced.journal, reduced.archive].every(chapter => parallaxX(chapter) === 0), 'a reduced-motion deep link starts without offset even on neighboring panels');
+});
+
+await test('Hero travel gives internal layers the same coordinate as ordinary scrolling without a docking jump', () => {
+  const hero = browser({ multiPanels: true });
+  const cards = [revealUnit(hero.series), hero.journalPanels.main, hero.journalPanels.sidebar, hero.journalPanels.stacked, revealUnit(hero.archive)];
+  assert.deepEqual(cards.map(parallaxX), Array(cards.length).fill(0), 'the hero starts with internal layers neutral');
+  hero.click(hero.link('#journal'));
+  hero.advance(600);
+  assert.equal(hero.html.classList.contains('is-chapter-entering'), true);
+  const shifted = parallaxX(hero.journal);
+  assert.ok(shifted < 0 && shifted > -12, 'the destination is still assembling toward its reading stop');
+  const reference = browser({ url: 'https://gudu.blog/#journal', multiPanels: true });
+  reference.jump(reference.destination('about') - hero.x - entranceShift(hero));
+  assert.ok(Math.abs(parallaxX(reference.journal) - shifted) <= 0.001, 'Hero side displacement participates in the ordinary internal-motion coordinate');
+  const reversing = cards.map(parallaxX);
+  hero.key('Home');
+  assert.deepEqual(cards.map(parallaxX), reversing, 'reversal preserves all current internal layers');
+  hero.advance(80);
+  const returning = cards.map(parallaxX);
+  hero.click(hero.link('#journal'));
+  assert.deepEqual(cards.map(parallaxX), returning, 're-entry resumes the same internal offset');
+  const before = { reads: hero.layoutReads, frames: hero.requestedFrames, scrolls: hero.scrolls.length };
+  hero.advance(1000);
+  assert.equal(parallaxX(hero.journal), 0, 'finishing Hero entry reaches the authored reading position');
+  assert.equal(hero.html.classList.contains('is-chapter-entering'), false);
+  assert.equal(hero.layoutReads, before.reads);
+  assert.ok(hero.requestedFrames - before.frames <= hero.scrolls.length - before.scrolls + 1);
+  hero.event('popstate');
+  hero.advance(32);
+  assert.equal(parallaxX(hero.journal), 0, 'the next ordinary update does not change the docking endpoint');
+  hero.click(hero.link('#home'));
+  hero.advance(1000);
+  assert.deepEqual(cards.map(parallaxX), Array(cards.length).fill(0), 'return completion clears all internal offsets');
+  assert.equal(hero.pendingFrames, 0);
+});
 
 await test('panel reveal thresholds have hysteresis and leave CSS to finish the sequence after scrolling stops', () => {
   const site = browser({ url: 'https://gudu.blog/#about' });
@@ -875,6 +1093,296 @@ await test('panel reveal thresholds have hysteresis and leave CSS to finish the 
   assert.equal(revealState(chapter).open, true);
   assert.equal(revealState(chapter).scanning, true);
   assert.equal(scanWrites().length, scanCount, 'reversing a close keeps the original one-shot scan class without removing or readding it');
+});
+
+await test('whole-interface mouse parallax coalesces samples and moves only three parent layers before coming to rest', () => {
+  const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true });
+  site.advance(1600);
+  const { main, nestedHeading, heading, intro } = site.journalPanels;
+  const snapshot = () => ({ top: site.top, x: site.x, marker: site.markerX, url: site.url.href,
+    depth: depthState(main), camera: cameraOffset(main), scrollOffset: parallaxX(main),
+    heading: depthState(heading), intro: depthState(intro), scrolls: site.scrolls.length,
+    events: site.interactionEvents.length });
+  const before = snapshot();
+  const reads = site.layoutReads;
+  const frames = site.requestedFrames;
+  const writes = site.domWrites.length;
+  for (let index = 0; index < 30; index++) {
+    assert.equal(movePointer(site, index % 2 ? main : nestedHeading).defaultPrevented, false);
+  }
+  assert.equal(site.pendingFrames, 1);
+  assert.equal(site.requestedFrames - frames, 1, 'a burst shares one update frame');
+  assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]]);
+  site.advance(16);
+  const first = layerOffset(site.track);
+  assert.ok(first[0] > 0 && first[0] < 8 && first[1] > 0 && first[1] < 5);
+  site.advance(1000);
+  assert.deepEqual(interfaceOffsets(site), [[8, 5], [4, 2.5], [3, 2]]);
+  assert.deepEqual(snapshot(), before, 'parent translation does not change rail geometry, panel projection or internal scroll offsets');
+  assert.equal(site.layoutReads, reads);
+  assert.equal(site.pendingFrames, 0);
+  assert.ok(site.domWrites.slice(writes).every(write => [site.track, site.header, site.progress].includes(write.target)
+    && write.kind === 'style' && write.name === 'translate'), 'mouse frames write only the three composed parents');
+  for (const node of [...site.panels, heading, intro, nestedHeading, site.html]) {
+    assert.equal(node.style.getPropertyValue('--chapter-pointer-x'), '');
+    assert.equal(node.style.getPropertyValue('translate'), '', 'all content follows its parent with no independent mouse offset');
+  }
+  const settled = { frames: site.requestedFrames, writes: site.domWrites.length };
+  site.advance(1800);
+  assert.deepEqual({ frames: site.requestedFrames, writes: site.domWrites.length }, settled);
+  for (const target of [site.body, site.header, site.progress, heading]) {
+    site.event('pointerout', { target: main, relatedTarget: target });
+    movePointer(site, target);
+    site.advance(32);
+    assert.deepEqual(interfaceOffsets(site), [[8, 5], [4, 2.5], [3, 2]], 'blank space, HUDs and loose text share one continuous mouse field');
+  }
+  movePointer(site, site.body, { clientX: -100, clientY: -100 });
+  site.advance(1100);
+  assert.deepEqual(interfaceOffsets(site), [[-8, -5], [-4, -2.5], [-3, -2]]);
+  site.event('pointerout', { target: site.body, relatedTarget: null });
+  assert.equal(layerOffset(site.track)[0], -8, 'actually leaving the window starts a soft return');
+  site.advance(32);
+  assert.ok(layerOffset(site.track)[0] > -8 && layerOffset(site.track)[0] < 0);
+  site.advance(1000);
+  assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]]);
+  for (const node of [site.track, site.header, site.progress]) assert.equal(node.style.getPropertyValue('translate'), '', 'rest clears inline translation, restoring CSS entrance ownership');
+  assert.equal(site.pendingFrames, 0);
+  assert.equal(site.layoutReads, reads);
+});
+
+await test('ordinary presses and search editing freeze the entire interface without moving hit targets', () => {
+  const site = browser({ url: 'https://gudu.blog/#about' });
+  movePointer(site, site.header);
+  site.advance(1000);
+  const frozen = interfaceOffsets(site);
+  const reads = site.layoutReads;
+  site.event('pointerdown', { target: site.header, pointerType: 'mouse', button: 0, isPrimary: true });
+  movePointer(site, site.body, { clientX: 0, clientY: 0, buttons: 1 });
+  site.advance(500);
+  assert.deepEqual(interfaceOffsets(site), frozen);
+  assert.equal(site.pendingFrames, 0);
+  site.input.focus();
+  site.event('focusin', { target: site.input });
+  site.event('pointerup', { target: site.input, pointerType: 'mouse', isPrimary: true });
+  site.input.value = 'space';
+  for (const target of [site.body, site.header]) movePointer(site, target, { clientX: 0, clientY: 0 });
+  site.event('pointerout', { target: site.header, relatedTarget: null });
+  site.advance(500);
+  assert.deepEqual(interfaceOffsets(site), frozen, 'editing keeps search controls still, even if the mouse leaves');
+  assert.equal(site.document.activeElement, site.input);
+  assert.equal(site.input.value, 'space');
+  assert.equal(site.pendingFrames, 0);
+  site.document.activeElement = site.body;
+  site.event('focusout', { target: site.input });
+  site.advance(1000);
+  assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]]);
+  movePointer(site, site.body);
+  site.advance(1000);
+  assert.deepEqual(interfaceOffsets(site), frozen, 'fresh input resumes after editing ends');
+  site.event('pointerdown', { target: site.header, pointerType: 'mouse', button: 0 });
+  site.event('pointerout', { target: site.header, relatedTarget: null });
+  // An ordinary press released outside the browser may have no pointerup.
+  movePointer(site, site.body, { clientX: 0, clientY: 0, buttons: 0 });
+  site.advance(1000);
+  assert.deepEqual(interfaceOffsets(site), [[-8, -5], [-4, -2.5], [-3, -2]], 'a released mouse sample recovers from a missed pointerup');
+  assert.equal(site.layoutReads, reads);
+});
+
+await test('translated ruler presses and drags preserve exact coordinates while its layer stays frozen', () => {
+  for (const operation of ['click', 'drag', 'remeasured-click']) {
+    const site = browser({ url: 'https://gudu.blog/#about' });
+    movePointer(site, site.body, { clientX: site.window.innerWidth * 0.7021, clientY: 500 });
+    site.advance(1000);
+    const frozen = interfaceOffsets(site);
+    const navX = frozen[2][0];
+    assert.notEqual(navX, 0);
+    if (operation === 'remeasured-click') {
+      site.input.focus();
+      site.event('focusin', { target: site.input });
+      site.event('site:revealed'); // measure while editing preserves the actual shifted ruler.
+      assert.deepEqual(interfaceOffsets(site), frozen);
+    }
+    const reads = site.layoutReads;
+    const before = site.top;
+    const initialMarker = site.rulerLeft + navX + site.markerX;
+    const destination = 1.413;
+    const pressedX = operation === 'drag' ? initialMarker + 9
+      : site.rulerLeft + navX + (destination + 0.5) / 4 * site.rulerWidth;
+    markerPointer(site, 'pointerdown', pressedX, { target: operation === 'drag' ? site.progressHitbox : site.progressRail });
+    assert.deepEqual(interfaceOffsets(site), frozen, 'stop and focus cannot reset a pressed ruler');
+    assert.equal(site.top, before, 'pressing cannot jump the document before a drag or release');
+    movePointer(site, site.header, { clientX: 0, clientY: 0, buttons: 1 });
+    site.advance(200);
+    assert.deepEqual(interfaceOffsets(site), frozen);
+    if (operation === 'drag') {
+      const end = pressedX + site.rulerWidth * 0.31;
+      markerPointer(site, 'pointermove', end);
+      site.advance(32);
+      assert.deepEqual(interfaceOffsets(site), frozen, 'drag updates keep all interface layers at the grabbed pose');
+      assert.ok(Math.abs(site.rulerLeft + navX + site.markerX - (end - 9)) < 0.001, 'the visual marker preserves the initial grabbed point');
+      markerPointer(site, 'pointerup', end);
+      assert.ok(Math.abs(site.top - (site.destination('about') + site.step * 1.24)) < 0.00001);
+    } else {
+      markerPointer(site, 'pointerup', pressedX);
+      site.advance(700);
+      assert.ok(Math.abs(site.top - (site.destination('about') + site.step * destination)) < 0.00001, 'rail click uses its translated visual origin, including after measurement');
+    }
+    assert.equal(site.progressMarker.hasPointerCapture(7), false);
+    assert.equal(site.layoutReads, reads, 'mapping and dragging use cached ruler bounds');
+    site.advance(1100);
+    assert.equal(site.pendingFrames, 0);
+    movePointer(site, site.body, { clientX: 0, clientY: 0 });
+    site.advance(1000);
+    assert.deepEqual(interfaceOffsets(site), [[-8, -5], [-4, -2.5], [-3, -2]], 'normal mouse movement resumes after release');
+  }
+});
+
+await test('interrupted translated ruler drags clear the frozen pose and cannot leave a queued scrub behind', () => {
+  for (const action of ['capture-lost', 'escape', 'reduced', 'coarse']) {
+    const site = browser({ url: 'https://gudu.blog/#about' });
+    movePointer(site, site.body);
+    site.advance(1000);
+    const start = site.rulerLeft + layerOffset(site.progress)[0] + site.markerX;
+    markerPointer(site, 'pointerdown', start);
+    markerPointer(site, 'pointermove', start + site.rulerWidth / 16);
+    site.advance(32);
+    const stoppedAt = site.top;
+    markerPointer(site, 'pointermove', start + site.rulerWidth / 8);
+    assert.equal(site.pendingFrames, 1);
+    if (action === 'capture-lost') {
+      site.progressMarker.releasePointerCapture(7);
+      site.event('lostpointercapture', { target: site.progressMarker, pointerId: 7 });
+    }
+    if (action === 'escape') assert.equal(site.key('Escape', { target: site.progressMarker }).defaultPrevented, true);
+    if (action === 'reduced') { site.media.matches = true; site.media.dispatchEvent({ type: 'change' }); }
+    if (action === 'coarse') { site.pointerMedia.matches = false; site.pointerMedia.dispatchEvent({ type: 'change' }); }
+    assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]], action);
+    assert.equal(site.progressMarker.hasPointerCapture(7), false);
+    assert.equal(site.progress.classList.contains('is-scrubbing'), false);
+    assert.equal(site.pendingFrames, 0, 'the pending drag sample is discarded');
+    markerPointer(site, 'pointermove', 10000);
+    site.advance(1000);
+    assert.equal(site.top, stoppedAt, action);
+    if (action === 'reduced') { site.media.matches = false; site.media.dispatchEvent({ type: 'change' }); }
+    if (action === 'coarse') { site.pointerMedia.matches = true; site.pointerMedia.dispatchEvent({ type: 'change' }); }
+    movePointer(site, site.body);
+    site.advance(1000);
+    assert.deepEqual(interfaceOffsets(site), [[8, 5], [4, 2.5], [3, 2]], 'fresh mouse movement resumes after interruption');
+    assert.equal(site.pendingFrames, 0);
+  }
+});
+
+await test('whole-interface mouse parallax excludes unsupported devices and unavailable scenes', () => {
+  for (const properties of [{ pointerType: 'touch' }, { pointerType: 'pen' }, { buttons: 1 }, { isPrimary: false }]) {
+    const site = browser({ url: 'https://gudu.blog/#about' });
+    movePointer(site, site.body);
+    site.advance(48);
+    assert.ok(layerOffset(site.track)[0] > 0);
+    movePointer(site, site.body, properties);
+    assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]]);
+    assert.equal(site.pendingFrames, 0, JSON.stringify(properties));
+  }
+  for (const state of ['coarse', 'narrow', 'reduced', 'loading', 'menu', 'home']) {
+    const site = browser({ url: 'https://gudu.blog/#' + (state === 'home' ? 'home' : 'about'),
+      finePointer: state !== 'coarse', reduced: state === 'reduced', viewportWidth: state === 'narrow' ? 720 : 1200 });
+    if (state === 'loading') site.html.classList.add('is-loading');
+    if (state === 'menu') site.body.dataset.menuOpen = 'true';
+    const before = { frames: site.requestedFrames, reads: site.layoutReads };
+    movePointer(site, site.body);
+    site.advance(1000);
+    assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]], state);
+    assert.equal(site.requestedFrames, before.frames, state);
+    assert.equal(site.layoutReads, before.reads);
+  }
+});
+
+await test('scroll input clears whole-interface offsets without losing pending updates or Hero composition', () => {
+  for (const action of ['external', 'wheel', 'keyboard', 'native']) {
+    const site = browser({ url: 'https://gudu.blog/#' + (action === 'native' ? 'journal' : 'series') });
+    const panel = site.panels[action === 'native' ? 2 : 1];
+    movePointer(site, site.body);
+    site.advance(48);
+    const start = site.top;
+    const reads = site.layoutReads;
+    if (action === 'external') {
+      site.window.scrollTo({ top: start + 123, behavior: 'instant' });
+      assert.equal(site.pendingFrames, 1);
+      site.event('focusin', { target: panel });
+      assert.equal(site.pendingFrames, 1, 'mouse reset must retain a queued navigation update');
+    }
+    if (action === 'wheel') assert.equal(site.wheel(120, { target: panel }).defaultPrevented, true);
+    if (action === 'keyboard') assert.equal(site.key('ArrowRight', { target: panel }).defaultPrevented, true);
+    if (action === 'native') {
+      assert.equal(site.wheel(100, { target: panel }).defaultPrevented, false);
+      site.journal.scrollTop = 100;
+      site.event('scroll', { target: site.journal });
+    }
+    assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]]);
+    site.advance(1200);
+    assert.equal(site.top, start + ({ external: 123, wheel: 120, keyboard: 100, native: 0 })[action]);
+    assert.equal(site.x, -(site.top - site.destination('about')));
+    assert.equal(site.journal.scrollTop, action === 'native' ? 100 : 0);
+    assert.equal(site.pendingFrames, 0);
+    assert.equal(site.layoutReads, reads);
+    if (action !== 'native') assert.notEqual(parallaxX(panel), 0, 'independent scroll parallax continues');
+  }
+  const hero = browser({ url: 'https://gudu.blog/#about' });
+  movePointer(hero, hero.body);
+  hero.advance(1000);
+  assert.match(hero.track.style.getPropertyValue('translate'), /^calc\(var\(--chapter-entrance-x, 0px\) \+ 8\.000px\)/, 'the moved parent composes with Hero displacement');
+  hero.click(hero.link('#home'));
+  assert.equal(hero.track.style.getPropertyValue('translate'), '', 'returning Hero clears inline translate so CSS controls entrance');
+  hero.advance(680);
+  assert.equal(hero.top, 0);
+  hero.wheel(100);
+  hero.advance(450);
+  movePointer(hero, hero.body);
+  assert.ok(entranceShift(hero) > 0, 'the ordinary Hero side entrance still runs');
+  assert.equal(hero.track.style.getPropertyValue('translate'), '');
+  hero.advance(450);
+  assert.equal(hero.top, hero.destination('about'));
+  movePointer(hero, hero.body);
+  hero.advance(1000);
+  assert.deepEqual(interfaceOffsets(hero), [[8, 5], [4, 2.5], [3, 2]]);
+});
+
+await test('whole-interface offsets clear even when frozen across device, layout and page lifecycle changes', () => {
+  for (const action of ['cancel', 'blur', 'resize', 'hidden', 'pagehide', 'reduced', 'coarse', 'touch']) {
+    const site = browser({ url: 'https://gudu.blog/#about' });
+    movePointer(site, site.body);
+    site.advance(48);
+    site.event('pointerdown', { target: site.input, pointerType: 'mouse', button: 0 });
+    site.input.focus();
+    site.event('focusin', { target: site.input });
+    assert.ok(layerOffset(site.track)[0] > 0);
+    if (action === 'cancel') site.event('pointercancel', { pointerId: 9 });
+    if (action === 'blur') site.event('blur');
+    if (action === 'resize') site.resizeWidth(720);
+    if (action === 'hidden') { site.document.hidden = true; site.event('visibilitychange'); }
+    if (action === 'pagehide') site.event('pagehide');
+    if (action === 'reduced') { site.media.matches = true; site.media.dispatchEvent({ type: 'change' }); }
+    if (action === 'coarse') { site.pointerMedia.matches = false; site.pointerMedia.dispatchEvent({ type: 'change' }); }
+    if (action === 'touch') site.event('pointerdown', { target: site.body, pointerType: 'touch', button: 0 });
+    assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]], action);
+    for (const node of [site.track, site.header, site.progress]) assert.equal(node.style.getPropertyValue('translate'), '', action);
+    assert.equal(site.pendingFrames, 0);
+    const reads = site.layoutReads;
+    const frames = site.requestedFrames;
+    site.advance(1100);
+    assert.equal(site.requestedFrames, frames);
+    assert.equal(site.layoutReads, reads);
+    if (action === 'resize') site.resizeWidth(1200);
+    if (action === 'hidden') { site.document.hidden = false; site.event('visibilitychange'); }
+    if (action === 'pagehide') site.event('pageshow');
+    if (action === 'reduced') { site.media.matches = false; site.media.dispatchEvent({ type: 'change' }); }
+    if (action === 'coarse') { site.pointerMedia.matches = true; site.pointerMedia.dispatchEvent({ type: 'change' }); }
+    site.document.activeElement = site.body;
+    site.advance(1100);
+    assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]], 'resume does not replay an obsolete mouse position');
+    movePointer(site, site.body);
+    site.advance(1000);
+    assert.deepEqual(interfaceOffsets(site), [[8, 5], [4, 2.5], [3, 2]], action);
+  }
 });
 
 await test('both exit edges withdraw early, hold through rest and jitter, and restore after a deliberate reversal', () => {
@@ -1404,21 +1912,94 @@ await test('outside headings share their owner plane through reversible perspect
   assert.ok(Math.abs(edgeStates[1].yaw) < Math.abs(edgeStates[0].yaw) && edgeStates[1].z < edgeStates[0].z, 'mobile text follows the gentler mobile perspective');
 });
 
+await test('journal title and intro follow separate surfaces without projecting or revealing their layout wrapper', () => {
+  for (const viewportWidth of [1200, 721, 720, 600]) {
+    const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true, viewportWidth });
+    const { main, sidebar, heading, intro, headingLayout, nestedHeading } = site.journalPanels;
+    assert.equal(site.isObserved(heading), true);
+    assert.equal(site.isObserved(intro), true, 'both text boxes can invalidate their own cached layout');
+    for (const offset of [-0.3, 0, 0.3, -0.3]) {
+      const reads = site.layoutReads;
+      const frames = site.requestedFrames;
+      site.jump(site.destination('journal') + site.step * offset);
+      assert.equal(site.layoutReads, reads, 'independent text planes add no scroll-time geometry reads');
+      assert.ok(site.requestedFrames - frames <= 1);
+      assertOnOwnerPlane(site, heading, main);
+      assertOnOwnerPlane(site, intro, viewportWidth <= 720 ? main : sidebar);
+      if (viewportWidth > 720) {
+        assert.notEqual(depthState(intro).yaw, depthState(heading).yaw, 'the right intro cannot inherit the wide main panel tilt');
+      }
+      for (const copy of [heading, intro]) {
+        assert.equal(copy.style.getPropertyValue('--chapter-parallax-x'), '', 'outer text receives no interior drift');
+        assert.equal(copy.style.getPropertyValue('--chapter-light-left'), '', 'outer text receives no panel material');
+      }
+    }
+    for (const node of [headingLayout, nestedHeading]) {
+      assert.equal(revealState(node).initialized, false, 'layout wrappers and text already inside a panel do not become surfaces');
+      assert.equal(node.style.getPropertyValue('--chapter-depth-yaw'), '');
+      assert.equal(node.style.getPropertyValue('--chapter-camera-x'), '');
+      assert.equal(node.style.getPropertyValue('--chapter-parallax-x'), '');
+      assert.equal(node.inert, false, 'the layout wrapper cannot suppress its independently visible children');
+    }
+  }
+  const travel = browser({ url: 'https://gudu.blog/#about', multiPanels: true });
+  const { heading, intro } = travel.journalPanels;
+  moveToVisiblePixels(travel, heading, revealThresholds(travel, heading).enter + 1);
+  assert.equal(revealState(heading).open, true);
+  assert.equal(revealState(intro).open, false, 'the right intro waits until its own text box enters');
+  moveToVisiblePixels(travel, intro, revealThresholds(travel, intro).enter + 1);
+  assert.equal(revealState(intro).open, true);
+  moveToVisiblePixels(travel, heading, revealThresholds(travel, heading).departure - 1, 'left');
+  assert.equal(revealState(heading).departing, true);
+  assert.equal(revealState(intro).departing, false, 'the right intro does not withdraw with the departing left title');
+});
+
+await test('the journal intro switches its owner at the stacking breakpoint and restores the desktop plane on resize', () => {
+  const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true, viewportWidth: 721 });
+  site.jump(site.destination('journal') - site.step * 0.2);
+  const { main, sidebar, heading, intro } = site.journalPanels;
+  const pose = () => ({ ...depthState(intro), ...cameraOffset(intro),
+    originX: intro.style.getPropertyValue('--chapter-depth-origin-x'),
+    originY: intro.style.getPropertyValue('--chapter-depth-origin-y') });
+  const original = pose();
+  for (const width of [720, 390, 721]) {
+    site.resizeWidth(width);
+    assertOnOwnerPlane(site, heading, main);
+    assertOnOwnerPlane(site, intro, width <= 720 ? main : sidebar);
+    assert.ok(Math.abs((site.top - site.destination('journal')) / site.step + 0.2) < 0.00001, 'changing ownership preserves the horizontal reading coordinate');
+    const frozen = pose();
+    const reads = site.layoutReads;
+    const frames = site.requestedFrames;
+    site.journal.scrollTop = 12;
+    site.event('scroll', { target: site.journal });
+    site.advance(32);
+    assert.equal(site.layoutReads, reads, 'native reading reuses the newly selected owner bounds');
+    assert.ok(site.requestedFrames - frames <= 1);
+    assert.equal(cameraOffset(intro).y, frozen.y + 12);
+    assertOnOwnerPlane(site, intro, width <= 720 ? main : sidebar);
+    site.journal.scrollTop = 0;
+    site.event('scroll', { target: site.journal });
+    site.advance(32);
+    assert.deepEqual(pose(), frozen, 'native reading reversal preserves the selected plane');
+  }
+  assert.deepEqual(pose(), original, 'crossing back above 720px restores the exact original desktop pose and pivot');
+});
+
 await test('outside text perspective resets on reduced motion and page suspension and resumes without a stale pose', () => {
-  for (const interruption of ['reduced', 'hidden', 'pagehide']) {
-    const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true });
-    const { heading } = site.journalPanels;
+  for (const [viewportWidth, interruption] of [1200, 600].flatMap(width => ['reduced', 'hidden', 'pagehide'].map(action => [width, action]))) {
+    const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true, viewportWidth });
+    const { heading, intro, headingLayout } = site.journalPanels;
     site.jump(site.destination('journal') - site.window.innerWidth * 0.4);
-    const pose = () => {
-      const { yaw, z, shift, span } = depthState(heading);
-      return { yaw, z, shift, span, ...cameraOffset(heading) };
-    };
+    const pose = () => [heading, intro].map(copy => {
+      const { yaw, z, shift, span } = depthState(copy);
+      return { yaw, z, shift, span, ...cameraOffset(copy) };
+    });
     const original = pose();
-    assert.ok(original.yaw < 0 && original.z > 0, `${interruption} begins with a visible angled heading`);
+    assert.ok(original.every(copy => copy.yaw < 0 && copy.z > 0), `${interruption} begins with both text parts on their angled planes`);
     if (interruption === 'reduced') { site.media.matches = true; site.media.dispatchEvent({ type: 'change' }); }
     if (interruption === 'hidden') { site.document.hidden = true; site.event('visibilitychange'); }
     if (interruption === 'pagehide') site.event('pagehide');
-    assert.deepEqual(pose(), { yaw: 0, z: 0, shift: 0, span: 1, x: 0, y: 0 }, `${interruption} clears text depth and its camera transform`);
+    assert.deepEqual(pose(), Array(2).fill({ yaw: 0, z: 0, shift: 0, span: 1, x: 0, y: 0 }), `${interruption} clears both independent text planes and cameras`);
     const frames = site.requestedFrames;
     const reads = site.layoutReads;
     site.advance(1600);
@@ -1428,6 +2009,7 @@ await test('outside text perspective resets on reduced motion and page suspensio
     if (interruption === 'hidden') { site.document.hidden = false; site.event('visibilitychange'); }
     if (interruption === 'pagehide') site.event('pageshow');
     assert.deepEqual(pose(), original, `${interruption} resumes the text at its cached screen position`);
+    assert.equal(headingLayout.style.getPropertyValue('--chapter-depth-yaw'), '', 'resuming never turns the layout wrapper into a second projection');
   }
 });
 
@@ -3267,15 +3849,21 @@ await test('top search submission reaches the article panel while preserving inp
   for (const mode of ['animated', 'reduced', 'resize', 'motion-change']) {
     const site = browser({ url: 'https://gudu.blog/?q=space&category=tech#series', reduced: mode === 'reduced' });
     site.journal.scrollTop = 500;
+    site.searchForm.classList.add('is-expanded');
+    site.input.value = 'space';
     site.input.focus();
+    const inputWrites = site.domWrites.length;
     assert.equal(site.header.contains(site.input), true);
     assert.equal(site.journal.contains(site.input), false);
+    assert.equal(site.header.inert, false);
     assert.equal(site.event('submit', { target: site.searchForm }).defaultPrevented, true);
+    assert.equal(site.header.inert, false, 'ordinary search navigation must not apply the Hero header gate');
     if (mode === 'reduced') {
       assert.equal(site.top, site.destination('journal'), 'reduced motion reaches results immediately');
     } else {
       site.advance(100);
       assert.equal(site.document.activeElement, site.input, 'navigation never steals focus from the visible top search field');
+      assert.equal(site.header.inert, false, 'the search field remains interactive while results move into view');
       if (mode === 'resize') site.resizeWidth(600);
       if (mode === 'motion-change') {
         site.media.matches = true;
@@ -3285,6 +3873,11 @@ await test('top search submission reaches the article panel while preserving inp
     site.advance(1000);
     assert.equal(site.top, site.destination('journal'), `${mode} reaches the article panel`);
     assert.equal(site.document.activeElement, site.input, `${mode} retains focus in the header search input`);
+    assert.equal(site.header.inert, false, `${mode} keeps the content header interactive`);
+    assert.ok(site.domWrites.slice(inputWrites).filter(write => write.target === site.header && write.kind === 'inert')
+      .every(write => write.value === false), `${mode} never transiently makes the focused search field inert`);
+    assert.equal(site.searchForm.classList.contains('is-expanded'), true, `${mode} preserves the expanded search form`);
+    assert.equal(site.input.value, 'space', `${mode} preserves the entered query`);
     assert.equal(site.journal.scrollTop, 0, 'search reveals the beginning of the article results');
     assert.equal(site.url.hash, '#journal');
     assert.equal(site.url.searchParams.get('q'), 'space');

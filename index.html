@@ -18,7 +18,7 @@
     <script src="./js/black-hole-theme.js?v=20261023-disk-refinement"></script>
     <link rel="stylesheet" href="./css/style.css?v=20261020-clean-hero" />
     <link rel="stylesheet" href="./css/blog.css?v=20261020-clean-hero" />
-  <link rel="stylesheet" href="./css/chapters.css?v=20261025-hero-content" />
+    <link rel="stylesheet" href="./css/chapters.css?v=20261025-interface-parallax" />
     <link rel="stylesheet" href="./css/about-terminal.css?v=20261025-solid-panels" />
     <link rel="stylesheet" href="./css/chapter-interactions.css?v=20261025-local-feedback" />
     <script src="./js/ink-splatter.js?v=20261020-camera-preserved" defer></script>
@@ -27,7 +27,7 @@
     <script src="./js/main.js?v=20261023-smooth-parallax" defer></script>
     <script src="./js/posts-data.js?v=20261014-1" defer></script>
     <script src="./js/blog.js?v=20261020-search-icon" defer></script>
-    <script src="./js/chapters.js?v=20261025-arc-perspective" defer></script>
+    <script src="./js/chapters.js?v=20261025-interface-parallax" defer></script>
   </head>
   <body class="home-page">
     <a class="skip-link" href="#about">跳到主要内容</a>
@@ -49,7 +49,7 @@
             <button id="clear-search" class="clear-search" type="button" hidden>清除</button>
           </span>
         </form>
-        <a class="header-tool" href="./feed.xml" aria-label="RSS 订阅"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none" /><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16" /></svg><span>RSS</span></a>
+        <a class="header-tool" href="./feed.xml" aria-label="RSS 订阅"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none" /><path class="header-rss-arc" pathLength="1" d="M4 11a9 9 0 0 1 9 9" /><path class="header-rss-arc header-rss-arc-outer" pathLength="1" d="M4 4a16 16 0 0 1 16 16" /></svg><span>RSS</span></a>
       </nav>
     </header>
     <div class="site-loader" id="site-loader" role="status" aria-live="polite">
@@ -216,9 +216,9 @@
         </aside>
       </section>
       <section class="journal-section section-wrap chapter-section" id="journal" aria-labelledby="journal-title" tabindex="-1">
-        <div class="section-heading" data-depth-owner="journal-surface">
-          <div><p class="eyebrow"><span>03</span> LATEST ARTICLES</p><h2 id="journal-title">最新文章<span class="accent">。</span></h2></div>
-          <p class="section-intro">把散落的念头，整理成文字。<br />留一份记录，也留一点回响。</p>
+        <div class="section-heading">
+          <div class="journal-heading-part" data-depth-owner="journal-surface"><p class="eyebrow"><span>03</span> LATEST ARTICLES</p><h2 id="journal-title">最新文章<span class="accent">。</span></h2></div>
+          <p class="section-intro journal-heading-part" data-depth-owner="journal-note" data-depth-owner-compact="journal-surface">把散落的念头，整理成文字。<br />留一份记录，也留一点回响。</p>
         </div>
         <div class="journal-layout">
           <div class="journal-main chapter-panel" id="journal-surface"><span class="chapter-panel-light" aria-hidden="true"></span>
@@ -232,7 +232,7 @@
             <button class="load-more outline-button" id="load-more" type="button" hidden>加载更多文章 <span aria-hidden="true">↓</span></button>
           </div>
           <aside class="journal-sidebar" aria-label="博客介绍与订阅">
-            <div class="sidebar-note chapter-panel"><span class="chapter-panel-light" aria-hidden="true"></span><p class="eyebrow">A SMALL CORNER</p><div class="small-orbit" aria-hidden="true">g<span>.</span></div><h3>留一处，自由书写。</h3><p>在信息的洪流之外，<br />给想法一个慢慢生长的地方。</p><a class="text-link" href="#about">关于这个博客 <span aria-hidden="true">↗</span></a></div>
+            <div class="sidebar-note chapter-panel" id="journal-note"><span class="chapter-panel-light" aria-hidden="true"></span><p class="eyebrow">A SMALL CORNER</p><div class="small-orbit" aria-hidden="true">g<span>.</span></div><h3>留一处，自由书写。</h3><p>在信息的洪流之外，<br />给想法一个慢慢生长的地方。</p><a class="text-link" href="#about">关于这个博客 <span aria-hidden="true">↗</span></a></div>
             <div class="subscribe-note chapter-panel"><span class="chapter-panel-light" aria-hidden="true"></span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16" /></svg><h3>让新文章来找你</h3><p>用 RSS 订阅，在你喜欢的阅读器里，接收下一篇记录。</p><a class="text-link" href="./feed.xml">订阅 RSS <span aria-hidden="true">↗</span></a></div>
           </aside>
         </div>
