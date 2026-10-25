@@ -18,15 +18,16 @@
     <script src="./js/black-hole-theme.js?v=20261023-disk-refinement"></script>
     <link rel="stylesheet" href="./css/style.css?v=20261020-clean-hero" />
     <link rel="stylesheet" href="./css/blog.css?v=20261020-clean-hero" />
-    <link rel="stylesheet" href="./css/chapters.css?v=20261024-about-terminal" />
-    <link rel="stylesheet" href="./css/about-terminal.css?v=20261024-1" />
+  <link rel="stylesheet" href="./css/chapters.css?v=20261025-hero-content" />
+    <link rel="stylesheet" href="./css/about-terminal.css?v=20261025-solid-panels" />
+    <link rel="stylesheet" href="./css/chapter-interactions.css?v=20261025-local-feedback" />
     <script src="./js/ink-splatter.js?v=20261020-camera-preserved" defer></script>
     <script src="./js/particle-sky.js?v=20261020-original-stars" defer></script>
     <script src="./js/black-hole.js?v=20261023-smooth-parallax" defer></script>
     <script src="./js/main.js?v=20261023-smooth-parallax" defer></script>
     <script src="./js/posts-data.js?v=20261014-1" defer></script>
     <script src="./js/blog.js?v=20261020-search-icon" defer></script>
-    <script src="./js/chapters.js?v=20261024-panel-reveals" defer></script>
+    <script src="./js/chapters.js?v=20261025-arc-perspective" defer></script>
   </head>
   <body class="home-page">
     <a class="skip-link" href="#about">跳到主要内容</a>
@@ -145,7 +146,7 @@
         <div class="chapter-viewport" id="chapter-viewport">
           <div class="chapter-track" id="chapter-track">
       <section class="about-section section-wrap chapter-section" id="about" aria-labelledby="about-title" tabindex="-1">
-        <div class="about-copy chapter-panel">
+        <div class="about-copy chapter-panel"><span class="chapter-panel-light" aria-hidden="true"></span>
           <div class="about-panel-top"><p class="eyebrow"><span>01</span> ABOUT ME</p><span class="about-record-label">个人档案 <span aria-hidden="true">/ PROFILE</span></span></div>
           <div class="about-calibration" aria-hidden="true"><span></span><span></span><span></span></div>
           <div class="about-body">
@@ -160,48 +161,52 @@
               </nav>
             </div>
             <div class="about-text">
-              <h2 id="about-title">你好，我是<br /><span class="about-name">Gudu<span class="accent">.</span></span></h2>
-              <div class="about-identity-line" aria-hidden="true"><span></span>IN MY OWN ORBIT</div>
-              <p class="about-lead">这个小小的站点，<br />是我在互联网的一块自留地。</p>
-              <p>在自己的轨道上，记录思考、生活与一切未知。把值得留下的想法写下来，让短暂的瞬间有处可寻。</p>
-              <div class="about-signature"><span class="about-signature-mark" aria-hidden="true">↗</span><p>不急着抵达，先把沿途记下来。</p><span class="about-signature-code" aria-hidden="true">G / 01</span></div>
+              <h2 id="about-title">你好！我是<br /><span class="about-name">Gudu</span></h2>
+              <p class="about-pronunciation"><span>我的名字读作</span><span class="about-chinese-name"><ruby>古<rp>（</rp><rt>gŭ</rt><rp>）</rp></ruby><ruby>渡<rp>（</rp><rt>dù</rt><rp>）</rp></ruby></span></p>
+              <dl class="about-dossier">
+                <div class="about-fact"><dt>现居 <span aria-hidden="true">/ LOCATION</span></dt><dd>澳大利亚</dd></div>
+                <div class="about-fact"><dt>身份 <span aria-hidden="true">/ IDENTITY</span></dt><dd>高中生</dd></div>
+                <div class="about-fact about-fact-wide"><dt>爱好 <span aria-hidden="true">/ OFF DUTY</span></dt><dd>看小说、打游戏和打游戏</dd></div>
+                <div class="about-fact about-fact-wide about-games"><dt>玩的游戏 <span aria-hidden="true">/ GAME LOG</span></dt><dd><ul><li><span aria-hidden="true">01</span><span lang="en">Minecraft</span></li><li><span aria-hidden="true">02</span><span>《刺客信条》系列</span></li><li><span aria-hidden="true">03</span><span>最近几部《塞尔达传说》</span></li></ul></dd></div>
+              </dl>
+              <div class="about-signature about-preference"><span class="about-signature-mark" aria-hidden="true">↗</span><p>最喜欢的类型 <strong>冒险游戏</strong></p><span class="about-signature-code" aria-hidden="true">ADV</span></div>
             </div>
           </div>
         </div>
         <div class="about-connections">
-          <p class="connection-heading"><span>继续探索</span><span aria-hidden="true">EXPLORE / 03</span></p>
-          <a class="connection-card chapter-panel" href="#journal">
+          <p class="connection-heading" data-depth-owner="connection-journal"><span>继续探索</span><span aria-hidden="true">EXPLORE / 03</span></p>
+          <a class="connection-card chapter-panel" id="connection-journal" href="#journal"><span class="chapter-panel-light" aria-hidden="true"></span>
             <div class="connection-card-head"><span class="connection-number" aria-hidden="true">01</span><span class="connection-index" aria-hidden="true">JOURNAL</span><span class="connection-arrow" aria-hidden="true">↗</span></div>
             <span class="connection-rule" aria-hidden="true"></span>
             <h3>最新文章</h3><p>思考、生活，与还未完成的想法。</p><span class="connection-action"><span>阅读文章</span><span class="connection-action-arrow" aria-hidden="true">→</span></span>
           </a>
-          <a class="connection-card chapter-panel" href="#archive">
+          <a class="connection-card chapter-panel" href="#archive"><span class="chapter-panel-light" aria-hidden="true"></span>
             <div class="connection-card-head"><span class="connection-number" aria-hidden="true">02</span><span class="connection-index" aria-hidden="true">ARCHIVE</span><span class="connection-arrow" aria-hidden="true">↗</span></div>
             <span class="connection-rule" aria-hidden="true"></span>
             <h3>时间的切片</h3><p>沿着时间，寻找文字留下的轨迹。</p><span class="connection-action"><span>浏览归档</span><span class="connection-action-arrow" aria-hidden="true">→</span></span>
           </a>
-          <a class="connection-card connection-rss chapter-panel" href="./feed.xml">
+          <a class="connection-card connection-rss chapter-panel" id="connection-rss" href="./feed.xml"><span class="chapter-panel-light" aria-hidden="true"></span>
             <div class="connection-card-head"><span class="connection-number" aria-hidden="true">03</span><span class="connection-index" aria-hidden="true">RSS FEED</span><span class="connection-arrow" aria-hidden="true">↗</span></div>
             <span class="connection-rule" aria-hidden="true"></span>
             <h3>保持连接 <span class="rss-label">RSS</span></h3><p>让下一篇记录，抵达你的阅读器。</p><span class="connection-action"><span>订阅更新</span><span class="connection-action-arrow" aria-hidden="true">→</span></span>
           </a>
-          <p class="connection-footnote"><span aria-hidden="true"></span>一直好奇 · 保持探索</p>
+          <p class="connection-footnote" data-depth-owner="connection-rss"><span aria-hidden="true"></span>一直好奇 · 保持探索</p>
         </div>
       </section>
       <section class="series-section section-wrap chapter-section" id="series" aria-labelledby="series-title" tabindex="-1">
-        <div class="series-main chapter-panel">
-          <p class="eyebrow"><span>02</span> TOPICS</p>
+        <div class="series-main chapter-panel"><span class="chapter-panel-light" aria-hidden="true"></span>
+          <p class="eyebrow"><span>02</span> CATEGORIES</p>
           <h2 id="series-title">沿着一个问题，<br />继续读下去<span class="accent">。</span></h2>
           <div class="series-empty">
             <div class="series-path-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-            <p class="series-empty-label">NO TOPICS YET</p>
-            <h3>专题，还在酝酿</h3>
+            <p class="series-empty-label">NO CATEGORIES YET</p>
+            <h3>分类，还在酝酿</h3>
             <p>这里会把同一主题的记录，<br />整理成一条可以慢慢阅读的路径。</p>
-            <span class="series-empty-status">目前还没有已发布的专题</span>
+            <span class="series-empty-status">目前还没有文章分类</span>
           </div>
           <a class="text-link" href="#journal">从最新的记录开始 <span aria-hidden="true">↗</span></a>
         </div>
-        <aside class="series-guide chapter-panel" aria-label="继续阅读">
+        <aside class="series-guide chapter-panel" aria-label="继续阅读"><span class="chapter-panel-light" aria-hidden="true"></span>
           <p class="eyebrow">FIND YOUR WAY</p>
           <h3>随处开始，<br />慢慢探索。</h3>
           <p class="series-guide-intro">一篇文字，一个切片。<br />在这些入口，找到下一段阅读。</p>
@@ -211,12 +216,12 @@
         </aside>
       </section>
       <section class="journal-section section-wrap chapter-section" id="journal" aria-labelledby="journal-title" tabindex="-1">
-        <div class="section-heading">
+        <div class="section-heading" data-depth-owner="journal-surface">
           <div><p class="eyebrow"><span>03</span> LATEST ARTICLES</p><h2 id="journal-title">最新文章<span class="accent">。</span></h2></div>
           <p class="section-intro">把散落的念头，整理成文字。<br />留一份记录，也留一点回响。</p>
         </div>
         <div class="journal-layout">
-          <div class="journal-main chapter-panel">
+          <div class="journal-main chapter-panel" id="journal-surface"><span class="chapter-panel-light" aria-hidden="true"></span>
             <div class="journal-toolbar"><div class="filter-list" id="filter-list" role="group" aria-label="按分类筛选文章" hidden></div><p class="results-count" id="results-count" role="status" aria-live="polite" hidden></p></div>
             <div class="posts-list" id="posts-list">
               <!-- posts:start -->
@@ -227,19 +232,19 @@
             <button class="load-more outline-button" id="load-more" type="button" hidden>加载更多文章 <span aria-hidden="true">↓</span></button>
           </div>
           <aside class="journal-sidebar" aria-label="博客介绍与订阅">
-            <div class="sidebar-note chapter-panel"><p class="eyebrow">A SMALL CORNER</p><div class="small-orbit" aria-hidden="true">g<span>.</span></div><h3>留一处，自由书写。</h3><p>在信息的洪流之外，<br />给想法一个慢慢生长的地方。</p><a class="text-link" href="#about">关于这个博客 <span aria-hidden="true">↗</span></a></div>
-            <div class="subscribe-note chapter-panel"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16" /></svg><h3>让新文章来找你</h3><p>用 RSS 订阅，在你喜欢的阅读器里，接收下一篇记录。</p><a class="text-link" href="./feed.xml">订阅 RSS <span aria-hidden="true">↗</span></a></div>
+            <div class="sidebar-note chapter-panel"><span class="chapter-panel-light" aria-hidden="true"></span><p class="eyebrow">A SMALL CORNER</p><div class="small-orbit" aria-hidden="true">g<span>.</span></div><h3>留一处，自由书写。</h3><p>在信息的洪流之外，<br />给想法一个慢慢生长的地方。</p><a class="text-link" href="#about">关于这个博客 <span aria-hidden="true">↗</span></a></div>
+            <div class="subscribe-note chapter-panel"><span class="chapter-panel-light" aria-hidden="true"></span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16" /></svg><h3>让新文章来找你</h3><p>用 RSS 订阅，在你喜欢的阅读器里，接收下一篇记录。</p><a class="text-link" href="./feed.xml">订阅 RSS <span aria-hidden="true">↗</span></a></div>
           </aside>
         </div>
       </section>
       <section class="archive-section section-wrap chapter-section" id="archive" aria-labelledby="archive-title" tabindex="-1">
-        <div class="archive-heading chapter-panel"><p class="eyebrow"><span>04</span> THE ARCHIVE</p><h2 id="archive-title">时间的切片<span class="accent">。</span></h2><p>文字有迹，时间有序。</p></div>
-        <div class="archive-list chapter-panel" id="archive-list">
+        <div class="archive-heading chapter-panel"><span class="chapter-panel-light" aria-hidden="true"></span><p class="eyebrow"><span>04</span> THE ARCHIVE</p><h2 id="archive-title">时间的切片<span class="accent">。</span></h2><p>文字有迹，时间有序。</p></div>
+        <div class="archive-list chapter-panel" id="archive-list"><span class="chapter-panel-light" aria-hidden="true"></span>
           <!-- archive:start -->
 <p class="archive-empty">这里将按时间，收好每一篇文章。<span>第一篇，敬请期待。</span></p>
 <!-- archive:end -->
         </div>
-        <footer class="site-footer"><a class="site-brand" href="#home" aria-label="Gudu，返回顶部"><img class="brand-logo" src="./assets/brand/gudu-logo-light.svg?v=20261018-logo" width="56" height="56" alt="GUDU" /></a><p>© 2026 Gudu <span class="footer-divider" aria-hidden="true">/</span> 在自己的轨道上</p><div class="footer-links"><a href="./feed.xml">RSS</a><a href="#home">返回顶部 <span aria-hidden="true">↑</span></a></div></footer>
+        <footer class="site-footer" data-depth-owner="archive-list"><a class="site-brand" href="#home" aria-label="Gudu，返回顶部"><img class="brand-logo" src="./assets/brand/gudu-logo-light.svg?v=20261018-logo" width="56" height="56" alt="GUDU" /></a><p>© 2026 Gudu <span class="footer-divider" aria-hidden="true">/</span> 在自己的轨道上</p><div class="footer-links"><a href="./feed.xml">RSS</a><a href="#home">返回顶部 <span aria-hidden="true">↑</span></a></div></footer>
       </section>
           </div>
         </div>
@@ -254,7 +259,7 @@
       </div>
       <div class="chapter-progress-links">
         <a href="#about" data-chapter-link><span class="chapter-station-index">01</span><strong class="chapter-station-title">关于</strong><small class="chapter-station-subtitle">ABOUT ME</small></a>
-        <a href="#series" data-chapter-link><span class="chapter-station-index">02</span><strong class="chapter-station-title">专题</strong><small class="chapter-station-subtitle">TOPICS</small></a>
+        <a href="#series" data-chapter-link><span class="chapter-station-index">02</span><strong class="chapter-station-title">分类</strong><small class="chapter-station-subtitle">CATEGORIES</small></a>
         <a href="#journal" data-chapter-link><span class="chapter-station-index">03</span><strong class="chapter-station-title">最新文章</strong><small class="chapter-station-subtitle">LATEST ARTICLES</small></a>
         <a href="#archive" data-chapter-link><span class="chapter-station-index">04</span><strong class="chapter-station-title">归档</strong><small class="chapter-station-subtitle">ARCHIVE</small></a>
       </div>

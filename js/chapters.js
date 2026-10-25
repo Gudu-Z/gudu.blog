@@ -65,11 +65,22 @@
   const revealGroups = chapters.map(chapter => ({
     chapter,
     lastScroll: null,
+    scrollLimit: 0,
     units: [...chapter.querySelectorAll('.chapter-panel, .connection-heading, .connection-footnote, .section-heading, .site-footer')]
       .filter(element => element.classList.contains('chapter-panel') || !element.closest('.chapter-panel'))
-      .map(element => ({ element, phase: 'preview', seen: false, exitMinimum: null, exitAxis: 'x', bounds: null })),
+      .map(element => ({ element, isPanel: element.classList.contains('chapter-panel'), phase: 'preview', seen: false, exitMinimum: null, exitAxis: 'x', bounds: null, calibrationReady: false, calibrated: false })),
   }));
+  const groupsByChapter = new Map(revealGroups.map(group => [group.chapter, group]));
   const revealUnits = revealGroups.flatMap(group => group.units);
+  // Outside labels share the spatial plane of the surface they describe;
+  // their visibility and text-reveal timing still remain independent.
+  const unitsByElement = new Map(revealUnits.map(unit => [unit.element, unit]));
+  for (const unit of revealUnits) {
+    const ownerId = unit.element.dataset.depthOwner;
+    const owner = ownerId ? unitsByElement.get(document.getElementById(ownerId)) : null;
+    unit.depthOwner = !unit.isPanel && owner?.isPanel ? owner : unit;
+  }
+  const calibratingPanels = new Set();
   let revealViewport = { top: 0, bottom: window.innerHeight };
   const chapterLabels = chapters.map((chapter, index) => links[index]?.querySelector('.chapter-station-title')?.textContent.trim() || chapter.id);
   const styleValues = new WeakMap();
@@ -131,6 +142,8 @@
   function noteIdleActivity() {
     lastIdleActivity = performance.now();
     clearIdle();
+    for (const unit of calibratingPanels) setClass(unit.element, 'is-chapter-calibrating', false);
+    calibratingPanels.clear();
   }
 
   function canIdle() {
@@ -141,10 +154,22 @@
   function scheduleIdle() {
     if (!canIdle()) { clearIdle(); return; }
     if (idleTimer || progressNav.classList.contains('is-chapter-idle')) return;
+    // Share the existing quiet-period timer. Each surface calibrates once per
+    // visit; the ruler still starts its idle decoration after a full second.
+    const pendingCalibration = revealUnits.some(unit => unit.calibrationReady && !unit.calibrated);
     idleTimer = setTimeout(() => {
       idleTimer = 0;
-      if (canIdle()) setClass(progressNav, 'is-chapter-idle', true);
-    }, Math.max(0, 1000 - (performance.now() - lastIdleActivity)));
+      if (!canIdle()) return;
+      for (const unit of revealUnits) {
+        if (!unit.calibrationReady || unit.calibrated) continue;
+        unit.calibrated = true;
+        calibratingPanels.add(unit);
+        setClass(unit.element, 'is-chapter-scanning', false);
+        setClass(unit.element, 'is-chapter-calibrating', true);
+      }
+      if (performance.now() - lastIdleActivity >= 1000) setClass(progressNav, 'is-chapter-idle', true);
+      else scheduleIdle();
+    }, Math.max(0, (pendingCalibration ? 120 : 1000) - (performance.now() - lastIdleActivity)));
   }
 
   function emitChapterState(progress = clamp(y() / Math.max(1, entry), 0, 1)) {
@@ -197,16 +222,90 @@
   }
 
   function settleRevealMotion() {
-    for (const { element } of revealUnits) {
+    for (const unit of revealUnits) {
+      const { element } = unit;
       setClass(element, 'is-chapter-immediate', true);
       setClass(element, 'is-chapter-scanning', false);
+      setUnitDepth(unit, 0);
     }
+  }
+
+  function arcEdge(position, radius, flatWidth, limit) {
+    const distance = Math.max(0, Math.abs(position) - flatWidth);
+    const angle = Math.min(limit, distance / radius);
+    // The extension is wholly offscreen. Keep moving outward there instead of
+    // wrapping around the cylinder or ever crossing the camera plane.
+    const extension = Math.max(0, distance - radius * limit);
+    return {
+      x: Math.sign(position) * (Math.min(flatWidth, Math.abs(position))
+        + radius * Math.sin(angle) + extension * Math.max(0.15, Math.cos(limit))),
+      z: radius * (1 - Math.cos(angle)),
+    };
+  }
+
+  function setUnitDepth(unit, enabled, left = 0, top = 0) {
+    const compact = window.innerWidth <= 720;
+    const surface = unit.depthOwner.bounds;
+    const perspective = Math.max(700, window.innerWidth * 1.1);
+    let yaw = 0;
+    let depth = 0;
+    let shift = 0;
+    let span = 1;
+    let cameraX = 0;
+    let cameraY = 0;
+    if (enabled && surface) {
+      const center = left + surface.width / 2 - window.innerWidth / 2;
+      const radius = window.innerWidth * (compact ? 0.9 : 0.65);
+      const flatWidth = window.innerWidth * (compact ? 0.12 : 0.1);
+      // Leave enough arc for the far end of even the widest visible face.
+      const limit = compact ? 1.4 : 1.85;
+      const start = arcEdge(center - surface.width / 2, radius, flatWidth, limit);
+      const end = arcEdge(center + surface.width / 2, radius, flatWidth, limit);
+      const dx = end.x - start.x;
+      const dz = end.z - start.z;
+      // A flat face joins two points of one shared arc. Its angle, depth and
+      // span therefore agree: wide cards can turn fully without an inner edge
+      // shrinking behind the reading plane or crossing a neighbor's edge.
+      yaw = -Math.atan2(dz, dx) * 180 / Math.PI;
+      depth = (start.z + end.z) / 2;
+      shift = (start.x + end.x) / 2 - center;
+      span = Math.hypot(dx, dz) / Math.max(1, surface.width);
+      cameraX = -center;
+      cameraY = (revealViewport.top + revealViewport.bottom) / 2 - (top + surface.height / 2);
+    }
+    setStyle(unit.element, '--chapter-camera-x', `${cameraX.toFixed(3)}px`);
+    setStyle(unit.element, '--chapter-camera-y', `${cameraY.toFixed(3)}px`);
+    setStyle(unit.element, '--chapter-perspective', `${perspective.toFixed(3)}px`);
+    setStyle(unit.element, '--chapter-depth-origin-x', surface && unit.bounds
+      ? `${(surface.left + surface.width / 2 - unit.bounds.left).toFixed(3)}px` : '50%');
+    setStyle(unit.element, '--chapter-depth-origin-y', surface && unit.bounds
+      ? `${(surface.top + surface.height / 2 - unit.bounds.top).toFixed(3)}px` : '50%');
+    setStyle(unit.element, '--chapter-depth-yaw', `${yaw.toFixed(3)}deg`);
+    setStyle(unit.element, '--chapter-depth-z', `${depth.toFixed(2)}px`);
+    setStyle(unit.element, '--chapter-depth-x', `${shift.toFixed(3)}px`);
+    setStyle(unit.element, '--chapter-depth-span', span.toFixed(6));
+    if (unit.isPanel) {
+      const light = clamp(-yaw / 45, -1, 1);
+      setStyle(unit.element, '--chapter-light-left', Math.max(0, light).toFixed(3));
+      setStyle(unit.element, '--chapter-light-right', Math.max(0, -light).toFixed(3));
+    }
+  }
+
+  function updateUnitDepth(unit, left, top, enabled) {
+    if (!enabled) { setUnitDepth(unit, 0); return; }
+    const card = unit.depthOwner.bounds;
+    left += card.left - unit.bounds.left;
+    top += card.top - unit.bounds.top;
+    // Use cached layout coordinates, never transformed readbacks. The same
+    // owner plane also carries headings/footnotes outside the black surface.
+    setUnitDepth(unit, true, left, top);
   }
 
   function measureReveals() {
     // Layout coordinates exclude each card's animated transform. Positioned
     // wrappers can sit between a card and its scrollable chapter.
-    for (const { chapter, units } of revealGroups) {
+    for (const group of revealGroups) {
+      const { chapter, units } = group;
       for (const unit of units) {
         let left = 0;
         let top = 0;
@@ -216,6 +315,12 @@
         }
         unit.bounds = { left, top, width: unit.element.offsetWidth, height: unit.element.offsetHeight };
       }
+      // Transformed corners can enlarge scrollHeight. Only real content that
+      // exceeds the reading height should turn this chapter into a scrollport.
+      const bottomPadding = parseFloat(getComputedStyle(chapter).paddingBottom) || 0;
+      const contentBottom = Math.max(0, ...units.map(unit => unit.bounds.top + unit.bounds.height));
+      group.scrollLimit = Math.max(0, contentBottom + bottomPadding - chapter.clientHeight);
+      group.scrollable = group.scrollLimit > 2;
     }
     // Use the actual clipping boundary shared with the header and ruler.
     const inset = getComputedStyle(viewport).clipPath?.match(/^inset\(([^)]+)/)?.[1]
@@ -223,7 +328,7 @@
     revealViewport = { top: inset[0] || 0, bottom: viewport.clientHeight - (inset[2] ?? inset[0] ?? 0) };
   }
 
-  function updateReveal(unit, axes, visible, revealVisible, immediate) {
+  function updateReveal(unit, axes, visible, revealVisible, immediate, skipCalibration) {
     const offscreen = axes.x.intersection <= 1 || axes.y.intersection <= 1;
     const canReveal = Object.values(axes).every(axis => axis.intersection >= Math.min(80, axis.span * 0.1));
     const closing = Object.values(axes).some(axis => axis.intersection <= Math.min(24, axis.span * 0.03));
@@ -277,9 +382,17 @@
     setClass(element, 'is-chapter-departing', unit.phase === 'departing');
     setClass(element, 'is-chapter-closing', unit.phase === 'closing');
     setInert(element, !visible || !readable || offscreen);
+    unit.calibrationReady = unit.isPanel && visible && unit.phase === 'open'
+      && Object.values(axes).every(axis => axis.intersection >= axis.span * 0.55);
+    if (!revealVisible || offscreen) unit.calibrated = false;
+    else if (skipCalibration && unit.calibrationReady) unit.calibrated = true;
+    if (!unit.calibrationReady || skipCalibration) {
+      setClass(element, 'is-chapter-calibrating', false);
+      calibratingPanels.delete(unit);
+    }
   }
 
-  function updateReveals(x, visible, instant) {
+  function updateReveals(x, visible, instant, calibratePanels) {
     const now = performance.now();
     const movement = lastRevealX === null ? 0 : x - lastRevealX;
     const distance = Math.abs(movement);
@@ -289,9 +402,19 @@
     lastRevealTime = now;
     const immediate = instant || fast || !initialized || !available() || blocked()
       || motion.matches || Boolean(transition?.direction) || !visible;
-    // Hero already owns the entrance opacity. Prepare its content before the
-    // viewport becomes interactive instead of changing reveal targets at 55%.
-    const revealVisible = visible || Boolean(transition?.direction);
+    // Prepare the assembled panels before their track slides in. Reveal bounds
+    // stay unshifted, while depth follows the actual position on screen.
+    const heroPhase = transition?.direction
+      ? transition.direction === 'entering' ? transitionPhase : 1 - transitionPhase : null;
+    const skipCalibration = !initialized || !available() || blocked() || motion.matches
+      || (instant && heroPhase === null && !calibratePanels);
+    const revealVisible = visible || heroPhase !== null;
+    const depthEnabled = revealVisible && available() && !blocked() && !motion.matches;
+    const heroTravel = heroPhase === null ? 1 : clamp((heroPhase - 0.18) / 0.67, 0, 1);
+    const heroSlide = motion.matches ? 0 : (window.innerWidth + Math.min(120, window.innerWidth * 0.08))
+      * (1 - heroTravel * heroTravel * (3 - 2 * heroTravel));
+    setStyle(track, '--chapter-entrance-x', `${heroSlide.toFixed(3)}px`);
+    setInert(viewport, !visible || heroPhase !== null);
 
     revealGroups.forEach((group, index) => {
       const { chapter, units } = group;
@@ -306,6 +429,7 @@
         const card = unit.bounds;
         const cardLeft = left + card.left;
         const cardTop = card.top - scroll;
+        updateUnitDepth(unit, cardLeft + heroSlide, cardTop, depthEnabled);
         updateReveal(unit, {
           x: {
             intersection: Math.max(0, Math.min(window.innerWidth, left + bounds.width, cardLeft + card.width) - Math.max(0, left, cardLeft)),
@@ -319,12 +443,12 @@
             side: cardTop + card.height / 2 >= (revealViewport.top + revealViewport.bottom) / 2 ? 1 : -1,
             movement: verticalMovement,
           },
-        }, visible, revealVisible, immediate);
+        }, visible, revealVisible, immediate, skipCalibration);
       }
     });
   }
 
-  function update(syncHash = true, instantPanels = false) {
+  function update(syncHash = true, instantPanels = false, calibratePanels = false) {
     if (!active || !positions.length) return;
     const scroll = y();
     renderedScroll = scroll;
@@ -347,7 +471,7 @@
     setInert(progressNav, !visible);
     for (const element of heroText) setInert(element, progress > 0.12);
     // CSS completes the triggered sequences; geometry uses the existing cache.
-    updateReveals(x, visible, instantPanels);
+    updateReveals(x, visible, instantPanels, calibratePanels);
     emitChapterState(progress);
     const index = visible ? Math.min(chapters.length, 1 + Math.round(x / Math.max(width, 1))) : 0;
     setStyle(progressNav, '--chapter-active-index', String(clamp(index - 1, 0, chapters.length - 1)));
@@ -389,6 +513,10 @@
     const ruler = progressTrack?.getBoundingClientRect();
     progressTrackLeft = ruler?.left || 0;
     progressTrackWidth = ruler?.width || 0;
+    for (const group of revealGroups) {
+      setClass(group.chapter, 'is-chapter-scrollable', group.scrollable);
+      clampChapterScroll(group);
+    }
     const runwayHeight = `${window.innerHeight + travel}px`;
     if (runway.style.height !== runwayHeight) runway.style.height = runwayHeight;
     positions = [0, ...chapters.map((_, index) => entry + index * width)];
@@ -417,6 +545,8 @@
     lastFrame = 0;
     railSeek = null;
     transition = null;
+    setStyle(track, '--chapter-entrance-x', '0.000px');
+    setInert(viewport, !available() || !root.classList.contains('is-content'));
     targetY = y();
     smoothY = targetY;
     for (const name of ['is-chapter-transitioning', 'is-chapter-entering', 'is-chapter-leaving']) setClass(root, name, false);
@@ -608,7 +738,7 @@
     const finish = () => {
       setScroll(destination, instant || Boolean(direction));
       stop();
-      update(false, instant || Boolean(direction));
+      update(false, instant || Boolean(direction), direction === 'entering' && !instant);
       if (focus) focusSection(index);
     };
     if (instant || motion.matches || document.hidden || (!previousDirection && Math.abs(start - destination) < 1)) { finish(); return; }
@@ -673,10 +803,17 @@
     return false;
   }
 
+  function clampChapterScroll(group) {
+    // CSS projection contributes to scrollHeight even though it adds no text.
+    // Keep native scrolling within the measured, untransformed reading area.
+    const top = clamp(group.chapter.scrollTop, 0, group.scrollLimit);
+    if (top !== group.chapter.scrollTop) group.chapter.scrollTop = top;
+  }
+
   function scrollableChapter(target, direction, keyboard = false) {
     const chapter = target?.closest?.('.chapter-section') || (keyboard ? chapters[Math.max(0, currentIndex - 1)] : null);
-    if (!chapter || chapter.inert) return null;
-    const bottom = chapter.scrollHeight - chapter.clientHeight;
+    if (!chapter || chapter.inert || !chapter.classList.contains('is-chapter-scrollable')) return null;
+    const bottom = groupsByChapter.get(chapter)?.scrollLimit || 0;
     return bottom > 2 && (direction > 0 ? chapter.scrollTop < bottom - 2 : chapter.scrollTop > 2) ? chapter : null;
   }
 
@@ -746,7 +883,8 @@
     if (inside) {
       stop();
       const readingDistance = event.code.startsWith('Arrow') ? 100 : inside.clientHeight * 0.65;
-      inside.scrollBy({ top: direction * readingDistance, behavior: motion.matches ? 'instant' : 'smooth' });
+      const destination = clamp(inside.scrollTop + direction * readingDistance, 0, groupsByChapter.get(inside).scrollLimit);
+      inside.scrollBy({ top: destination - inside.scrollTop, behavior: motion.matches ? 'instant' : 'smooth' });
       scheduleIdle();
     } else if (advance(direction * distance)) entryGesture = true;
   });
@@ -874,9 +1012,13 @@
     queueUpdate();
   }, { passive: true });
   document.addEventListener('scroll', event => {
-    if (!available() || !event.target?.closest?.('.chapter-section')) return;
+    if (!available()) return;
+    const group = groupsByChapter.get(event.target?.closest?.('.chapter-section'));
+    if (!group) return;
+    clampChapterScroll(group);
     noteIdleActivity();
-    scheduleIdle();
+    // The coalesced update refreshes each card's visibility before deciding
+    // whether the quiet period needs a short calibration or the idle delay.
     queueUpdate();
   }, { passive: true, capture: true });
   window.addEventListener('resize', reflow, { passive: true });

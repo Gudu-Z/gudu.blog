@@ -1,0 +1,154 @@
+@charset "UTF-8";
+
+/* Load after the chapter and About styles: keep panel motion intact
+   while replacing older whole-card hover fills with local link feedback. */
+.home-page .chapter-section a:any-link {
+  --chapter-link-active: 0;
+  --chapter-link-arrow-x: 0px;
+  --chapter-link-arrow-y: 0px;
+}
+.home-page .chapter-section a:focus-visible {
+  --chapter-link-active: 1;
+  --chapter-link-ink: #f0f3f5;
+  --chapter-link-signal: var(--chapter-signal);
+  --chapter-link-arrow-x: 2px;
+  --chapter-link-arrow-y: -2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .home-page .chapter-section a:hover {
+    --chapter-link-active: 1;
+    --chapter-link-ink: #f0f3f5;
+    --chapter-link-signal: var(--chapter-signal);
+    --chapter-link-arrow-x: 2px;
+    --chapter-link-arrow-y: -2px;
+  }
+}
+
+/* These pseudo-elements belong to the links, not to the moving panel surfaces.
+   Guide feedback follows the existing top border. */
+.home-page .chapter-section :is(.about-socials a, .series-reading-link, .text-link, .post-link, .archive-item a, .archive-year li a) {
+  position: relative;
+}
+.home-page .chapter-section :is(.about-socials a, .series-reading-link, .text-link, .post-link, .archive-item a, .archive-year li a)::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 -1px;
+  height: 1px;
+  background: rgb(220 228 234 / 48%);
+  opacity: var(--chapter-link-active);
+  transform: scaleX(var(--chapter-link-active));
+  transform-origin: left;
+  transition: transform 200ms cubic-bezier(0.2, 0.7, 0.2, 1), opacity 180ms ease;
+  pointer-events: none;
+}
+.home-page .chapter-section .series-reading-link::after { top: -1px; bottom: auto; }
+.home-page .chapter-section :is(.text-link, .post-link)::after { bottom: -2px; }
+
+.home-page .chapter-section .about-socials a:any-link {
+  color: var(--chapter-link-ink, #a9afb7);
+  border-bottom-color: var(--chapter-rule);
+}
+.home-page .chapter-section .about-socials a:any-link .about-link-arrow {
+  color: var(--chapter-link-signal, #6f7883);
+  transform: translate(var(--chapter-link-arrow-x), var(--chapter-link-arrow-y));
+  transition: color 180ms ease, transform 200ms ease;
+}
+
+/* The card keeps exactly the same material and geometry during interaction. */
+.home-page .chapter-section a.connection-card:any-link {
+  background-color: var(--chapter-panel);
+  box-shadow: 0 9px 20px rgb(0 0 0 / 24%), 0 0 9px rgb(0 0 0 / 14%);
+}
+.home-page .chapter-section a.connection-card:any-link h3 {
+  color: var(--chapter-link-ink, var(--chapter-text));
+}
+.home-page .chapter-section a.connection-card:any-link .connection-number {
+  color: var(--chapter-link-signal, #d3d8dd);
+}
+.home-page .chapter-section a.connection-card:any-link .connection-arrow {
+  color: var(--chapter-link-signal, #abb4bc);
+  transform: translate(var(--chapter-link-arrow-x), var(--chapter-link-arrow-y));
+}
+.home-page .chapter-section a.connection-card:any-link .connection-action > span:first-child {
+  color: var(--chapter-link-ink, #c0c7ce);
+}
+.home-page .chapter-section a.connection-card:any-link .connection-action-arrow {
+  color: var(--chapter-link-signal, #939da7);
+  transform: translateX(calc(var(--chapter-link-active) * 3px));
+}
+.home-page .chapter-section a.connection-card:any-link .connection-rule::after {
+  opacity: calc(0.45 + var(--chapter-link-active) * 0.45);
+  transform: scaleX(calc(0.35 + var(--chapter-link-active) * 0.65));
+  transition: transform 200ms ease, opacity 180ms ease;
+}
+.home-page .chapter-section a.connection-card :is(.connection-arrow, .connection-action-arrow) {
+  transition: transform 200ms ease, color 180ms ease;
+}
+.home-page .chapter-section a.connection-card .connection-action > span:first-child {
+  transition: color 180ms ease;
+}
+
+.home-page .chapter-section .series-reading-link:any-link strong {
+  color: var(--chapter-link-ink, #bcbcc3);
+  transition: color 180ms ease;
+}
+.home-page .chapter-section .series-reading-link:any-link .series-reading-index {
+  color: var(--chapter-link-signal, #66666d);
+  transition: color 180ms ease;
+}
+.home-page .chapter-section .series-reading-link:any-link > span:last-child {
+  color: var(--chapter-link-signal, #b9b9c0);
+  transform: translate(var(--chapter-link-arrow-x), var(--chapter-link-arrow-y));
+  transition: transform 200ms ease, color 180ms ease;
+}
+.home-page .chapter-section .text-link:any-link { color: var(--chapter-link-ink, #c5ccd4); }
+.home-page .chapter-section .text-link:any-link > span[aria-hidden="true"] {
+  transform: translate(var(--chapter-link-arrow-x), var(--chapter-link-arrow-y));
+  transition: transform 200ms ease;
+}
+
+/* The article remains a reading surface; only its real title/read links respond. */
+.home-page .chapter-section .post-title a:any-link {
+  color: var(--chapter-link-ink, inherit);
+  background: linear-gradient(rgb(220 228 234 / 40%), rgb(220 228 234 / 40%)) left bottom / calc(var(--chapter-link-active) * 100%) 1px no-repeat;
+  transition: color 180ms ease, background-size 200ms ease;
+}
+.home-page .chapter-section .post-link:any-link {
+  color: var(--chapter-link-ink, #c8d0d9);
+  transition: color 180ms ease;
+}
+.home-page .chapter-section .post-link > span[aria-hidden="true"],
+.home-page .chapter-section :is(.archive-item, .archive-year li) a > span[aria-hidden="true"]:last-child {
+  display: inline-block;
+  transform: translate(var(--chapter-link-arrow-x), var(--chapter-link-arrow-y));
+  transition: transform 200ms ease, color 180ms ease;
+}
+.home-page .chapter-section :is(.archive-item, .archive-year li) a:any-link {
+  color: var(--chapter-link-ink, inherit);
+  transition: color 180ms ease;
+}
+.home-page .chapter-section :is(.archive-item, .archive-year li) a:any-link > span[aria-hidden="true"]:last-child {
+  color: var(--chapter-link-signal, inherit);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-page .chapter-section a:any-link {
+    --chapter-link-arrow-x: 0px;
+    --chapter-link-arrow-y: 0px;
+  }
+  .home-page .chapter-section a.connection-card:any-link .connection-action-arrow { transform: none; }
+  .home-page .chapter-section :is(.about-socials a, .series-reading-link, .text-link, .post-link, .archive-item a, .archive-year li a)::after,
+  .home-page .chapter-section .about-socials a:any-link .about-link-arrow,
+  .home-page .chapter-section a.connection-card:any-link :is(.connection-number, .connection-arrow, .connection-action-arrow),
+  .home-page .chapter-section a.connection-card:any-link .connection-rule::after,
+  .home-page .chapter-section a.connection-card .connection-action > span:first-child,
+  .home-page .chapter-section .series-reading-link:any-link :is(strong, .series-reading-index, span:last-child),
+  .home-page .chapter-section .text-link:any-link > span[aria-hidden="true"],
+  .home-page .chapter-section .post-title a,
+  .home-page .chapter-section .post-link,
+  .home-page .chapter-section .post-link > span[aria-hidden="true"],
+  .home-page .chapter-section :is(.archive-item, .archive-year li) a,
+  .home-page .chapter-section :is(.archive-item, .archive-year li) a > span[aria-hidden="true"]:last-child {
+    transition: none;
+  }
+}

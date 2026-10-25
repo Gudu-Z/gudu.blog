@@ -179,6 +179,24 @@ html.has-chapters .home-page .chapter-section {
   align-content: safe center;
 }
 html.has-chapters .home-page .chapter-section::-webkit-scrollbar { display: none; }
+/* Fitting chapters are clipped by the viewport, not their unrotated column.
+   Long chapters keep their native vertical scrollport. */
+html.has-chapters .home-page .chapter-section:not(.is-chapter-scrollable) { overflow: visible; }
+/* Give native scrollports room for projected corners. Matching negative
+   margins and padding preserve the content width, positions and rail stride. */
+html.has-chapters .home-page .chapter-section {
+  --chapter-bleed: max(24px, 4vw);
+  flex-basis: calc(var(--chapter-width) + 2 * var(--chapter-bleed));
+  width: calc(var(--chapter-width) + 2 * var(--chapter-bleed));
+  margin-inline: calc(-1 * var(--chapter-bleed));
+  padding-inline: calc(12px + var(--chapter-bleed));
+  pointer-events: none;
+}
+/* Transparent scrollport margins must not intercept a neighboring card. */
+html.has-chapters .home-page .chapter-reveal-unit { pointer-events: auto; }
+@media (min-width: 721px) {
+  html.has-chapters .home-page .chapter-section { --chapter-bleed: max(48px, 4vw); }
+}
 html.has-chapters .home-page .journal-section { justify-content: safe center; }
 html.has-chapters .home-page .journal-section > * { flex-shrink: 0; }
 /* Chapter anchors receive programmatic focus after navigation. */
@@ -187,9 +205,11 @@ html.has-chapters .home-page .journal-section > * { flex-shrink: 0; }
 .home-page .chapter-panel {
   border: 0;
   border-radius: 0;
+  isolation: isolate;
   background: var(--chapter-panel);
   box-shadow: 0 9px 20px rgb(0 0 0 / 24%), 0 0 9px rgb(0 0 0 / 14%);
 }
+.home-page .chapter-panel > .chapter-panel-light { display: none; }
 .home-page .chapter-section .accent,
 .home-page .chapter-section .eyebrow > span,
 .home-page .chapter-section .text-link span { color: var(--chapter-accent); }
@@ -306,12 +326,11 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
 .home-page .archive-empty::before { background: var(--chapter-accent); }
 .home-page .site-footer { position: relative; grid-column: 1 / -1; width: 100%; margin: 20px 0 0; padding-block: 26px 0; }
 
-/* Each surface owns its reveal state; loose headings and notes are separate units.
-   Panel surfaces deploy first, followed by their own readable interior layers. */
+/* Panel surfaces stay solid. Their text retains its own staggered entrance
+   and exit, independently of perspective, spacing and material. */
 @media (prefers-reduced-motion: no-preference) {
   html.has-chapters .home-page .chapter-section :is(.chapter-panel, .chapter-reveal-unit) {
     --chapter-reveal-open: 1;
-    --chapter-rule-reveal: 1;
     --chapter-reveal-duration: 0ms;
     --chapter-reveal-stagger: 0ms;
     --chapter-reveal-reverse: 0;
@@ -322,12 +341,10 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
   }
   html.has-chapters .home-page .chapter-reveal-unit.has-chapter-reveal:not(.is-chapter-revealed) {
     --chapter-reveal-open: 0;
-    --chapter-rule-reveal: 0;
   }
-  /* Withdraw in view first; keep a visible surface until the final edge. */
+  /* Text withdraws in reverse order; the panel itself stays fully assembled. */
   html.has-chapters .home-page .chapter-reveal-unit.is-chapter-departing {
     --chapter-reveal-open: 0.6;
-    --chapter-rule-reveal: 0.45;
     --chapter-reveal-duration: 300ms;
     --chapter-reveal-stagger: 35ms;
     --chapter-reveal-reverse: 1;
@@ -337,34 +354,53 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     --chapter-reveal-stagger: 55ms;
     --chapter-reveal-reverse: 1;
   }
+  html.has-chapters .home-page .chapter-section :is(.chapter-panel, .chapter-reveal-unit) {
+    transform: translate3d(var(--chapter-camera-x, 0px), var(--chapter-camera-y, 0px), 0)
+      perspective(var(--chapter-perspective, 1400px))
+      translate3d(calc(-1 * var(--chapter-camera-x, 0px) + var(--chapter-depth-x, 0px)), calc(-1 * var(--chapter-camera-y, 0px)), var(--chapter-depth-z, 0px))
+      rotateY(var(--chapter-depth-yaw, 0deg))
+      scaleX(var(--chapter-depth-span, 1));
+    transform-origin: var(--chapter-depth-origin-x, 50%) var(--chapter-depth-origin-y, 50%);
+  }
   html.has-chapters .home-page .chapter-section .chapter-panel {
-    --chapter-panel-opacity: var(--chapter-reveal-open);
-    --chapter-panel-offset: calc(28px * (1 - var(--chapter-reveal-open)) * var(--chapter-reveal-direction, 1));
-    --chapter-panel-scale: calc(0.96 + 0.04 * var(--chapter-reveal-open));
-    opacity: var(--chapter-panel-opacity);
-    transform: translateX(var(--chapter-panel-offset)) scale(var(--chapter-panel-scale));
-    transform-origin: center;
-    /* The existing shadow travels with the surface instead of repainting a blur. */
-    transition-property: var(--chapter-reveal-properties, transform, opacity, box-shadow, background-color);
-    transition-duration: 460ms, 360ms, 220ms, 220ms;
-    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1), ease-out, ease, ease;
-    transition-delay: calc(40ms * var(--chapter-reveal-reverse)), calc(40ms * var(--chapter-reveal-reverse)), 0ms, 0ms;
+    position: relative;
+    opacity: 1;
+    translate: none;
+    scale: 1;
+    transition: box-shadow 220ms ease, background-color 220ms ease;
   }
-  html.has-chapters .home-page .chapter-section .chapter-panel.is-chapter-departing {
-    --chapter-panel-opacity: 0.78;
-    --chapter-panel-offset: calc(18px * var(--chapter-reveal-direction, 1));
-    --chapter-panel-scale: 0.975;
-    transition-duration: 320ms, 300ms, 220ms, 220ms;
+  html.has-chapters .home-page .chapter-panel > .chapter-panel-light {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
   }
-  html.has-chapters .home-page .chapter-section .chapter-panel:focus-within {
-    --chapter-panel-opacity: 1;
-    transform: none;
-    transition: none;
+  html.has-chapters .home-page .chapter-panel > .chapter-panel-light::before,
+  html.has-chapters .home-page .chapter-panel > .chapter-panel-light::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  html.has-chapters .home-page .chapter-panel > .chapter-panel-light::before {
+    /* One diffuse reflection across the surface, with no sized light strip or
+       uniform white wash. All stops fade smoothly before reaching the center. */
+    background: radial-gradient(ellipse 64% 68% at 0% 28%,
+      rgb(232 234 237 / 3.8%), rgb(232 234 237 / 1.6%) 32%,
+      rgb(232 234 237 / 0.4%) 52%, transparent 76%);
+    opacity: var(--chapter-light-left, 0);
+  }
+  html.has-chapters .home-page .chapter-panel > .chapter-panel-light::after {
+    background: radial-gradient(ellipse 64% 68% at 100% 28%,
+      rgb(232 234 237 / 3.8%), rgb(232 234 237 / 1.6%) 32%,
+      rgb(232 234 237 / 0.4%) 52%, transparent 76%);
+    opacity: var(--chapter-light-right, 0);
   }
   html.has-chapters .home-page .chapter-section :where(
-    .about-panel-top, .about-portrait, .about-socials, .about-identity-line, .about-text > p, .about-signature,
+    .about-panel-top, .about-socials, .about-text > p, .about-dossier, .about-signature,
     .connection-heading, .connection-footnote, .connection-card-head, .connection-action,
-    .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3, p, svg, .text-link),
+    .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3, p, .text-link),
     .series-empty, .series-reading-link, .journal-section > .section-heading,
     .journal-toolbar, .journal-empty, .search-empty, .posts-list > .post-card,
     .archive-year > h3, .archive-year li, .archive-group > h3, .archive-item, .site-footer
@@ -382,14 +418,18 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
     transition-delay: var(--chapter-layer-delay);
   }
+  /* Loose copy has no panel parent to supply perspective. Keep its reveal
+     slide separate so text easing never delays the scroll-driven 3D pose. */
+  html.has-chapters .home-page .chapter-section .chapter-reveal-unit:not(.chapter-panel) {
+    translate: var(--chapter-layer-x, 0px) 0;
+    transition-property: var(--chapter-reveal-properties, opacity, translate);
+  }
   html.has-chapters .home-page .chapter-section :where(
     .about-panel-top, .connection-heading, .connection-card-head, .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3),
     .journal-section > .section-heading, .archive-year > h3, .archive-group > h3
   ) { --chapter-layer-stage: 0; }
-  html.has-chapters .home-page .chapter-section .about-portrait { --chapter-layer-stage: 0; --chapter-layer-polarity: -1; }
-  html.has-chapters .home-page .chapter-reveal-unit:is(.is-chapter-departing, .is-chapter-closing) .about-portrait { --chapter-layer-polarity: 1; }
   html.has-chapters .home-page .chapter-section :where(
-    .about-socials, .about-text > p, .about-signature, .connection-card > p,
+    .about-socials, .about-text > p, .about-dossier, .about-signature, .connection-card > p,
     .connection-action, .connection-footnote, .series-empty, .series-main > .text-link,
     .series-guide-intro, .journal-sidebar .chapter-panel > :is(p:not(.eyebrow), .text-link),
     .search-empty, .archive-empty, .site-footer
@@ -408,31 +448,78 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
 
   /* A focused link or control stays legible even while its chapter is at an edge. */
   html.has-chapters .home-page .chapter-section :where(
-    .about-panel-top, .about-portrait, .about-socials, .about-identity-line, .about-text > p, .about-signature,
+    .about-panel-top, .about-socials, .about-text > p, .about-dossier, .about-signature,
     .connection-heading, .connection-footnote, .connection-card-head, .connection-action,
-    .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3, p, svg, .text-link),
+    .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3, p, .text-link),
     .series-empty, .series-reading-link, .journal-section > .section-heading,
     .journal-toolbar, .journal-empty, .search-empty, .posts-list > .post-card,
     .archive-year > h3, .archive-year li, .archive-group > h3, .archive-item, .site-footer
   ):focus-within { --chapter-layer-opacity: 1; --chapter-layer-x: 0px; transition: none; }
   html.has-chapters .home-page .chapter-section .connection-card:focus-visible > :is(.connection-card-head, h3, p, .connection-action) { --chapter-layer-opacity: 1; --chapter-layer-x: 0px; transition: none; }
 
-  html.has-chapters .home-page :is(.about-signature, .series-empty-status, .series-reading-link) { position: relative; border-top-color: transparent; }
-  html.has-chapters .home-page :is(.about-signature, .series-empty-status, .series-reading-link)::before { content: ""; position: absolute; left: 0; right: 0; top: -1px; height: 1px; background: #dedede18; transform: scaleX(var(--chapter-rule-reveal, 1)); transform-origin: center; pointer-events: none; }
-  html.has-chapters .home-page .about-signature::before { background: #f064462b; }
-  html.has-chapters .home-page .series-empty-status::before { background: #dedede19; }
-  html.has-chapters .home-page .series-path-mark::before { transform: scaleX(var(--chapter-rule-reveal, 1)); transform-origin: center; }
-  html.has-chapters .home-page :is(.about-signature, .series-empty-status, .series-reading-link, .series-path-mark)::before {
-    transition-property: var(--chapter-line-properties, transform);
-    transition-duration: var(--chapter-reveal-duration, 0ms);
-    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-    transition-delay: calc(var(--chapter-reveal-stagger, 0ms) * (1 - var(--chapter-reveal-reverse, 0)));
+  /* Direct jumps and Hero travel suppress time-based reveal tails. The About
+     sequence below follows the reversible Hero phase instead of a second clock. */
+  html.has-chapters .home-page .chapter-reveal-unit.is-chapter-immediate,
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-reveal-unit {
+    --chapter-reveal-properties: none;
+    --chapter-reveal-duration: 0ms;
+    --chapter-reveal-stagger: 0ms;
   }
-  html.has-chapters .home-page .series-reading-link:focus-visible::before { transform: scaleX(1); transition: none; }
 
-  /* Every panel gets its own short sweep; small cards keep it inside their padding. */
-  html.has-chapters .home-page .chapter-panel.has-chapter-reveal { --chapter-scan-travel: 96px; position: relative; }
-  html.has-chapters .home-page .chapter-panel:is(.connection-card, .series-guide, .sidebar-note, .subscribe-note, .archive-heading) { --chapter-scan-travel: 40px; }
+  /* Assemble the About content inside its already solid, moving surfaces.
+     All layers finish before docking; interruption never leaves a queued fade. */
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-section.about-section :where(
+    .about-panel-top, .about-calibration, .about-portrait, .about-socials > a,
+    .about-text > h2, .about-pronunciation, .about-fact, .about-preference,
+    .connection-heading, .connection-footnote, .connection-card-head,
+    .connection-rule, .connection-card > h3, .connection-card > p, .connection-action
+  ) {
+    --about-arrival-progress: clamp(0, calc((var(--chapter-visual-phase) - var(--about-arrival-start, 0.5)) / var(--about-arrival-duration, 0.28)), 1);
+    --about-arrival-ease: calc(var(--about-arrival-progress) * var(--about-arrival-progress) * (3 - 2 * var(--about-arrival-progress)));
+    opacity: calc(var(--about-arrival-ease) * var(--chapter-reveal-open, 1));
+    translate: calc(20px * (1 - var(--about-arrival-ease))) calc(5px * (1 - var(--about-arrival-ease)));
+    transition: none;
+  }
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-section.about-section :where(
+    .about-panel-top, .about-socials, .about-text > h2, .about-pronunciation,
+    .about-dossier, .about-preference, .connection-card-head,
+    .connection-card > h3, .connection-card > p, .connection-action
+  ) { transform: none; }
+  /* The two layout wrappers stay readable: only their individual rows animate. */
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-section.about-section :is(.about-socials, .about-dossier) { opacity: 1; }
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-section.about-section .about-portrait {
+    translate: calc(28px * (1 - var(--about-arrival-ease))) 0;
+    scale: calc(0.98 + 0.02 * var(--about-arrival-ease));
+  }
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-section.about-section :is(.about-calibration, .connection-rule) {
+    translate: none;
+    scale: var(--about-arrival-ease) 1;
+    transform-origin: left center;
+  }
+  .home-page .about-section .about-panel-top { --about-arrival-start: 0.32; --about-arrival-duration: 0.24; }
+  .home-page .about-section .about-calibration { --about-arrival-start: 0.34; --about-arrival-duration: 0.3; }
+  .home-page .about-section .about-portrait { --about-arrival-start: 0.4; --about-arrival-duration: 0.37; }
+  .home-page .about-section .about-text > h2 { --about-arrival-start: 0.45; --about-arrival-duration: 0.32; }
+  .home-page .about-section .about-pronunciation { --about-arrival-start: 0.5; --about-arrival-duration: 0.32; }
+  .home-page .about-section .about-fact { --about-arrival-start: 0.55; --about-arrival-duration: 0.29; }
+  .home-page .about-section .about-fact:nth-child(2) { --about-arrival-start: 0.58; }
+  .home-page .about-section .about-fact:nth-child(3) { --about-arrival-start: 0.61; }
+  .home-page .about-section .about-fact:nth-child(4) { --about-arrival-start: 0.64; }
+  .home-page .about-section .about-socials > a { --about-arrival-start: 0.64; --about-arrival-duration: 0.27; }
+  .home-page .about-section .about-socials > a:nth-child(2) { --about-arrival-start: 0.68; }
+  .home-page .about-section .about-preference { --about-arrival-start: 0.7; --about-arrival-duration: 0.25; }
+  .home-page .about-section .connection-card { --about-arrival-lane: 0; }
+  .home-page .about-section .connection-card:nth-of-type(2) { --about-arrival-lane: 0.035; }
+  .home-page .about-section .connection-card:nth-of-type(3) { --about-arrival-lane: 0.07; }
+  .home-page .about-section .connection-card-head { --about-arrival-start: calc(0.53 + var(--about-arrival-lane)); --about-arrival-duration: 0.2; }
+  .home-page .about-section .connection-rule { --about-arrival-start: calc(0.54 + var(--about-arrival-lane)); --about-arrival-duration: 0.27; }
+  .home-page .about-section .connection-card > h3 { --about-arrival-start: calc(0.57 + var(--about-arrival-lane)); --about-arrival-duration: 0.25; }
+  .home-page .about-section .connection-card > p { --about-arrival-start: calc(0.61 + var(--about-arrival-lane)); --about-arrival-duration: 0.24; }
+  .home-page .about-section .connection-action { --about-arrival-start: calc(0.65 + var(--about-arrival-lane)); --about-arrival-duration: 0.22; }
+  .home-page .about-section .connection-heading { --about-arrival-start: 0.51; --about-arrival-duration: 0.23; }
+  .home-page .about-section .connection-footnote { --about-arrival-start: 0.73; --about-arrival-duration: 0.23; }
+
+  /* These details only pulse once the individual panel has come to rest. */
   html.has-chapters .home-page .chapter-panel.has-chapter-reveal::before {
     content: "";
     position: absolute;
@@ -456,33 +543,62 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     transform-origin: right center;
     pointer-events: none;
   }
-  html.has-chapters .home-page .chapter-panel.is-chapter-scanning::before { animation: chapter-panel-scan 700ms ease-out forwards; }
-  html.has-chapters .home-page .chapter-panel.is-chapter-scanning::after { animation: chapter-panel-calibrate 700ms ease-out forwards; }
 
-  /* Hero owns its existing phase; immediate navigation never leaves a timed tail. */
-  html.has-chapters .home-page .chapter-reveal-unit.is-chapter-immediate,
-  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-reveal-unit {
-    --chapter-reveal-properties: none;
-    --chapter-line-properties: none;
-    --chapter-reveal-duration: 0ms;
-    --chapter-reveal-stagger: 0ms;
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-track {
+    translate: var(--chapter-entrance-x, 0px) 0;
   }
+
+  /* Immediate navigation and Hero motion suppress arrival decorations. */
   html.has-chapters .home-page .chapter-panel.is-chapter-immediate::before,
   html.has-chapters .home-page .chapter-panel.is-chapter-immediate::after,
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel::before,
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel::after { animation: none; opacity: 0; }
+
+  /* Once a surface settles, only its registration details acknowledge arrival. */
+  html.has-chapters .home-page .chapter-panel.is-chapter-calibrating::before {
+    transform-origin: left center;
+    animation: chapter-settle-rule 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  html.has-chapters .home-page .chapter-panel.is-chapter-calibrating::after {
+    animation: chapter-settle-register 200ms ease-out 80ms;
+  }
+  html.has-chapters .home-page .chapter-panel.is-chapter-calibrating :is(.about-calibration, .connection-rule)::before {
+    transform-origin: left center;
+    animation: chapter-settle-line 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  html.has-chapters .home-page .chapter-panel.is-chapter-calibrating :is(.eyebrow > span, .connection-number) {
+    animation: chapter-settle-mark 180ms ease-out 60ms;
+  }
+  html.has-chapters .home-page .chapter-panel.is-chapter-calibrating :is(.about-calibration, .series-path-mark) > span {
+    animation: chapter-settle-mark 140ms ease-out 60ms;
+  }
+  html.has-chapters .home-page .chapter-panel.is-chapter-calibrating :is(.about-calibration, .series-path-mark) > span:nth-child(2) { animation-delay: 100ms; }
+  html.has-chapters .home-page .chapter-panel.is-chapter-calibrating :is(.about-calibration, .series-path-mark) > span:nth-child(3) { animation-delay: 140ms; }
+
+  /* A new Hero journey always owns the presentation, including interrupted settles. */
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel.is-chapter-calibrating::before,
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel.is-chapter-calibrating::after,
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel.is-chapter-calibrating :is(.about-calibration, .connection-rule)::before,
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel.is-chapter-calibrating :is(.eyebrow > span, .connection-number),
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel.is-chapter-calibrating :is(.about-calibration, .series-path-mark) > span { animation: none; }
 }
-@keyframes chapter-panel-scan {
-  0% { opacity: 0; transform: translateX(-8px) scaleX(0.3); }
-  18% { opacity: 0.55; }
-  66% { opacity: 0.2; }
-  100% { opacity: 0; transform: translateX(var(--chapter-scan-travel, 96px)) scaleX(0.7); }
-}
-@keyframes chapter-panel-calibrate {
-  0% { opacity: 0; transform: scaleX(0.4); }
-  24% { opacity: 0.4; }
-  68% { opacity: 0.14; }
+@keyframes chapter-settle-rule {
+  0% { opacity: 0; transform: scaleX(0.18); }
+  36% { opacity: 0.65; }
   100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes chapter-settle-register {
+  0% { opacity: 0; }
+  35% { opacity: 0.55; }
+  100% { opacity: 0; }
+}
+@keyframes chapter-settle-line {
+  0% { opacity: 0.45; transform: scaleX(0.78); }
+  100% { opacity: 1; transform: scaleX(1); }
+}
+@keyframes chapter-settle-mark {
+  0% { opacity: 0.4; }
+  100% { opacity: 1; }
 }
 
 .home-page .chapter-progress { display: none; }
@@ -630,8 +746,6 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) {
   --chapter-clock-out: clamp(0, calc((var(--chapter-visual-phase) - 0.08) / 0.34), 1);
   --chapter-bottom-out: clamp(0, calc((var(--chapter-visual-phase) - 0.15) / 0.34), 1);
   --chapter-grid-out: clamp(0, calc(var(--chapter-visual-phase) / 0.5), 1);
-  --chapter-panel-in: clamp(0, calc((var(--chapter-visual-phase) - 0.23) / 0.43), 1);
-  --chapter-copy-in: clamp(0, calc((var(--chapter-visual-phase) - 0.319) / 0.43), 1);
   --chapter-line-in: clamp(0, calc((var(--chapter-visual-phase) - 0.38) / 0.42), 1);
   --chapter-header-in: clamp(0, calc((var(--chapter-visual-phase) - 0.34) / 0.38), 1);
   --chapter-marker-in: clamp(0, calc((var(--chapter-visual-phase) - 0.43) / 0.42), 1);
@@ -642,19 +756,7 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page #hero
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .live-clock { filter: opacity(calc(1 - var(--chapter-clock-out))); translate: 0 calc(-12px * var(--chapter-clock-out)); }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .hero-bottom { opacity: calc(1 - var(--chapter-bottom-out)); translate: 0 calc(-12px * var(--chapter-bottom-out)); pointer-events: none; }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .space-grid { opacity: 1; filter: opacity(calc(1 - var(--chapter-grid-out))); }
-html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-section + .chapter-section {
-  --chapter-panel-in: clamp(0, calc((var(--chapter-visual-phase) - 0.33) / 0.43), 1);
-  --chapter-copy-in: clamp(0, calc((var(--chapter-visual-phase) - 0.419) / 0.43), 1);
-}
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-viewport { pointer-events: none; }
-html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel { opacity: calc(var(--chapter-panel-in) * var(--chapter-panel-opacity, 1)); translate: calc(40px * (1 - var(--chapter-panel-in))) 0; }
-html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page :is(.chapter-panel > *, .connection-heading, .connection-footnote, .chapter-section > .section-heading, .site-footer) { opacity: calc(var(--chapter-copy-in) * var(--chapter-layer-opacity, 1)); translate: calc(8px * (1 - var(--chapter-copy-in))) 0; }
-html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page :is(.about-signature, .series-empty-status, .series-reading-link) { position: relative; border-top-color: transparent; }
-html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page :is(.about-signature, .series-empty-status, .series-reading-link)::before { content: ""; position: absolute; left: 0; right: 0; top: -1px; height: 1px; background: #dedede18; transform: scaleX(calc(var(--chapter-line-in) * var(--chapter-rule-reveal, 1))); transform-origin: center; }
-html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .about-signature::before { background: #f064462b; }
-html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .series-empty-status::before { background: #dedede19; }
-html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .series-reading-link::before { background: #dedede18; }
-html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .series-path-mark::before { transform: scaleX(calc(var(--chapter-line-in) * var(--chapter-rule-reveal, 1))); transform-origin: center; }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page :is(.site-header, .chapter-progress) { visibility: visible; transform: none; pointer-events: none; transition: none; }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .site-header { opacity: var(--chapter-header-in); }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress { opacity: clamp(0, calc(var(--chapter-visual-phase) / 0.2), 1); }
@@ -773,7 +875,7 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   .home-page .header-search input { font-size: 16px; }
   .home-page .chapter-section { width: 88%; padding-block: 99px 105px; }
   html.has-chapters .home-page .chapter-viewport { clip-path: inset(78px 0 110px); }
-  html.has-chapters .home-page .chapter-section { padding-inline: 8px; }
+  html.has-chapters .home-page .chapter-section { padding-inline: calc(8px + var(--chapter-bleed)); }
   /* Keep intrinsic row heights inside the fixed-height, scrollable chapter. */
   .home-page .about-section { grid-template-columns: 1fr; grid-auto-rows: max-content; align-items: start; gap: 20px; }
   .home-page .about-copy { min-height: max(500px, var(--chapter-content-height)); padding: 30px; }
@@ -791,7 +893,8 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   .home-page .connection-card h3 { margin-top: 13px; font-size: 18px; }
   .home-page .connection-action { margin-top: auto; padding-top: 15px; }
   .home-page .connection-footnote { margin-top: 16px; }
-  .home-page .journal-layout { grid-template-columns: 1fr; gap: 16px; }
+  /* Full-width and half-width faces meet different parts of the arc. */
+  .home-page .journal-layout { grid-template-columns: 1fr; gap: 32px 16px; }
   .home-page .journal-main { padding: 24px 17px; }
   .home-page .journal-empty { min-height: 340px; padding-inline: 8px; }
   .home-page .journal-sidebar { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -844,6 +947,8 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   .home-page .series-empty { padding-top: 25px; }
 }
 @media (prefers-reduced-motion: reduce) {
+  html.has-chapters .home-page .chapter-section :is(.chapter-panel, .chapter-reveal-unit) { translate: none; scale: none; transform: none; }
+  html.has-chapters .home-page .chapter-panel > .chapter-panel-light { display: none; }
   .home-page .connection-card, .home-page .connection-arrow,
   .home-page .header-search, .home-page .header-search-fields,
   .home-page .chapter-progress-response,
@@ -861,8 +966,7 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page :is(#hero-title, .live-clock, .hero-bottom, .chapter-panel, .chapter-panel > *, .connection-heading, .connection-footnote, .chapter-section > .section-heading, .site-footer, .chapter-progress-links a) { translate: none; }
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-track { --chapter-response-x: var(--chapter-marker-x, 0px); background-size: 100% 100%; }
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-track::before { clip-path: none; }
-  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page :is(.about-signature, .series-empty-status, .series-reading-link, .chapter-progress-links a)::before,
-  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .series-path-mark::before,
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-links a::before,
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-track::after,
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-links a:is([aria-current], .is-active)::after { transform: none; }
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-marker { transform: translate3d(calc(var(--chapter-marker-x, 0px) - 1px), 0, 0); }

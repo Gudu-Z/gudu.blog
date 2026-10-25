@@ -39,7 +39,7 @@ function classList(initial = [], onWrite = () => {}) {
 
 // Only browser surfaces used by the chapter controller are modeled. The real
 // controller executes unmodified; assertions inspect scrolls, URLs and events.
-function browser({ reduced = false, url = 'https://gudu.blog/', loading = false, hidden = false, viewportWidth = 1200, roundScroll = false, initialPanelWidth = null, multiPanels = false } = {}) {
+function browser({ reduced = false, url = 'https://gudu.blog/', loading = false, hidden = false, viewportWidth = 1200, viewportHeight = 800, roundScroll = false, initialPanelWidth = null, multiPanels = false } = {}) {
   let now = 0;
   let sequence = 0;
   let scrollY = 0;
@@ -57,7 +57,7 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
   let requestedFrames = 0;
   const domWrites = [];
   const nodes = [];
-  const height = 800;
+  const height = viewportHeight;
   let document;
   let window;
   let panelWidthOverride = initialPanelWidth;
@@ -222,13 +222,14 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
   const panels = chapters.slice(1).map(chapter => {
     const panel = new Element('div', {
       id: `${chapter.id}-panel`, classes: ['chapter-panel'], offsetParent: chapter,
-      geometry: () => ({ left: 0, top: 100, width: panelWidth(), height: 600 }),
+      geometry: () => ({ left: 0, top: 100, width: panelWidth(), height: chapter === journal ? journal.scrollHeight - 100 : 600 }),
     });
     chapter.append(panel);
     return panel;
   });
   const journalPanels = { main: panels[2] };
   if (multiPanels) {
+    journal.paddingBottom = 122;
     const column = new Element('div', {
       geometry: () => ({ left: panelWidth() * 0.04, top: 100, width: panelWidth() * 0.92, height: 1200 }),
       offsetParent: journal,
@@ -246,7 +247,7 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
       geometry: () => ({ left: 0, top: 740, width: panelWidth() * 0.92, height: 360 }),
     });
     const heading = new Element('header', {
-      classes: ['section-heading'], offsetParent: journal,
+      classes: ['section-heading'], dataset: { depthOwner: journalPanels.main.id }, offsetParent: journal,
       geometry: () => ({ left: 0, top: 60, width: panelWidth(), height: 48 }),
     });
     const nestedHeading = new Element('header', {
@@ -258,8 +259,8 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
     journal.append(heading);
     Object.assign(journalPanels, { sidebar, stacked, heading, nestedHeading });
   }
-  const chapterTitles = ['关于', '专题', '最新文章', '归档'];
-  const chapterSubtitles = ['ABOUT ME', 'TOPICS', 'LATEST ARTICLES', 'ARCHIVE'];
+  const chapterTitles = ['关于', '分类', '最新文章', '归档'];
+  const chapterSubtitles = ['ABOUT ME', 'CATEGORIES', 'LATEST ARTICLES', 'ARCHIVE'];
   const navLinks = chapters.slice(1).map((chapter, index) => {
     const link = new Element('a', { dataset: { chapterLink: '' } });
     link.href = `#${chapter.id}`;
@@ -338,6 +339,7 @@ function browser({ reduced = false, url = 'https://gudu.blog/', loading = false,
   const getComputedStyle = node => ({
     scrollPaddingTop: '0px',
     scrollMarginTop: '0px',
+    paddingBottom: `${node.paddingBottom || 0}px`,
     clipPath: node === viewport && multiPanels ? 'inset(88px 0px 122px 0px)' : 'none',
     overflowY: node.overflowY || 'visible',
     getPropertyValue: name => node.style.getPropertyValue(name),
@@ -538,6 +540,8 @@ await test('entrance glow continues after scene progress reaches one, while cont
     assert.equal(immediate.top, immediate.destination('archive'));
     assert.equal(immediate.html.classList.contains('is-chapter-entering'), false);
     assert.equal(immediate.html.classList.contains('is-chapter-leaving'), false);
+    assert.equal(entranceShift(immediate), 0, 'instant navigation has no side-entry displacement');
+    assert.equal(immediate.viewport.inert, false);
     assert.ok(immediate.chapterEvents.every(event => event.entranceGlow === 0), 'hash restoration and reduced motion do not play the layered effect');
   }
 });
@@ -566,7 +570,12 @@ await test('hash jumps, reduced motion, resize and page lifecycle clear an activ
     assert.equal(site.html.classList.contains('is-chapter-transitioning'), false, interruption);
     assert.equal(Number(site.html.style.getPropertyValue('--chapter-transition-phase')), 0, interruption);
     assert.equal(Number(site.html.style.getPropertyValue('--chapter-entrance-glow')), 0, interruption);
+    assert.equal(entranceShift(site), 0, `${interruption} clears the side-entry displacement`);
+    if (['hash', 'reduced', 'resize'].includes(interruption)) assert.equal(site.viewport.inert, false, `${interruption} restores content interaction`);
     assert.equal(site.chapterEvents.at(-1).entranceGlow, 0, `${interruption} notifies the renderer immediately`);
+    if (['reduced', 'hidden', 'pagehide'].includes(interruption)) {
+      for (const panel of site.panels) assertFlatDepth(panel, `${interruption} also clears the interrupted hero plane transform`);
+    }
     const destination = interruption === 'pagehide' ? stoppedAt : site.destination(interruption === 'hash' ? 'series' : 'archive');
     assert.equal(site.top, destination, interruption);
     if (['reduced', 'resize', 'hidden'].includes(interruption)) assert.equal(site.document.activeElement, site.archive);
@@ -589,22 +598,31 @@ await test('reversing or retargeting a hero transition preserves the visible pha
   assert.ok(site.chapterEvents.at(-1).entranceGlow > 0.95);
   const enteringVisual = visualPhase(site);
   const enteringScroll = site.top;
+  const enteringDepth = [depthState(site.about), depthState(site.series)];
+  const enteringShift = entranceShift(site);
   const reversalEvents = site.chapterEvents.length;
   site.key('Home');
   assert.equal(site.html.classList.contains('is-chapter-entering'), false);
   assert.equal(site.html.classList.contains('is-chapter-leaving'), true);
   assert.equal(visualPhase(site), enteringVisual, 'the return begins at the same visible layer position');
   assert.equal(site.top, enteringScroll, 'reversing does not jump the camera scroll position');
+  assert.deepEqual([depthState(site.about), depthState(site.series)], enteringDepth, 'reversing preserves each complete rigid-plane pose');
+  assert.equal(entranceShift(site), enteringShift, 'reversing preserves the actual side-entry position');
+  assert.equal(site.viewport.inert, true, 'reversing cannot activate panels in transit');
   assert.equal(site.chapterEvents.at(-1).entranceGlow, 0);
   site.advance(180);
   const leavingVisual = visualPhase(site);
   const leavingScroll = site.top;
+  const leavingDepth = [depthState(site.about), depthState(site.series)];
+  const leavingShift = entranceShift(site);
   assert.ok(leavingVisual > 0 && leavingVisual < enteringVisual);
   site.click(site.link('#about'));
   assert.equal(site.html.classList.contains('is-chapter-leaving'), false);
   assert.equal(site.html.classList.contains('is-chapter-entering'), true);
   assert.ok(Math.abs(visualPhase(site) - leavingVisual) < 0.00011, 're-entry preserves the partially hidden layers');
   assert.equal(site.top, leavingScroll);
+  assert.deepEqual([depthState(site.about), depthState(site.series)], leavingDepth, 're-entry resumes the exact partially returned panel pose');
+  assert.equal(entranceShift(site), leavingShift, 're-entry also preserves its side-entry displacement');
   site.advance(690);
   assert.equal(site.top, site.destination('about'));
   assert.equal(site.document.activeElement, site.about);
@@ -621,10 +639,14 @@ await test('reversing or retargeting a hero transition preserves the visible pha
   assert.equal(retargeted.chapterEvents.at(-1).progress, 1, 'the camera can finish before the visual layers');
   const previousVisual = visualPhase(retargeted);
   const previousScroll = retargeted.top;
+  const previousDepth = retargeted.panels.map(depthState);
+  const previousShift = entranceShift(retargeted);
   retargeted.click(retargeted.link('#journal'));
   assert.equal(retargeted.html.classList.contains('is-chapter-entering'), true);
   assert.equal(visualPhase(retargeted), previousVisual, 'changing a content target continues unfinished entrance layers');
   assert.equal(retargeted.top, previousScroll);
+  assert.deepEqual(retargeted.panels.map(depthState), previousDepth, 'retargeting unfinished entrance layers preserves each current panel pose');
+  assert.equal(entranceShift(retargeted), previousShift, 'retargeting does not restart the side slide');
   assert.equal(retargeted.wheel(120).defaultPrevented, true, 'the unfinished layered entrance still absorbs wheel momentum');
   retargeted.advance(599);
   assert.equal(retargeted.html.classList.contains('is-chapter-entering'), true);
@@ -714,6 +736,86 @@ function revealState(node) {
   };
 }
 
+function isCalibrating(node) {
+  return revealUnit(node).classList.contains('is-chapter-calibrating');
+}
+
+function calibrationCount(site, node) {
+  return site.domWrites.filter(write => write.target === revealUnit(node) && write.operation === 'add'
+    && write.names?.includes('is-chapter-calibrating')).length;
+}
+
+function depthState(node) {
+  const unit = revealUnit(node);
+  // CSS treats signed zero identically; keep missing/invalid values as NaN.
+  const value = name => 0 + parseFloat(unit.style.getPropertyValue(name));
+  return {
+    yaw: value('--chapter-depth-yaw'),
+    z: value('--chapter-depth-z'),
+    shift: value('--chapter-depth-x'),
+    span: value('--chapter-depth-span'),
+    left: value('--chapter-light-left'),
+    right: value('--chapter-light-right'),
+  };
+}
+
+function entranceShift(site) {
+  return parseFloat(site.track.style.getPropertyValue('--chapter-entrance-x'));
+}
+
+function cameraOffset(node) {
+  const unit = revealUnit(node);
+  return {
+    x: 0 + parseFloat(unit.style.getPropertyValue('--chapter-camera-x')),
+    y: 0 + parseFloat(unit.style.getPropertyValue('--chapter-camera-y')),
+  };
+}
+
+function assertFlatDepth(node, message) {
+  assert.deepEqual(depthState(node), { yaw: 0, z: 0, shift: 0, span: 1, left: 0, right: 0 }, message);
+  assert.deepEqual(cameraOffset(node), { x: 0, y: 0 }, message);
+}
+
+function panelLayout(node) {
+  const section = node.closest('.chapter-section');
+  let left = section.offsetLeft;
+  let top = 0;
+  for (let ancestor = node; ancestor !== section; ancestor = ancestor.offsetParent) {
+    left += ancestor.offsetLeft;
+    top += ancestor.offsetTop;
+  }
+  return { left, top, width: node.offsetWidth, height: node.offsetHeight, section };
+}
+
+function projectedPoint(site, node, layout, x, y) {
+  const pose = depthState(node);
+  const camera = cameraOffset(node);
+  const unit = revealUnit(node);
+  const value = name => parseFloat(unit.style.getPropertyValue(name));
+  const perspective = value('--chapter-perspective');
+  const originX = value('--chapter-depth-origin-x');
+  const originY = value('--chapter-depth-origin-y');
+  const angle = pose.yaw * Math.PI / 180;
+  const localX = (x - originX) * pose.span;
+  const localY = y - originY;
+  const depth = pose.z - Math.sin(angle) * localX;
+  const scale = perspective / (perspective - depth);
+  // Evaluate the CSS camera projection at each actual rotated corner. This
+  // also allows labels to be compared with points outside their owner's box.
+  return {
+    x: layout.left + site.x + originX + camera.x + (Math.cos(angle) * localX + pose.shift - camera.x) * scale,
+    y: layout.top - layout.section.scrollTop + originY + camera.y + (localY - camera.y) * scale,
+    depth, scale,
+  };
+}
+
+function projectedPanel(site, node, layout) {
+  const points = [[0, 0], [layout.width, 0], [layout.width, layout.height], [0, layout.height]]
+    .map(([x, y]) => projectedPoint(site, node, layout, x, y));
+  return { left: Math.min(...points.map(point => point.x)), right: Math.max(...points.map(point => point.x)),
+    top: Math.min(...points.map(point => point.y)), bottom: Math.max(...points.map(point => point.y)), points };
+}
+
 function revealThresholds(site, chapter) {
   const visibleWidth = Math.min(revealUnit(chapter).offsetWidth, site.window.innerWidth);
   const enter = Math.min(80, visibleWidth * 0.1);
@@ -733,7 +835,9 @@ function moveToVisiblePixels(site, chapter, visibleWidth, side = 'right') {
   // Small native scroll steps exercise threshold transitions rather than the
   // explicit fast-drag fallback. The controller still runs unmodified.
   while (Math.abs(target - site.top) > site.step / 12) {
+    const previous = site.top;
     site.jump(site.top + Math.sign(target - site.top) * site.step / 12);
+    assert.notEqual(site.top, previous, 'the requested panel visibility must be reachable within the fixture scroll range');
   }
   site.jump(target);
 }
@@ -1003,11 +1107,537 @@ await test('main and sidebar cards reveal, withdraw and rearm independently usin
   assert.equal(stacked.inert, true);
 });
 
+await test('each panel comes forward at the edges and returns to its reading plane reversibly without extra layout or frames', () => {
+  const edgeStates = [];
+  for (const viewportWidth of [1200, 600]) {
+    const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true, viewportWidth });
+    const { main, sidebar, heading } = site.journalPanels;
+    assert.ok(Number.isFinite(depthState(main).yaw), 'the main reading card has a valid shared-arc pose');
+    assert.ok(Math.abs(depthState(sidebar).yaw) > 0, 'the neighboring sidebar has its own off-center yaw');
+    assert.ok(depthState(sidebar).z > 0, 'the neighboring sidebar comes forward independently');
+    assert.equal(depthState(heading).yaw, depthState(main).yaw, 'the outside heading shares the main reading plane');
+    assert.equal(heading.style.getPropertyValue('--chapter-light-left'), '', 'loose text has no panel material');
+    assert.equal(site.journal.style.getPropertyValue('--chapter-depth-yaw'), '', 'the whole chapter is not transformed as one surface');
+    assert.match(main.style.getPropertyValue('--chapter-depth-yaw'), /deg$/);
+    assert.match(main.style.getPropertyValue('--chapter-depth-z'), /px$/);
+    assert.match(main.style.getPropertyValue('--chapter-depth-x'), /px$/);
+    assert.equal(main.style.getPropertyValue('--chapter-depth-drift'), '', 'the rigid plane has no separate interior drift');
+    let worldCenter = site.journal.offsetLeft + main.offsetWidth / 2;
+    for (let node = main; node !== site.journal; node = node.offsetParent) worldCenter += node.offsetLeft;
+    const entry = site.destination('about');
+    const atCenter = screenX => {
+      const reads = site.layoutReads;
+      const frames = site.requestedFrames;
+      site.jump(entry + worldCenter - screenX);
+      assert.equal(site.layoutReads, reads, 'positioning a panel reads no live geometry');
+      assert.ok(site.requestedFrames - frames <= 1, 'a native position update needs only the existing controller frame');
+      return depthState(main);
+    };
+    site.advance(1300);
+    const right = atCenter(viewportWidth * 0.9);
+    assert.ok(right.yaw < 0 && right.left > 0 && right.right === 0, 'the right-hand panel reverses its tilt while keeping the inner left edge lit');
+    assert.ok(right.shift < 0, 'the right chord bends toward the shared arc center');
+    const innerRight = atCenter(viewportWidth * 0.75);
+    assert.ok(Math.abs(right.yaw) > Math.abs(innerRight.yaw) && Math.abs(innerRight.yaw) > 0, 'yaw approaches zero continuously on the way to the center');
+    assert.ok(right.z > innerRight.z && innerRight.z > 0, 'the forward edge depth recedes toward the central reading plane');
+    assert.ok(Math.abs(right.shift) > Math.abs(innerRight.shift) && innerRight.shift < 0, 'the arc displacement approaches zero on the way to the reading plane');
+    for (const offset of [25, 0, -25]) {
+      atCenter(viewportWidth / 2 + offset);
+      assert.ok(Math.abs(depthState(main).yaw) < 3 && depthState(main).z < viewportWidth * 0.03, 'small central movements retain a gentle reading pose');
+    }
+    const left = atCenter(viewportWidth * 0.1);
+    assert.ok(left.yaw > 0 && left.right > 0 && left.left === 0, 'the left-hand panel reverses its tilt while keeping the inner right edge lit');
+    assert.ok(left.shift > 0 && Math.abs(left.shift + right.shift) < 0.001, 'the chord displacement mirrors continuously across the center');
+    assert.ok(left.yaw * right.yaw < 0, 'the two sides tilt in opposite directions');
+    assert.ok(Math.abs(left.yaw + right.yaw) < 0.001);
+    assert.ok(Math.abs(left.z - right.z) < 0.001);
+    assert.ok(Math.abs(left.left - right.right) < 0.001 && Math.abs(left.right - right.left) < 0.001, 'the local side light mirrors with panel position');
+    for (const light of [left.left, left.right, right.left, right.right]) assert.ok(light >= 0 && light <= 1);
+    assert.ok(right.left + right.right > 0, 'the off-center surface has a localized side light');
+    assert.deepEqual(atCenter(viewportWidth * 0.9), right, 'returning to a coordinate restores the exact pose without easing history');
+    edgeStates.push(right);
+    const frames = site.requestedFrames;
+    const writes = site.domWrites.length;
+    site.advance(1600);
+    assert.equal(site.requestedFrames, frames, 'depth has no animation loop after movement stops');
+    assert.equal(site.domWrites.slice(writes).filter(write => write.target === main && write.name?.startsWith('--chapter-depth')).length, 0);
+    assert.deepEqual([site.pendingFrames, site.pendingTimers], [0, 0]);
+  }
+  assert.ok(Math.abs(edgeStates[1].yaw) < Math.abs(edgeStates[0].yaw), 'mobile uses a gentler tilt');
+  assert.ok(Math.abs(edgeStates[1].z) < Math.abs(edgeStates[0].z), 'mobile uses a shallower depth');
+  assert.ok(Math.abs(edgeStates[1].shift) < Math.abs(edgeStates[0].shift), 'mobile uses a gentler arc displacement');
+});
+
+await test('outer panels keep changing their pose until the edge instead of plateauing while still visible', () => {
+  for (const viewportWidth of [600, 1200, 3840]) {
+    const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true, viewportWidth,
+      initialPanelWidth: viewportWidth > 1200 ? viewportWidth * 0.78 : null });
+    const { main, heading } = site.journalPanels;
+    const layout = panelLayout(main);
+    const center = layout.left + layout.width / 2;
+    const offsetSpan = (viewportWidth + layout.width) / 2;
+    const atOffset = offset => {
+      const reads = site.layoutReads;
+      const frames = site.requestedFrames;
+      site.jump(site.destination('about') + center - (viewportWidth / 2 + offset * offsetSpan));
+      assert.equal(site.layoutReads, reads);
+      assert.ok(site.requestedFrames - frames <= 1);
+      const { yaw, z, shift, span } = depthState(main);
+      const text = depthState(heading);
+      assert.deepEqual({ yaw: text.yaw, z: text.z, shift: text.shift, span: text.span }, { yaw, z, shift, span }, 'the outside heading follows the full owner curve');
+      return { yaw, z, shift, span, ...cameraOffset(main) };
+    };
+    for (const direction of [1, -1]) {
+      const poses = [0.7, 0.8, 0.9].map(offset => atOffset(direction * offset));
+      assert.ok(Math.sign(poses[0].yaw) === -direction);
+      for (let index = 1; index < poses.length; index++) {
+        assert.ok(Math.abs(poses[index].yaw) > Math.abs(poses[index - 1].yaw), 'tilt keeps evolving across the outer visible range');
+        assert.ok(poses[index].z > poses[index - 1].z, 'depth keeps approaching without the old outer plateau');
+      }
+      assert.deepEqual(atOffset(direction * 0.8), poses[1], 'reversal retraces the same outer pose');
+      assert.deepEqual(atOffset(direction * 0.7), poses[0]);
+    }
+    atOffset(0);
+    assert.equal(depthState(main).yaw, 0, 'the centered chord faces the reader');
+    assert.equal(depthState(main).shift, 0, 'the centered chord has no sideways offset');
+  }
+});
+
+await test('visible edge panels turn substantially and grow in both dimensions with no corner receding behind the reading plane', () => {
+  for (const viewportWidth of [390, 600, 1200, 2551, 3840, 7680]) {
+    for (const widthFraction of [0.35, 0.78]) {
+      const site = browser({ url: 'https://gudu.blog/#journal', viewportWidth,
+        initialPanelWidth: viewportWidth * 0.82 });
+      const main = site.panels[2];
+      main.geometry = () => ({ left: 0, top: 100, width: viewportWidth * widthFraction, height: 600 });
+      site.resizeWidth(viewportWidth);
+      const layout = panelLayout(main);
+      const center = layout.left + layout.width / 2;
+      const atCenter = fraction => {
+        const reads = site.layoutReads;
+        const frames = site.requestedFrames;
+        site.jump(site.destination('about') + center - viewportWidth * fraction);
+        assert.equal(site.layoutReads, reads);
+        assert.ok(site.requestedFrames - frames <= 1);
+        const projected = projectedPanel(site, main, layout);
+        for (const point of projected.points) {
+          assert.ok(point.depth >= -0.01, 'every corner stays on or in front of the reading plane');
+          assert.ok(Number.isFinite(point.scale) && point.scale >= 0.99999, 'no corner shrinks away from the viewer or crosses the camera');
+        }
+        return projected;
+      };
+      const reading = atCenter(0.5);
+      for (const fraction of [0, 1]) {
+        const edge = atCenter(fraction);
+        assert.ok(edge.right > 0 && edge.left < viewportWidth, 'the tested turn is visible instead of already offscreen');
+        assert.ok(Math.abs(depthState(main).yaw) >= 20, `the visible ${viewportWidth}px edge turns clearly`);
+        assert.ok(edge.right - edge.left > (reading.right - reading.left) * 1.05, 'forward motion outweighs the width lost to rotation');
+        assert.ok(edge.bottom - edge.top > (reading.bottom - reading.top) * 1.05, 'the same edge is visibly taller as it approaches');
+      }
+      for (const fraction of [0.1, 0.25, 0.75, 0.9]) atCenter(fraction);
+    }
+  }
+});
+
+await test('a visible wide panel keeps turning and growing smoothly when its outer edge crosses the former arc limit', () => {
+  for (const viewportWidth of [390, 1200, 3840]) {
+    const site = browser({ url: 'https://gudu.blog/#journal', viewportWidth,
+      initialPanelWidth: viewportWidth * 0.82 });
+    const main = site.panels[2];
+    main.geometry = () => ({ left: 0, top: 100, width: viewportWidth * 0.78, height: 600 });
+    site.resizeWidth(viewportWidth);
+    const layout = panelLayout(main);
+    const worldCenter = layout.left + layout.width / 2;
+    const compact = viewportWidth <= 720;
+    const radius = viewportWidth * (compact ? 0.9 : 0.65);
+    const flatWidth = viewportWidth * (compact ? 0.12 : 0.1);
+    const oldLimitCenter = flatWidth + radius * 1.15 - layout.width / 2;
+    const step = viewportWidth * 0.004;
+    for (const direction of [1, -1]) {
+      const samples = [-2, -1, 1, 2].map(offset => {
+        const reads = site.layoutReads;
+        const distance = oldLimitCenter + offset * step;
+        site.jump(site.destination('about') + worldCenter - (viewportWidth / 2 + direction * distance));
+        assert.equal(site.layoutReads, reads);
+        const projected = projectedPanel(site, main, layout);
+        assert.ok(projected.right > 0 && projected.left < viewportWidth, 'the inner portion is still visible across the former cutoff');
+        return { turn: Math.abs(depthState(main).yaw), height: projected.bottom - projected.top };
+      });
+      for (const property of ['turn', 'height']) {
+        const before = samples[1][property] - samples[0][property];
+        const after = samples[3][property] - samples[2][property];
+        assert.ok(before > 0 && after > 0, `${property} continues increasing instead of freezing at the former cutoff`);
+        assert.ok(after / before > 0.9 && after / before < 1.1, `${property} keeps a continuous visible speed at ${viewportWidth}px`);
+      }
+    }
+  }
+});
+
+await test('a surface wholly inside the flat arc center keeps its original reading geometry', () => {
+  for (const viewportWidth of [390, 1200]) {
+    const site = browser({ url: 'https://gudu.blog/#journal', viewportWidth });
+    const main = site.panels[2];
+    main.geometry = () => ({ left: 0, top: 100, width: viewportWidth * 0.12, height: 600 });
+    site.resizeWidth(viewportWidth);
+    const layout = panelLayout(main);
+    const center = layout.left + layout.width / 2;
+    for (const fraction of [0.475, 0.5, 0.525]) {
+      site.jump(site.destination('about') + center - viewportWidth * fraction);
+      assert.deepEqual(depthState(main), { yaw: 0, z: 0, shift: 0, span: 1, left: 0, right: 0 });
+      const projected = projectedPanel(site, main, layout);
+      assert.ok(Math.abs(projected.left - (layout.left + site.x)) < 0.001);
+      assert.ok(Math.abs(projected.top - layout.top) < 0.001);
+      assert.ok(Math.abs(projected.right - projected.left - layout.width) < 0.001);
+      assert.ok(Math.abs(projected.bottom - projected.top - layout.height) < 0.001);
+    }
+  }
+});
+
+await test('only logical content overflow clips a chapter and enables its native reading viewport', () => {
+  const site = browser({ url: 'https://gudu.blog/#about', multiPanels: true });
+  const scrollable = chapter => chapter.classList.contains('is-chapter-scrollable');
+  assert.equal(scrollable(site.about), false, 'fitting panels can extend their perspective past the chapter edges');
+  assert.equal(scrollable(site.journal), true, 'lower stacked content retains its native reading viewport');
+
+  site.about.scrollHeight = site.window.innerHeight + 300;
+  site.resizeWidth(site.window.innerWidth);
+  assert.equal(scrollable(site.about), false, 'projection-inflated scrollHeight alone cannot clip a fitting chapter');
+  site.about.paddingBottom = 104;
+  site.resizeWidth(site.window.innerWidth);
+  assert.equal(scrollable(site.about), true, 'real bottom padding participates in the reading-height limit');
+  site.about.paddingBottom = 0;
+  site.resizeWidth(site.window.innerWidth);
+  assert.equal(scrollable(site.about), false, 'removing logical overflow restores the open projection');
+
+  site.journal.clientHeight = 1600;
+  site.resizeWidth(site.window.innerWidth);
+  assert.equal(scrollable(site.journal), false, 'a taller reading viewport can fit the same content');
+  site.journal.clientHeight = site.window.innerHeight;
+  site.resizeWidth(site.window.innerWidth);
+  assert.equal(scrollable(site.journal), true, 'resizing back preserves access to genuinely overflowing content');
+  const reads = site.layoutReads;
+  const writes = site.domWrites.length;
+  site.wheel(120);
+  site.advance(1600);
+  assert.equal(site.layoutReads, reads, 'overflow classification does not add layout reads to scrolling');
+  assert.equal(site.domWrites.slice(writes).filter(write => write.names?.includes('is-chapter-scrollable')).length, 0, 'perspective motion cannot repeatedly change clipping mode');
+});
+
+await test('projection-only overflow cannot swallow wheel, keyboard or touch movement over a fitting panel', () => {
+  for (const viewportWidth of [600, 1200]) {
+    for (const input of ['wheel', 'keyboard', 'touch']) {
+      const site = browser({ url: 'https://gudu.blog/#series', viewportWidth });
+      site.series.scrollHeight = site.window.innerHeight + 300;
+      site.resizeWidth(viewportWidth);
+      assert.equal(site.series.classList.contains('is-chapter-scrollable'), false);
+      const target = site.panels[1];
+      const originalTop = site.top;
+      if (input === 'wheel') assert.equal(site.wheel(60, { target }).defaultPrevented, true);
+      if (input === 'keyboard') assert.equal(site.key('ArrowDown', { target }).defaultPrevented, true);
+      if (input === 'touch') {
+        const finger = clientY => ({ clientX: 100, clientY });
+        site.event('touchstart', { target, touches: [finger(600)] });
+        assert.equal(site.event('touchmove', { target, touches: [finger(540)] }).defaultPrevented, true);
+        site.event('touchend', { target, touches: [] });
+      }
+      site.advance(1000);
+      assert.ok(site.top > originalTop, `${input} continues moving through the horizontal strip at ${viewportWidth}px`);
+      assert.equal(site.series.scrollTop, 0, 'a fitting panel does not create an artificial vertical reading position');
+      assert.equal(site.innerScrolls.length, 0);
+    }
+  }
+});
+
+await test('outside headings share their owner plane through reversible perspective without projecting nested copy twice', () => {
+  const edgeStates = [];
+  for (const viewportWidth of [1200, 600]) {
+    const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true, viewportWidth });
+    const { main, heading, nestedHeading } = site.journalPanels;
+    const layout = panelLayout(heading);
+    const ownerLayout = panelLayout(main);
+    const worldCenter = ownerLayout.left + ownerLayout.width / 2;
+    const pose = () => {
+      const { yaw, z, shift, span } = depthState(heading);
+      return { yaw, z, shift, span, ...cameraOffset(heading) };
+    };
+    const atCenter = screenX => {
+      const reads = site.layoutReads;
+      const frames = site.requestedFrames;
+      site.jump(site.destination('about') + worldCenter - screenX);
+      assert.equal(site.layoutReads, reads, 'loose text uses the same cached layout as panels');
+      assert.ok(site.requestedFrames - frames <= 1, 'loose text adds no animation chain');
+      const { yaw, z, shift, span } = depthState(main);
+      assert.deepEqual(pose(), { yaw, z, shift, span, ...cameraOffset(main) }, 'the label uses its owner pose and viewport camera');
+      for (const [x, y] of [[0, 0], [layout.width, layout.height]]) {
+        const actual = projectedPoint(site, heading, layout, x, y);
+        const owner = projectedPoint(site, main, ownerLayout, x + layout.left - ownerLayout.left, y + layout.top - ownerLayout.top);
+        assert.ok(Math.hypot(actual.x - owner.x, actual.y - owner.y) < 0.003, 'outside label corners remain on the exact owner plane');
+      }
+      return pose();
+    };
+    site.advance(1300);
+    const right = atCenter(viewportWidth * 0.9);
+    assert.ok(right.yaw < 0 && right.z > 0 && right.x < 0, 'incoming text tilts and approaches around the viewport camera');
+    const inner = atCenter(viewportWidth * 0.75);
+    assert.ok(Math.abs(inner.yaw) < Math.abs(right.yaw) && inner.z < right.z && inner.z > 0);
+    const centered = atCenter(viewportWidth / 2);
+    assert.equal(centered.yaw, 0, 'centered reading copy faces the reader on its owner chord');
+    assert.equal(centered.shift, 0);
+    const left = atCenter(viewportWidth * 0.1);
+    assert.ok(left.yaw > 0 && left.z > 0 && left.x > 0, 'outgoing text follows the opposite perspective');
+    assert.ok(Math.abs(left.yaw + right.yaw) < 0.001 && Math.abs(left.z - right.z) < 0.001);
+    assert.ok(Math.abs(left.x + right.x) < 0.001, 'the viewport camera mirrors around the owner pivot');
+    assert.deepEqual(atCenter(viewportWidth * 0.9), right, 'the text pose depends on its position, not scroll history');
+    assert.equal(heading.style.getPropertyValue('--chapter-light-left'), '');
+    assert.equal(heading.style.getPropertyValue('--chapter-light-right'), '');
+    assert.equal(isCalibrating(heading), false, 'outside text never receives the panel material pulse');
+    assert.equal(revealState(nestedHeading).initialized, false, 'copy inside a panel inherits that panel instead of becoming another surface');
+    assert.equal(nestedHeading.style.getPropertyValue('--chapter-depth-yaw'), '');
+    assert.equal(site.journal.style.getPropertyValue('--chapter-depth-yaw'), '', 'perspective remains independent per surface');
+    const frames = site.requestedFrames;
+    const writes = site.domWrites.length;
+    site.advance(1600);
+    assert.equal(site.requestedFrames, frames, 'settled text does not keep rendering');
+    assert.equal(site.domWrites.slice(writes).filter(write => write.target === heading && write.name?.startsWith('--chapter-depth')).length, 0);
+    edgeStates.push(right);
+  }
+  assert.ok(Math.abs(edgeStates[1].yaw) < Math.abs(edgeStates[0].yaw) && edgeStates[1].z < edgeStates[0].z, 'mobile text follows the gentler mobile perspective');
+});
+
+await test('outside text perspective resets on reduced motion and page suspension and resumes without a stale pose', () => {
+  for (const interruption of ['reduced', 'hidden', 'pagehide']) {
+    const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true });
+    const { heading } = site.journalPanels;
+    site.jump(site.destination('journal') - site.window.innerWidth * 0.4);
+    const pose = () => {
+      const { yaw, z, shift, span } = depthState(heading);
+      return { yaw, z, shift, span, ...cameraOffset(heading) };
+    };
+    const original = pose();
+    assert.ok(original.yaw < 0 && original.z > 0, `${interruption} begins with a visible angled heading`);
+    if (interruption === 'reduced') { site.media.matches = true; site.media.dispatchEvent({ type: 'change' }); }
+    if (interruption === 'hidden') { site.document.hidden = true; site.event('visibilitychange'); }
+    if (interruption === 'pagehide') site.event('pagehide');
+    assert.deepEqual(pose(), { yaw: 0, z: 0, shift: 0, span: 1, x: 0, y: 0 }, `${interruption} clears text depth and its camera transform`);
+    const frames = site.requestedFrames;
+    const reads = site.layoutReads;
+    site.advance(1600);
+    assert.equal(site.requestedFrames, frames);
+    assert.equal(site.layoutReads, reads);
+    if (interruption === 'reduced') { site.media.matches = false; site.media.dispatchEvent({ type: 'change' }); }
+    if (interruption === 'hidden') { site.document.hidden = false; site.event('visibilitychange'); }
+    if (interruption === 'pagehide') site.event('pageshow');
+    assert.deepEqual(pose(), original, `${interruption} resumes the text at its cached screen position`);
+  }
+});
+
+await test('visible outside text keeps its owner plane current when the owner is vertically clipped', () => {
+  const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true });
+  const { main, heading } = site.journalPanels;
+  const width = main.offsetWidth;
+  main.geometry = () => ({ left: 0, top: site.window.innerHeight * 2, width, height: 480 });
+  site.resizeWidth(site.window.innerWidth);
+  const ownerLayout = panelLayout(main);
+  const textLayout = panelLayout(heading);
+  const worldCenter = ownerLayout.left + ownerLayout.width / 2;
+  const align = () => {
+    const textPoint = projectedPoint(site, heading, textLayout, 0, 0);
+    const ownerPoint = projectedPoint(site, main, ownerLayout, textLayout.left - ownerLayout.left, textLayout.top - ownerLayout.top);
+    assert.ok(Math.hypot(textPoint.x - ownerPoint.x, textPoint.y - ownerPoint.y) < 0.003);
+  };
+  site.jump(site.destination('about') + worldCenter - site.window.innerWidth * 0.9);
+  assert.equal(main.inert, true, 'the owner remains below the internal viewport');
+  assert.equal(heading.inert, false, 'its separate heading is visible and readable');
+  assert.ok(depthState(heading).yaw < 0);
+  align();
+  const originalCamera = cameraOffset(heading);
+  const reads = site.layoutReads;
+  site.journal.scrollTop = 20;
+  site.event('scroll', { target: site.journal });
+  site.advance(32);
+  assert.equal(site.layoutReads, reads);
+  assert.equal(cameraOffset(heading).y, originalCamera.y + 20, 'a clipped owner does not freeze its visible label camera');
+  align();
+  site.jump(site.destination('about') + worldCenter - site.window.innerWidth * 0.1);
+  assert.ok(depthState(heading).yaw > 0, 'the owner-linked heading also updates across the horizontal center');
+  assert.equal(main.inert, true);
+  align();
+});
+
+await test('the shared arc preserves horizontal gaps without reading new geometry', () => {
+  for (const viewportWidth of [600, 1200, 3840]) {
+    const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true, viewportWidth,
+      initialPanelWidth: viewportWidth > 1200 ? viewportWidth * 0.78 : null });
+    const { main, sidebar } = site.journalPanels;
+    const mainLayout = panelLayout(main);
+    const sideLayout = panelLayout(sidebar);
+    const worldCenter = mainLayout.left + mainLayout.width / 2;
+    for (const position of [-0.05, 0.1, 0.3, 0.5, 0.65]) {
+      const reads = site.layoutReads;
+      site.jump(site.destination('about') + worldCenter - viewportWidth * position);
+      assert.equal(site.layoutReads, reads, 'perspective separation uses only the cached panel bounds');
+      const mainRect = projectedPanel(site, main, mainLayout);
+      const sideRect = projectedPanel(site, sidebar, sideLayout);
+      assert.ok(sideRect.left - mainRect.right > 0, `horizontal cards retain a projected gap at ${viewportWidth}px / ${position}`);
+      if (position === 0.5) {
+        assert.equal(depthState(main).yaw, 0, 'the centered panel faces the reader');
+        const growth = (mainRect.right - mainRect.left) / mainLayout.width;
+        assert.ok(growth >= 1 && growth < 1.08, 'the reading pose retains a restrained size');
+      }
+      else if (depthState(main).z > 0) assert.equal(Math.sign(cameraOffset(main).x), Math.sign(0.5 - position), 'the camera stays at the shared view center');
+      assert.equal(main.style.getPropertyValue('--chapter-depth-y'), '');
+      assert.equal(parseFloat(main.style.getPropertyValue('--chapter-perspective')), Math.max(700, viewportWidth * 1.1));
+    }
+    const expected = cameraOffset(main);
+    site.jump(site.destination('about') + worldCenter - viewportWidth * 0.3);
+    site.jump(site.destination('about') + worldCenter - viewportWidth * 0.65);
+    assert.deepEqual(cameraOffset(main), expected, 'reversing to the same screen position restores the same camera');
+  }
+});
+
+await test('wide and tall stacked panels keep their projected gap through horizontal and native vertical travel', () => {
+  for (const viewportWidth of [390, 3840]) {
+    const compact = viewportWidth < 720;
+    const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true, viewportWidth,
+      viewportHeight: compact ? 844 : 2160,
+      initialPanelWidth: compact ? null : viewportWidth * 0.78 });
+    const { main, sidebar } = site.journalPanels;
+    const cardWidth = compact ? 300 : 1200;
+    const cardHeight = compact ? 220 : 1100;
+    main.geometry = () => ({ left: 0, top: 0, width: cardWidth, height: cardHeight });
+    sidebar.geometry = () => ({ left: 0, top: cardHeight + 16, width: cardWidth, height: cardHeight });
+    site.resizeWidth(viewportWidth);
+    const mainLayout = panelLayout(main);
+    const sideLayout = panelLayout(sidebar);
+    for (const side of ['right', 'left']) {
+      moveToVisiblePixels(site, main, cardWidth * 0.05, side);
+      const before = depthState(main);
+      assert.ok(before.z > viewportWidth * 0.1, 'edge panels move substantially toward the viewer');
+      assert.ok(Math.abs(before.yaw) >= 20 && Math.abs(before.yaw) < 66, 'wide panels visibly turn as one rigid face');
+      let upper = projectedPanel(site, main, mainLayout);
+      let lower = projectedPanel(site, sidebar, sideLayout);
+      const assertGaps = () => {
+        // Compare the same sides of the sloped edges. Axis-aligned bounding
+        // boxes overlap on a tilted plane even when its polygons are separate.
+        for (const [bottom, top] of [[3, 0], [2, 1]]) {
+          assert.ok(Math.abs(upper.points[bottom].x - lower.points[top].x) < 0.003);
+          const gap = lower.points[top].y - upper.points[bottom].y;
+          assert.ok(gap >= 15.9, `stacked cards preserve a positive gap (${gap})`);
+          assert.ok(Math.abs(gap - 16 * upper.points[bottom].scale) < 0.003, 'the gap grows only by the same perspective as its neighboring edge');
+        }
+      };
+      assertGaps();
+      const originalCamera = cameraOffset(main);
+      const reads = site.layoutReads;
+      site.journal.scrollTop = 40;
+      site.event('scroll', { target: site.journal });
+      site.advance(32);
+      assert.equal(site.layoutReads, reads, 'vertical clearance updates from cached bounds and native scrollTop');
+      assert.deepEqual(depthState(main), before, 'vertical reading does not alter the approved yaw or forward depth');
+      assert.equal(cameraOffset(main).x, originalCamera.x);
+      assert.equal(cameraOffset(main).y, originalCamera.y + 40, 'vertical reading retains the fixed viewport camera');
+      upper = projectedPanel(site, main, mainLayout);
+      lower = projectedPanel(site, sidebar, sideLayout);
+      assertGaps();
+      site.journal.scrollTop = 0;
+      site.event('scroll', { target: site.journal });
+      site.advance(32);
+      assert.deepEqual(cameraOffset(main), originalCamera, 'reversing native reading restores the exact camera');
+    }
+    site.media.matches = true;
+    site.media.dispatchEvent({ type: 'change' });
+    assertFlatDepth(main, 'reduced motion clears perspective and the camera transform');
+    assertFlatDepth(sidebar, 'reduced motion also clears the independently positioned stacked card');
+  }
+});
+
+await test('motion preferences and suspension settle depth while hero phases join and leave the content pose continuously', () => {
+  for (const interruption of ['reduced', 'blocked', 'hidden', 'pagehide']) {
+    const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true });
+    const sidebar = site.journalPanels.sidebar;
+    const original = depthState(sidebar);
+    assert.ok(Math.abs(original.yaw) > 0, interruption);
+    if (interruption === 'reduced') { site.media.matches = true; site.media.dispatchEvent({ type: 'change' }); }
+    if (interruption === 'blocked') { site.html.classList.add('is-loading'); site.event('popstate'); site.advance(32); }
+    if (interruption === 'hidden') { site.document.hidden = true; site.event('visibilitychange'); }
+    if (interruption === 'pagehide') site.event('pagehide');
+    for (const panel of [...site.panels, sidebar, site.journalPanels.stacked]) assertFlatDepth(panel, `${interruption} settles every panel`);
+    const frames = site.requestedFrames;
+    const reads = site.layoutReads;
+    site.advance(1600);
+    assert.equal(site.requestedFrames, frames, `${interruption} cannot leave a depth animation running`);
+    assert.equal(site.layoutReads, reads);
+    if (interruption === 'reduced') { site.media.matches = false; site.media.dispatchEvent({ type: 'change' }); }
+    if (interruption === 'blocked') { site.html.classList.remove('is-loading'); site.event('popstate'); site.advance(32); }
+    if (interruption === 'hidden') { site.document.hidden = false; site.event('visibilitychange'); }
+    if (interruption === 'pagehide') site.event('pageshow');
+    assert.deepEqual(depthState(sidebar), original, `${interruption} resumes the cached horizontal position without a stale pose`);
+  }
+  const hero = browser();
+  assert.equal(entranceShift(hero), 0);
+  for (const panel of hero.panels) assertFlatDepth(panel, 'the hero starts without panel depth');
+  hero.wheel(120);
+  const initialShift = entranceShift(hero);
+  assert.ok(initialShift > hero.window.innerWidth, 'the assembled content starts beyond the side of the viewport');
+  assert.equal(hero.viewport.inert, true, 'the entire moving viewport is inaccessible during the hero transition');
+  assert.equal(revealState(hero.about).open, true, 'the main panel is assembled before its side-entry displacement becomes visible');
+  const initialDepth = depthState(hero.about);
+  assert.ok(initialDepth.z > 0 && initialDepth.yaw < 0 && initialDepth.shift < 0, 'the incoming panel starts near the viewer on the side of the arc');
+  const geometryReads = hero.layoutReads;
+  const animationFrames = hero.requestedFrames;
+  const animationScrolls = hero.scrolls.length;
+  hero.advance(450);
+  const middleShift = entranceShift(hero);
+  assert.ok(middleShift > 0 && middleShift < initialShift, 'the assembled content moves progressively into the viewport');
+  assert.equal(hero.viewport.inert, true);
+  const middleDepth = depthState(hero.about);
+  assert.ok(middleDepth.z > 0 && middleDepth.z < initialDepth.z, 'the middle of the entrance is still in depth while receding toward the reading plane');
+  assert.ok(middleDepth.yaw < -20, 'the visible side entrance turns clearly instead of remaining nearly frontal');
+  assert.ok(middleDepth.shift < 0 && Math.abs(middleDepth.shift) < Math.abs(initialDepth.shift));
+  const reference = browser({ url: 'https://gudu.blog/#journal' });
+  reference.jump(reference.destination('journal') - middleShift);
+  const screenMatchedDepth = depthState(reference.journal);
+  for (const key of Object.keys(middleDepth)) {
+    assert.ok(Math.abs(middleDepth[key] - screenMatchedDepth[key]) <= 0.011, `${key} follows the actual shifted screen position instead of a separate hero depth mix`);
+  }
+  hero.advance(350);
+  assert.equal(hero.html.classList.contains('is-chapter-entering'), true);
+  assert.equal(entranceShift(hero), 0, 'the slide joins the ordinary track before the final transition frame');
+  assert.equal(hero.viewport.inert, true, 'an already aligned viewport still waits for the transition to finish');
+  const reading = browser({ url: 'https://gudu.blog/#about' });
+  assert.deepEqual(depthState(hero.about), depthState(reading.about), 'the main panel reaches its ordinary reading plane before the final hero frame');
+  const joinedDepth = [depthState(hero.about), depthState(hero.series)];
+  assert.ok(Math.abs(joinedDepth[1].yaw) > 0, 'the neighboring panel already has its ordinary off-center pose');
+  hero.advance(100);
+  assert.equal(hero.html.classList.contains('is-chapter-entering'), false);
+  assert.equal(hero.viewport.inert, false, 'finishing the transition restores content interaction');
+  assert.equal(entranceShift(hero), 0);
+  assert.deepEqual([depthState(hero.about), depthState(hero.series)], joinedDepth, 'removing the hero transition cannot jump either panel at the endpoint');
+  assert.equal(hero.layoutReads, geometryReads, 'hero depth uses existing cached geometry throughout the timeline');
+  assert.ok(hero.requestedFrames - animationFrames <= hero.scrolls.length - animationScrolls + 1, 'depth adds no animation chain to the existing hero movement');
+  hero.click(hero.link('#home'));
+  assert.equal(entranceShift(hero), 0, 'the return starts at the ordinary track position');
+  assert.equal(hero.viewport.inert, true);
+  assert.deepEqual([depthState(hero.about), depthState(hero.series)], joinedDepth, 'returning begins at the same content pose');
+  hero.advance(340);
+  assert.equal(entranceShift(hero), middleShift, 'the same visual phase follows the same side-entry path in reverse');
+  assert.deepEqual(depthState(hero.about), middleDepth, 'the same visual phase follows the same rigid-plane path in reverse');
+  hero.advance(1000);
+  assert.equal(entranceShift(hero), 0, 'return completion clears displacement after hiding the content');
+  assert.equal(hero.viewport.inert, true, 'hidden content stays inaccessible on the hero');
+  for (const panel of hero.panels) assertFlatDepth(panel);
+  assert.equal(hero.pendingFrames, 0);
+  const reduced = browser({ reduced: true, url: 'https://gudu.blog/#journal', multiPanels: true });
+  assertFlatDepth(reduced.journalPanels.sidebar, 'an initial hash with reduced motion is flat from the first render');
+});
+
 await test('native vertical reading reveals lower cards against the clipped viewport without moving their siblings or reading layout', () => {
   const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true });
   const { main, sidebar, stacked, heading } = site.journalPanels;
   const readTo = top => {
+    let steps = 0;
     while (site.journal.scrollTop !== top) {
+      assert.ok(++steps < 100, 'the requested native reading position remains reachable');
       site.journal.scrollTop += Math.sign(top - site.journal.scrollTop) * Math.min(24, Math.abs(top - site.journal.scrollTop));
       site.event('scroll', { target: site.journal });
       site.advance(32);
@@ -1016,6 +1646,7 @@ await test('native vertical reading reveals lower cards against the clipped view
   assert.deepEqual([revealState(main).open, revealState(sidebar).open, revealState(stacked).open], [true, true, false]);
   assert.equal(stacked.inert, true);
   assert.equal(revealState(heading).initialized, true, 'loose headings are independent reveal units');
+  const horizontalDepth = [depthState(main), depthState(sidebar)];
   const reads = site.layoutReads;
   const horizontalPosition = site.top;
   // The lower panel starts at 100 + 740px in the nested wrapper. Its first
@@ -1030,6 +1661,7 @@ await test('native vertical reading reveals lower cards against the clipped view
   readTo(325);
   assert.equal(revealState(main).departing, true, 'the main card begins exiting above the clipped viewport');
   assert.equal(revealState(stacked).departing, false, 'the incoming lower card keeps its own open state');
+  assert.deepEqual([depthState(main), depthState(sidebar)], horizontalDepth, 'native vertical reading cannot alter either card horizontal depth');
   site.event('scroll', { target: site.journal });
   site.advance(32);
   assert.equal(revealState(main).departing, true, 'full horizontal visibility cannot reset a stationary vertical exit');
@@ -1720,6 +2352,193 @@ await test('idle decoration starts one second after content settles and stops im
   assert.equal(site.pendingTimers, 0);
 });
 
+await test('Hero panels calibrate only after arrival and share the existing idle timer without layout or frames', () => {
+  const site = browser();
+  site.wheel(120);
+  site.advance(899);
+  assert.equal(site.panels.some(isCalibrating), false, 'an assembled side entrance never calibrates while moving');
+  site.advance(1);
+  assert.equal(site.pendingFrames, 0);
+  const reads = site.layoutReads;
+  const frames = site.requestedFrames;
+  site.advance(119);
+  assert.equal(isCalibrating(site.about), false, 'arrival waits for a short quiet period');
+  site.advance(1);
+  assert.equal(isCalibrating(site.about), true);
+  assert.equal(site.panels.slice(1).some(isCalibrating), false, 'distant and partial preview panels do not calibrate');
+  assert.equal(calibrationCount(site, site.about), 1);
+  assert.equal(site.pendingTimers, 1, 'the same idle timeout now waits for the ruler');
+  assert.equal(site.progress.classList.contains('is-chapter-idle'), false);
+  site.advance(879);
+  assert.equal(site.progress.classList.contains('is-chapter-idle'), false);
+  site.advance(1);
+  assert.equal(site.progress.classList.contains('is-chapter-idle'), true, 'ruler idle still starts one second after arrival');
+  site.advance(5000);
+  assert.equal(site.pendingTimers, 0);
+  assert.equal(site.pendingFrames, 0);
+  assert.equal(site.requestedFrames, frames, 'CSS calibration does not create an animation loop');
+  assert.equal(site.layoutReads, reads, 'calibration uses existing visibility state');
+  assert.equal(calibrationCount(site, site.about), 1, 'a stationary panel does not repeat its calibration');
+
+  site.click(site.link('#home'));
+  assert.equal(site.panels.some(isCalibrating), false, 'returning to Hero cancels the current calibration immediately');
+  site.advance(680);
+  site.click(site.navLinks[0]);
+  site.advance(900);
+  site.advance(120);
+  assert.equal(calibrationCount(site, site.about), 2, 'a later Hero entrance is a new panel visit');
+});
+
+await test('wheel, chapter navigation and rail seeking never calibrate panels before motion actually settles', () => {
+  for (const input of ['wheel', 'link', 'rail']) {
+    const site = browser({ url: 'https://gudu.blog/#about' });
+    if (input === 'wheel') site.wheel(site.step);
+    if (input === 'link') site.click(site.navLinks[1]);
+    if (input === 'rail') {
+      const point = site.rulerLeft + site.rulerWidth * 1.5 / 4;
+      markerPointer(site, 'pointerdown', point, { target: site.progressRail });
+      markerPointer(site, 'pointerup', point, { target: site.progressRail });
+    }
+    let ticks = 0;
+    while (site.pendingFrames) {
+      site.advance(16);
+      assert.equal(site.panels.some(isCalibrating), false, `${input}: movement cannot trigger a stationary calibration`);
+      assert.ok(++ticks < 150, `${input}: the interaction finishes`);
+    }
+    assert.ok(Math.abs(site.top - site.destination('series')) < 0.01);
+    const reads = site.layoutReads;
+    const frames = site.requestedFrames;
+    site.advance(119);
+    assert.equal(isCalibrating(site.series), false, input);
+    site.advance(1);
+    assert.equal(isCalibrating(site.series), true, `${input}: the destination calibrates after settling`);
+    assert.equal(site.layoutReads, reads);
+    assert.equal(site.requestedFrames, frames);
+  }
+});
+
+await test('main, sidebar and vertically stacked panels calibrate independently of their chapter and loose labels', () => {
+  const site = browser({ url: 'https://gudu.blog/#about', multiPanels: true });
+  const { main, sidebar, stacked, heading, nestedHeading } = site.journalPanels;
+  moveToVisiblePixels(site, main, main.offsetWidth * 0.6);
+  site.advance(140);
+  assert.equal(isCalibrating(main), true);
+  assert.equal(isCalibrating(sidebar), false, 'a visible main card does not activate its offscreen neighbor');
+  assert.equal(isCalibrating(stacked), false, 'a card below the vertical clipping boundary waits');
+  assert.equal(isCalibrating(heading), false);
+  assert.equal(isCalibrating(nestedHeading), false);
+  assert.equal(site.journal.classList.contains('is-chapter-calibrating'), false, 'calibration belongs to individual surfaces');
+
+  moveToVisiblePixels(site, sidebar, sidebar.offsetWidth * 0.6);
+  site.advance(140);
+  assert.equal(isCalibrating(sidebar), true);
+  assert.equal(calibrationCount(site, main), 1, 'an already visited sibling does not replay');
+  assert.equal(calibrationCount(site, sidebar), 1);
+  assert.equal(calibrationCount(site, stacked), 0);
+
+  site.journal.scrollTop = 400;
+  site.document.dispatchEvent({ type: 'scroll', target: site.journal });
+  site.advance(180);
+  assert.equal(isCalibrating(stacked), true, 'native vertical reading gives the newly visible card its own calibration');
+  assert.equal(isCalibrating(main), false);
+  assert.equal(isCalibrating(sidebar), false);
+  assert.deepEqual([calibrationCount(site, main), calibrationCount(site, sidebar), calibrationCount(site, stacked)], [1, 1, 1]);
+});
+
+await test('small movements and reversals do not replay calibration, while completely leaving rearms only that panel', () => {
+  const site = browser({ url: 'https://gudu.blog/#about' });
+  moveToVisiblePixels(site, site.series, revealUnit(site.series).offsetWidth * 0.7);
+  site.advance(140);
+  assert.equal(calibrationCount(site, site.series), 1);
+  assert.equal(revealState(site.series).scanning, false, 'calibration retires the old entrance scanner');
+  const scans = () => site.domWrites.filter(write => write.target === revealUnit(site.series) && write.operation === 'add'
+    && write.names?.includes('is-chapter-scanning')).length;
+  const previousScans = scans();
+  const settled = site.top;
+  site.jump(settled + 12);
+  assert.equal(isCalibrating(site.series), false, 'new activity cancels an active calibration');
+  site.advance(200);
+  site.jump(settled);
+  site.advance(200);
+  assert.equal(calibrationCount(site, site.series), 1, 'a short direction reversal keeps the same visit');
+  assert.equal(scans(), previousScans, 'canceling calibration does not restart the retired entrance scan');
+
+  moveToVisiblePixels(site, site.series, 0.5, 'left');
+  assert.equal(isCalibrating(site.series), false);
+  moveToVisiblePixels(site, site.series, revealUnit(site.series).offsetWidth * 0.7, 'left');
+  site.advance(140);
+  assert.equal(calibrationCount(site, site.series), 2, 'returning after full departure starts one new calibration');
+});
+
+await test('held cursor grabs and touches defer pending calibration until release', () => {
+  for (const input of ['cursor', 'touch']) {
+    const site = browser({ url: 'https://gudu.blog/#about' });
+    let release;
+    if (input === 'cursor') {
+      const start = site.rulerLeft + site.markerX;
+      const end = start + site.rulerWidth / 4;
+      markerPointer(site, 'pointerdown', start);
+      markerPointer(site, 'pointermove', end);
+      site.advance(16);
+      release = () => markerPointer(site, 'pointerup', end);
+    } else {
+      moveToVisiblePixels(site, site.series, revealUnit(site.series).offsetWidth * 0.7);
+      site.event('touchstart', { target: site.series, touches: [{ clientX: 300, clientY: 400 }] });
+      release = () => site.event('touchend', { touches: [] });
+    }
+    site.advance(1500);
+    assert.equal(isCalibrating(site.series), false, `${input}: a stationary held interaction is still active`);
+    assert.equal(calibrationCount(site, site.series), 0);
+    assert.equal(site.pendingFrames, 0);
+    assert.equal(site.pendingTimers, 0, 'no polling timer waits for release');
+    release();
+    site.advance(119);
+    assert.equal(isCalibrating(site.series), false);
+    site.advance(1);
+    assert.equal(isCalibrating(site.series), true, `${input}: release starts the quiet period`);
+  }
+});
+
+await test('instant positioning and page lifecycle changes cancel calibration without replaying delayed tails', () => {
+  for (const interruption of ['hash', 'resize', 'hidden', 'pagehide', 'reduced']) {
+    for (const timing of ['pending', 'active']) {
+      const site = browser({ url: 'https://gudu.blog/#about' });
+      moveToVisiblePixels(site, site.series, revealUnit(site.series).offsetWidth * 0.7);
+      if (timing === 'active') site.advance(140);
+      assert.equal(isCalibrating(site.series), timing === 'active');
+      if (interruption === 'hash') site.hash('#journal');
+      if (interruption === 'resize') site.resizeWidth(600);
+      if (interruption === 'hidden') { site.document.hidden = true; site.event('visibilitychange'); }
+      if (interruption === 'pagehide') site.event('pagehide');
+      if (interruption === 'reduced') { site.media.matches = true; site.media.dispatchEvent({ type: 'change' }); }
+      assert.equal(site.panels.some(isCalibrating), false, `${interruption}/${timing}: cancellation is immediate`);
+      const counts = site.panels.map(panel => calibrationCount(site, panel));
+      if (['hidden', 'pagehide', 'reduced'].includes(interruption)) assert.equal(site.pendingTimers, 0);
+      site.advance(1500);
+      assert.deepEqual(site.panels.map(panel => calibrationCount(site, panel)), counts, `${interruption}/${timing}: canceled work has no delayed tail`);
+      if (interruption === 'hidden') { site.document.hidden = false; site.event('visibilitychange'); }
+      if (interruption === 'pagehide') site.event('pageshow');
+      if (interruption === 'reduced') { site.media.matches = false; site.media.dispatchEvent({ type: 'change' }); }
+      site.advance(1500);
+      assert.deepEqual(site.panels.map(panel => calibrationCount(site, panel)), counts, `${interruption}/${timing}: restoration settles already visible surfaces`);
+      assert.equal(site.pendingFrames, 0);
+      assert.equal(site.pendingTimers, 0);
+    }
+  }
+  for (const reduced of [false, true]) {
+    const site = browser({ reduced, url: 'https://gudu.blog/#journal' });
+    site.advance(1500);
+    assert.equal(site.panels.some(isCalibrating), false, 'an initial hash is a settled view');
+    if (reduced) {
+      site.click(site.navLinks[1]);
+      site.advance(1500);
+      assert.equal(site.panels.some(isCalibrating), false, 'reduced motion never plays a calibration');
+      assert.equal(site.pendingTimers, 0);
+      assert.equal(site.pendingFrames, 0);
+    }
+  }
+});
+
 await test('native reading, reading keys and a held touch suspend idle decoration without taking over inputs', () => {
   const site = browser({ url: 'https://gudu.blog/?q=space#journal' });
   const idle = () => site.progress.classList.contains('is-chapter-idle');
@@ -1838,6 +2657,114 @@ await test('long panels read vertically before their edge passes wheel movement 
   assert.equal(site.wheel(-80, { target: site.journal }).defaultPrevented, true);
   site.advance(1000);
   assert.equal(site.top, journalTop);
+});
+
+await test('native long-chapter scrolling stops at real content even when projection inflates the DOM scroll range', () => {
+  for (const viewportWidth of [390, 1200]) {
+    const site = browser({ url: 'https://gudu.blog/#journal', viewportWidth });
+    const logicalGeometry = site.panels[2].geometry();
+    site.panels[2].geometry = () => logicalGeometry;
+    site.journal.scrollHeight += 700;
+    site.resizeWidth(viewportWidth);
+    const limit = logicalGeometry.top + logicalGeometry.height - site.journal.clientHeight;
+    const horizontal = site.top;
+    const reads = site.layoutReads;
+    const frames = site.requestedFrames;
+    site.journal.scrollTop = limit + 300;
+    site.document.dispatchEvent({ type: 'scroll', target: site.journal });
+    assert.equal(site.journal.scrollTop, limit, 'native overshoot is removed before the next rendered update');
+    site.document.dispatchEvent({ type: 'scroll', target: site.journal });
+    site.advance(32);
+    assert.equal(site.layoutReads, reads, 'clamping uses cached logical geometry');
+    assert.ok(site.requestedFrames - frames <= 1, 'the correcting scroll event shares the existing update frame');
+    assert.equal(site.top, horizontal, 'native overshoot cannot move horizontally by itself');
+    assert.equal(site.wheel(80, { target: site.journal }).defaultPrevented, true, 'a new wheel at the logical bottom leaves the chapter');
+    site.advance(1000);
+    assert.equal(site.top, horizontal + 80);
+    assert.equal(site.journal.scrollTop, limit);
+    assert.equal(site.wheel(-80, { target: site.journal }).defaultPrevented, false, 'upward reading still stays inside the long chapter');
+    site.journal.scrollTop = -20;
+    site.document.dispatchEvent({ type: 'scroll', target: site.journal });
+    assert.equal(site.journal.scrollTop, 0, 'the logical start also rejects native overscroll');
+  }
+});
+
+await test('reading keys target the logical boundary instead of animating into projection-only space', () => {
+  for (const reduced of [false, true]) {
+    const site = browser({ url: 'https://gudu.blog/#journal', reduced });
+    const logicalGeometry = site.panels[2].geometry();
+    site.panels[2].geometry = () => logicalGeometry;
+    site.journal.scrollHeight += 700;
+    site.resizeWidth(site.window.innerWidth);
+    const limit = logicalGeometry.top + logicalGeometry.height - site.journal.clientHeight;
+    const horizontal = site.top;
+    site.journal.scrollTop = limit - 10;
+    site.key('PageDown', { target: site.journal });
+    assert.equal(site.journal.scrollTop, limit, 'the key target itself ends at the content boundary');
+    assert.equal(site.innerScrolls.at(-1).behavior, reduced ? 'instant' : 'smooth');
+    assert.equal(site.top, horizontal);
+    site.key('ArrowDown', { target: site.journal });
+    site.advance(1000);
+    assert.equal(site.top, horizontal + 100, 'the following key continues through the horizontal strip');
+    assert.equal(site.journal.scrollTop, limit);
+  }
+});
+
+await test('touch reaching the logical bottom stays native until release before the next gesture moves horizontally', () => {
+  const site = browser({ url: 'https://gudu.blog/#journal', viewportWidth: 390 });
+  const logicalGeometry = site.panels[2].geometry();
+  site.panels[2].geometry = () => logicalGeometry;
+  site.journal.scrollHeight += 700;
+  site.resizeWidth(site.window.innerWidth);
+  const limit = logicalGeometry.top + logicalGeometry.height - site.journal.clientHeight;
+  const horizontal = site.top;
+  const finger = clientY => ({ clientX: 100, clientY });
+  site.journal.scrollTop = limit - 10;
+  site.event('touchstart', { target: site.journal, touches: [finger(600)] });
+  assert.equal(site.event('touchmove', { target: site.journal, touches: [finger(570)] }).defaultPrevented, false);
+  site.journal.scrollTop = limit + 200;
+  site.document.dispatchEvent({ type: 'scroll', target: site.journal });
+  assert.equal(site.journal.scrollTop, limit);
+  assert.equal(site.event('touchmove', { target: site.journal, touches: [finger(450)] }).defaultPrevented, false, 'the held native gesture never switches axes at the corrected boundary');
+  site.advance(32);
+  assert.equal(site.top, horizontal);
+  site.event('touchend', { touches: [] });
+  site.event('touchstart', { target: site.journal, touches: [finger(600)] });
+  assert.equal(site.event('touchmove', { target: site.journal, touches: [finger(540)] }).defaultPrevented, true);
+  site.event('touchend', { touches: [] });
+  site.advance(1000);
+  assert.equal(site.top, horizontal + 60);
+  assert.equal(site.journal.scrollTop, limit);
+});
+
+await test('logical reading limits remeasure after content and viewport changes and remove stale vertical positions', () => {
+  const site = browser({ url: 'https://gudu.blog/#journal' });
+  let logicalGeometry = site.panels[2].geometry();
+  site.panels[2].geometry = () => logicalGeometry;
+  site.journal.scrollHeight += 1000;
+  site.resizeWidth(site.window.innerWidth);
+  const horizontal = site.top;
+  site.journal.scrollTop = 700;
+  logicalGeometry = { ...logicalGeometry, height: 700 };
+  site.lateResize();
+  site.advance(32);
+  assert.equal(site.journal.scrollTop, 0, 'shorter results cannot retain an old reading offset');
+  assert.equal(site.journal.classList.contains('is-chapter-scrollable'), false);
+  logicalGeometry = { ...logicalGeometry, height: 1900 };
+  site.lateResize();
+  site.advance(32);
+  assert.equal(site.journal.classList.contains('is-chapter-scrollable'), true);
+  site.journal.scrollTop = 1300;
+  site.document.dispatchEvent({ type: 'scroll', target: site.journal });
+  assert.equal(site.journal.scrollTop, 1200, 'new content has its own increased logical limit');
+  site.journal.clientHeight = 1000;
+  site.resizeWidth(site.window.innerWidth);
+  assert.equal(site.journal.scrollTop, 1000, 'a taller reading viewport clamps the remaining offset');
+  logicalGeometry = { ...logicalGeometry, height: 2300 };
+  site.lateResize();
+  site.advance(32);
+  assert.equal(site.wheel(80, { target: site.journal }).defaultPrevented, false, 'appended content is readable beyond the previous bottom');
+  assert.equal(site.top, horizontal, 'logical vertical changes preserve the horizontal destination');
 });
 
 await test('keyboard input travels continuously, while anchors retain query parameters and focus', () => {
@@ -2201,7 +3128,10 @@ await test('only revealed panels can receive focus, with geometry still limiting
   assert.equal(revealUnit(hero.about).inert, true);
   hero.advance(200);
   assert.equal(revealState(hero.about).open, true);
-  assert.equal(revealUnit(hero.about).inert, false, 'interaction becomes available after the existing content visibility threshold');
+  assert.equal(revealUnit(hero.about).inert, false, 'the unit becomes ready after the content visibility threshold');
+  assert.equal(hero.viewport.inert, true, 'its ancestor still blocks interaction while the assembled panels slide in');
+  hero.advance(620);
+  assert.equal(hero.viewport.inert, false, 'interaction becomes available when the full hero transition finishes');
 });
 
 await test('an upward wheel from the About edge returns to the hero and absorbs its momentum tail', () => {
@@ -2229,6 +3159,9 @@ await test('an upward wheel from the About edge returns to the hero and absorbs 
 await test('About reads its own vertical content before an upward wheel or key returns to the hero', () => {
   const wheelSite = browser({ url: 'https://gudu.blog/#about' });
   wheelSite.about.scrollHeight = 1600;
+  const wheelContent = wheelSite.panels[0].geometry();
+  wheelSite.panels[0].geometry = () => ({ ...wheelContent, height: 1500 });
+  wheelSite.resizeWidth(wheelSite.window.innerWidth);
   wheelSite.about.scrollTop = 200;
   assert.equal(wheelSite.wheel(-80, { target: wheelSite.about }).defaultPrevented, false);
   wheelSite.advance(1000);
@@ -2240,6 +3173,9 @@ await test('About reads its own vertical content before an upward wheel or key r
 
   const keySite = browser({ url: 'https://gudu.blog/#about' });
   keySite.about.scrollHeight = 1600;
+  const keyContent = keySite.panels[0].geometry();
+  keySite.panels[0].geometry = () => ({ ...keyContent, height: 1500 });
+  keySite.resizeWidth(keySite.window.innerWidth);
   keySite.about.scrollTop = 200;
   keySite.key('ArrowUp', { target: keySite.about });
   assert.equal(keySite.about.scrollTop, 100);

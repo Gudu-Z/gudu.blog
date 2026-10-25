@@ -109,41 +109,116 @@
 .home-page .about-section .about-socials a:is(:hover, :focus-visible) .about-link-arrow { transform: translate(2px, -2px); }
 .home-page .about-section .about-socials a:focus-visible { outline: 1px solid #c5cbd18c; outline-offset: 4px; }
 
-.home-page .about-section .about-text > .about-identity-line {
+/* Personal details read like an archive record, without turning facts into buttons. */
+.home-page .about-section .about-copy { height: max-content; }
+.home-page .about-section .about-body { flex: 1 0 auto; }
+.home-page .about-section .about-copy h2 {
+  font-size: clamp(24px, calc(27 * var(--about-unit)), 36px);
+  line-height: 1.4;
+}
+.home-page .about-section .about-name {
+  margin-top: 5px;
+  font-size: clamp(66px, calc(78 * var(--about-unit)), 104px);
+}
+.home-page .about-section .about-text > .about-pronunciation {
   display: flex;
-  align-items: center;
-  gap: 11px;
-  margin: calc(13 * var(--about-unit)) 0 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 14px;
   max-width: none;
-  color: #a5aeb6;
-  font: var(--about-code-size)/1.5 var(--chapter-mono);
-  letter-spacing: 0.12em;
-}
-.home-page .about-section .about-identity-line > span {
-  flex: none;
-  width: calc(22 * var(--about-unit));
-  height: 1px;
-  background: var(--chapter-signal);
-}
-.home-page .about-section .about-text > .about-lead {
-  margin: calc(20 * var(--about-unit)) 0 calc(14 * var(--about-unit));
-  font-size: clamp(16px, calc(17 * var(--about-unit)), 20px);
-  line-height: 1.85;
-  color: var(--chapter-text);
-}
-.home-page .about-section .about-text > p:not(.about-lead) {
-  margin-bottom: 0;
-  font-size: clamp(13px, calc(12 * var(--about-unit)), 16px);
-  line-height: 2;
+  margin: calc(10 * var(--about-unit)) 0 calc(19 * var(--about-unit));
+  padding-top: 4px;
   color: #a8b1b9;
+  font-size: clamp(13px, calc(12 * var(--about-unit)), 16px);
+  line-height: 1.8;
+}
+.home-page .about-section .about-chinese-name {
+  color: var(--chapter-text);
+  font-size: clamp(21px, calc(21 * var(--about-unit)), 28px);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.home-page .about-section .about-chinese-name ruby { ruby-position: over; ruby-align: center; }
+.home-page .about-section .about-chinese-name ruby + ruby { margin-left: 7px; }
+.home-page .about-section .about-chinese-name rt {
+  color: #acb6bf;
+  font: 500 clamp(10px, calc(10 * var(--about-unit)), 12px)/1.2 var(--chapter-mono);
+  letter-spacing: 0.02em;
+}
+.home-page .about-section .about-dossier {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(13 * var(--about-unit)) 16px;
+  margin: 0;
+}
+.home-page .about-section .about-fact { min-width: 0; }
+.home-page .about-section .about-fact dt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 7px;
+  color: #a8b2bb;
+  font-size: var(--about-code-size);
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+}
+.home-page .about-section .about-fact dt > span {
+  color: #7f8993;
+  font: 9px/1.5 var(--chapter-mono);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.home-page .about-section .about-fact dd {
+  margin: 5px 0 0;
+  color: #d0d6dc;
+  font-size: clamp(14px, calc(13 * var(--about-unit)), 17px);
+  line-height: 1.75;
   text-wrap: pretty;
 }
-.home-page .about-section .about-signature {
-  margin-top: clamp(22px, calc(26 * var(--about-unit)), 36px);
-  padding-top: calc(17 * var(--about-unit));
+.home-page .about-section .about-fact-wide {
+  grid-column: 1 / -1;
+  padding-top: calc(12 * var(--about-unit));
+  border-top: 1px solid var(--chapter-rule);
 }
-.home-page .about-section .about-signature p { font-size: clamp(11px, calc(10 * var(--about-unit)), 13px); line-height: 1.8; color: #aeb6be; }
-.home-page .about-section .about-signature-code { font-size: var(--about-code-size); color: #858f99; }
+.home-page .about-section .about-games ul {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.home-page .about-section .about-games li {
+  display: grid;
+  grid-template-columns: 19px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+}
+.home-page .about-section .about-games li > span:first-child {
+  color: #7f8993;
+  font: 9px/1.5 var(--chapter-mono);
+  letter-spacing: 0.06em;
+}
+.home-page .about-section .about-preference {
+  gap: 10px;
+  max-width: none;
+  margin-top: calc(16 * var(--about-unit));
+  padding-top: calc(13 * var(--about-unit));
+}
+.home-page .about-section .about-preference p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 10px;
+  font-size: var(--about-code-size);
+  line-height: 1.8;
+  color: #a8b2bb;
+}
+.home-page .about-section .about-preference strong {
+  color: var(--chapter-text);
+  font-size: clamp(14px, calc(14 * var(--about-unit)), 18px);
+  font-weight: 500;
+}
+.home-page .about-section .about-signature-code { font-size: 9px; color: #858f99; }
 
 /* Number, title, description and action follow the same internal columns on every card. */
 .home-page .about-section .connection-heading {
@@ -190,20 +265,8 @@
 .home-page .about-section .rss-label { font-size: 10px; }
 .home-page .about-section .connection-footnote { color: #959fa8; font-size: 10px; line-height: 1.6; letter-spacing: 0.05em; }
 
-/* Lines use their own pseudo-element, leaving the reveal layer's translation intact. */
-.home-page .about-section .about-calibration::before,
-.home-page .about-section .connection-rule::before {
-  transform: scaleX(calc(var(--chapter-rule-reveal, 1) * var(--chapter-line-in, 1)));
-  transform-origin: center;
-  transition-property: var(--chapter-line-properties, transform);
-  transition-duration: var(--chapter-reveal-duration, 0ms);
-  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-  transition-delay: calc(var(--chapter-reveal-stagger, 0ms) * (1 - var(--chapter-reveal-reverse, 0)));
-}
-
 @media (max-width: 1200px) {
   .home-page .about-section .about-body { align-items: start; }
-  .home-page .about-section .about-signature { margin-top: 24px; }
   .home-page .about-section .connection-card-head { gap: 8px; }
   .home-page .about-section .connection-card { padding-block: 22px; }
   .home-page .about-section .connection-action { margin-top: auto; }
@@ -213,10 +276,9 @@
   .home-page .about-section .about-calibration { margin-bottom: 25px; }
   .home-page .about-section .about-portrait-caption { font-size: 10px; letter-spacing: 0.07em; }
   .home-page .about-section .about-socials a { min-height: 44px; }
-  .home-page .about-section .about-text > .about-identity-line { margin-top: 12px; }
-  .home-page .about-section .about-text > .about-lead { margin-top: 22px; }
-  .home-page .about-section .about-text > p:not(.about-lead) { font-size: 14px; }
-  .home-page .about-section .about-signature { margin-top: 24px; padding-top: 18px; }
+  .home-page .about-section .about-text > .about-pronunciation { margin-block: 12px 22px; font-size: 14px; }
+  .home-page .about-section .about-dossier { row-gap: 16px; }
+  .home-page .about-section .about-preference { margin-top: 20px; padding-top: 16px; }
   .home-page .about-section .connection-card { padding-block: 24px; }
   .home-page .about-section .connection-card h3 { font-size: 20px; }
   .home-page .about-section .connection-action { padding-top: 15px; }
@@ -224,8 +286,6 @@
 @media (max-width: 480px) {
   .home-page .about-section .about-record-label { font-size: 10px; }
   .home-page .about-section .about-portrait-caption { gap: 8px; }
-  .home-page .about-section .about-text > .about-identity-line { gap: 9px; letter-spacing: 0.09em; }
-  .home-page .about-section .about-identity-line > span { width: 18px; }
   .home-page .about-section .connection-heading { flex-wrap: wrap; gap: 5px 12px; }
 }
 @media (max-height: 760px) and (min-width: 721px) {
@@ -234,10 +294,12 @@
   .home-page .about-section .about-portrait-caption { margin-top: 9px; }
   .home-page .about-section .about-socials { margin-top: 9px; }
   .home-page .about-section .about-socials a { min-height: 44px; padding-block: 10px; }
-  .home-page .about-section .about-text > .about-identity-line { margin-top: 9px; }
-  .home-page .about-section .about-text > .about-lead { margin-top: 16px; margin-bottom: 12px; font-size: 16px; }
-  .home-page .about-section .about-text > p:not(.about-lead) { line-height: 1.9; }
-  .home-page .about-section .about-signature { margin-top: 20px; padding-top: 15px; }
+  .home-page .about-section .about-copy h2 { font-size: 24px; }
+  .home-page .about-section .about-name { font-size: 66px; }
+  .home-page .about-section .about-text > .about-pronunciation { margin-block: 8px 13px; }
+  .home-page .about-section .about-dossier { row-gap: 10px; }
+  .home-page .about-section .about-fact-wide { padding-top: 9px; }
+  .home-page .about-section .about-preference { margin-top: 13px; padding-top: 10px; }
   .home-page .about-section .connection-card { padding-block: 18px; }
   .home-page .about-section .connection-rule { margin-block: 7px 9px; }
   .home-page .about-section .connection-card h3 { margin-bottom: 6px; font-size: 17px; }
