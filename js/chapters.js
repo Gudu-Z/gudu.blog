@@ -298,11 +298,22 @@
     setStyle(unit.element, '--chapter-depth-z', `${depth.toFixed(2)}px`);
     setStyle(unit.element, '--chapter-depth-x', `${shift.toFixed(3)}px`);
     setStyle(unit.element, '--chapter-depth-span', span.toFixed(6));
-    if (unit.isPanel) {
-      const light = clamp(-yaw / 45, -1, 1);
-      setStyle(unit.element, '--chapter-light-left', Math.max(0, light).toFixed(3));
-      setStyle(unit.element, '--chapter-light-right', Math.max(0, -light).toFixed(3));
-    }
+    unit.depthYaw = yaw;
+    unit.depthEnabled = Boolean(enabled && surface);
+    setUnitLight(unit);
+  }
+
+  function setUnitLight(unit) {
+    if (!unit.isPanel) return;
+    // One fixed upper-left source lights the rotated normal. The same view
+    // rotation applies to every face; the opposite edge receives soft shade.
+    const yaw = (unit.depthYaw - pointerLayer.x / 8 * 1.5) * Math.PI / 180;
+    const pitch = pointerLayer.y / 5 * 0.8 * Math.PI / 180;
+    const facing = -0.48 * Math.sin(yaw)
+      + 0.36 * Math.sin(pitch) * Math.cos(yaw)
+      + 0.8 * Math.cos(pitch) * Math.cos(yaw);
+    setStyle(unit.element, '--chapter-light-left', (unit.depthEnabled ? clamp((facing - 0.45) / 0.45, 0, 1) : 0).toFixed(3));
+    setStyle(unit.element, '--chapter-light-right', (unit.depthEnabled ? clamp((0.82 - facing) / 0.82, 0, 1) : 0).toFixed(3));
   }
 
   function updateUnitDepth(unit, left, top, enabled) {
@@ -576,6 +587,11 @@
     setStyle(header, 'translate', hudTranslate);
     pointerNavX = Number(x.toFixed(3));
     setStyle(progressNav, 'translate', hudTranslate);
+    // These angles sit inside each unit's shared camera projection, before its
+    // world position. Outside text therefore stays on its owner's plane.
+    setStyle(track, '--chapter-view-yaw', `${(-x / 8 * 1.5).toFixed(3)}deg`);
+    setStyle(track, '--chapter-view-pitch', `${(vertical / 5 * 0.8).toFixed(3)}deg`);
+    for (const unit of revealUnits) setUnitLight(unit);
   }
 
   function holdPointerParallax() {
@@ -624,8 +640,8 @@
     if (!updateFrame) updateFrame = requestAnimationFrame(now => {
       updateFrame = 0;
       if (!available()) { updatePending = false; return; }
-      // Pointer-only frames touch the three interface layers, never re-run navigation
-      // or measure layout. Both inputs share this coalesced frame and then stop.
+      // Pointer-only frames update the shared view and surface light, never re-run
+      // navigation or measure layout. Both inputs share this frame and then stop.
       if (updatePending) { updatePending = false; update(); }
       if (tickPointerParallax(now)) queueUpdate(true);
     });

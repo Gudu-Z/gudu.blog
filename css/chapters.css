@@ -382,6 +382,8 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
   html.has-chapters .home-page .chapter-section :is(.chapter-panel, .chapter-reveal-unit) {
     transform: translate3d(var(--chapter-camera-x, 0px), var(--chapter-camera-y, 0px), 0)
       perspective(var(--chapter-perspective, 1400px))
+      rotateX(var(--chapter-view-pitch, 0deg))
+      rotateY(var(--chapter-view-yaw, 0deg))
       translate3d(calc(-1 * var(--chapter-camera-x, 0px) + var(--chapter-depth-x, 0px)), calc(-1 * var(--chapter-camera-y, 0px)), var(--chapter-depth-z, 0px))
       rotateY(var(--chapter-depth-yaw, 0deg))
       scaleX(var(--chapter-depth-span, 1));
@@ -409,17 +411,16 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     pointer-events: none;
   }
   html.has-chapters .home-page .chapter-panel > .chapter-panel-light::before {
-    /* One diffuse reflection across the surface, with no sized light strip or
-       uniform white wash. All stops fade smoothly before reaching the center. */
-    background: radial-gradient(ellipse 64% 68% at 0% 28%,
-      rgb(232 234 237 / 3.8%), rgb(232 234 237 / 1.6%) 32%,
-      rgb(232 234 237 / 0.4%) 52%, transparent 76%);
+    /* Light remains local to the upper-left edge. The gradient is static;
+       only its opacity follows the surface normal, without washing out copy. */
+    background: radial-gradient(ellipse 42% 72% at 0% 8%,
+      rgb(232 234 237 / 4%), rgb(232 234 237 / 1.6%) 30%,
+      rgb(232 234 237 / 0.3%) 56%, transparent 82%);
     opacity: var(--chapter-light-left, 0);
   }
   html.has-chapters .home-page .chapter-panel > .chapter-panel-light::after {
-    background: radial-gradient(ellipse 64% 68% at 100% 28%,
-      rgb(232 234 237 / 3.8%), rgb(232 234 237 / 1.6%) 32%,
-      rgb(232 234 237 / 0.4%) 52%, transparent 76%);
+    background: radial-gradient(ellipse 48% 88% at 100% 85%,
+      rgb(0 0 0 / 9%), rgb(0 0 0 / 4%) 32%, transparent 82%);
     opacity: var(--chapter-light-right, 0);
   }
   html.has-chapters .home-page .chapter-section :where(

@@ -808,6 +808,15 @@ function depthState(node) {
   };
 }
 
+function depthGeometry(node) {
+  const { left, right, ...geometry } = depthState(node);
+  return geometry;
+}
+
+function viewAngles(site) {
+  return ['yaw', 'pitch'].map(axis => parseFloat(site.track.style.getPropertyValue(`--chapter-view-${axis}`)) || 0);
+}
+
 function parallaxX(node) {
   return 0 + parseFloat(revealUnit(node).style.getPropertyValue('--chapter-parallax-x'));
 }
@@ -870,13 +879,22 @@ function projectedPoint(site, node, layout, x, y) {
   const angle = pose.yaw * Math.PI / 180;
   const localX = (x - originX) * pose.span;
   const localY = y - originY;
-  const depth = pose.z - Math.sin(angle) * localX;
+  const [viewYaw, viewPitch] = viewAngles(site).map(degrees => degrees * Math.PI / 180);
+  const sceneX = Math.cos(angle) * localX + pose.shift - camera.x;
+  const sceneY = localY - camera.y;
+  const sceneZ = pose.z - Math.sin(angle) * localX;
+  // CSS applies the shared view Ry, then Rx, after the card's own chord pose.
+  const turnedX = Math.cos(viewYaw) * sceneX + Math.sin(viewYaw) * sceneZ;
+  const turnedZ = -Math.sin(viewYaw) * sceneX + Math.cos(viewYaw) * sceneZ;
+  const turnedY = Math.cos(viewPitch) * sceneY - Math.sin(viewPitch) * turnedZ;
+  const depth = Math.sin(viewPitch) * sceneY + Math.cos(viewPitch) * turnedZ;
   const scale = perspective / (perspective - depth);
+  const [pointerX, pointerY] = layerOffset(site.track);
   // Evaluate the CSS camera projection at each actual rotated corner. This
   // also allows labels to be compared with points outside their owner's box.
   return {
-    x: layout.left + site.x + originX + camera.x + (Math.cos(angle) * localX + pose.shift - camera.x) * scale,
-    y: layout.top - layout.section.scrollTop + originY + camera.y + (localY - camera.y) * scale,
+    x: layout.left + site.x + pointerX + originX + camera.x + turnedX * scale,
+    y: layout.top - layout.section.scrollTop + pointerY + originY + camera.y + turnedY * scale,
     depth, scale,
   };
 }
@@ -1108,8 +1126,8 @@ await test('whole-interface mouse parallax coalesces samples and moves only thre
   site.advance(1600);
   const { main, nestedHeading, heading, intro } = site.journalPanels;
   const snapshot = () => ({ top: site.top, x: site.x, marker: site.markerX, url: site.url.href,
-    depth: depthState(main), camera: cameraOffset(main), scrollOffset: parallaxX(main),
-    heading: depthState(heading), intro: depthState(intro), scrolls: site.scrolls.length,
+    depth: depthGeometry(main), camera: cameraOffset(main), scrollOffset: parallaxX(main),
+    heading: depthGeometry(heading), intro: depthGeometry(intro), scrolls: site.scrolls.length,
     events: site.interactionEvents.length });
   const before = snapshot();
   const reads = site.layoutReads;
@@ -1127,12 +1145,20 @@ await test('whole-interface mouse parallax coalesces samples and moves only thre
   assertForeground();
   site.advance(1000);
   assert.deepEqual(interfaceOffsets(site), [[6, 3.75], [8, 5], [8, 5]]);
+  assert.deepEqual(viewAngles(site), [-1.5, 0.8]);
   assertForeground();
   assert.deepEqual(snapshot(), before, 'parent translation does not change rail geometry, panel projection or internal scroll offsets');
   assert.equal(site.layoutReads, reads);
   assert.equal(site.pendingFrames, 0);
-  assert.ok(site.domWrites.slice(writes).every(write => [site.track, site.header, site.progress].includes(write.target)
-    && write.kind === 'style' && write.name === 'translate'), 'mouse frames write only the three composed parents');
+  assert.ok(site.domWrites.slice(writes).every(write => write.kind === 'style' && (
+    ([site.track, site.header, site.progress].includes(write.target) && write.name === 'translate')
+    || (write.target === site.track && ['--chapter-view-yaw', '--chapter-view-pitch'].includes(write.name))
+    || (write.target.classList.contains('chapter-panel') && ['--chapter-light-left', '--chapter-light-right'].includes(write.name))
+  )), 'mouse frames only update parent translation, shared view angles and local material opacity');
+  for (const hud of [site.header, site.progress]) {
+    assert.equal(hud.style.getPropertyValue('--chapter-view-yaw'), '');
+    assert.equal(hud.style.getPropertyValue('--chapter-view-pitch'), '', 'foreground HUDs remain unrotated');
+  }
   for (const node of [...site.panels, heading, intro, nestedHeading, site.html]) {
     assert.equal(node.style.getPropertyValue('--chapter-pointer-x'), '');
     assert.equal(node.style.getPropertyValue('translate'), '', 'all content follows its parent with no independent mouse offset');
@@ -1149,6 +1175,7 @@ await test('whole-interface mouse parallax coalesces samples and moves only thre
   movePointer(site, site.body, { clientX: -100, clientY: -100 });
   site.advance(1100);
   assert.deepEqual(interfaceOffsets(site), [[-6, -3.75], [-8, -5], [-8, -5]]);
+  assert.deepEqual(viewAngles(site), [1.5, -0.8]);
   assertForeground();
   site.event('pointerout', { target: site.body, relatedTarget: null });
   assert.equal(layerOffset(site.track)[0], -6, 'actually leaving the window starts a soft return');
@@ -1157,9 +1184,81 @@ await test('whole-interface mouse parallax coalesces samples and moves only thre
   assertForeground();
   site.advance(1000);
   assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]]);
+  assert.deepEqual(viewAngles(site), [0, 0]);
   for (const node of [site.track, site.header, site.progress]) assert.equal(node.style.getPropertyValue('translate'), '', 'rest clears inline translation, restoring CSS entrance ownership');
   assert.equal(site.pendingFrames, 0);
   assert.equal(site.layoutReads, reads);
+});
+
+await test('shared mouse observation preserves owner planes and panel gaps while a fixed light responds continuously to orientation', () => {
+  for (const viewportWidth of [1200, 2551]) {
+    const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true, viewportWidth });
+    const { main, sidebar, heading, intro } = site.journalPanels;
+    const mainLayout = panelLayout(main);
+    const sidebarLayout = panelLayout(sidebar);
+    for (const offset of [-0.1, 0, 0.1]) {
+      site.jump(site.destination('journal') + offset * site.step);
+      const geometry = [main, sidebar, heading, intro].map(depthGeometry);
+      let firstProjection;
+      for (const [x, y] of [[0, 0], [1, 0], [1, 1], [0, 1], [0.5, 0.5], [0, 0]]) {
+        const reads = site.layoutReads;
+        movePointer(site, site.body, { clientX: x * viewportWidth, clientY: y * site.window.innerHeight });
+        site.advance(1000);
+        assert.equal(site.layoutReads, reads, 'view orientation and illumination never read live layout');
+        assert.equal(site.pendingFrames, 0);
+        const [yaw, pitch] = viewAngles(site);
+        assert.ok(Math.abs(yaw) <= 1.5 && Math.abs(pitch) <= 0.8, 'observation stays within the subtle yaw and pitch limits');
+        assert.deepEqual([main, sidebar, heading, intro].map(depthGeometry), geometry, 'mouse observation does not alter the scroll-authored chord geometry');
+        assertOnOwnerPlane(site, heading, main);
+        assertOnOwnerPlane(site, intro, sidebar);
+        const mainRect = projectedPanel(site, main, mainLayout);
+        const sideRect = projectedPanel(site, sidebar, sidebarLayout);
+        assert.ok(sideRect.left > mainRect.right, 'a shared observation angle retains the horizontal gap and card order');
+        for (const point of [...mainRect.points, ...sideRect.points]) {
+          assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y) && point.scale > 0, 'both observed surfaces stay in front of the camera');
+        }
+        for (const card of [main, sidebar]) {
+          const { left, right } = depthState(card);
+          assert.ok(left >= 0 && left <= 1 && right >= 0 && right <= 1);
+        }
+        for (const copy of [heading, intro]) {
+          assert.equal(copy.style.getPropertyValue('--chapter-light-left'), '');
+          assert.equal(copy.style.getPropertyValue('--chapter-light-right'), '', 'material shading remains on black surfaces only');
+        }
+        if (x === 0 && y === 0) {
+          const projection = [mainRect, sideRect, depthState(main), depthState(sidebar)];
+          if (firstProjection) assert.deepEqual(projection, firstProjection, 'reversing the mouse restores the same observed planes and shading');
+          else firstProjection = projection;
+        }
+      }
+    }
+  }
+  const light = browser({ url: 'https://gudu.blog/#journal', multiPanels: true });
+  const card = light.journalPanels.main;
+  const layout = panelLayout(card);
+  light.jump(light.destination('about') + layout.left + layout.width / 2 - light.window.innerWidth / 2);
+  assert.equal(depthState(card).yaw, 0);
+  const sample = fraction => {
+    const reads = light.layoutReads;
+    movePointer(light, light.body, { clientX: fraction * light.window.innerWidth, clientY: light.window.innerHeight / 2 });
+    light.advance(1000);
+    assert.equal(light.layoutReads, reads);
+    const { left, right } = depthState(card);
+    return [left, right];
+  };
+  const facing = sample(1);
+  const opposing = sample(0);
+  assert.ok(facing[0] > opposing[0] && facing[1] < opposing[1], 'at equal pitch a surface turned toward the upper-left source gains reflection and loses shadow');
+  for (const edge of [[-0.01, 0, 0.01], [1.01, 1, 0.99]]) {
+    const [outside, boundary, inside] = edge.map(sample);
+    assert.deepEqual(outside, boundary, 'clamping at a mouse boundary cannot jump the light');
+    assert.ok(boundary.every((value, index) => Math.abs(value - inside[index]) <= 0.003), 'the first step inside the boundary changes reflection and shadow gently');
+  }
+  light.media.matches = true;
+  light.media.dispatchEvent({ type: 'change' });
+  assert.deepEqual(viewAngles(light), [0, 0]);
+  assertFlatDepth(card, 'reduced motion clears observation, perspective and material together');
+  assert.equal(light.pendingFrames, 0);
 });
 
 await test('ordinary presses and search editing freeze the entire interface without moving hit targets', () => {
@@ -1167,11 +1266,13 @@ await test('ordinary presses and search editing freeze the entire interface with
   movePointer(site, site.header);
   site.advance(1000);
   const frozen = interfaceOffsets(site);
+  const frozenAngles = viewAngles(site);
   const reads = site.layoutReads;
   site.event('pointerdown', { target: site.header, pointerType: 'mouse', button: 0, isPrimary: true });
   movePointer(site, site.body, { clientX: 0, clientY: 0, buttons: 1 });
   site.advance(500);
   assert.deepEqual(interfaceOffsets(site), frozen);
+  assert.deepEqual(viewAngles(site), frozenAngles);
   assert.equal(site.pendingFrames, 0);
   site.input.focus();
   site.event('focusin', { target: site.input });
@@ -1181,6 +1282,7 @@ await test('ordinary presses and search editing freeze the entire interface with
   site.event('pointerout', { target: site.header, relatedTarget: null });
   site.advance(500);
   assert.deepEqual(interfaceOffsets(site), frozen, 'editing keeps search controls still, even if the mouse leaves');
+  assert.deepEqual(viewAngles(site), frozenAngles, 'search editing freezes the shared observation angle too');
   assert.equal(site.document.activeElement, site.input);
   assert.equal(site.input.value, 'space');
   assert.equal(site.pendingFrames, 0);
@@ -1188,6 +1290,7 @@ await test('ordinary presses and search editing freeze the entire interface with
   site.event('focusout', { target: site.input });
   site.advance(1000);
   assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]]);
+  assert.deepEqual(viewAngles(site), [0, 0]);
   movePointer(site, site.body);
   site.advance(1000);
   assert.deepEqual(interfaceOffsets(site), frozen, 'fresh input resumes after editing ends');
@@ -1206,6 +1309,7 @@ await test('translated ruler presses and drags preserve exact coordinates while 
     movePointer(site, site.body, { clientX: site.window.innerWidth * 0.7021, clientY: 500 });
     site.advance(1000);
     const frozen = interfaceOffsets(site);
+    const frozenAngles = viewAngles(site);
     const navX = frozen[2][0];
     assert.notEqual(navX, 0);
     if (operation === 'remeasured-click') {
@@ -1222,6 +1326,7 @@ await test('translated ruler presses and drags preserve exact coordinates while 
       : site.rulerLeft + navX + (destination + 0.5) / 4 * site.rulerWidth;
     markerPointer(site, 'pointerdown', pressedX, { target: operation === 'drag' ? site.progressHitbox : site.progressRail });
     assert.deepEqual(interfaceOffsets(site), frozen, 'stop and focus cannot reset a pressed ruler');
+    assert.deepEqual(viewAngles(site), frozenAngles);
     assert.equal(site.top, before, 'pressing cannot jump the document before a drag or release');
     movePointer(site, site.header, { clientX: 0, clientY: 0, buttons: 1 });
     site.advance(200);
@@ -1231,6 +1336,7 @@ await test('translated ruler presses and drags preserve exact coordinates while 
       markerPointer(site, 'pointermove', end);
       site.advance(32);
       assert.deepEqual(interfaceOffsets(site), frozen, 'drag updates keep all interface layers at the grabbed pose');
+      assert.deepEqual(viewAngles(site), frozenAngles, 'the shared camera cannot move while the ruler is grabbed');
       assert.ok(Math.abs(site.rulerLeft + navX + site.markerX - (end - 9)) < 0.001, 'the visual marker preserves the initial grabbed point');
       markerPointer(site, 'pointerup', end);
       assert.ok(Math.abs(site.top - (site.destination('about') + site.step * 1.24)) < 0.00001);
@@ -1269,6 +1375,7 @@ await test('interrupted translated ruler drags clear the frozen pose and cannot 
     if (action === 'reduced') { site.media.matches = true; site.media.dispatchEvent({ type: 'change' }); }
     if (action === 'coarse') { site.pointerMedia.matches = false; site.pointerMedia.dispatchEvent({ type: 'change' }); }
     assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]], action);
+    assert.deepEqual(viewAngles(site), [0, 0], action);
     assert.equal(site.progressMarker.hasPointerCapture(7), false);
     assert.equal(site.progress.classList.contains('is-scrubbing'), false);
     assert.equal(site.pendingFrames, 0, 'the pending drag sample is discarded');
@@ -1303,6 +1410,7 @@ await test('whole-interface mouse parallax excludes unsupported devices and unav
     movePointer(site, site.body);
     site.advance(1000);
     assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]], state);
+    assert.deepEqual(viewAngles(site), [0, 0], state);
     assert.equal(site.requestedFrames, before.frames, state);
     assert.equal(site.layoutReads, before.reads);
   }
@@ -1344,6 +1452,7 @@ await test('scroll input clears whole-interface offsets without losing pending u
   assert.match(hero.track.style.getPropertyValue('translate'), /^calc\(var\(--chapter-entrance-x, 0px\) \+ 6\.000px\)/, 'the moved parent composes with Hero displacement');
   hero.click(hero.link('#home'));
   assert.equal(hero.track.style.getPropertyValue('translate'), '', 'returning Hero clears inline translate so CSS controls entrance');
+  assert.deepEqual(viewAngles(hero), [0, 0], 'Hero travel clears the pointer observation angle');
   hero.advance(680);
   assert.equal(hero.top, 0);
   hero.wheel(100);
@@ -1376,6 +1485,7 @@ await test('whole-interface offsets clear even when frozen across device, layout
     if (action === 'coarse') { site.pointerMedia.matches = false; site.pointerMedia.dispatchEvent({ type: 'change' }); }
     if (action === 'touch') site.event('pointerdown', { target: site.body, pointerType: 'touch', button: 0 });
     assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]], action);
+    assert.deepEqual(viewAngles(site), [0, 0], action);
     for (const node of [site.track, site.header, site.progress]) assert.equal(node.style.getPropertyValue('translate'), '', action);
     assert.equal(site.pendingFrames, 0);
     const reads = site.layoutReads;
@@ -1391,6 +1501,7 @@ await test('whole-interface offsets clear even when frozen across device, layout
     site.document.activeElement = site.body;
     site.advance(1100);
     assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]], 'resume does not replay an obsolete mouse position');
+    assert.deepEqual(viewAngles(site), [0, 0], 'resume also clears the former observation angle');
     movePointer(site, site.body);
     site.advance(1000);
     assert.deepEqual(interfaceOffsets(site), [[6, 3.75], [8, 5], [8, 5]], action);
@@ -1655,7 +1766,7 @@ await test('each panel comes forward at the edges and returns to its reading pla
     };
     site.advance(1300);
     const right = atCenter(viewportWidth * 0.9);
-    assert.ok(right.yaw < 0 && right.left > 0 && right.right === 0, 'the right-hand panel reverses its tilt while keeping the inner left edge lit');
+    assert.ok(right.yaw < 0 && right.left > 0, 'the right-hand panel turns toward the fixed upper-left light');
     assert.ok(right.shift < 0, 'the right chord bends toward the shared arc center');
     const innerRight = atCenter(viewportWidth * 0.75);
     assert.ok(Math.abs(right.yaw) > Math.abs(innerRight.yaw) && Math.abs(innerRight.yaw) > 0, 'yaw approaches zero continuously on the way to the center');
@@ -1666,12 +1777,12 @@ await test('each panel comes forward at the edges and returns to its reading pla
       assert.ok(Math.abs(depthState(main).yaw) < 3 && depthState(main).z < viewportWidth * 0.03, 'small central movements retain a gentle reading pose');
     }
     const left = atCenter(viewportWidth * 0.1);
-    assert.ok(left.yaw > 0 && left.right > 0 && left.left === 0, 'the left-hand panel reverses its tilt while keeping the inner right edge lit');
+    assert.ok(left.yaw > 0 && left.right > 0, 'the left-hand panel turns away from the light and develops a soft dark side');
     assert.ok(left.shift > 0 && Math.abs(left.shift + right.shift) < 0.001, 'the chord displacement mirrors continuously across the center');
     assert.ok(left.yaw * right.yaw < 0, 'the two sides tilt in opposite directions');
     assert.ok(Math.abs(left.yaw + right.yaw) < 0.001);
     assert.ok(Math.abs(left.z - right.z) < 0.001);
-    assert.ok(Math.abs(left.left - right.right) < 0.001 && Math.abs(left.right - right.left) < 0.001, 'the local side light mirrors with panel position');
+    assert.ok(right.left > left.left && right.right < left.right, 'one fixed light source illuminates facing surfaces more than opposing surfaces');
     for (const light of [left.left, left.right, right.left, right.right]) assert.ok(light >= 0 && light <= 1);
     assert.ok(right.left + right.right > 0, 'the off-center surface has a localized side light');
     assert.deepEqual(atCenter(viewportWidth * 0.9), right, 'returning to a coordinate restores the exact pose without easing history');
@@ -1803,7 +1914,7 @@ await test('a surface wholly inside the flat arc center keeps its original readi
     const center = layout.left + layout.width / 2;
     for (const fraction of [0.475, 0.5, 0.525]) {
       site.jump(site.destination('about') + center - viewportWidth * fraction);
-      assert.deepEqual(depthState(main), { yaw: 0, z: 0, shift: 0, span: 1, left: 0, right: 0 });
+      assert.deepEqual(depthGeometry(main), { yaw: 0, z: 0, shift: 0, span: 1 });
       const projected = projectedPanel(site, main, layout);
       assert.ok(Math.abs(projected.left - (layout.left + site.x)) < 0.001);
       assert.ok(Math.abs(projected.top - layout.top) < 0.001);
