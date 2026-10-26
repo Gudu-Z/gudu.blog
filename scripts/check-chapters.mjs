@@ -1097,6 +1097,14 @@ await test('panel reveal thresholds have hysteresis and leave CSS to finish the 
 
 await test('whole-interface mouse parallax coalesces samples and moves only three parent layers before coming to rest', () => {
   const site = browser({ url: 'https://gudu.blog/#journal', multiPanels: true });
+  const assertForeground = () => {
+    const [content, top, bottom] = interfaceOffsets(site);
+    assert.deepEqual(top, bottom, 'both HUD layers occupy the same foreground plane');
+    for (const axis of [0, 1]) {
+      assert.equal(Math.sign(top[axis]), Math.sign(content[axis]), 'foreground and content follow the same mouse direction');
+      assert.ok(Math.abs(top[axis]) > Math.abs(content[axis]), 'foreground parallax stays stronger than content on both axes');
+    }
+  };
   site.advance(1600);
   const { main, nestedHeading, heading, intro } = site.journalPanels;
   const snapshot = () => ({ top: site.top, x: site.x, marker: site.markerX, url: site.url.href,
@@ -1115,9 +1123,11 @@ await test('whole-interface mouse parallax coalesces samples and moves only thre
   assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]]);
   site.advance(16);
   const first = layerOffset(site.track);
-  assert.ok(first[0] > 0 && first[0] < 8 && first[1] > 0 && first[1] < 5);
+  assert.ok(first[0] > 0 && first[0] < 6 && first[1] > 0 && first[1] < 3.75);
+  assertForeground();
   site.advance(1000);
-  assert.deepEqual(interfaceOffsets(site), [[8, 5], [4, 2.5], [3, 2]]);
+  assert.deepEqual(interfaceOffsets(site), [[6, 3.75], [8, 5], [8, 5]]);
+  assertForeground();
   assert.deepEqual(snapshot(), before, 'parent translation does not change rail geometry, panel projection or internal scroll offsets');
   assert.equal(site.layoutReads, reads);
   assert.equal(site.pendingFrames, 0);
@@ -1134,15 +1144,17 @@ await test('whole-interface mouse parallax coalesces samples and moves only thre
     site.event('pointerout', { target: main, relatedTarget: target });
     movePointer(site, target);
     site.advance(32);
-    assert.deepEqual(interfaceOffsets(site), [[8, 5], [4, 2.5], [3, 2]], 'blank space, HUDs and loose text share one continuous mouse field');
+    assert.deepEqual(interfaceOffsets(site), [[6, 3.75], [8, 5], [8, 5]], 'blank space, HUDs and loose text share one continuous mouse field');
   }
   movePointer(site, site.body, { clientX: -100, clientY: -100 });
   site.advance(1100);
-  assert.deepEqual(interfaceOffsets(site), [[-8, -5], [-4, -2.5], [-3, -2]]);
+  assert.deepEqual(interfaceOffsets(site), [[-6, -3.75], [-8, -5], [-8, -5]]);
+  assertForeground();
   site.event('pointerout', { target: site.body, relatedTarget: null });
-  assert.equal(layerOffset(site.track)[0], -8, 'actually leaving the window starts a soft return');
+  assert.equal(layerOffset(site.track)[0], -6, 'actually leaving the window starts a soft return');
   site.advance(32);
-  assert.ok(layerOffset(site.track)[0] > -8 && layerOffset(site.track)[0] < 0);
+  assert.ok(layerOffset(site.track)[0] > -6 && layerOffset(site.track)[0] < 0);
+  assertForeground();
   site.advance(1000);
   assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]]);
   for (const node of [site.track, site.header, site.progress]) assert.equal(node.style.getPropertyValue('translate'), '', 'rest clears inline translation, restoring CSS entrance ownership');
@@ -1184,7 +1196,7 @@ await test('ordinary presses and search editing freeze the entire interface with
   // An ordinary press released outside the browser may have no pointerup.
   movePointer(site, site.body, { clientX: 0, clientY: 0, buttons: 0 });
   site.advance(1000);
-  assert.deepEqual(interfaceOffsets(site), [[-8, -5], [-4, -2.5], [-3, -2]], 'a released mouse sample recovers from a missed pointerup');
+  assert.deepEqual(interfaceOffsets(site), [[-6, -3.75], [-8, -5], [-8, -5]], 'a released mouse sample recovers from a missed pointerup');
   assert.equal(site.layoutReads, reads);
 });
 
@@ -1233,7 +1245,7 @@ await test('translated ruler presses and drags preserve exact coordinates while 
     assert.equal(site.pendingFrames, 0);
     movePointer(site, site.body, { clientX: 0, clientY: 0 });
     site.advance(1000);
-    assert.deepEqual(interfaceOffsets(site), [[-8, -5], [-4, -2.5], [-3, -2]], 'normal mouse movement resumes after release');
+    assert.deepEqual(interfaceOffsets(site), [[-6, -3.75], [-8, -5], [-8, -5]], 'normal mouse movement resumes after release');
   }
 });
 
@@ -1267,7 +1279,7 @@ await test('interrupted translated ruler drags clear the frozen pose and cannot 
     if (action === 'coarse') { site.pointerMedia.matches = true; site.pointerMedia.dispatchEvent({ type: 'change' }); }
     movePointer(site, site.body);
     site.advance(1000);
-    assert.deepEqual(interfaceOffsets(site), [[8, 5], [4, 2.5], [3, 2]], 'fresh mouse movement resumes after interruption');
+    assert.deepEqual(interfaceOffsets(site), [[6, 3.75], [8, 5], [8, 5]], 'fresh mouse movement resumes after interruption');
     assert.equal(site.pendingFrames, 0);
   }
 });
@@ -1329,7 +1341,7 @@ await test('scroll input clears whole-interface offsets without losing pending u
   const hero = browser({ url: 'https://gudu.blog/#about' });
   movePointer(hero, hero.body);
   hero.advance(1000);
-  assert.match(hero.track.style.getPropertyValue('translate'), /^calc\(var\(--chapter-entrance-x, 0px\) \+ 8\.000px\)/, 'the moved parent composes with Hero displacement');
+  assert.match(hero.track.style.getPropertyValue('translate'), /^calc\(var\(--chapter-entrance-x, 0px\) \+ 6\.000px\)/, 'the moved parent composes with Hero displacement');
   hero.click(hero.link('#home'));
   assert.equal(hero.track.style.getPropertyValue('translate'), '', 'returning Hero clears inline translate so CSS controls entrance');
   hero.advance(680);
@@ -1343,7 +1355,7 @@ await test('scroll input clears whole-interface offsets without losing pending u
   assert.equal(hero.top, hero.destination('about'));
   movePointer(hero, hero.body);
   hero.advance(1000);
-  assert.deepEqual(interfaceOffsets(hero), [[8, 5], [4, 2.5], [3, 2]]);
+  assert.deepEqual(interfaceOffsets(hero), [[6, 3.75], [8, 5], [8, 5]]);
 });
 
 await test('whole-interface offsets clear even when frozen across device, layout and page lifecycle changes', () => {
@@ -1381,7 +1393,7 @@ await test('whole-interface offsets clear even when frozen across device, layout
     assert.deepEqual(interfaceOffsets(site), [[0, 0], [0, 0], [0, 0]], 'resume does not replay an obsolete mouse position');
     movePointer(site, site.body);
     site.advance(1000);
-    assert.deepEqual(interfaceOffsets(site), [[8, 5], [4, 2.5], [3, 2]], action);
+    assert.deepEqual(interfaceOffsets(site), [[6, 3.75], [8, 5], [8, 5]], action);
   }
 });
 

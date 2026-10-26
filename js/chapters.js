@@ -568,12 +568,14 @@
   function paintPointerParallax() {
     const { x, y: vertical } = pointerLayer;
     const moved = x !== 0 || vertical !== 0;
+    // Both HUDs share the foreground plane; the content moves less behind them.
+    const hudTranslate = moved ? `${x.toFixed(3)}px ${vertical.toFixed(3)}px` : '';
     // Move only three composed layers. Removing an idle inline translate lets
     // the existing CSS Hero entrance retain sole control of the track.
-    setStyle(track, 'translate', moved ? `calc(var(--chapter-entrance-x, 0px) + ${x.toFixed(3)}px) ${vertical.toFixed(3)}px` : '');
-    setStyle(header, 'translate', moved ? `${(x * 0.5).toFixed(3)}px ${(vertical * 0.5).toFixed(3)}px` : '');
-    pointerNavX = Number((x * 0.375).toFixed(3));
-    setStyle(progressNav, 'translate', moved ? `${pointerNavX.toFixed(3)}px ${(vertical * 0.4).toFixed(3)}px` : '');
+    setStyle(track, 'translate', moved ? `calc(var(--chapter-entrance-x, 0px) + ${(x * 0.75).toFixed(3)}px) ${(vertical * 0.75).toFixed(3)}px` : '');
+    setStyle(header, 'translate', hudTranslate);
+    pointerNavX = Number(x.toFixed(3));
+    setStyle(progressNav, 'translate', hudTranslate);
   }
 
   function holdPointerParallax() {
