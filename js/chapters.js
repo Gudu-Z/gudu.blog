@@ -22,8 +22,8 @@
   const mouseMotion = matchMedia('(hover: hover) and (pointer: fine)');
   let positions = [];
   let panelBounds = [];
+  let chapterStops = [];
   let entry = 0;
-  let width = 0;
   let travel = 0;
   let maximum = 0;
   let progressTrackLeft = 0;
@@ -99,9 +99,26 @@
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const y = () => window.scrollY || 0;
   const available = () => active && !document.hidden;
-  const position = () => y() >= entry ? 1 + (y() - entry) / Math.max(width, 1) : y() / Math.max(entry, 1);
+  const position = () => y() >= entry ? 1 + coordinateAt(y() - entry) : y() / Math.max(entry, 1);
   const blocked = () => root.classList.contains('is-loading') || document.body.dataset.menuOpen === 'true';
   const interactive = target => target?.closest?.('input, textarea, select, button, [contenteditable="true"], [role="slider"]');
+
+  // The ruler has equal chapter cells, but the actual reading stops can have
+  // different spacing. Both directions use the same cached center segments.
+  // Extrapolate at the ends so dragging from an outer half-cell stays aligned;
+  // only the applied scroll position is clamped to the content range.
+  function coordinateAt(offset) {
+    if (chapterStops.length < 2) return 0;
+    let index = 0;
+    while (index < chapterStops.length - 2 && offset >= chapterStops[index + 1]) index++;
+    return index + (offset - chapterStops[index]) / Math.max(1, chapterStops[index + 1] - chapterStops[index]);
+  }
+
+  function offsetAt(coordinate) {
+    if (chapterStops.length < 2) return 0;
+    const index = clamp(Math.floor(coordinate), 0, chapterStops.length - 2);
+    return chapterStops[index] + (coordinate - index) * Math.max(1, chapterStops[index + 1] - chapterStops[index]);
+  }
 
   function setStyle(element, name, value) {
     if (!element) return;
@@ -423,9 +440,9 @@
   function updateReveals(x, visible, instant, calibratePanels) {
     const now = performance.now();
     const movement = lastRevealX === null ? 0 : x - lastRevealX;
-    const distance = Math.abs(movement);
-    const fast = distance > width * 0.55 || (scrub?.dragging && distance > width * 0.04
-      && distance / Math.max(16, now - lastRevealTime) > width * 0.0025);
+    const distance = lastRevealX === null ? 0 : Math.abs(coordinateAt(x) - coordinateAt(lastRevealX));
+    const fast = distance > 0.55 || (scrub?.dragging && distance > 0.04
+      && distance / Math.max(16, now - lastRevealTime) > 0.0025);
     lastRevealX = x;
     lastRevealTime = now;
     const immediate = instant || fast || !initialized || !available() || blocked()
@@ -441,6 +458,7 @@
     const heroTravel = heroPhase === null ? 1 : clamp((heroPhase - 0.18) / 0.67, 0, 1);
     const heroSlide = motion.matches ? 0 : (window.innerWidth + Math.min(120, window.innerWidth * 0.08))
       * (1 - heroTravel * heroTravel * (3 - 2 * heroTravel));
+    const parallaxPosition = coordinateAt(x - heroSlide);
     setStyle(track, '--chapter-entrance-x', `${heroSlide.toFixed(3)}px`);
     setInert(viewport, !visible || heroPhase !== null);
 
@@ -451,7 +469,7 @@
       // Offset from this chapter's reading stop, rather than the asymmetric
       // center of each card: all its text rests at the authored layout on arrival.
       // The Hero displacement shares this coordinate, with no extra animation loop.
-      const parallaxPhase = clamp((index * width - x + heroSlide) / Math.max(1, width), -1, 1);
+      const parallaxPhase = clamp(index - parallaxPosition, -1, 1);
       const parallaxX = depthEnabled ? -Math.sin(parallaxPhase * Math.PI / 2) * (window.innerWidth <= 720 ? 5 : 12) : 0;
       const scroll = chapter.scrollTop;
       const verticalMovement = group.lastScroll === null ? 0 : scroll - group.lastScroll;
@@ -488,8 +506,8 @@
     renderedScroll = scroll;
     const progress = clamp(scroll / Math.max(1, entry), 0, 1);
     const x = clamp(scroll - entry, 0, travel);
-    const chapterPosition = x / Math.max(width, 1);
-    const siteProgress = travel ? x / travel : 0;
+    const chapterPosition = coordinateAt(x);
+    const siteProgress = chapterPosition / Math.max(1, chapters.length - 1);
     const visible = progress > 0.55;
     setStyle(root, '--chapter-progress', progress.toFixed(4));
     // A local transform avoids inheriting a changing custom property through
@@ -508,7 +526,7 @@
     // CSS completes the triggered sequences; geometry uses the existing cache.
     updateReveals(x, visible, instantPanels, calibratePanels);
     emitChapterState(progress);
-    const index = visible ? Math.min(chapters.length, 1 + Math.round(x / Math.max(width, 1))) : 0;
+    const index = visible ? Math.min(chapters.length, 1 + Math.round(chapterPosition)) : 0;
     setStyle(progressNav, '--chapter-active-index', String(clamp(index - 1, 0, chapters.length - 1)));
     const changed = index !== currentIndex;
     const sliderValue = (siteProgress * 100).toFixed(1);
@@ -533,15 +551,14 @@
   function measure() {
     if (!available() || measuring) return;
     measuring = true;
-    // Read the actual panel stride, including the fixed gap between chapters.
-    width = chapters.length > 1
-      ? chapters[1].offsetLeft - chapters[0].offsetLeft
-      : chapters[0].offsetWidth;
-    width = Math.max(width, 1);
+    // Read each slot once: a compact chapter must dock at its own center and
+    // must not leave an invisible full-width slot between its neighbors.
     panelBounds = chapters.map(chapter => ({ left: chapter.offsetLeft, width: chapter.offsetWidth }));
+    const firstCenter = panelBounds[0].left + panelBounds[0].width / 2;
+    chapterStops = panelBounds.map(bounds => bounds.left + bounds.width / 2 - firstCenter);
     measureReveals();
     entry = runway.getBoundingClientRect().top + y();
-    travel = width * (chapters.length - 1);
+    travel = chapterStops[chapterStops.length - 1];
     // Finish geometry reads before changing the runway height.
     const figure = document.querySelector('#black-hole')?.getBoundingClientRect();
     const scene = stage.getBoundingClientRect();
@@ -555,7 +572,7 @@
     }
     const runwayHeight = `${window.innerHeight + travel}px`;
     if (runway.style.height !== runwayHeight) runway.style.height = runwayHeight;
-    positions = [0, ...chapters.map((_, index) => entry + index * width)];
+    positions = [0, ...chapterStops.map(offset => entry + offset)];
     maximum = entry + travel;
     if (figure) {
       setStyle(root, '--fallback-shift-x', `${scene.left + scene.width / 2 - figure.left - figure.width / 2}px`);
@@ -713,7 +730,8 @@
     if (!available() || blocked()) { finishScrub(); return; }
     // Use the grabbed point as the origin: the large hit target must not jump
     // the page when pressed away from the tiny visual cursor. Geometry is cached.
-    const top = clamp(drag.startY + (drag.latestX - drag.startX) * drag.scrollPerPixel, entry, maximum);
+    const coordinate = drag.startPosition + (drag.latestX - drag.startX) * drag.positionPerPixel;
+    const top = clamp(entry + offsetAt(coordinate), entry, maximum);
     targetY = smoothY = top;
     if (Math.abs(top - y()) > 0.01) {
       setInteraction('content');
@@ -731,7 +749,7 @@
       return;
     }
     const seek = { from: smoothY, to: targetY, started: performance.now() };
-    const duration = 320 + Math.min(210, Math.abs(seek.to - seek.from) / Math.max(width, 1) * 70);
+    const duration = 320 + Math.min(210, Math.abs(coordinateAt(seek.to - entry) - coordinateAt(seek.from - entry)) * 70);
     railSeek = seek;
     setInteraction('content');
     function step(now) {
@@ -765,7 +783,7 @@
     setClass(progressNav, 'is-scrubbing', false);
     if (progressMarker?.hasPointerCapture?.(drag.pointerId)) progressMarker.releasePointerCapture(drag.pointerId);
     noteIdleActivity();
-    if (canCommit && !drag.dragging) { seekRail(drag.startY); return; }
+    if (canCommit && !drag.dragging) { seekRail(entry + offsetAt(drag.startPosition)); return; }
     setInteraction(null);
     scheduleIdle();
   }
@@ -785,16 +803,14 @@
     // interaction keeps the focus target without drawing its keyboard outline.
     setClass(progressMarker, 'is-pointer-focused', true);
     progressMarker.focus({ preventScroll: true });
-    // Cursor endpoints are the centers of the first and last chapter cells.
-    const cursorTravel = progressTrackWidth * (chapters.length - 1) / chapters.length;
     const grabbedMarker = progressMarker.contains(event.target);
     // Rail presses seek between chapter centers; label links still navigate
     // to exact chapter anchors. Keep the outer half-cells within the content.
     const railPosition = (event.clientX - progressTrackLeft - pointerNavX) / progressTrackWidth * chapters.length - 0.5;
     // Clamp only when applying the position so a drag starting in an outer
     // half-cell stays aligned with the pointer as it enters the usable range.
-    const startY = grabbedMarker ? y() : entry + railPosition * width;
-    scrub = { pointerId: event.pointerId, startX: event.clientX, latestX: event.clientX, startY, scrollPerPixel: travel / cursorTravel, dragging: grabbedMarker };
+    const startPosition = grabbedMarker ? coordinateAt(y() - entry) : railPosition;
+    scrub = { pointerId: event.pointerId, startX: event.clientX, latestX: event.clientX, startPosition, positionPerPixel: chapters.length / progressTrackWidth, dragging: grabbedMarker };
     setClass(progressNav, 'is-scrubbing', grabbedMarker);
     progressMarker.setPointerCapture(event.pointerId);
   });
@@ -842,12 +858,13 @@
     if (event.code === 'Escape' && scrub) { event.preventDefault(); finishScrub(); resetPointerParallax(true); return; }
     if (!available() || blocked() || transition?.direction || y() < entry - 1
         || event.altKey || event.ctrlKey || event.metaKey) return;
-    const deltas = { ArrowLeft: -width / 20, ArrowDown: -width / 20, ArrowRight: width / 20, ArrowUp: width / 20, PageDown: -width, PageUp: width };
+    const deltas = { ArrowLeft: -0.05, ArrowDown: -0.05, ArrowRight: 0.05, ArrowUp: 0.05, PageDown: -1, PageUp: 1 };
     if (!(event.code in deltas) && event.code !== 'Home' && event.code !== 'End') return;
     event.preventDefault();
     stop();
     entryGesture = false;
-    const destination = event.code === 'Home' ? entry : event.code === 'End' ? maximum : clamp(y() + deltas[event.code], entry, maximum);
+    const destination = event.code === 'Home' ? entry : event.code === 'End' ? maximum
+      : clamp(entry + offsetAt(coordinateAt(y() - entry) + deltas[event.code]), entry, maximum);
     targetY = smoothY = destination;
     if (Math.abs(destination - y()) > 0.01) {
       setInteraction('content');
@@ -1029,7 +1046,6 @@
       if (!event.repeat) goTo(1, { focus: true, entrance: true });
       return;
     }
-    const distance = event.code.startsWith('Arrow') ? 100 : width * 0.6;
     const vertical = !['ArrowLeft', 'ArrowRight'].includes(event.code);
     const inside = vertical && scrollableChapter(event.target, direction, true);
     if (inside) {
@@ -1038,7 +1054,12 @@
       const destination = clamp(inside.scrollTop + direction * readingDistance, 0, groupsByChapter.get(inside).scrollLimit);
       inside.scrollBy({ top: destination - inside.scrollTop, behavior: motion.matches ? 'instant' : 'smooth' });
       scheduleIdle();
-    } else if (advance(direction * distance)) entryGesture = true;
+    } else {
+      const intended = frame && !transition && !railSeek ? targetY : y();
+      const delta = event.code.startsWith('Arrow') ? direction * 100
+        : entry + offsetAt(coordinateAt(intended - entry) + direction * 0.6) - intended;
+      if (advance(delta)) entryGesture = true;
+    }
   });
 
   window.addEventListener('touchstart', event => {
@@ -1099,6 +1120,15 @@
     goTo(index, { focus: true, entrance: index === 0 || (y() < entry - 2 && index > 0) });
   });
 
+  window.addEventListener('site:category', event => {
+    if (!available() || blocked()) return;
+    const index = sections.findIndex(section => section.id === 'journal');
+    if (index < 0) return;
+    event.preventDefault();
+    sections[index].scrollTop = 0;
+    goTo(index, { historyMode: null, focus: true });
+  });
+
   document.addEventListener('submit', event => {
     if (!available() || blocked() || event.target.id !== 'post-search') return;
     const index = sections.findIndex(section => section.id === 'journal');
@@ -1132,7 +1162,7 @@
         instant: Boolean(navigation.direction),
       });
     } else {
-      const destination = previousPosition >= 1 ? entry + (previousPosition - 1) * width : previousPosition * entry;
+      const destination = previousPosition >= 1 ? entry + offsetAt(previousPosition - 1) : previousPosition * entry;
       if (Math.abs(destination - y()) > 0.5) setScroll(destination, true);
       setInteraction(null);
     }

@@ -55,10 +55,11 @@
   if (!postsList || !Array.isArray(window.BLOG_POSTS)) return;
 
   const posts = window.BLOG_POSTS.filter(post => post && typeof post.title === 'string');
+  const welcomePanel = posts.length ? null : postsList.querySelector('.journal-empty');
   if (!searchForm || !searchInput || !filterList) return;
 
   searchForm.hidden = false;
-  filterList.hidden = posts.length === 0;
+  filterList.hidden = false;
   if (resultsCount) resultsCount.hidden = false;
 
   const searchToggle = searchForm.querySelector('.header-search-toggle');
@@ -113,7 +114,20 @@
   }
 
   const pageSize = 6;
-  const categories = [...new Set(posts.map(post => post.category).filter(Boolean))];
+  // The generated catalog keeps empty categories selectable and gives links a
+  // stable URL even when their displayed names change.
+  const categories = Array.isArray(window.BLOG_CATEGORIES)
+    ? window.BLOG_CATEGORIES.filter(category => category && typeof category.slug === 'string' && typeof category.name === 'string')
+    : [...new Map(posts.filter(post => post.category).map(post => [post.categorySlug || post.category,
+      { slug: post.categorySlug || post.category, name: post.category }])).values()];
+  const categoryNames = new Map(categories.map(category => [category.slug, category.name]));
+  const postCategories = new Map(posts.map(post => [post, categoryNames.has(post.categorySlug) ? post.categorySlug
+    : categories.find(category => category.name === post.category || category.slug === post.category)?.slug
+      || (categoryNames.has('other') ? 'other' : '')]));
+  const categoryCounts = new Map(categories.map(category => [category.slug, posts.filter(post => postCategories.get(post) === category.slug).length]));
+  for (const element of document.querySelectorAll('[data-category-count]')) {
+    element.textContent = String(categoryCounts.get(element.dataset.categoryCount) || 0).padStart(2, '0');
+  }
   const searchablePosts = posts.map(post => ({
     post,
     text: [post.title, post.summary || post.excerpt, post.category, ...(Array.isArray(post.tags) ? post.tags : []), post.searchText]
@@ -141,7 +155,7 @@
 
   function createPostCard(post, index) {
     const card = createElement('article', 'post-card');
-    card.dataset.category = post.category || '';
+    card.dataset.category = postCategories.get(post) || '';
     card.style.setProperty('--card-index', String(index));
 
     const number = createElement('span', 'post-number', String(posts.indexOf(post) + 1).padStart(2, '0'));
@@ -184,15 +198,15 @@
 
   function createFilters() {
     const fragment = document.createDocumentFragment();
-    for (const category of ['', ...categories]) {
+    for (const category of ['', ...categoryNames.keys()]) {
       const button = createElement('button', 'filter-button');
       button.type = 'button';
       button.dataset.category = category;
       button.setAttribute('aria-controls', 'posts-list');
       button.setAttribute('aria-pressed', 'false');
-      const count = category ? posts.filter(post => post.category === category).length : posts.length;
+      const count = category ? categoryCounts.get(category) : posts.length;
       button.append(
-        createElement('span', 'filter-label', category || '全部'),
+        createElement('span', 'filter-label', categoryNames.get(category) || '全部'),
         createElement('span', 'filter-count', String(count)),
       );
       fragment.append(button);
@@ -203,13 +217,22 @@
   function matchingPosts() {
     const terms = state.query.normalize('NFKC').toLocaleLowerCase('zh-CN').split(/\s+/).filter(Boolean);
     return searchablePosts.filter(({ post, text }) => (
-      (!state.category || post.category === state.category) && terms.every(term => text.includes(term))
+      (!state.category || postCategories.get(post) === state.category) && terms.every(term => text.includes(term))
     )).map(({ post }) => post);
   }
 
   function render(append = false) {
-    // Keep the authored welcome panel while the first article is still pending.
-    if (!posts.length) {
+    for (const button of filterList.querySelectorAll('button[data-category]')) {
+      button.setAttribute('aria-pressed', String(button.dataset.category === state.category));
+    }
+    for (const link of document.querySelectorAll('[data-category-link]')) {
+      if (link.dataset.categoryLink === state.category) link.setAttribute('aria-current', 'true');
+      else link.removeAttribute('aria-current');
+    }
+    // Keep the authored welcome only for the unfiltered empty site. A chosen
+    // category or query still needs an honest empty result with a reset action.
+    if (!posts.length && !state.category && !state.query) {
+      if (welcomePanel && !postsList.contains(welcomePanel)) postsList.replaceChildren(welcomePanel);
       if (clearSearch) clearSearch.hidden = searchInput.value.length === 0;
       if (resultsCount) resultsCount.textContent = '暂无已发布的文章';
       if (emptyState) emptyState.hidden = true;
@@ -225,10 +248,17 @@
     else postsList.replaceChildren(fragment);
     displayedCount = Math.min(state.limit, matches.length);
 
-    for (const button of filterList.querySelectorAll('button[data-category]')) {
-      button.setAttribute('aria-pressed', String(button.dataset.category === state.category));
-    }
     if (emptyState) emptyState.hidden = matches.length > 0;
+    if (emptyState && !matches.length) {
+      const title = emptyState.querySelector('h3');
+      const description = emptyState.querySelector('p');
+      const emptyCategory = state.category && !state.query;
+      const categoryName = categoryNames.get(state.category);
+      if (title) title.textContent = emptyCategory ? '这个分类还没有文章' : '还没有找到这篇记录';
+      if (description) description.textContent = emptyCategory
+        ? `“${categoryName}”暂无已发布的文章，可以先看看全部文章。`
+        : `${categoryName ? `在“${categoryName}”中` : ''}试试其他关键词，或者看看全部文章。`;
+    }
     if (clearSearch) clearSearch.hidden = searchInput.value.length === 0;
     if (resultsCount) {
       resultsCount.textContent = matches.length > displayedCount
@@ -241,12 +271,13 @@
     }
   }
 
-  function updateUrl(mode) {
+  function updateUrl(mode, hash) {
     const url = new URL(window.location.href);
     if (state.query) url.searchParams.set('q', state.query);
     else url.searchParams.delete('q');
     if (state.category) url.searchParams.set('category', state.category);
     else url.searchParams.delete('category');
+    if (hash) url.hash = hash;
     if (url.href === window.location.href) return false;
     // History can be unavailable in a sandboxed embed; filtering still works there.
     try {
@@ -259,9 +290,9 @@
     const params = new URL(window.location.href).searchParams;
     state.query = (params.get('q') || '').trim();
     const requestedCategory = params.get('category') || '';
-    state.category = categories.includes(requestedCategory)
-      ? requestedCategory
-      : posts.find(post => post.categorySlug === requestedCategory)?.category || '';
+    state.category = categoryNames.has(requestedCategory) ? requestedCategory
+      : categories.find(category => category.name === requestedCategory)?.slug
+        || postCategories.get(posts.find(post => post.category === requestedCategory || post.categorySlug === requestedCategory)) || '';
     state.limit = pageSize;
     searchSession = false;
     searchInput.value = state.query;
@@ -313,6 +344,28 @@
     updateUrl('push');
     render();
   });
+  document.addEventListener('click', event => {
+    if (event.defaultPrevented || event.button > 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    const link = event.target.closest?.('a[data-category-link]');
+    if (!link || link.hasAttribute('download') || (link.target && link.target !== '_self') || !categoryNames.has(link.dataset.categoryLink)) return;
+    const target = new URL(link.href, window.location.href);
+    if (target.origin !== window.location.origin || target.pathname !== window.location.pathname) return;
+    event.preventDefault();
+    state.query = '';
+    state.category = link.dataset.categoryLink;
+    state.limit = pageSize;
+    searchSession = false;
+    searchInput.value = '';
+    updateUrl('push', '#journal');
+    render();
+    const navigation = new CustomEvent('site:category', { detail: { category: state.category }, cancelable: true });
+    window.dispatchEvent(navigation);
+    if (!navigation.defaultPrevented) {
+      document.querySelector('#journal')?.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start',
+      });
+    }
+  });
   resetFilters?.addEventListener('click', resetAll);
   loadMore?.addEventListener('click', () => {
     const firstNewIndex = displayedCount;
@@ -325,6 +378,6 @@
   });
   window.addEventListener('popstate', restoreFromUrl);
 
-  if (posts.length) createFilters();
+  createFilters();
   restoreFromUrl();
 })();

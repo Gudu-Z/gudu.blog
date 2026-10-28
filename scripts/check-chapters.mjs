@@ -39,7 +39,7 @@ function classList(initial = [], onWrite = () => {}) {
 
 // Only browser surfaces used by the chapter controller are modeled. The real
 // controller executes unmodified; assertions inspect scrolls, URLs and events.
-function browser({ reduced = false, finePointer = true, url = 'https://gudu.blog/', loading = false, hidden = false, viewportWidth = 1200, viewportHeight = 800, roundScroll = false, initialPanelWidth = null, multiPanels = false } = {}) {
+function browser({ reduced = false, finePointer = true, url = 'https://gudu.blog/', loading = false, hidden = false, viewportWidth = 1200, viewportHeight = 800, roundScroll = false, initialPanelWidth = null, chapterWidths = null, multiPanels = false, categoryLayout = false } = {}) {
   let now = 0;
   let sequence = 0;
   let scrollY = 0;
@@ -61,10 +61,21 @@ function browser({ reduced = false, finePointer = true, url = 'https://gudu.blog
   let document;
   let window;
   let panelWidthOverride = initialPanelWidth;
+  let chapterWidthOverrides = chapterWidths;
   const viewWidth = () => window?.innerWidth ?? viewportWidth;
   const panelWidth = () => panelWidthOverride ?? Number((viewWidth() <= 720 ? viewWidth() * 0.88 : Math.min(1200, viewWidth() * 0.82)).toFixed(4));
   const panelGap = () => viewWidth() <= 720 ? 20 : 32;
   const panelStep = () => panelWidth() + panelGap();
+  const chapterWidth = index => {
+    const widths = typeof chapterWidthOverrides === 'function'
+      ? chapterWidthOverrides({ viewportWidth: viewWidth(), defaultWidth: panelWidth() }) : chapterWidthOverrides;
+    return widths?.[index] ?? panelWidth();
+  };
+  const chapterLeft = index => chapterWidthOverrides
+    ? (viewWidth() - chapterWidth(0)) / 2
+      + Array.from({ length: index }, (_, previous) => chapterWidth(previous) + panelGap()).reduce((sum, value) => sum + value, 0)
+    : (viewWidth() - panelWidth()) / 2 + index * panelStep();
+  const chapterCenter = index => chapterLeft(index) + chapterWidth(index) / 2;
   const rulerWidth = () => viewWidth() * (viewWidth() <= 720 ? 0.92 : 0.89);
 
   class Element {
@@ -118,13 +129,13 @@ function browser({ reduced = false, finePointer = true, url = 'https://gudu.blog
     get offsetLeft() {
       layoutReads++;
       if (this.geometry) return this.geometry().left;
-      return this.chapterIndex === undefined ? 0 : (viewWidth() - panelWidth()) / 2 + this.chapterIndex * panelStep();
+      return this.chapterIndex === undefined ? 0 : chapterLeft(this.chapterIndex);
     }
     get offsetWidth() {
       layoutReads++;
       if (this.classList.contains('chapter-progress-track')) return rulerWidth();
       if (this.geometry) return this.geometry().width;
-      return this.chapterIndex === undefined ? viewWidth() : panelWidth();
+      return this.chapterIndex === undefined ? viewWidth() : chapterWidth(this.chapterIndex);
     }
     get href() { return new URL(this.getAttribute('href') || '', location).href; }
     set href(value) { this.setAttribute('href', value); }
@@ -224,11 +235,33 @@ function browser({ reduced = false, finePointer = true, url = 'https://gudu.blog
   const panels = chapters.slice(1).map(chapter => {
     const panel = new Element('div', {
       id: `${chapter.id}-panel`, classes: ['chapter-panel'], offsetParent: chapter,
-      geometry: () => ({ left: 0, top: 100, width: panelWidth(), height: chapter === journal ? journal.scrollHeight - 100 : 600 }),
+      geometry: () => ({ left: 0, top: 100, width: chapterWidth(chapter.chapterIndex), height: chapter === journal ? journal.scrollHeight - 100 : 600 }),
     });
     chapter.append(panel);
     return panel;
   });
+  const categoryPanels = { surface: panels[1] };
+  if (categoryLayout) {
+    const surface = categoryPanels.surface;
+    surface.id = 'category-surface';
+    surface.classList.add('category-panel');
+    const heading = new Element('header', {
+      classes: ['category-heading'], dataset: { depthOwner: surface.id }, offsetParent: series,
+      geometry: () => ({ left: 0, top: 30, width: chapterWidth(1), height: 50 }),
+    });
+    const columns = ['minecraft', 'daydreams', 'collected', 'other'].map((slug, index) => {
+      const column = new Element('a', {
+        classes: ['category-column'], dataset: { categoryLink: slug }, offsetParent: surface,
+        geometry: () => ({ left: chapterWidth(1) * index / 4, top: 0, width: chapterWidth(1) / 4, height: 600 }),
+      });
+      column.href = `?category=${slug}#journal`;
+      return column;
+    });
+    surface.append(...columns);
+    series.children = [];
+    series.append(heading, surface);
+    Object.assign(categoryPanels, { heading, columns });
+  }
   const journalPanels = { main: panels[2] };
   if (multiPanels) {
     journal.paddingBottom = 122;
@@ -408,11 +441,15 @@ function browser({ reduced = false, finePointer = true, url = 'https://gudu.blog
   }
   advance(32);
   return {
-    html, body, window, document, chapters, panels, journalPanels, about, journal, series, archive, navLinks, searchForm, input, media, pointerMedia, header, progress, progressCurrent,
+    html, body, window, document, chapters, panels, journalPanels, categoryPanels, about, journal, series, archive, navLinks, searchForm, input, media, pointerMedia, header, progress, progressCurrent,
     runway, viewport, track, progressTrack, progressRail, progressMarker, progressHitbox, heroHeading, scrolls, innerScrolls, chapterEvents, interactionEvents, historyEntries, domWrites,
     get top() { return scrollY; },
     get step() { return panelStep(); },
-    destination(id) { return id === 'home' ? 0 : height + chapters.find(chapter => chapter.id === id).chapterIndex * panelStep(); },
+    destination(id) {
+      if (id === 'home') return 0;
+      const index = chapters.find(chapter => chapter.id === id).chapterIndex;
+      return height + (chapterWidthOverrides ? chapterCenter(index) - chapterCenter(0) : index * panelStep());
+    },
     get x() { return Number(track.style.getPropertyValue('transform').match(/translate3d\(([-\d.]+)px/)?.[1]) || 0; },
     get markerX() { return parseFloat(progressMarker.style.getPropertyValue('--chapter-marker-x')); },
     get rulerWidth() { return rulerWidth(); },
@@ -448,6 +485,11 @@ function browser({ reduced = false, finePointer = true, url = 'https://gudu.blog
       for (const observer of resizeObservers) observer.callback();
     },
     resizeWidth(value) { window.innerWidth = value; dispatch('resize'); advance(32); },
+    setChapterWidths(value) {
+      chapterWidthOverrides = value;
+      for (const observer of resizeObservers) observer.callback();
+      advance(32);
+    },
     settlePanelWidth(value = null) {
       panelWidthOverride = value;
       for (const observer of resizeObservers) {
@@ -2075,6 +2117,38 @@ await test('journal title and intro follow separate surfaces without projecting 
   moveToVisiblePixels(travel, heading, revealThresholds(travel, heading).departure - 1, 'left');
   assert.equal(revealState(heading).departing, true);
   assert.equal(revealState(intro).departing, false, 'the right intro does not withdraw with the departing left title');
+});
+
+await test('the outside category heading shares its single surface while all four links remain ordinary panel content', () => {
+  for (const viewportWidth of [1200, 390]) {
+    const site = browser({ url: 'https://gudu.blog/#series', viewportWidth, categoryLayout: true });
+    const { surface, heading, columns } = site.categoryPanels;
+    assert.equal(site.isObserved(heading), true);
+    assert.equal(site.isObserved(surface), true);
+    for (const offset of [-0.3, 0, 0.3, -0.3]) {
+      const reads = site.layoutReads;
+      site.jump(site.destination('series') + site.step * offset);
+      assert.equal(site.layoutReads, reads, 'category travel uses cached heading and panel geometry');
+      assertOnOwnerPlane(site, heading, surface);
+      assert.equal(heading.style.getPropertyValue('--chapter-parallax-x'), '', 'the outside title never drifts away from its panel');
+      assert.equal(heading.style.getPropertyValue('--chapter-light-left'), '', 'the outside title is not a second black surface');
+    }
+    for (const column of columns) {
+      assert.equal(site.isObserved(column), false);
+      assert.equal(revealState(column).initialized, false, 'a category link inherits the shared panel reveal');
+      assert.equal(column.style.getPropertyValue('--chapter-depth-yaw'), '', 'columns never acquire their own perspective');
+    }
+    site.media.matches = true;
+    site.media.dispatchEvent({ type: 'change' });
+    assertFlatDepth(surface, 'reduced motion flattens the shared category panel');
+    assert.equal(depthState(heading).yaw, 0);
+    assert.equal(depthState(heading).z, 0);
+    site.media.matches = false;
+    site.media.dispatchEvent({ type: 'change' });
+    assertOnOwnerPlane(site, heading, surface);
+    site.advance(1600);
+    assert.equal(site.pendingFrames, 0, 'the category heading does not add a permanent render loop');
+  }
 });
 
 await test('the journal intro switches its owner at the stacking breakpoint and restores the desktop plane on resize', () => {
@@ -4009,6 +4083,65 @@ await test('top search submission reaches the article panel while preserving inp
   }
 });
 
+await test('category selection animates to the start of Journal without writing a second history entry', () => {
+  for (const mode of ['animated', 'reduced', 'resize']) {
+    const origin = mode === 'resize' ? 'archive' : 'series';
+    const site = browser({ url: `https://gudu.blog/?q=old&source=category#${origin}`, reduced: mode === 'reduced', categoryLayout: true });
+    const selected = site.categoryPanels.columns[0];
+    selected.focus();
+    site.journal.scrollTop = 500;
+    const beforeSelection = site.url.href;
+    const historyCount = site.historyEntries.length;
+    // blog.js has already rendered the filter and pushed its combined query/hash.
+    const destinationUrl = new URL(site.url);
+    destinationUrl.searchParams.delete('q');
+    destinationUrl.searchParams.set('category', selected.dataset.categoryLink);
+    destinationUrl.hash = 'journal';
+    site.window.history.pushState(null, '', destinationUrl);
+    const start = site.top;
+    const event = site.event('site:category', { target: site.window, detail: { category: selected.dataset.categoryLink } });
+    assert.equal(event.defaultPrevented, true, 'claiming navigation prevents the blog fallback from scrolling a second time');
+    assert.equal(site.journal.scrollTop, 0, 'the next category opens at the first result');
+    assert.equal(site.historyEntries.length, historyCount + 1, 'the chapter controller does not duplicate the blog history push');
+    if (mode === 'reduced') {
+      assert.equal(site.top, site.destination('journal'));
+    } else {
+      assert.equal(site.top, start, 'category navigation starts without jumping the track');
+      site.advance(100);
+      assert.ok(site.top > Math.min(start, site.destination('journal')) && site.top < Math.max(start, site.destination('journal')), 'the track moves through intermediate positions');
+      assert.equal(site.document.activeElement, selected, 'focus waits for the article surface to arrive');
+      if (mode === 'resize') site.resizeWidth(600);
+    }
+    site.advance(1200);
+    assert.equal(site.top, site.destination('journal'), `${mode} reaches the measured article reading stop`);
+    assert.equal(site.document.activeElement, site.journal);
+    assert.equal(site.url.href, destinationUrl.href);
+    assert.equal(site.historyEntries.length, historyCount + 1, 'animation frames and completion do not rewrite the chosen URL');
+    assert.equal(site.pendingFrames, 0);
+    site.restore(beforeSelection, site.destination(origin));
+    assert.equal(site.top, site.destination(origin), 'browser Back returns directly to the original chapter');
+    assert.equal(site.url.href, beforeSelection);
+    assert.equal(site.historyEntries.length, historyCount + 1, 'history restoration creates no new entry');
+  }
+});
+
+await test('unavailable category navigation leaves the event unclaimed for the blog fallback', () => {
+  for (const state of ['loading', 'menu', 'hidden', 'pagehide']) {
+    const site = browser({ url: 'https://gudu.blog/#series', loading: state === 'loading', hidden: state === 'hidden' });
+    if (state === 'menu') site.body.dataset.menuOpen = 'true';
+    if (state === 'pagehide') site.event('pagehide');
+    site.journal.scrollTop = 300;
+    const start = site.top;
+    const historyCount = site.historyEntries.length;
+    assert.equal(site.event('site:category', { target: site.window, detail: { category: 'minecraft' } }).defaultPrevented, false, state);
+    site.advance(1000);
+    assert.equal(site.top, start, state);
+    assert.equal(site.journal.scrollTop, 300, 'an unavailable controller does not alter the native reading position');
+    assert.equal(site.historyEntries.length, historyCount);
+    assert.equal(site.pendingFrames, 0);
+  }
+});
+
 await test('unrelated form submissions keep their native behavior and current chapter', () => {
   const site = browser({ url: 'https://gudu.blog/#series' });
   const form = site.form('unrelated-form');
@@ -4019,4 +4152,161 @@ await test('unrelated form submissions keep their native behavior and current ch
   assert.equal(site.url.hash, '#series');
   assert.equal(site.document.activeElement, site.input);
   assert.equal(site.pendingFrames, 0);
+});
+
+const unequalChapterWidths = ({ viewportWidth, defaultWidth }) => [
+  defaultWidth, viewportWidth <= 720 ? viewportWidth * 0.92 + 16 : defaultWidth * 0.56, defaultWidth, defaultWidth,
+];
+const contentIds = ['about', 'series', 'journal', 'archive'];
+
+function topAtChapterFraction(site, coordinate) {
+  const lower = Math.min(2, Math.max(0, Math.floor(coordinate)));
+  const from = site.destination(contentIds[lower]);
+  const to = site.destination(contentIds[lower + 1]);
+  return from + (to - from) * (coordinate - lower);
+}
+
+function assertChapterFraction(site, coordinate, label) {
+  const expected = topAtChapterFraction(site, coordinate);
+  assert.ok(Math.abs(site.top - expected) < 1e-6, `${label}: ${site.top} must map to logical chapter ${coordinate} at ${expected}`);
+  assert.ok(Math.abs(site.x - (site.destination('about') - expected)) < 0.001, `${label}: track travel follows real center distances`);
+  assert.ok(Math.abs(site.markerX - (coordinate + 0.5) * site.rulerWidth / 4) < 0.001, `${label}: the ruler keeps four equal slots`);
+  assert.ok(Math.abs(Number(site.progress.style.getPropertyValue('--site-progress')) - coordinate / 3) < 0.000011, `${label}: site progress follows the logical chapter coordinate`);
+}
+
+await test('unequal chapter widths center direct hashes, navigation and history while retaining equal ruler slots', () => {
+  for (const viewportWidth of [600, 1200]) {
+    for (const [index, id] of contentIds.entries()) {
+      const direct = browser({ chapterWidths: unequalChapterWidths, viewportWidth, url: `https://gudu.blog/?q=space#${id}` });
+      assertChapterFraction(direct, index, `direct ${id} at ${viewportWidth}px`);
+      const bounds = direct.chapters[index + 1].getBoundingClientRect();
+      assert.ok(Math.abs(bounds.left + bounds.width / 2 - viewportWidth / 2) < 0.001, `${id} itself is centered, not its left edge`);
+      assert.equal(direct.navLinks[index].getAttribute('aria-current'), 'location');
+      assert.equal(direct.url.searchParams.get('q'), 'space');
+    }
+  }
+  const site = browser({ chapterWidths: unequalChapterWidths, url: 'https://gudu.blog/?q=space#about' });
+  assert.notEqual(site.destination('journal') - site.destination('series'), site.destination('archive') - site.destination('journal'), 'the fixture has genuinely different center-to-center distances');
+  for (const [index, link] of site.navLinks.entries()) {
+    site.click(link.querySelector('.chapter-station-title'));
+    const reads = site.layoutReads;
+    site.advance(1000);
+    assert.equal(site.layoutReads, reads, 'navigation frames reuse measured centers');
+    assertChapterFraction(site, index, `navigation to ${contentIds[index]}`);
+    assert.equal(site.document.activeElement, site.chapters[index + 1]);
+  }
+  site.hash('#series');
+  assertChapterFraction(site, 1, 'changed hash');
+  const historyCount = site.historyEntries.length;
+  site.restore('https://gudu.blog/?q=restored#archive', site.destination('archive'));
+  assertChapterFraction(site, 3, 'history with a different hash');
+  site.restore('https://gudu.blog/?q=another#archive', topAtChapterFraction(site, 2.72));
+  assertChapterFraction(site, 2.72, 'same-hash history retains its native fractional position');
+  assert.equal(site.historyEntries.length, historyCount, 'history restoration adds no new navigation entry');
+});
+
+await test('unequal center distances map rail clicks and marker drags through fractional chapter boundaries without layout reads', () => {
+  const site = browser({ chapterWidths: unequalChapterWidths, url: 'https://gudu.blog/?q=space#about' });
+  const point = coordinate => site.rulerLeft + (coordinate + 0.5) * site.rulerWidth / 4;
+  const reads = site.layoutReads;
+  for (const coordinate of [0.413, 1.726, 2.463]) {
+    markerPointer(site, 'pointerdown', point(coordinate), { target: site.progressRail });
+    markerPointer(site, 'pointerup', point(coordinate));
+    site.advance(1600);
+    assertChapterFraction(site, coordinate, `rail click ${coordinate}`);
+    assert.equal(site.pendingFrames, 0);
+  }
+  site.jump(topAtChapterFraction(site, 1.82));
+  const grabbedX = point(1.82) + 6;
+  const station = site.rulerWidth / 4;
+  markerPointer(site, 'pointerdown', grabbedX);
+  assertChapterFraction(site, 1.82, 'off-center marker grip');
+  markerPointer(site, 'pointermove', grabbedX + 0.51 * station);
+  site.advance(16);
+  assertChapterFraction(site, 2.33, 'drag across the narrow-to-wide center interval');
+  markerPointer(site, 'pointerup', grabbedX + 0.79 * station);
+  assertChapterFraction(site, 2.61, 'release flushes its final fractional point');
+  assert.equal(site.progressMarker.hasPointerCapture(7), false);
+  assert.equal(site.pendingFrames, 0);
+  markerPointer(site, 'pointerdown', point(2.61));
+  markerPointer(site, 'pointermove', point(1.4));
+  site.advance(16);
+  markerPointer(site, 'pointerup', point(1.4));
+  assertChapterFraction(site, 1.4, 'reverse drag crosses back through the same boundary');
+  assert.equal(site.layoutReads, reads, 'click tweens and drag frames use cached unequal-width geometry');
+  assert.equal(site.url.searchParams.get('q'), 'space');
+});
+
+await test('resizing unequal chapters preserves logical fractions and retargets active navigation to the new centers', () => {
+  const site = browser({ chapterWidths: unequalChapterWidths, url: 'https://gudu.blog/#about' });
+  site.jump(topAtChapterFraction(site, 2.31));
+  const desktopTop = site.top;
+  site.resizeWidth(600);
+  assertChapterFraction(site, 2.31, 'responsive narrow viewport');
+  assert.notEqual(site.top, desktopTop, 'the responsive fixture changes real pixel distances');
+  assert.ok(Math.abs(parseFloat(site.runway.style.height) - site.destination('archive')) < 1e-6, 'the runway ends at the last measured center');
+  site.resizeWidth(1200);
+  assertChapterFraction(site, 2.31, 'responsive desktop viewport');
+  assert.ok(site.isObserved(site.series), 'the narrow chapter itself participates in resize observation');
+  site.setChapterWidths([984, 420, 984, 984]);
+  assertChapterFraction(site, 2.31, 'an isolated category width change');
+  site.setChapterWidths([984, 760, 984, 984]);
+  assertChapterFraction(site, 2.31, 'a later category width change');
+
+  const navigation = browser({ chapterWidths: unequalChapterWidths, url: 'https://gudu.blog/?q=space#about' });
+  navigation.click(navigation.navLinks[3]);
+  navigation.advance(160);
+  assert.ok(navigation.top > navigation.destination('about') && navigation.top < navigation.destination('archive'));
+  navigation.resizeWidth(600);
+  const reads = navigation.layoutReads;
+  navigation.advance(1000);
+  assert.equal(navigation.layoutReads, reads, 'the retargeted animation does not remeasure each frame');
+  assertChapterFraction(navigation, 3, 'navigation retarget after resize');
+  assert.equal(navigation.document.activeElement, navigation.archive);
+  assert.equal(navigation.url.hash, '#archive');
+  assert.equal(navigation.url.searchParams.get('q'), 'space');
+  assert.equal(navigation.pendingFrames, 0);
+});
+
+await test('keyboard chapter steps stay logical across unequal widths while arrows and wheel retain their intended distances', () => {
+  for (const reduced of [false, true]) {
+    const site = browser({ chapterWidths: unequalChapterWidths, reduced, url: 'https://gudu.blog/?q=space#series' });
+    site.jump(topAtChapterFraction(site, 1.98));
+    const reads = site.layoutReads;
+    const key = code => site.key(code, { target: site.progressMarker });
+    key('ArrowRight');
+    assertChapterFraction(site, 2.03, 'slider ArrowRight adds 0.05 across a center interval');
+    key('PageDown');
+    assertChapterFraction(site, 1.03, 'slider PageDown subtracts one logical chapter');
+    key('PageUp');
+    assertChapterFraction(site, 2.03, 'slider PageUp adds one logical chapter');
+    key('ArrowLeft');
+    assertChapterFraction(site, 1.98, 'slider ArrowLeft reverses the fine step');
+    key('End');
+    assertChapterFraction(site, 3, 'slider End');
+    key('Home');
+    assertChapterFraction(site, 0, 'slider Home remains inside content');
+    assert.equal(site.layoutReads, reads, 'logical keyboard mapping uses cached centers');
+    assert.equal(site.pendingFrames, 0);
+  }
+  const page = browser({ chapterWidths: unequalChapterWidths, url: 'https://gudu.blog/#series' });
+  page.jump(topAtChapterFraction(page, 1.45));
+  const reads = page.layoutReads;
+  page.key(' ');
+  page.advance(1200);
+  assertChapterFraction(page, 2.05, 'body Space adds 0.6 logical chapters from Series across the next interval');
+  page.jump(topAtChapterFraction(page, 1.75));
+  page.journal.scrollTop = page.journal.scrollHeight - page.journal.clientHeight;
+  page.key('PageDown');
+  page.advance(1200);
+  assertChapterFraction(page, 2.35, 'body PageDown adds 0.6 logical chapters across the next interval');
+  const beforeArrow = page.top;
+  page.key('ArrowRight');
+  page.advance(1200);
+  assert.ok(Math.abs(page.top - beforeArrow - 100) < 1e-6, 'body ArrowRight still travels 100 real pixels');
+  const beforeWheel = page.top;
+  page.wheel(120);
+  page.advance(1200);
+  assert.ok(Math.abs(page.top - beforeWheel - 120) < 1e-6, 'wheel distance remains a real pixel distance');
+  assert.equal(page.layoutReads, reads, 'body input adds no per-frame geometry reads');
 });

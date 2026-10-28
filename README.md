@@ -50,6 +50,8 @@ npm run dev
 - `css/style.css`：首屏布局、桌面与移动端适配。
 - `css/blog.css`：博客内容、导航、阅读页、404 与移动端适配。
 - `css/chapters.css`：首页横向面板、固定场景、顶部导航与底部仪表盘。
+- `css/categories.css`：四列分类面板、立体线稿、细体计数和响应式布局。
+- `js/categories.js`：分类线稿的悬停与键盘动画，支持反向归位、减少动态效果及离屏/后台停帧。
 - `js/main.js`：本地时钟、相机输入、标题视差与实时渲染生命周期。
 - `js/chapters.js`：首屏双向分段切换、连续横向滚动、触摸与键盘控制、锚点历史、进度与黑洞转场同步。
 - `js/black-hole-theme.js`：首帧前选择极简或水墨主题，配置特殊日期，解析预览链接，并同步主题描述与回退图。
@@ -69,7 +71,7 @@ npm run dev
 - `content/posts/*.json`：文章内容的唯一编辑入口，目前为空。
 - `scripts/build-blog.mjs`：校验文章并生成阅读页、首页静态列表、`js/posts-data.js`、RSS、sitemap、robots 和 404。
 - `scripts/bake-ink-material.mjs`：通过本地预览和已启动的 Chrome 调试连接，手工烘焙水墨材质与明暗图。
-- `scripts/check-blog.mjs`：在独立临时目录验证内容生成、转义、草稿排除和过期页面清理，不向网站添加测试文章。
+- `scripts/check-blog.mjs`：在独立临时目录验证内容生成、转义、分类计数、草稿排除和过期页面清理，并模拟浏览器检查分类、搜索与历史记录，不向网站添加测试文章。
 - `scripts/check-chapters.mjs`：验证分段滚动、惯性手势、触摸、长章节、键盘、历史与页面生命周期。
 - `assets/fonts/`：背景标题 `GUDU’s` 使用本地 Barlow Condensed Black。字体及 SIL Open Font License 均随网站提供，不依赖在线字体服务。
 
@@ -94,7 +96,7 @@ Logo 使用作者在 `logo.ai` 中设计的圆环与斜向尖角图形，保留�
   "title": "文章标题",
   "excerpt": "用于首页与 RSS 的文章摘要。",
   "date": "2026-10-14",
-  "category": "随笔",
+  "category": "白日梦话",
   "tags": ["记录"],
   "draft": false,
   "sections": [
@@ -111,7 +113,9 @@ Logo 使用作者在 `logo.ai` 中设计的圆环与斜向尖角图形，保留�
 
 - `slug` 使用小写英文字母、数字和连字符，对应 `posts/your-article-slug.html`，应保持稳定。
 - 日期使用有效的 `YYYY-MM-DD`；文章按日期倒序排列，相同日期按 slug 排序。阅读时长根据正文估算。
-- 分类和标签可自行填写；筛选项会从实际文章生成。搜索匹配标题、摘要、分类和标签，可与分类同时使用。
+- 分类统一配置在 `content/categories.json`：`Minecraft` → `minecraft`、`白日梦话` → `daydreams`、`神秘文案` → `collected`、`其他` → `other`。文章的 `category` 填写对应显示名称；其他名称会保留在文章中，并归入“其他”筛选。标签可自行填写。
+- 四个分类始终可选，包括暂时没有文章的分类。分类入口会清空旧搜索词，使用 `?category=minecraft#journal` 这样的稳定链接进入文章区；刷新和前进后退可恢复筛选。分类计数来自已构建的非草稿文章，不受当前搜索影响。
+- 搜索匹配标题、摘要、分类和标签，可与分类同时使用。构建会把分类配置和文章元数据一并写入 `js/posts-data.js`，修改配置或文章后需重新运行 `npm run build`。
 - `sections` 至少包含一章；省略章节 `id` 时自动生成。章节 id 在文章内应唯一。
 - `draft: true` 的文章不生成阅读页，也不出现在首页、归档、RSS 或站点地图中。它不是定时发布功能，准备好后改为 `false` 再构建。
 - 所有正文按纯文本处理，不执行原始 HTML，也不解析 Markdown。内容块还支持下列格式：

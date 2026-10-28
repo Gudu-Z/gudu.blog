@@ -159,7 +159,7 @@ html.has-chapters:is(.is-content, .is-chapter-entering, .is-chapter-leaving) .ho
 html.has-chapters .home-page .chapter-track {
   display: flex;
   gap: var(--chapter-gap);
-  width: calc(100vw + (var(--chapter-width) + var(--chapter-gap)) * (var(--chapter-count, 4) - 1));
+  width: max-content;
   height: 100%;
   padding-inline: var(--chapter-start) calc(100vw - var(--chapter-width) - var(--chapter-start));
   transform: translate3d(var(--chapter-x, 0px), 0, 0);
@@ -188,8 +188,8 @@ html.has-chapters .home-page .chapter-section:not(.is-chapter-scrollable) { over
    margins and padding preserve the content width, positions and rail stride. */
 html.has-chapters .home-page .chapter-section {
   --chapter-bleed: max(24px, 4vw);
-  flex-basis: calc(var(--chapter-width) + 2 * var(--chapter-bleed));
-  width: calc(var(--chapter-width) + 2 * var(--chapter-bleed));
+  flex-basis: calc(var(--chapter-slot-width, var(--chapter-width)) + 2 * var(--chapter-bleed));
+  width: calc(var(--chapter-slot-width, var(--chapter-width)) + 2 * var(--chapter-bleed));
   margin-inline: calc(-1 * var(--chapter-bleed));
   padding-inline: calc(12px + var(--chapter-bleed));
   pointer-events: none;
@@ -427,7 +427,8 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     .about-panel-top, .about-socials, .about-text > p, .about-dossier, .about-signature,
     .connection-heading, .connection-footnote, .connection-card-head, .connection-action,
     .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3, p, .text-link),
-    .series-empty, .series-reading-link, .journal-heading-part,
+    .series-empty, .series-reading-link, .journal-heading-part, .category-heading,
+    .category-index, .category-composition, .category-description, .category-bottom,
     .journal-toolbar, .journal-empty, .search-empty, .posts-list > .post-card,
     .archive-year > h3, .archive-year li, .archive-group > h3, .archive-item, .site-footer
   ) {
@@ -452,13 +453,13 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
   }
   html.has-chapters .home-page .chapter-section :where(
     .about-panel-top, .connection-heading, .connection-card-head, .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3),
-    .journal-heading-part, .archive-year > h3, .archive-group > h3
+    .journal-heading-part, .category-heading, .category-index, .archive-year > h3, .archive-group > h3
   ) { --chapter-layer-stage: 0; }
   html.has-chapters .home-page .chapter-section :where(
     .about-socials, .about-text > p, .about-dossier, .about-signature, .connection-card > p,
     .connection-action, .connection-footnote, .series-empty, .series-main > .text-link,
     .series-guide-intro, .journal-sidebar .chapter-panel > :is(p:not(.eyebrow), .text-link),
-    .search-empty, .archive-empty, .site-footer
+    .search-empty, .archive-empty, .site-footer, .category-description, .category-bottom
   ) { --chapter-layer-stage: 2; }
   html.has-chapters .home-page .chapter-section .series-reading-link:nth-of-type(1) { --chapter-layer-stage: 0; }
   html.has-chapters .home-page .chapter-section .series-reading-link:nth-of-type(2) { --chapter-layer-stage: 1; }
@@ -477,10 +478,13 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     .about-panel-top, .about-socials, .about-text > p, .about-dossier, .about-signature,
     .connection-heading, .connection-footnote, .connection-card-head, .connection-action,
     .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3, p, .text-link),
-    .series-empty, .series-reading-link, .journal-heading-part,
+    .series-empty, .series-reading-link, .journal-heading-part, .category-heading,
+    .category-index, .category-composition, .category-description, .category-bottom,
     .journal-toolbar, .journal-empty, .search-empty, .posts-list > .post-card,
     .archive-year > h3, .archive-year li, .archive-group > h3, .archive-item, .site-footer
   ):focus-within { --chapter-layer-opacity: 1; --chapter-layer-x: 0px; transition: none; }
+  html.has-chapters .home-page .category-column:focus-visible > *,
+  html.has-chapters .home-page .category-column:focus-visible .category-description { --chapter-layer-opacity: 1; --chapter-layer-x: 0px; transition: none; }
   html.has-chapters .home-page .chapter-section .connection-card:focus-visible > :is(.connection-card-head, h3, p, .connection-action) { --chapter-layer-opacity: 1; --chapter-layer-x: 0px; transition: none; }
 
   /* Direct jumps and Hero travel suppress time-based reveal tails. The About

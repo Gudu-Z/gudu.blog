@@ -18,16 +18,18 @@
     <script src="./js/black-hole-theme.js?v=20261023-disk-refinement"></script>
     <link rel="stylesheet" href="./css/style.css?v=20261020-clean-hero" />
     <link rel="stylesheet" href="./css/blog.css?v=20261020-clean-hero" />
-    <link rel="stylesheet" href="./css/chapters.css?v=20261026-shared-view" />
+    <link rel="stylesheet" href="./css/chapters.css?v=20261027-content-width" />
     <link rel="stylesheet" href="./css/about-terminal.css?v=20261025-solid-panels" />
     <link rel="stylesheet" href="./css/chapter-interactions.css?v=20261025-local-feedback" />
+  <link rel="stylesheet" href="./css/categories.css?v=20261028-category-exhibit" />
     <script src="./js/ink-splatter.js?v=20261020-camera-preserved" defer></script>
     <script src="./js/particle-sky.js?v=20261020-original-stars" defer></script>
     <script src="./js/black-hole.js?v=20261023-smooth-parallax" defer></script>
     <script src="./js/main.js?v=20261023-smooth-parallax" defer></script>
-    <script src="./js/posts-data.js?v=20261014-1" defer></script>
-    <script src="./js/blog.js?v=20261020-search-icon" defer></script>
-    <script src="./js/chapters.js?v=20261026-shared-view" defer></script>
+    <script src="./js/posts-data.js?v=20261026-categories" defer></script>
+    <script src="./js/blog.js?v=20261026-categories" defer></script>
+    <script src="./js/chapters.js?v=20261027-content-width" defer></script>
+    <script src="./js/categories.js?v=20261028-category-exhibit" defer></script>
   </head>
   <body class="home-page">
     <a class="skip-link" href="#about">跳到主要内容</a>
@@ -194,26 +196,42 @@
         </div>
       </section>
       <section class="series-section section-wrap chapter-section" id="series" aria-labelledby="series-title" tabindex="-1">
-        <div class="series-main chapter-panel"><span class="chapter-panel-light" aria-hidden="true"></span>
-          <p class="eyebrow"><span>02</span> CATEGORIES</p>
-          <h2 id="series-title">沿着一个问题，<br />继续读下去<span class="accent">。</span></h2>
-          <div class="series-empty">
-            <div class="series-path-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-            <p class="series-empty-label">NO CATEGORIES YET</p>
-            <h3>分类，还在酝酿</h3>
-            <p>这里会把同一主题的记录，<br />整理成一条可以慢慢阅读的路径。</p>
-            <span class="series-empty-status">目前还没有文章分类</span>
-          </div>
-          <a class="text-link" href="#journal">从最新的记录开始 <span aria-hidden="true">↗</span></a>
+        <div class="category-heading" data-depth-owner="category-surface">
+          <div><p class="eyebrow"><span>02</span> CATEGORIES</p><h2 id="series-title">分类<span aria-hidden="true"> /</span></h2></div>
+          <span class="category-heading-rule" aria-hidden="true"></span>
+          <span class="category-heading-meta" aria-hidden="true">EXPLORE<br /><b>BY INTEREST</b></span>
         </div>
-        <aside class="series-guide chapter-panel" aria-label="继续阅读"><span class="chapter-panel-light" aria-hidden="true"></span>
-          <p class="eyebrow">FIND YOUR WAY</p>
-          <h3>随处开始，<br />慢慢探索。</h3>
-          <p class="series-guide-intro">一篇文字，一个切片。<br />在这些入口，找到下一段阅读。</p>
-          <a class="series-reading-link" href="#journal"><span class="series-reading-index">01</span><span><strong>最新文章</strong><small>从最近的记录开始</small></span><span aria-hidden="true">↗</span></a>
-          <a class="series-reading-link" href="#archive"><span class="series-reading-index">02</span><span><strong>文章归档</strong><small>沿着时间，回看文字</small></span><span aria-hidden="true">↗</span></a>
-          <a class="series-reading-link" href="./feed.xml"><span class="series-reading-index">03</span><span><strong>订阅 RSS</strong><small>在阅读器里等待下一篇</small></span><span aria-hidden="true">↗</span></a>
-        </aside>
+        <div class="category-panel chapter-panel" id="category-surface"><span class="chapter-panel-light" aria-hidden="true"></span>
+        <div class="category-columns">
+          <a class="category-column" href="?category=minecraft#journal" data-category-link="minecraft" aria-label="浏览 Minecraft 分类">
+            <span class="category-index"><span class="category-symbol" aria-hidden="true">//</span><span class="category-index-line" aria-hidden="true"></span></span>
+            <span class="category-composition"><strong class="category-name category-latin">Minecraft</strong><span class="category-art category-terrain" aria-hidden="true"><span class="category-art-depth">
+              <span class="category-voxel-group">
+                <span class="category-voxel category-voxel-main"><span class="category-voxel-face category-voxel-front"></span><span class="category-voxel-face category-voxel-back"></span><span class="category-voxel-face category-voxel-left"></span><span class="category-voxel-face category-voxel-right"></span><span class="category-voxel-face category-voxel-top"></span><span class="category-voxel-face category-voxel-bottom"></span></span>
+                <span class="category-voxel category-voxel-low"><span class="category-voxel-face category-voxel-front"></span><span class="category-voxel-face category-voxel-back"></span><span class="category-voxel-face category-voxel-left"></span><span class="category-voxel-face category-voxel-right"></span><span class="category-voxel-face category-voxel-top"></span><span class="category-voxel-face category-voxel-bottom"></span></span>
+                <span class="category-voxel category-voxel-side"><span class="category-voxel-face category-voxel-front"></span><span class="category-voxel-face category-voxel-back"></span><span class="category-voxel-face category-voxel-left"></span><span class="category-voxel-face category-voxel-right"></span><span class="category-voxel-face category-voxel-top"></span><span class="category-voxel-face category-voxel-bottom"></span></span>
+                <span class="category-voxel category-voxel-satellite"><span class="category-voxel-face category-voxel-front"></span><span class="category-voxel-face category-voxel-back"></span><span class="category-voxel-face category-voxel-left"></span><span class="category-voxel-face category-voxel-right"></span><span class="category-voxel-face category-voxel-top"></span><span class="category-voxel-face category-voxel-bottom"></span></span>
+              </span>
+            </span></span><span class="category-code" aria-hidden="true">GAME JOURNAL</span><span class="category-description">关于 Minecraft<br />游戏的文章。</span></span>
+            <span class="category-bottom"><span class="category-count"><span class="category-count-number" data-category-count="minecraft">00</span><small>篇文章</small></span><span class="category-bottom-rule" aria-hidden="true"></span><span class="category-action">浏览 <span aria-hidden="true">↗</span></span></span>
+          </a>
+          <a class="category-column" href="?category=daydreams#journal" data-category-link="daydreams" aria-label="浏览 白日梦话 分类">
+            <span class="category-index"><span class="category-symbol" aria-hidden="true">//</span><span class="category-index-line" aria-hidden="true"></span></span>
+            <span class="category-composition"><strong class="category-name">白日梦话</strong><span class="category-art category-dream" aria-hidden="true"><span class="category-art-depth"><span class="category-dream-axis"></span><i class="category-dream-ring"></i><i class="category-dream-ring"></i><i class="category-dream-ring"></i><span class="category-fragment category-fragment-a"></span><span class="category-fragment category-fragment-b"></span><span class="category-fragment category-fragment-c"></span><span class="category-art-dot"></span></span></span><span class="category-code" aria-hidden="true">DAYDREAMS</span><span class="category-description">离奇的小故事，<br />像做梦一样。</span></span>
+            <span class="category-bottom"><span class="category-count"><span class="category-count-number" data-category-count="daydreams">00</span><small>篇文章</small></span><span class="category-bottom-rule" aria-hidden="true"></span><span class="category-action">浏览 <span aria-hidden="true">↗</span></span></span>
+          </a>
+          <a class="category-column" href="?category=collected#journal" data-category-link="collected" aria-label="浏览 神秘文案 分类">
+            <span class="category-index"><span class="category-symbol" aria-hidden="true">//</span><span class="category-index-line" aria-hidden="true"></span></span>
+            <span class="category-composition"><strong class="category-name">神秘文案</strong><span class="category-art category-words" aria-hidden="true"><span class="category-art-depth"><span class="category-quote category-quote-open">“</span><span class="category-word-lines"><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="category-quote category-quote-close">”</span><span class="category-word-bracket"></span><span class="category-art-dot"></span></span></span><span class="category-code" aria-hidden="true">COLLECTED WORDS</span><span class="category-description">从互联网上收集的<br />有趣文案。</span></span>
+            <span class="category-bottom"><span class="category-count"><span class="category-count-number" data-category-count="collected">00</span><small>篇文章</small></span><span class="category-bottom-rule" aria-hidden="true"></span><span class="category-action">浏览 <span aria-hidden="true">↗</span></span></span>
+          </a>
+          <a class="category-column" href="?category=other#journal" data-category-link="other" aria-label="浏览 其他 分类">
+            <span class="category-index"><span class="category-symbol" aria-hidden="true">//</span><span class="category-index-line" aria-hidden="true"></span></span>
+            <span class="category-composition"><strong class="category-name">其他</strong><span class="category-art category-network" aria-hidden="true"><span class="category-art-depth"><span class="category-node-line category-node-line-a"></span><span class="category-node-line category-node-line-b"></span><span class="category-node-line category-node-line-c"></span><span class="category-node-line category-node-line-d"></span><span class="category-node category-node-a"></span><span class="category-node category-node-b"></span><span class="category-node category-node-c"></span><span class="category-node category-node-d"></span><span class="category-node category-node-e"></span><span class="category-node-ring"></span><span class="category-art-dot"></span></span></span><span class="category-code" aria-hidden="true">MISCELLANY</span><span class="category-description">其他一些东西。</span></span>
+            <span class="category-bottom"><span class="category-count"><span class="category-count-number" data-category-count="other">00</span><small>篇文章</small></span><span class="category-bottom-rule" aria-hidden="true"></span><span class="category-action">浏览 <span aria-hidden="true">↗</span></span></span>
+          </a>
+        </div>
+        </div>
       </section>
       <section class="journal-section section-wrap chapter-section" id="journal" aria-labelledby="journal-title" tabindex="-1">
         <div class="section-heading">
