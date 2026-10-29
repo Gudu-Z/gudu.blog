@@ -129,10 +129,23 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .footer-links a { padding: 10px 0; }
 
 /* Reading uses the same quiet typography and orange wayfinding as the home page. */
-.article-page .site-header, .not-found-page .site-header { position: relative; border-bottom-color: var(--line); }
-.article-page .site-nav, .not-found-page .site-nav { margin-left: auto; margin-right: 32px; }
-.header-rss { font: 11px "Consolas", monospace; color: var(--muted); }
-.header-rss span { color: var(--red); }
+.article-page .site-header, .not-found-page .site-header { position: relative; border-bottom: 0; }
+.article-page .site-nav, .not-found-page .site-nav { margin-left: auto; margin-right: 32px; gap: 30px; color: #a0a0aa; font-size: 13px; letter-spacing: 0.05em; }
+:is(.article-page, .not-found-page) .site-nav a:hover { color: var(--red); }
+/* The brand coordinate matches the home page header at its base size. */
+:is(.article-page, .not-found-page) .site-brand { gap: 11px; }
+:is(.article-page, .not-found-page) .site-header .brand-logo { width: 46px; height: 46px; }
+:is(.article-page, .not-found-page) .header-brand-coordinate { display: grid; gap: 5px; color: #8e8e97; font: 10px/1 "Consolas", "SFMono-Regular", monospace; letter-spacing: 0.08em; white-space: nowrap; }
+:is(.article-page, .not-found-page) .header-brand-name { display: flex; align-items: center; gap: 8px; font-family: var(--ui-sans); font-size: 14px; letter-spacing: 0.12em; }
+:is(.article-page, .not-found-page) .header-brand-name > span:first-child { color: #dedee3; font-weight: 600; }
+:is(.article-page, .not-found-page) .header-brand-slash { color: var(--red); font-size: 11px; letter-spacing: 0; opacity: 0.55; }
+:is(.article-page, .not-found-page) .header-brand-kind { color: #a6a6af; font-size: 10.5px; letter-spacing: 0.15em; }
+:is(.article-page, .not-found-page) .header-brand-calibration { position: relative; display: block; height: 3px; background: linear-gradient(#9d9da33d, #9d9da33d) left 1px / 100% 1px no-repeat; }
+:is(.article-page, .not-found-page) .header-brand-calibration::before { content: ""; position: absolute; top: 1px; left: 0; width: 10px; height: 1px; background: var(--red); opacity: 0.8; }
+.header-rss { display: inline-flex; align-items: center; gap: 9px; color: #a0a0aa; font-size: 13px; letter-spacing: 0.05em; transition: color 180ms; }
+.header-rss svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.35; }
+.header-rss svg circle { fill: var(--red); stroke: var(--red); }
+.header-rss:hover { color: var(--red); }
 .site-footer > a:last-child:not(:first-child) { font-size: 11px; color: var(--muted); margin-left: auto; }
 .article-shell { width: min(1080px, 85%); margin: 0 auto; padding: 58px 0 80px; }
 .article-back { color: var(--muted); font-size: 12px; display: inline-block; padding-block: 10px; margin-bottom: 40px; }
@@ -140,40 +153,58 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .article-header { max-width: 810px; margin-bottom: 52px; }
 .article-title { font-family: inherit; font-size: clamp(29px, 4vw, 48px); letter-spacing: -0.035em; line-height: 1.4; font-weight: 600; margin: 20px 0; overflow-wrap: anywhere; }
 .article-deck { font-size: 16px; color: var(--muted); line-height: 1.9; }
-.article-tags { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; padding: 0; list-style: none; color: #aab7c6; font-size: 11px; }
-.article-tags li { padding: 4px 9px; background: #ffffff05; border: 1px solid var(--line); }
+.article-meta { font-size: 12px; }
+/* Small square separators echo the orange mark without competing with it. */
+.article-meta > * + *::before { content: ""; display: inline-block; width: 3px; height: 3px; margin-right: 14px; vertical-align: middle; background: currentColor; opacity: 0.45; }
+.article-category { color: var(--red); transition: color 180ms; }
+.article-category:hover { color: #f69b85; }
+.article-tags { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 20px; padding: 0; list-style: none; color: #84909e; font-size: 12px; }
 .demo-notice { margin-top: 20px; line-height: 1.8; padding: 12px; }
 .article-layout { display: grid; grid-template-columns: minmax(0, 730px) 210px; gap: 70px; align-items: start; }
 .article-body { min-width: 0; font-size: 16px; line-height: 2; color: #c6ced7; overflow-wrap: anywhere; }
 .article-body h2 { color: var(--paper); font-size: 25px; line-height: 1.6; font-weight: 600; letter-spacing: -0.02em; margin: 48px 0 20px; scroll-margin-top: 40px; }
 .article-section:first-child h2 { margin-top: 0; }
+.article-body > :first-child { margin-top: 0; }
 .article-body h3 { font-size: 20px; color: var(--paper); margin: 32px 0 16px; }
+.article-body :is(h3, h4, h5, h6) { scroll-margin-top: 40px; }
+.article-body :is(h4, h5, h6) { color: var(--paper); font-size: 17px; margin: 28px 0 14px; }
 .article-body p { margin: 0 0 24px; }
 .article-body ul, .article-body ol { padding-left: 1.5em; margin-block: 20px 28px; }
 .article-body li { padding-left: 5px; margin-bottom: 9px; }
 .article-body li::marker { color: #a5b4c6; }
 .article-body a { color: #f69b85; text-decoration: underline; text-underline-offset: 4px; }
+.article-body img { display: block; max-width: 100%; height: auto; margin: 24px auto; }
+.article-body hr { border: 0; border-top: 1px solid var(--line); margin: 36px 0; }
+.article-body :not(pre) > code { background: #ffffff08; padding: .15em .4em; border-radius: 2px; }
+.article-body li > :is(ul, ol) { margin-block: 10px; }
+.markdown-table { max-width: 100%; overflow-x: auto; margin: 28px 0; }
+.markdown-table:focus-visible { outline: 1px solid var(--red); outline-offset: 4px; }
+.markdown-table table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.markdown-table :is(th, td) { border: 1px solid var(--line); padding: 10px 14px; text-align: left; min-width: 90px; }
+.markdown-table th { color: var(--paper); background: #ffffff05; font-weight: 600; }
 .article-body blockquote { border-left: 2px solid var(--red); padding: 12px 24px; margin: 30px 0; background: #f0644606; color: #bdc7d3; }
 .article-body blockquote p:last-child { margin-bottom: 0; }
 .article-callout { border: 1px solid #f064462e; background: #f0644606; padding: 20px 24px; margin: 28px 0; font-size: 14px; }
 .article-callout p:last-child { margin-bottom: 0; }
 .code-block { position: relative; }
 .code-language { position: absolute; right: 12px; top: 5px; font: 9px "Consolas", monospace; color: #8595a8; }
-.article-end { display: flex; align-items: center; gap: 16px; margin-top: 45px; padding-top: 28px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.article-end { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 45px; padding-top: 28px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 .article-end p { margin: 0; }
-.article-end > span { color: var(--red); }
+.article-end-mark { flex: none; width: 6px; height: 6px; background: var(--red); }
 .article-body code { font: 0.86em/1.8 "Consolas", "SFMono-Regular", monospace; }
 .article-body pre { overflow-x: auto; padding: 22px; margin: 28px 0; border: 1px solid var(--line); background: #0d1219; tab-size: 2; line-height: 1.8; white-space: pre; }
 .article-toc { position: sticky; top: 35px; border-left: 1px solid var(--line); padding-left: 22px; font-size: 12px; }
 .article-toc h2, .article-toc h3, .toc-label { font-size: 11px; color: #c6d0db; font-weight: 500; letter-spacing: 0.1em; margin: 0 0 20px; }
 .article-toc ol, .article-toc ul { padding: 0; margin: 0; list-style: none; }
 .article-toc li { margin: 0 0 14px; line-height: 1.7; }
+.article-toc .toc-subheading { padding-left: 12px; font-size: 11px; }
 .article-toc a { color: var(--muted); }
 .article-toc a:hover, .article-toc a.is-active { color: #f69b85; }
-.article-tools { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--line); }
+.article-tools { margin-left: auto; text-align: right; }
 .copy-link { background: none; border: 1px solid var(--line); padding: 10px 14px; font-size: 11px; }
 .copy-link:hover { border-color: var(--red); }
 .copy-status { display: block; margin-top: 10px; color: var(--muted); font-size: 11px; line-height: 1.8; }
+.copy-status:empty { display: none; }
 .article-pagination { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; border-top: 1px solid var(--line); padding-top: 32px; margin-top: 65px; }
 .article-pagination a { display: flex; flex-direction: column; gap: 10px; font-size: 15px; line-height: 1.7; }
 .article-pagination a:hover { color: #f69b85; }
@@ -186,8 +217,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .reading-progress span { display: block; width: 0; height: 100%; background: var(--red); }
 .not-found { width: min(800px, 85%); min-height: 70svh; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; margin: 0 auto; padding: 60px 0; }
 .not-found .error-code { font: 900 clamp(100px, 18vw, 190px)/1 "Barlow Condensed", sans-serif; color: #8595a644; letter-spacing: 0; margin: 0; }
-.error-code span { color: var(--red); }
-.not-found h1 { font: 600 clamp(23px, 4vw, 36px)/1.6 "Arial", "PingFang SC", "Microsoft YaHei", sans-serif; letter-spacing: -0.035em; margin: 18px 0 0; }
+.error-code span { display: inline-block; width: 0.12em; height: 0.12em; margin-left: 0.06em; overflow: hidden; color: transparent; background: var(--red); }
+.not-found h1 { font: 600 clamp(23px, 4vw, 36px)/1.6 var(--ui-sans); letter-spacing: -0.035em; margin: 18px 0 0; }
 .not-found h2 { font-size: 26px; margin: 15px 0; }
 .not-found p { color: var(--muted); font-size: 14px; line-height: 2; }
 .not-found .text-link, .not-found .outline-button { margin-top: 20px; }
@@ -206,8 +237,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
   .site-nav { gap: 18px; font-size: 11px; letter-spacing: 0; }
   .site-nav .nav-rss { border: 0; padding-left: 0; font-size: 10px; }
   .nav-rss span { display: none; }
-  .article-page .site-nav, .not-found-page .site-nav { margin-right: 18px; }
-  .header-rss { font-size: 10px; }
+  .article-page .site-nav, .not-found-page .site-nav { margin-right: 18px; gap: 18px; font-size: 12px; letter-spacing: 0; }
+  :is(.article-page, .not-found-page) .header-brand-coordinate { display: none; }
+  :is(.article-page, .not-found-page) .site-header .brand-logo { width: 40px; height: 40px; }
+  .header-rss { font-size: 12px; }
   .menu-toggle { display: flex; align-items: center; gap: 12px; padding: 12px 0 12px 18px; font-size: 11px; border: 0; background: none; }
   .menu-icon { display: block; width: 19px; height: 9px; border-block: 1px solid #c6d0db; transition: transform 180ms; }
   .menu-toggle[aria-expanded="true"] .menu-icon { transform: rotate(-45deg); }
@@ -261,11 +294,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
   .article-header { margin-bottom: 32px; }
   .article-title { font-size: 31px; }
   .article-deck { font-size: 14px; }
-  .article-layout { display: flex; flex-direction: column; gap: 35px; }
-  .article-toc { order: -1; position: static; width: 100%; border-left: 0; border-block: 1px solid var(--line); padding: 24px 0; }
-  .article-toc ol { display: flex; flex-wrap: wrap; gap: 10px 22px; }
+  .article-layout { display: flex; flex-direction: column; gap: 28px; }
+  /* The contents fold into one swipeable row so the text starts on the first screen. */
+  .article-toc { order: -1; position: static; display: flex; align-items: baseline; gap: 18px; width: 100%; border-left: 0; border-block: 1px solid var(--line); padding: 12px 0; }
+  .article-toc .toc-label { flex: none; margin: 0; }
+  .article-toc nav { min-width: 0; overflow-x: auto; scrollbar-width: none; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
+  .article-toc nav::-webkit-scrollbar { display: none; }
+  .article-toc ol { display: flex; gap: 20px; padding-right: 24px; white-space: nowrap; }
   .article-toc li { margin: 0; }
-  .article-tools { margin-top: 18px; padding-top: 16px; }
+  .article-toc .toc-subheading { padding-left: 0; }
   .article-body { width: 100%; font-size: 15px; }
   .article-body h2 { font-size: 23px; }
   .article-body pre { padding: 16px; }

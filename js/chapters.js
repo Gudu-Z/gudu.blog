@@ -14,8 +14,8 @@
   const header = document.querySelector('.site-header');
   const progressNav = document.querySelector('.chapter-progress');
   const progressTrack = document.querySelector('.chapter-progress-track');
+  const progressRail = document.querySelector('.chapter-progress-rail');
   const progressMarker = document.querySelector('.chapter-progress-marker');
-  const currentLabel = document.querySelector('[data-chapter-current]');
   const links = [...document.querySelectorAll('[data-chapter-link]')];
   const heroText = [...stage.querySelectorAll('.hero-heading')];
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -55,6 +55,7 @@
   let movingTimer = 0;
   let arrivalTimer = 0;
   let arrivingLink = null;
+  let departingLink = null;
   let idleTimer = 0;
   let lastIdleActivity = performance.now();
   let touching = false;
@@ -66,6 +67,8 @@
   let scrub = null;
   let scrubFrame = 0;
   let railSeek = null;
+  let railTarget = null;
+  let railHoverX = null;
   let lastSliderValue = null;
   let lastRevealX = null;
   let lastRevealTime = 0;
@@ -120,6 +123,15 @@
     return chapterStops[index] + (coordinate - index) * Math.max(1, chapterStops[index + 1] - chapterStops[index]);
   }
 
+  // Axis presses and releases within a tenth of a ruler cell of a chapter
+  // center settle on that center; anywhere else keeps the exact point.
+  const stationSnap = 0.1;
+  function settleCoordinate(coordinate) {
+    const clamped = clamp(coordinate, 0, chapters.length - 1);
+    const station = Math.round(clamped);
+    return Math.abs(clamped - station) <= stationSnap ? station : clamped;
+  }
+
   function setStyle(element, name, value) {
     if (!element) return;
     let values = styleValues.get(element);
@@ -150,7 +162,9 @@
     clearTimeout(arrivalTimer);
     arrivalTimer = 0;
     setClass(arrivingLink, 'is-arriving', false);
+    setClass(departingLink, 'is-departing', false);
     arrivingLink = null;
+    departingLink = null;
     setClass(progressMarker, 'is-arriving', false);
   }
 
@@ -226,7 +240,7 @@
     setStyle(root, '--chapter-entrance-glow', entranceGlow.toFixed(5));
   }
 
-  function updateProgressFeedback(x, visible, changed, index) {
+  function updateProgressFeedback(x, visible, changed, index, previous) {
     const moved = lastIndicatorX !== null && Math.abs(x - lastIndicatorX) > 0.01;
     lastIndicatorX = x;
     if (!progressNav || !initialized || !visible || motion.matches || document.hidden || transition?.direction) {
@@ -243,8 +257,12 @@
     }
     if (changed && index > 0) {
       clearArrival();
+      // The light passes through the stem the cursor crossed, in its direction of travel.
+      setClass(progressNav, 'is-moving-back', previous > index);
       arrivingLink = links.find(link => link.hash === `#${sections[index].id}`) || null;
+      departingLink = previous > 0 ? links.find(link => link.hash === `#${sections[previous].id}`) || null : null;
       setClass(arrivingLink, 'is-arriving', true);
+      setClass(departingLink, 'is-departing', true);
       setClass(progressMarker, 'is-arriving', true);
       arrivalTimer = setTimeout(clearArrival, 400);
     }
@@ -529,6 +547,7 @@
     const index = visible ? Math.min(chapters.length, 1 + Math.round(chapterPosition)) : 0;
     setStyle(progressNav, '--chapter-active-index', String(clamp(index - 1, 0, chapters.length - 1)));
     const changed = index !== currentIndex;
+    const previousIndex = currentIndex;
     const sliderValue = (siteProgress * 100).toFixed(1);
     if (progressMarker && (sliderValue !== lastSliderValue || changed)) {
       lastSliderValue = sliderValue;
@@ -537,13 +556,12 @@
     }
     if (changed) {
       currentIndex = index;
-      if (currentLabel) currentLabel.textContent = String(Math.max(index, 1)).padStart(2, '0');
       for (const link of links) {
         if (link.hash === `#${sections[index].id}`) link.setAttribute('aria-current', 'location');
         else link.removeAttribute('aria-current');
       }
     }
-    updateProgressFeedback(x, visible, changed, index);
+    updateProgressFeedback(x, visible, changed, index, previousIndex);
     scheduleIdle();
     if (syncHash && initialized && !transition && (scroll >= entry - 1 || scroll <= 1)) writeHash(index);
   }
@@ -566,6 +584,7 @@
     // Cache the layout origin, not the ruler's current mouse displacement.
     progressTrackLeft = (ruler?.left || 0) - pointerNavX;
     progressTrackWidth = ruler?.width || 0;
+    paintRailHover();
     for (const group of revealGroups) {
       setClass(group.chapter, 'is-chapter-scrollable', group.scrollable);
       clampChapterScroll(group);
@@ -604,6 +623,7 @@
     setStyle(header, 'translate', hudTranslate);
     pointerNavX = Number(x.toFixed(3));
     setStyle(progressNav, 'translate', hudTranslate);
+    paintRailHover();
     // These angles sit inside each unit's shared camera projection, before its
     // world position. Outside text therefore stays on its owner's plane.
     setStyle(track, '--chapter-view-yaw', `${(-x / 8 * 1.5).toFixed(3)}deg`);
@@ -782,8 +802,15 @@
     targetY = smoothY = y();
     setClass(progressNav, 'is-scrubbing', false);
     if (progressMarker?.hasPointerCapture?.(drag.pointerId)) progressMarker.releasePointerCapture(drag.pointerId);
+    // The press only borrowed focus for Escape. Returning it keeps PageDown,
+    // Space and the arrows moving the page, unless the slider already had focus.
+    if (!drag.keepFocus && document.activeElement === progressMarker) progressMarker.blur();
     noteIdleActivity();
-    if (canCommit && !drag.dragging) { seekRail(entry + offsetAt(drag.startPosition)); return; }
+    if (canCommit) {
+      const reached = drag.dragging ? coordinateAt(y() - entry) : drag.startPosition;
+      const settled = settleCoordinate(reached);
+      if (!drag.dragging || settled !== reached) { seekRail(entry + offsetAt(settled)); return; }
+    }
     setInteraction(null);
     scheduleIdle();
   }
@@ -799,6 +826,9 @@
     stop({ preserveInteraction: true });
     entryGesture = false;
     touch = null;
+    // A press replaces the preview; the next mouse move over the axis brings it back.
+    clearRailHover();
+    const keepFocus = document.activeElement === progressMarker;
     // Programmatic focus can inherit keyboard focus-visible state. Pointer
     // interaction keeps the focus target without drawing its keyboard outline.
     setClass(progressMarker, 'is-pointer-focused', true);
@@ -810,11 +840,43 @@
     // Clamp only when applying the position so a drag starting in an outer
     // half-cell stays aligned with the pointer as it enters the usable range.
     const startPosition = grabbedMarker ? coordinateAt(y() - entry) : railPosition;
-    scrub = { pointerId: event.pointerId, startX: event.clientX, latestX: event.clientX, startPosition, positionPerPixel: chapters.length / progressTrackWidth, dragging: grabbedMarker };
+    scrub = { pointerId: event.pointerId, startX: event.clientX, latestX: event.clientX, startPosition, positionPerPixel: chapters.length / progressTrackWidth, dragging: grabbedMarker, keepFocus };
     setClass(progressNav, 'is-scrubbing', grabbedMarker);
     progressMarker.setPointerCapture(event.pointerId);
   });
   progressTrack?.addEventListener('click', event => event.preventDefault());
+
+  function setRailTarget(link) {
+    if (link === railTarget) return;
+    setClass(railTarget, 'is-rail-target', false);
+    railTarget = link;
+    setClass(railTarget, 'is-rail-target', true);
+  }
+
+  // Hovering the axis previews where a click lands, already settled near a
+  // chapter center. Parallax frames and remeasurement redraw it, so the mark
+  // stays under a still mouse while the ruler moves; geometry stays cached.
+  function paintRailHover() {
+    if (railHoverX === null || scrub || !progressTrackWidth) return;
+    const coordinate = settleCoordinate((railHoverX - progressTrackLeft - pointerNavX) / progressTrackWidth * chapters.length - 0.5);
+    setStyle(progressTrack, '--chapter-hover-x', `${((coordinate + 0.5) * progressTrackWidth / chapters.length).toFixed(3)}px`);
+    setRailTarget(links[Math.round(coordinate)] || null);
+  }
+
+  function clearRailHover() {
+    railHoverX = null;
+    setStyle(progressTrack, '--chapter-hover-x', '');
+    setRailTarget(null);
+  }
+
+  function hoverRail(event) {
+    if (event.pointerType !== 'mouse' || event.buttons) { clearRailHover(); return; }
+    railHoverX = event.clientX;
+    paintRailHover();
+  }
+  progressRail?.addEventListener('pointerenter', hoverRail);
+  progressRail?.addEventListener('pointermove', hoverRail);
+  progressRail?.addEventListener('pointerleave', clearRailHover);
 
   window.addEventListener('pointermove', event => {
     if (!scrub || event.pointerId !== scrub.pointerId) return;
@@ -858,6 +920,8 @@
     if (event.code === 'Escape' && scrub) { event.preventDefault(); finishScrub(); resetPointerParallax(true); return; }
     if (!available() || blocked() || transition?.direction || y() < entry - 1
         || event.altKey || event.ctrlKey || event.metaKey) return;
+    // Space has no slider meaning; it must not scroll the page between chapters.
+    if (event.code === 'Space') { event.preventDefault(); return; }
     const deltas = { ArrowLeft: -0.05, ArrowDown: -0.05, ArrowRight: 0.05, ArrowUp: 0.05, PageDown: -1, PageUp: 1 };
     if (!(event.code in deltas) && event.code !== 'Home' && event.code !== 'End') return;
     event.preventDefault();

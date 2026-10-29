@@ -192,6 +192,12 @@ function browser({ reduced = false, finePointer = true, url = 'https://gudu.blog
     querySelectorAll(selector) { return nodes.filter(node => node !== this && this.contains(node) && node.matches(selector)); }
     querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
     focus() { document.activeElement = this; }
+    blur() {
+      if (document.activeElement !== this) return;
+      document.activeElement = body;
+      this.dispatchEvent({ type: 'blur', target: this });
+      document.dispatchEvent({ type: 'focusout', target: this });
+    }
     scrollIntoView() { window.scrollTo({ top: this.top, behavior: 'instant' }); }
     scrollBy(options) {
       this.scrollTop = Math.max(0, Math.min(this.scrollTop + options.top, this.scrollHeight - this.clientHeight));
@@ -227,7 +233,6 @@ function browser({ reduced = false, finePointer = true, url = 'https://gudu.blog
   progressHitbox.setAttribute('aria-hidden', 'true');
   progressMarker.append(progressHitbox);
   const progressLinks = new Element('div', { classes: ['chapter-progress-links'] });
-  const progressCurrent = new Element('span', { id: 'chapter-current', dataset: { chapterCurrent: '' } });
   const heroHeading = new Element('div', { classes: ['hero-heading'] });
   const searchForm = new Element('form', { id: 'post-search' });
   const input = new Element('input', { id: 'search-input' });
@@ -330,7 +335,7 @@ function browser({ reduced = false, finePointer = true, url = 'https://gudu.blog
   track.append(about, series, journal, archive);
   hero.append(stage);
   stage.append(heroHeading, blackHole);
-  progress.append(progressTrack, progressLinks, progressCurrent);
+  progress.append(progressTrack, progressLinks);
   progressTrack.append(progressRail, progressFill, progressMarker);
   Object.defineProperty(html, 'scrollHeight', { get: () => height + (parseFloat(runway.style.height) || height) });
   html.clientHeight = body.clientHeight = height;
@@ -441,7 +446,7 @@ function browser({ reduced = false, finePointer = true, url = 'https://gudu.blog
   }
   advance(32);
   return {
-    html, body, window, document, chapters, panels, journalPanels, categoryPanels, about, journal, series, archive, navLinks, searchForm, input, media, pointerMedia, header, progress, progressCurrent,
+    html, body, window, document, chapters, panels, journalPanels, categoryPanels, about, journal, series, archive, navLinks, searchForm, input, media, pointerMedia, header, progress,
     runway, viewport, track, progressTrack, progressRail, progressMarker, progressHitbox, heroHeading, scrolls, innerScrolls, chapterEvents, interactionEvents, historyEntries, domWrites,
     get top() { return scrollY; },
     get step() { return panelStep(); },
@@ -515,7 +520,6 @@ await test('only the opening wheel snaps to About and its momentum tail cannot s
   assert.equal(site.header.inert, false);
   assert.equal(site.progress.inert, false);
   assert.equal(site.heroHeading.inert, true);
-  assert.equal(site.progressCurrent.textContent, '01');
   assert.equal(site.navLinks[0].getAttribute('aria-current'), 'location');
   assert.ok(site.chapterEvents.some(event => event.progress === 1), 'the scene receives its fully transformed state');
   assert.equal(site.x, 0);
@@ -769,7 +773,7 @@ await test('continuous wheel input accumulates distance across panel boundaries 
   assert.equal(site.x, -1500);
   assert.ok(Math.abs(site.markerX - (1500 / site.step + 0.5) * site.rulerWidth / 4) < 0.001, 'the marker follows continuous movement inside its own track');
   assert.equal(site.url.hash, '#series');
-  assert.equal(site.progressCurrent.textContent, '02');
+  assert.equal(site.navLinks[1].getAttribute('aria-current'), 'location');
   assert.equal(Number(site.progress.style.getPropertyValue('--site-progress')), Number((1500 / (site.step * 3)).toFixed(5)));
   assert.equal(site.html.classList.contains('is-chapter-transitioning'), false);
   assert.equal(site.heroHeading.inert, true);
@@ -2780,6 +2784,7 @@ await test('pressing the horizontal axis seeks between chapters and can continue
   markerPointer(site, 'pointerup', point(1.527), { target: site.progressRail });
   const released = site.top;
   assert.ok(Math.abs(released - top(1.527)) < 1e-6);
+  assert.equal(site.document.activeElement, site.body, 'releasing the axis returns keyboard focus to the page');
   assert.equal(site.progressTrack.style.getPropertyValue('--chapter-marker-x'), site.progressMarker.style.getPropertyValue('--chapter-marker-x'), 'local tick feedback follows the released position');
   const historyCount = site.historyEntries.length;
   assert.equal(site.click(site.progressRail).defaultPrevented, true, 'the release click is consumed by the horizontal axis');
@@ -2964,6 +2969,109 @@ await test('the outer half-cells of the horizontal axis clamp to the first and l
   }
 });
 
+await test('axis clicks and drag releases within a tenth of a cell settle on that chapter while farther points stay exact', () => {
+  for (const reduced of [false, true]) {
+    const site = browser({ reduced, url: 'https://gudu.blog/#about' });
+    const point = position => site.rulerLeft + (position + 0.5) * site.rulerWidth / 4;
+    const top = position => site.destination('about') + site.step * position;
+    for (const [pressed, expected] of [[1.08, 1], [1.92, 2], [2.89, 2.89], [1.12, 1.12]]) {
+      markerPointer(site, 'pointerdown', point(pressed), { target: site.progressRail });
+      markerPointer(site, 'pointerup', point(pressed), { target: site.progressRail });
+      site.advance(1600);
+      assert.ok(Math.abs(site.top - top(expected)) < 1e-6, `a click at ${pressed} lands on ${expected}`);
+      assert.equal(site.pendingFrames, 0);
+    }
+    site.jump(top(1.2));
+    const grabbedX = site.rulerLeft + site.markerX;
+    markerPointer(site, 'pointerdown', grabbedX, { target: site.progressHitbox });
+    markerPointer(site, 'pointermove', grabbedX + 1.75 * site.rulerWidth / 4);
+    site.advance(16);
+    markerPointer(site, 'pointerup', grabbedX + 1.75 * site.rulerWidth / 4);
+    if (!reduced) {
+      assert.ok(Math.abs(site.top - top(2.95)) < 1e-6, 'the release first commits its own point');
+      assert.equal(site.pendingFrames, 1, 'then eases onto the nearby center');
+      site.advance(1600);
+    }
+    assert.ok(Math.abs(site.top - top(3)) < 1e-6, 'a release near a center settles on it');
+    assert.equal(site.pendingFrames, 0);
+    assert.equal(site.interactionEvents.at(-1).active, false);
+  }
+});
+
+await test('hovering the axis previews the settled landing point and its station, and follows the moving ruler', () => {
+  const site = browser({ url: 'https://gudu.blog/#about' });
+  const point = position => site.rulerLeft + (position + 0.5) * site.rulerWidth / 4;
+  const hoverX = () => parseFloat(site.progressTrack.style.getPropertyValue('--chapter-hover-x'));
+  const targets = () => site.navLinks.filter(link => link.classList.contains('is-rail-target'));
+  const cleared = () => Number.isNaN(hoverX()) && targets().length === 0;
+  const hover = (position, properties = {}) => markerPointer(site, 'pointermove', point(position), { target: site.progressRail, buttons: 0, ...properties });
+  const reads = site.layoutReads;
+  hover(2.37);
+  assert.ok(Math.abs(hoverX() - 2.87 * site.rulerWidth / 4) < 0.001, 'the hairline sits on the exact landing point');
+  assert.deepEqual(targets(), [site.navLinks[2]]);
+  hover(0.93);
+  assert.ok(Math.abs(hoverX() - 1.5 * site.rulerWidth / 4) < 0.001, 'near a center the preview shows the settled point');
+  assert.deepEqual(targets(), [site.navLinks[1]]);
+  hover(-0.4);
+  assert.ok(Math.abs(hoverX() - 0.5 * site.rulerWidth / 4) < 0.001, 'an outer half-cell previews the first chapter center');
+  assert.deepEqual(targets(), [site.navLinks[0]]);
+  assert.equal(site.layoutReads, reads, 'the preview uses cached ruler geometry');
+
+  hover(2.37);
+  site.advance(1000);
+  const navX = layerOffset(site.progress)[0];
+  assert.notEqual(navX, 0, 'the HUD parallax has moved the ruler');
+  assert.ok(Math.abs(site.rulerLeft + navX + hoverX() - point(2.37)) < 0.001, 'the hairline stays under the still mouse while the ruler moves');
+  site.event('pointerleave', { target: site.progressRail, pointerType: 'mouse' });
+  assert.ok(cleared(), 'leaving the axis removes the preview');
+
+  hover(1.6);
+  markerPointer(site, 'pointerdown', point(1.6), { target: site.progressRail });
+  assert.ok(cleared(), 'a press replaces the preview');
+  markerPointer(site, 'pointerup', point(1.6), { target: site.progressRail });
+  site.advance(1600);
+  assert.ok(cleared(), 'an old preview cannot return before the mouse moves again');
+  hover(2.37, { pointerType: 'touch' });
+  hover(2.37, { buttons: 1 });
+  assert.ok(cleared(), 'touches and pressed movement show no preview');
+});
+
+await test('ruler presses return focus so page keys keep their direction, while a keyboard-focused slider keeps it', () => {
+  for (const pointerType of ['mouse', 'touch']) {
+    const site = browser({ url: 'https://gudu.blog/#series', viewportWidth: pointerType === 'touch' ? 600 : 1200 });
+    const point = position => site.rulerLeft + (position + 0.5) * site.rulerWidth / 4;
+    markerPointer(site, 'pointerdown', point(1.3), { target: site.progressRail, pointerType });
+    assert.equal(site.document.activeElement, site.progressMarker, 'the press holds focus so Escape can cancel it');
+    markerPointer(site, 'pointerup', point(1.3), { target: site.progressRail, pointerType });
+    assert.equal(site.document.activeElement, site.body, `a ${pointerType} release returns focus to the page`);
+    assert.equal(site.progressMarker.classList.contains('is-pointer-focused'), false);
+    site.advance(1600);
+    const before = site.top;
+    site.key('PageDown');
+    site.advance(1200);
+    assert.ok(site.top > before, `PageDown still moves forward after a ${pointerType} press`);
+  }
+  const drag = browser({ url: 'https://gudu.blog/#series' });
+  const grabbedX = drag.rulerLeft + drag.markerX;
+  markerPointer(drag, 'pointerdown', grabbedX, { target: drag.progressHitbox });
+  markerPointer(drag, 'pointermove', grabbedX + drag.rulerWidth / 16);
+  drag.advance(16);
+  markerPointer(drag, 'pointerup', grabbedX + drag.rulerWidth / 16);
+  assert.equal(drag.document.activeElement, drag.body, 'dragging the triangle also returns focus');
+
+  const keyboard = browser({ url: 'https://gudu.blog/#series' });
+  const point = position => keyboard.rulerLeft + (position + 0.5) * keyboard.rulerWidth / 4;
+  keyboard.progressMarker.focus();
+  markerPointer(keyboard, 'pointerdown', point(2.4), { target: keyboard.progressRail });
+  markerPointer(keyboard, 'pointerup', point(2.4), { target: keyboard.progressRail });
+  assert.equal(keyboard.document.activeElement, keyboard.progressMarker, 'a slider reached by keyboard keeps its focus');
+  keyboard.advance(1600);
+  const settled = keyboard.top;
+  assert.equal(keyboard.key(' ', { target: keyboard.progressMarker }).defaultPrevented, true, 'Space cannot scroll the document from the slider');
+  keyboard.advance(1200);
+  assert.equal(keyboard.top, settled);
+});
+
 await test('touching the horizontal axis survives compatibility touch events and retains its captured drag', () => {
   const site = browser({ url: 'https://gudu.blog/#about', viewportWidth: 600 });
   const point = position => site.rulerLeft + (position + 0.5) * site.rulerWidth / 4;
@@ -3024,7 +3132,6 @@ await test('minimal progress readout tracks movement and arrivals, then clears f
   assert.equal(site.pendingTimers, 0, 'settled movement does not leave a polling timer');
 
   site.hash('#series');
-  assert.equal(site.progressCurrent.textContent, '02');
   assert.equal(site.navLinks[1].getAttribute('aria-current'), 'location');
   assert.equal(arriving(site.navLinks[1]), true);
   assert.equal(arriving(site.progressMarker), true);
@@ -3057,12 +3164,36 @@ await test('minimal progress readout tracks movement and arrivals, then clears f
   assert.equal(site.pendingTimers, 0);
 });
 
+await test('the lit segment hands over through the crossed stem in the direction of travel', () => {
+  const site = browser({ url: 'https://gudu.blog/#series' });
+  const state = () => ({
+    back: site.progress.classList.contains('is-moving-back'),
+    arriving: site.navLinks.findIndex(link => link.classList.contains('is-arriving')),
+    departing: site.navLinks.findIndex(link => link.classList.contains('is-departing')),
+  });
+  site.advance(1000);
+  site.hash('#journal');
+  assert.deepEqual(state(), { back: false, arriving: 2, departing: 1 }, 'moving right grows Journal from its left stem and retracts Series into it');
+  site.advance(1000);
+  assert.deepEqual(state(), { back: false, arriving: -1, departing: -1 }, 'the handover clears once the sweep is over');
+  site.hash('#series');
+  assert.deepEqual(state(), { back: true, arriving: 1, departing: 2 }, 'moving left mirrors the handover');
+  site.hash('#archive');
+  assert.deepEqual(state(), { back: false, arriving: 3, departing: 1 }, 'a jump hands over from the segment it leaves');
+  site.event('pagehide');
+  assert.deepEqual(state(), { back: false, arriving: -1, departing: -1 }, 'leaving the page clears the handover');
+
+  const reduced = browser({ reduced: true, url: 'https://gudu.blog/#series' });
+  reduced.hash('#journal');
+  assert.equal(reduced.navLinks.some(link => link.classList.contains('is-departing')), false, 'reduced motion has no handover');
+});
+
 await test('reduced motion suppresses progress feedback and cancels feedback already in progress', () => {
   const reduced = browser({ reduced: true, url: 'https://gudu.blog/#series' });
   reduced.click(reduced.navLinks[2]);
   assert.equal(reduced.top, reduced.destination('journal'));
   assert.equal(reduced.document.activeElement, reduced.journal);
-  assert.equal(reduced.progressCurrent.textContent, '03');
+  assert.equal(reduced.navLinks[2].getAttribute('aria-current'), 'location');
   assert.equal(reduced.progress.classList.contains('is-chapter-moving'), false);
   assert.equal(reduced.progressMarker.classList.contains('is-arriving'), false);
   assert.equal(reduced.navLinks.some(link => link.classList.contains('is-arriving')), false);
@@ -3849,7 +3980,7 @@ await test('all positions follow measured panel gaps while progress counts only 
   for (const [index, id] of ids.entries()) {
     site.hash(`#${id}`);
     assert.equal(site.top, site.destination(id));
-    assert.equal(site.progressCurrent.textContent, String(Math.max(index, 1)).padStart(2, '0'));
+    assert.equal(site.navLinks.findIndex(link => link.hasAttribute('aria-current')), index - 1, `${id} marks only its own station`);
     assert.equal(site.progress.style.getPropertyValue('--chapter-active-index'), String(Math.max(index - 1, 0)));
     assert.equal(Number(site.progress.style.getPropertyValue('--site-progress')), Number((Math.max(index - 1, 0) / 3).toFixed(5)));
     assert.ok(Math.abs(site.markerX - (Math.max(index - 1, 0) + 0.5) * site.rulerWidth / 4) < 0.001, `${id} aligns the marker with its station center`);
@@ -3858,7 +3989,6 @@ await test('all positions follow measured panel gaps while progress counts only 
   assert.equal(site.x, -site.step * 3);
   assert.notEqual(site.step, site.window.innerWidth, 'the fixture exercises partial-width panels');
   site.hash('#series');
-  assert.equal(site.progressCurrent.textContent, '02');
   assert.equal(site.navLinks[1].getAttribute('aria-current'), 'location');
 });
 

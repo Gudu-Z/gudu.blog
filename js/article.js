@@ -4,7 +4,8 @@
   const article = document.querySelector('.article-body');
   const progress = document.querySelector('[data-reading-progress]');
   const links = Array.from(document.querySelectorAll('[data-toc-link]'));
-  const headings = links.map(link => document.getElementById(link.hash.slice(1))).filter(Boolean);
+  const headingIds = links.map(link => decodeURIComponent(link.hash.slice(1)));
+  const headings = headingIds.map(id => document.getElementById(id)).filter(Boolean);
   let scheduled = false;
 
   function updateReadingState() {
@@ -23,8 +24,8 @@
     if (headings.length && window.scrollY + viewport >= pageHeight - 2) {
       current = headings[headings.length - 1];
     }
-    for (const link of links) {
-      const selected = current && link.hash === `#${current.id}`;
+    for (const [index, link] of links.entries()) {
+      const selected = current && headingIds[index] === current.id;
       link.classList.toggle('is-active', Boolean(selected));
       if (selected) link.setAttribute('aria-current', 'location');
       else link.removeAttribute('aria-current');

@@ -7,6 +7,13 @@
     "dev": "node scripts/serve.mjs",
     "start": "node scripts/serve.mjs",
     "build": "node scripts/build-blog.mjs",
-    "check": "node --check js/black-hole-theme.js && node --check js/loading.js && node --check js/particle-sky.js && node --check js/black-hole.js && node --check js/ink-splatter.js && node --check js/main.js && node --check js/chapters.js && node --check js/categories.js && node --check js/blog.js && node --check js/article.js && node --check js/posts-data.js && node --check scripts/serve.mjs && node --check scripts/build-blog.mjs && node --check scripts/bake-ink-material.mjs && node scripts/build-blog.mjs --check && node scripts/check-blog.mjs && node scripts/check-chapters.mjs && node scripts/check-categories.mjs && node scripts/check-loading.mjs && node scripts/check-black-hole-theme.mjs && node scripts/check-black-hole-clock.mjs && node scripts/check-black-hole-startup.mjs && node scripts/check-black-hole-rendering.mjs && node scripts/check-particle-sky.mjs && node scripts/check-black-hole-sampling.mjs && node scripts/check-black-hole-lensing.mjs"
+    "check": "node --check js/black-hole-theme.js && node --check js/loading.js && node --check js/particle-sky.js && node --check js/black-hole.js && node --check js/ink-splatter.js && node --check js/main.js && node --check js/chapters.js && node --check js/cursor.js && node --check js/blog.js && node --check js/article.js && node --check js/posts-data.js && node --check scripts/serve.mjs && node --check scripts/build-blog.mjs && node --check scripts/markdown.mjs && node --check scripts/bake-ink-material.mjs && node scripts/build-blog.mjs --check && node scripts/check-blog.mjs && node scripts/check-markdown.mjs && node scripts/check-chapters.mjs && node scripts/check-cursor.mjs && node scripts/check-loading.mjs && node scripts/check-black-hole-theme.mjs && node scripts/check-black-hole-clock.mjs && node scripts/check-black-hole-startup.mjs && node scripts/check-black-hole-rendering.mjs && node scripts/check-particle-sky.mjs && node scripts/check-black-hole-sampling.mjs && node scripts/check-black-hole-lensing.mjs"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "devDependencies": {
+    "markdown-it": "15.0.3",
+    "yaml": "2.9.1"
   }
 }

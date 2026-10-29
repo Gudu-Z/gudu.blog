@@ -1,0 +1,38 @@
+/* Focus-frame pointer drawn by js/cursor.js. The system cursor stays until the
+   first mouse movement, and text fields keep their text cursor. */
+html.has-site-cursor,
+html.has-site-cursor * { cursor: none !important; }
+html.has-site-cursor :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, [contenteditable="true"]) { cursor: text !important; }
+
+.site-cursor { position: fixed; inset: 0; z-index: 2147483647; pointer-events: none; opacity: 0; transition: opacity 160ms ease; contain: strict; }
+.site-cursor.is-visible { opacity: 1; }
+.site-cursor > i { position: absolute; left: 0; top: 0; width: 0; height: 0; will-change: transform; }
+
+/* Each corner sits on its point of the frame; its two 1px arms run inward. */
+.site-cursor > i:not(.site-cursor-dot)::before,
+.site-cursor > i:not(.site-cursor-dot)::after { content: ""; position: absolute; background: rgb(236 240 244 / 82%); transition: width 180ms ease, height 180ms ease, background-color 160ms ease, opacity 160ms ease; }
+.site-cursor > i:not(.site-cursor-dot)::before { width: var(--site-cursor-arm, 5px); height: 1px; }
+.site-cursor > i:not(.site-cursor-dot)::after { width: 1px; height: var(--site-cursor-arm, 5px); }
+.site-cursor-tl::before, .site-cursor-tl::after { left: 0; top: 0; }
+.site-cursor-tr::before, .site-cursor-tr::after { right: 0; top: 0; }
+.site-cursor-bl::before, .site-cursor-bl::after { left: 0; bottom: 0; }
+.site-cursor-br::before, .site-cursor-br::after { right: 0; bottom: 0; }
+.site-cursor:is(.is-locked, .is-field, .is-axis, .is-grip) > i:not(.site-cursor-dot)::before,
+.site-cursor:is(.is-locked, .is-field, .is-axis, .is-grip) > i:not(.site-cursor-dot)::after { background: rgb(248 250 252 / 96%); }
+
+.site-cursor .site-cursor-dot { width: 3px; height: 3px; transition: opacity 120ms ease; }
+/* The text cursor, the ruler's landing hairline and its triangle already mark the point. */
+.site-cursor:is(.is-field, .is-axis, .is-grip) .site-cursor-dot { opacity: 0; }
+.site-cursor-dot::before { content: ""; position: absolute; inset: 0; background: #f3f3f3; transition: transform 140ms ease, background-color 140ms ease; }
+.site-cursor.is-locked .site-cursor-dot::before { background: #f06446; }
+.site-cursor.is-pressed .site-cursor-dot::before { transform: scale(1.7); }
+
+@media (prefers-reduced-motion: reduce) {
+  .site-cursor,
+  .site-cursor .site-cursor-dot,
+  .site-cursor > i::before,
+  .site-cursor > i::after { transition: none; }
+}
+@media print {
+  .site-cursor { display: none; }
+}

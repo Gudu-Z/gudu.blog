@@ -13,7 +13,9 @@
   --space: #080b10;
   --paper: #e6e9ec;
   --red: #f06446;
-  font-family: "Arial", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* Latin text uses the system UI face; Chinese falls through to PingFang or YaHei. */
+  --ui-sans: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-family: var(--ui-sans);
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
 }

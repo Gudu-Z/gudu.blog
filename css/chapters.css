@@ -8,7 +8,16 @@
   --chapter-signal: #f06446;
   --chapter-accent: var(--chapter-signal);
   --chapter-line: #d1d1d124;
-  --chapter-panel: rgb(13 13 15 / 74%);
+  --chapter-panel: rgb(12 14 17 / 88%);
+  /* A faint hairline, a top highlight and two registration corners give each
+     surface an edge without drawing a frame around it. */
+  --chapter-panel-tick: rgb(205 213 220 / 34%);
+  --chapter-panel-frame:
+    linear-gradient(var(--chapter-panel-tick) 0 0) left top / 14px 1px no-repeat,
+    linear-gradient(var(--chapter-panel-tick) 0 0) left top / 1px 14px no-repeat,
+    linear-gradient(var(--chapter-panel-tick) 0 0) right bottom / 14px 1px no-repeat,
+    linear-gradient(var(--chapter-panel-tick) 0 0) right bottom / 1px 14px no-repeat;
+  --chapter-panel-shadow: inset 0 0 0 1px rgb(222 228 234 / 5%), inset 0 1px 0 rgb(236 240 244 / 4%), 0 9px 20px rgb(0 0 0 / 24%), 0 0 9px rgb(0 0 0 / 14%);
   --chapter-mono: "Consolas", "SFMono-Regular", monospace;
   --chapter-text: #e6e9ec;
   --chapter-muted: #9da5ad;
@@ -85,7 +94,7 @@ html.has-chapters.is-content .home-page .hero-heading { pointer-events: none; }
 .home-page .site-header .site-brand { min-width: 44px; min-height: calc(46 * var(--header-unit)); gap: calc(11 * var(--header-unit)); }
 .home-page .site-header .brand-logo { width: calc(46 * var(--header-unit)); height: calc(46 * var(--header-unit)); }
 .home-page .header-brand-coordinate { display: grid; gap: calc(5 * var(--header-unit)); color: #8e8e97; font-family: "Consolas", "SFMono-Regular", monospace; font-size: min(10.5px, calc(9 * var(--header-unit))); line-height: 1; letter-spacing: 0.08em; white-space: nowrap; }
-.home-page .header-brand-name { display: flex; align-items: center; gap: calc(8 * var(--header-unit)); font-family: "Arial", "Helvetica Neue", sans-serif; font-size: calc(14 * var(--header-unit)); letter-spacing: 0.12em; }
+.home-page .header-brand-name { display: flex; align-items: center; gap: calc(8 * var(--header-unit)); font-family: var(--ui-sans); font-size: calc(14 * var(--header-unit)); letter-spacing: 0.12em; }
 .home-page .header-brand-name > span:first-child { color: #dedee3; font-weight: 600; }
 .home-page .header-brand-slash { color: var(--chapter-signal); font-size: calc(11 * var(--header-unit)); letter-spacing: 0; opacity: 0.55; }
 .home-page .header-brand-kind { color: #a6a6af; font-size: calc(10.5 * var(--header-unit)); letter-spacing: 0.15em; }
@@ -208,15 +217,26 @@ html.has-chapters .home-page .journal-section > * { flex-shrink: 0; }
   border: 0;
   border-radius: 0;
   isolation: isolate;
-  background: var(--chapter-panel);
-  box-shadow: 0 9px 20px rgb(0 0 0 / 24%), 0 0 9px rgb(0 0 0 / 14%);
+  background: var(--chapter-panel-frame), var(--chapter-panel);
+  box-shadow: var(--chapter-panel-shadow);
 }
 .home-page .chapter-panel > .chapter-panel-light { display: none; }
 .home-page .chapter-section .accent,
 .home-page .chapter-section .eyebrow > span,
 .home-page .chapter-section .text-link span { color: var(--chapter-accent); }
-.home-page .chapter-section .eyebrow { font-size: 10px; letter-spacing: 0.17em; color: #87909a; }
+.home-page .chapter-section .eyebrow { font-size: 10px; letter-spacing: 0.16em; color: var(--chapter-muted); }
 .home-page .chapter-section .eyebrow > span { margin-right: 14px; }
+/* Chapter titles share one weight and end with the Hero's orange square. */
+.home-page .chapter-section :is(.category-heading, .section-heading, .archive-heading) h2 { font-weight: 600; letter-spacing: 0.02em; }
+.home-page .chapter-section h2 > .accent {
+  display: inline-block;
+  width: 0.17em;
+  height: 0.17em;
+  margin-left: 0.12em;
+  overflow: hidden;
+  color: transparent;
+  background: var(--chapter-accent);
+}
 
 .home-page .about-section {
   display: grid;
@@ -245,34 +265,30 @@ html.has-chapters .home-page .journal-section > * { flex-shrink: 0; }
 .home-page .about-socials a:is(:hover, :focus-visible) { color: #ededed; border-bottom-color: #d7d7dc50; }
 .home-page .about-socials a:is(:hover, :focus-visible) > span:last-child { color: var(--chapter-accent); }
 .home-page .about-copy h2 { font-size: clamp(25px, 2.9vw, 38px); line-height: 1.5; font-weight: 500; letter-spacing: -0.035em; }
-.home-page .about-name { display: inline-block; margin-top: 4px; font: 900 clamp(66px, 7vw, 94px)/1.03 "Barlow Condensed", "Arial Narrow", sans-serif; letter-spacing: 0.005em; }
+.home-page .about-name { display: inline-block; margin-top: 4px; font: 900 clamp(54px, 5.6vw, 76px)/1.03 "Barlow Condensed", "Arial Narrow", sans-serif; letter-spacing: 0.005em; }
 .home-page .about-name .accent { margin-left: 3px; }
 .home-page .about-text > .about-lead { margin: 27px 0 19px; font-size: 17px; line-height: 1.9; color: #d1d4d8; }
 .home-page .about-text > p:not(.about-lead) { margin: 0 0 28px; color: #929ba5; font-size: 12px; line-height: 2.2; max-width: 350px; }
 .home-page .about-signature { display: flex; align-items: center; gap: 14px; margin-top: auto; padding-top: 23px; border-top: 1px solid #f064462b; }
 .home-page .about-signature-mark { color: var(--chapter-accent); font-size: 16px; }
 .home-page .about-signature p { margin: 0; font-size: 10px; line-height: 1.8; color: #a4abb3; }
-.home-page .about-signature-code { margin-left: auto; color: #626e7a; font: 9px "Consolas", "SFMono-Regular", monospace; white-space: nowrap; }
 .home-page .about-connections { display: flex; flex-direction: column; min-width: 0; min-height: max(510px, var(--chapter-content-height)); }
 .home-page .connection-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 0 16px; font-size: 10px; letter-spacing: 0.1em; color: #a0a6ad; }
-.home-page .connection-heading > span:last-child { font: 8px "Consolas", "SFMono-Regular", monospace; letter-spacing: 0.13em; color: #65717c; }
 .home-page .connection-card { display: flex; flex: 1; flex-direction: column; position: relative; padding: 25px 27px 22px; transition: box-shadow 220ms ease, background 220ms ease; }
 .home-page .connection-card + .connection-card { margin-top: 12px; }
 .home-page .connection-index { display: block; font: 8px "Consolas", "SFMono-Regular", monospace; color: #7e8792; letter-spacing: 0.12em; }
-.home-page .connection-arrow { position: absolute; top: 22px; right: 25px; font-size: 15px; color: #8f959c; transition: color 220ms ease, transform 220ms ease; }
 .home-page .connection-card h3 { margin: 15px 0 8px; font-size: 19px; line-height: 1.4; font-weight: 400; letter-spacing: 0.01em; }
 .home-page .connection-card p { margin: 0; color: #8a939e; font-size: 10px; line-height: 1.8; }
 .home-page .connection-action { display: flex; justify-content: space-between; margin-top: auto; padding-top: 16px; color: #bcbcc0; font-size: 9px; letter-spacing: 0.05em; }
 .home-page .connection-action > span { color: var(--chapter-accent); }
 .home-page .rss-label { display: inline-block; margin-left: 7px; vertical-align: 2px; color: var(--chapter-accent); font: 8px "Consolas", "SFMono-Regular", monospace; letter-spacing: 0.04em; }
-.home-page .connection-card:hover { background: rgb(20 20 22 / 84%); box-shadow: 0 10px 22px rgb(0 0 0 / 32%); }
-.home-page .connection-card:is(:hover, :focus-visible) .connection-arrow { color: var(--chapter-accent); transform: translate(2px, -2px); }
+.home-page .connection-card:hover { background-color: rgb(20 20 22 / 84%); box-shadow: 0 10px 22px rgb(0 0 0 / 32%); }
 .home-page .connection-footnote { display: flex; align-items: center; gap: 9px; margin: 17px 0 0; color: #74808c; font-size: 9px; letter-spacing: 0.08em; }
 .home-page .connection-footnote > span { width: 3px; height: 3px; background: var(--chapter-signal); }
 
 .home-page .journal-section { display: flex; flex-direction: column; justify-content: center; }
 .home-page .journal-section .section-heading { margin-bottom: 33px; }
-.home-page .journal-section .section-heading h2 { font-size: clamp(28px, 3vw, 40px); line-height: 1.5; }
+.home-page .journal-section .section-heading h2 { font-size: clamp(28px, 3vw, 40px); line-height: 1.3; }
 .home-page .journal-layout { flex: 1 0 auto; gap: 32px; grid-template-columns: minmax(0, 3fr) minmax(230px, 0.9fr); align-items: stretch; }
 .home-page .journal-main { display: flex; flex-direction: column; padding: 30px; }
 .home-page .journal-main .posts-list { display: flex; flex: 1; flex-direction: column; }
@@ -284,12 +300,18 @@ html.has-chapters .home-page .journal-section > * { flex-shrink: 0; }
 .home-page .chapter-section .post-title a:is(:hover, :focus-visible),
 .home-page .chapter-section .archive-item a:is(:hover, :focus-visible),
 .home-page .chapter-section .archive-year li a:is(:hover, :focus-visible) { color: var(--chapter-signal); }
-.home-page .chapter-section .filter-button[aria-pressed="true"] { color: var(--chapter-signal); background: #f064460a; border-color: #f0644652; }
+/* Filters read like the bottom stations: white when selected, marked by a short orange rule. */
+.home-page .chapter-section .filter-list { gap: 4px 24px; }
+.home-page .chapter-section .filter-button { position: relative; padding: 8px 0; border: 0; color: #8f989f; transition: color 180ms ease; }
+.home-page .chapter-section .filter-button::after { content: ""; position: absolute; left: 0; bottom: 3px; width: 14px; height: 2px; background: var(--chapter-signal); opacity: 0; transform: scaleX(0.3); transform-origin: left; transition: opacity 180ms ease, transform 200ms ease; }
+.home-page .chapter-section .filter-button:hover { color: var(--chapter-text); }
+.home-page .chapter-section .filter-button[aria-pressed="true"] { color: var(--chapter-text); background: none; }
+.home-page .chapter-section .filter-button[aria-pressed="true"]::after { opacity: 1; transform: none; }
+.home-page .chapter-section .filter-button[aria-pressed="true"] .filter-count { color: var(--chapter-signal); opacity: 1; }
 .home-page .journal-sidebar { padding: 0; border: 0; display: flex; flex-direction: column; gap: 16px; }
 .home-page .journal-sidebar .chapter-panel { display: flex; flex: 1; flex-direction: column; align-items: flex-start; padding: 27px; }
 .home-page .journal-sidebar .chapter-panel > .text-link { margin-top: auto; }
 .home-page .journal-sidebar .small-orbit { display: none; }
-.home-page .journal-sidebar .sidebar-note > .eyebrow { margin-bottom: 22px; font-size: 8px; }
 .home-page .journal-sidebar h3 { font-size: 14px; }
 .home-page .journal-sidebar p:not(.eyebrow) { font-size: 11px; }
 .home-page .journal-sidebar .subscribe-note { margin: 0; }
@@ -322,7 +344,7 @@ html.has-chapters .home-page .journal-section > * { flex-shrink: 0; }
 .home-page .archive-section { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.45fr); align-items: start; align-content: center; gap: 32px; }
 html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-content, 1fr) auto; align-items: stretch; align-content: stretch; }
 .home-page .archive-heading { min-height: 300px; padding: 37px; }
-.home-page .archive-heading h2 { font-size: clamp(25px, 2.7vw, 35px); }
+.home-page .archive-heading h2 { font-size: clamp(28px, 3vw, 40px); line-height: 1.3; }
 .home-page .archive-list { padding: 37px; min-height: 300px; }
 .home-page .archive-empty { margin-top: 14px; }
 .home-page .archive-empty::before { background: var(--chapter-accent); }
@@ -642,6 +664,7 @@ html.has-chapters .home-page .chapter-progress {
   --chapter-axis-bottom: calc(var(--chapter-station-base) + 4px);
   --chapter-station-stem: 36px;
   --chapter-tick-step: 1.5625%;
+  --chapter-tick-mid-step: 6.25%;
   --chapter-response-radius: clamp(52px, 5vw, 96px);
   position: fixed;
   bottom: 19px;
@@ -660,8 +683,16 @@ html.has-chapters .home-page .chapter-progress {
   transition: opacity 360ms ease, transform 360ms ease, visibility 360ms;
 }
 html.has-chapters.is-content .home-page .chapter-progress { opacity: 1; visibility: visible; transform: none; pointer-events: auto; }
+/* Wide screens cut the same cells finer, so the ticks keep the spacing of a
+   1440px screen (about 20px fine and 80px middle) and stay on the stations. */
+@media (min-width: 1728px) {
+  html.has-chapters .home-page .chapter-progress { --chapter-tick-step: calc(100% / 96); --chapter-tick-mid-step: calc(100% / 24); }
+}
+@media (min-width: 2400px) {
+  html.has-chapters .home-page .chapter-progress { --chapter-tick-step: calc(100% / 128); --chapter-tick-mid-step: calc(100% / 32); }
+}
 .home-page .chapter-progress-track { --chapter-response-x: var(--chapter-marker-x, 0px); position: absolute; z-index: 2; bottom: var(--chapter-axis-bottom); left: 0; right: 0; height: 1px; background: #aaaaaa43; pointer-events: none; }
-.home-page .chapter-progress-track::before { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 9px; background-image: repeating-linear-gradient(90deg, #9898982e 0 1px, transparent 1px var(--chapter-tick-step)), repeating-linear-gradient(90deg, #a2a2a248 0 1px, transparent 1px 6.25%), repeating-linear-gradient(90deg, #b7b7b766 0 1px, transparent 1px 12.5%); background-size: 100% 3px, 100% 5px, 100% 8px; background-position: left bottom; background-repeat: no-repeat; }
+.home-page .chapter-progress-track::before { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 9px; background-image: repeating-linear-gradient(90deg, #9898982e 0 1px, transparent 1px var(--chapter-tick-step)), repeating-linear-gradient(90deg, #a2a2a248 0 1px, transparent 1px var(--chapter-tick-mid-step)), repeating-linear-gradient(90deg, #b7b7b766 0 1px, transparent 1px 12.5%); background-size: 100% 3px, 100% 5px, 100% 8px; background-position: left bottom; background-repeat: no-repeat; }
 .home-page .chapter-progress-track::after { content: ""; position: absolute; right: 0; bottom: calc(var(--chapter-station-base) - var(--chapter-axis-bottom) - 5px); width: 1px; height: calc(var(--chapter-station-stem) + 5px); background: #74747499; }
 .home-page .chapter-progress-rail { position: absolute; inset: -19.5px 0; pointer-events: none; cursor: pointer; touch-action: none; }
 /* Fixed ticks brighten and extend only near the moving point; the axis stays unfilled. */
@@ -673,7 +704,7 @@ html.has-chapters.is-content .home-page .chapter-progress { opacity: 1; visibili
   right: 0;
   bottom: -2px;
   height: 11px;
-  background-image: repeating-linear-gradient(90deg, #dededebb 0 1px, transparent 1px var(--chapter-tick-step)), repeating-linear-gradient(90deg, #e8e8e8bb 0 1px, transparent 1px 6.25%), repeating-linear-gradient(90deg, #f4f4f4aa 0 1px, transparent 1px 12.5%);
+  background-image: repeating-linear-gradient(90deg, #dededebb 0 1px, transparent 1px var(--chapter-tick-step)), repeating-linear-gradient(90deg, #e8e8e8bb 0 1px, transparent 1px var(--chapter-tick-mid-step)), repeating-linear-gradient(90deg, #f4f4f4aa 0 1px, transparent 1px 12.5%);
   background-size: 100% 5px, 100% 7px, 100% 10px;
   background-position: left bottom;
   background-repeat: no-repeat;
@@ -689,6 +720,24 @@ html.has-chapters.is-content .home-page .chapter-progress { opacity: 1; visibili
 .home-page .chapter-progress.is-chapter-moving .chapter-progress-response { opacity: 0.8; }
 .home-page .chapter-progress.is-scrubbing .chapter-progress-response,
 .home-page .chapter-progress-track:focus-within .chapter-progress-response { opacity: 1; }
+/* A mouse over the axis gets the same tick response at the landing point of a
+   click, plus a hairline. chapters.js settles the point near chapter centers. */
+.home-page .chapter-progress-rail::before {
+  --chapter-hover-mask: linear-gradient(90deg, transparent calc(var(--chapter-hover-x, -999px) - var(--chapter-response-radius)), #000 calc(var(--chapter-hover-x, -999px) - 6px), #000 calc(var(--chapter-hover-x, -999px) + 6px), transparent calc(var(--chapter-hover-x, -999px) + var(--chapter-response-radius)));
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* Same ticks as the response layer, anchored to the axis inside the 40px hit band. */
+  background-image: linear-gradient(#f4f4f4, #f4f4f4), repeating-linear-gradient(90deg, #dededebb 0 1px, transparent 1px var(--chapter-tick-step)), repeating-linear-gradient(90deg, #e8e8e8bb 0 1px, transparent 1px var(--chapter-tick-mid-step)), repeating-linear-gradient(90deg, #f4f4f4aa 0 1px, transparent 1px 12.5%);
+  background-size: 1px 13px, 100% 5px, 100% 7px, 100% 10px;
+  background-position: calc(var(--chapter-hover-x, -999px) - 0.5px) 50%, left 0 bottom 17.5px, left 0 bottom 17.5px, left 0 bottom 17.5px;
+  background-repeat: no-repeat;
+  -webkit-mask-image: var(--chapter-hover-mask);
+  mask-image: var(--chapter-hover-mask);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
 /* The controller caches the ruler width; cursor motion needs no layout reads or wide overflow box. */
 /* The thicker stem stays centered; the triangle sits just above the axis. */
 .home-page .chapter-progress-marker { position: absolute; z-index: 1; left: 0; top: -4px; width: 2px; height: 10px; background: #f06446; transform: translate3d(calc(var(--chapter-marker-x, 0px) - 1px), 0, 0); will-change: transform; pointer-events: none; cursor: grab; touch-action: none; user-select: none; }
@@ -712,10 +761,11 @@ html.has-chapters.is-content:not(.is-chapter-entering):not(.is-chapter-leaving) 
 .home-page .chapter-progress-links { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .home-page .chapter-progress-links a { position: relative; display: block; min-width: 0; color: #7f7f7f; transition: color 160ms ease; }
 .home-page .chapter-progress-links a::before { content: ""; position: absolute; left: 0; bottom: calc(var(--chapter-station-base) - 5px); width: 1px; height: calc(var(--chapter-station-stem) + 5px); background: currentColor; opacity: 0.6; transition: opacity 180ms ease; }
-.home-page .chapter-progress-links a::after { content: ""; position: absolute; left: 15px; bottom: var(--chapter-axis-bottom); width: 28px; height: 1px; background: #f3f3f3; opacity: 0; transform: scaleX(0.2); transform-origin: left; transition: opacity 180ms ease, transform 220ms ease; }
-.home-page .chapter-station-index { position: absolute; top: 1px; left: 15px; font: 8px "Consolas", "SFMono-Regular", monospace; color: #575757; letter-spacing: 0.06em; }
+/* The current chapter's whole axis segment lights up, from its stem to the next one. */
+.home-page .chapter-progress-links a::after { content: ""; position: absolute; left: 0; right: 0; bottom: var(--chapter-axis-bottom); height: 1px; background: #f3f3f3; opacity: 0; transform-origin: left; transition: opacity 180ms ease; }
+.home-page .chapter-station-index { position: absolute; top: 1px; left: 15px; font: 8px "Consolas", "SFMono-Regular", monospace; color: #6b6b6b; letter-spacing: 0.06em; }
 .home-page .chapter-station-title { position: absolute; left: 15px; bottom: calc(var(--chapter-station-base) + 10px); font-size: 15px; line-height: 1.5; font-weight: 400; letter-spacing: 0.06em; transition: color 160ms ease; }
-.home-page .chapter-station-subtitle { position: absolute; left: 15px; top: calc(100% - var(--chapter-station-base) + 1px); font: 7px "Consolas", "SFMono-Regular", monospace; letter-spacing: 0.13em; color: #575757; white-space: nowrap; }
+.home-page .chapter-station-subtitle { position: absolute; left: 15px; top: calc(100% - var(--chapter-station-base) + 1px); font: 8px "Consolas", "SFMono-Regular", monospace; letter-spacing: 0.13em; color: #7a7a7a; white-space: nowrap; }
 /* Keep the labels clickable above the rail without lifting their whole grid cells. */
 .home-page :is(.chapter-station-index, .chapter-station-title, .chapter-station-subtitle) { z-index: 3; }
 .home-page .chapter-progress-links a[aria-current],
@@ -723,29 +773,35 @@ html.has-chapters.is-content:not(.is-chapter-entering):not(.is-chapter-leaving) 
 .home-page .chapter-progress-links a[aria-current]::before,
 .home-page .chapter-progress-links a.is-active::before { opacity: 0.8; }
 .home-page .chapter-progress-links a[aria-current]::after,
-.home-page .chapter-progress-links a.is-active::after { opacity: 1; transform: scaleX(1); background: linear-gradient(90deg, var(--chapter-signal) 0 4px, #f3f3f3 4px); }
+.home-page .chapter-progress-links a.is-active::after { opacity: 0.5; }
 .home-page .chapter-progress-links a[aria-current] .chapter-station-index,
 .home-page .chapter-progress-links a.is-active .chapter-station-index { color: var(--chapter-signal); }
 .home-page .chapter-progress-links a[aria-current] .chapter-station-subtitle,
-.home-page .chapter-progress-links a.is-active .chapter-station-subtitle { color: #858585; }
+.home-page .chapter-progress-links a.is-active .chapter-station-subtitle { color: #a5a5a5; }
 .home-page .chapter-progress-links a:focus-visible { outline: 1px solid #a4a4a4; outline-offset: 4px; }
 .home-page .chapter-progress-links a:not([aria-current]):not(.is-active):focus-visible .chapter-station-title { color: #c5c5c5; }
-.home-page .chapter-progress-links a:not([aria-current]):not(.is-active):focus-visible::after { opacity: 0.45; transform: scaleX(0.6); }
+.home-page .chapter-progress-links a:not([aria-current]):not(.is-active):focus-visible::after { opacity: 0.2; }
 .home-page .chapter-progress-links a.is-arriving::after { animation: chapter-line-arrive 380ms ease-out; }
+/* The crossed stem hands the light over: the new segment grows out of it while
+   the old one retracts into it, mirrored when the cursor travels left. */
+.home-page .chapter-progress-links a.is-departing::after { transform: scaleX(0); transform-origin: right; transition: opacity 220ms ease, transform 240ms ease; }
+.home-page .chapter-progress.is-moving-back .chapter-progress-links a:is([aria-current], .is-active)::after { transform-origin: right; }
+.home-page .chapter-progress.is-moving-back .chapter-progress-links a.is-departing::after { transform-origin: left; }
 .home-page .chapter-progress-links a.is-arriving .chapter-station-title { animation: chapter-title-arrive 380ms ease-out; }
-.home-page .chapter-route-readout { position: absolute; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; color: #616161; font: 7px "Consolas", "SFMono-Regular", monospace; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
-.home-page .chapter-route-readout > span:last-child { margin-left: auto; }
-.home-page [data-chapter-current] { color: #f3f3f3; }
-.home-page .chapter-count-divider { color: #686868; }
 
 @media (hover: hover) {
-  .home-page .chapter-progress-track:hover .chapter-progress-response { opacity: 1; }
+  .home-page .chapter-progress-track:has(.chapter-progress-marker:hover) .chapter-progress-response { opacity: 1; }
+  /* The ruler moves with fractional parallax offsets, which spread the 1px hairline
+     across device pixels on dense screens; a stronger layer keeps it readable. */
+  .home-page .chapter-progress:not(.is-scrubbing) .chapter-progress-rail:hover::before { opacity: 0.85; }
   .home-page .chapter-progress-links a:not([aria-current]):not(.is-active):hover .chapter-station-title { color: #c5c5c5; }
-  .home-page .chapter-progress-links a:not([aria-current]):not(.is-active):hover::after { opacity: 0.45; transform: scaleX(0.6); }
+  /* Kept apart: a browser without :has() drops only this rule, not the label hover above. */
+  .home-page .chapter-progress:not(.is-scrubbing):has(.chapter-progress-rail:hover) .chapter-progress-links a.is-rail-target:not([aria-current]):not(.is-active) .chapter-station-title { color: #c5c5c5; }
+  .home-page .chapter-progress-links a:not([aria-current]):not(.is-active):hover::after { opacity: 0.2; }
 }
 @keyframes chapter-line-arrive {
-  from { opacity: 0.25; transform: scaleX(0.2); }
-  to { opacity: 1; transform: scaleX(1); }
+  from { opacity: 0.15; transform: scaleX(0); }
+  to { opacity: 0.5; transform: none; }
 }
 @keyframes chapter-title-arrive {
   from { color: #b5b5b5; }
@@ -801,10 +857,11 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-links a { opacity: var(--chapter-station-in); translate: 0 calc(2px * (1 - var(--chapter-station-in))); }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-links a::before { transform: scaleY(var(--chapter-station-in)); transform-origin: bottom; transition: none; }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-links a:is([aria-current], .is-active)::after { transform: scaleX(var(--chapter-station-in)); transition: none; animation: none; }
+/* The axis draws in from the left around the Hero, so its active segment does too in either direction. */
+html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress .chapter-progress-links a::after { transform-origin: left; }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-station-title { transition: none; animation: none; }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-marker { transform: translate3d(calc(var(--chapter-marker-x, 0px) * var(--chapter-marker-in) - 1px), 0, 0); opacity: var(--chapter-marker-in); }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-marker::after { opacity: var(--chapter-entrance-glow, 0); transition: none; }
-html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-route-readout { opacity: var(--chapter-line-in); }
 
 /* Header instruments follow the same reversible Hero clock as the content.
    Only the individual parts fade; their transparent parent stays fully drawn. */
@@ -866,7 +923,7 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   }
   :where(html.has-chapters) .home-page .chapter-section .eyebrow { font-size: calc(10 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .chapter-section .text-link { font-size: calc(12 * var(--chapter-content-unit)); }
-  :where(html.has-chapters) .home-page .about-copy { padding: calc(54 * var(--chapter-content-unit)); }
+  :where(html.has-chapters) .home-page .about-copy { padding: calc(46 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .about-panel-top { margin-bottom: calc(35 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .about-body {
     --about-avatar-size: clamp(260px, calc(var(--chapter-content-height) * 0.53), 480px);
@@ -877,14 +934,13 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
     gap: calc(32 * var(--chapter-content-unit));
   }
   :where(html.has-chapters) .home-page .about-copy h2 { font-size: calc(38 * var(--chapter-content-unit)); }
-  :where(html.has-chapters) .home-page .about-name { font-size: calc(94 * var(--chapter-content-unit)); }
+  :where(html.has-chapters) .home-page .about-name { font-size: calc(76 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .about-text > .about-lead { margin: calc(27 * var(--chapter-content-unit)) 0 calc(19 * var(--chapter-content-unit)); font-size: calc(17 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .about-text > p:not(.about-lead) { max-width: calc(350 * var(--chapter-content-unit)); margin-bottom: 0; font-size: clamp(13px, calc(12 * var(--chapter-content-unit)), 16px); }
   :where(html.has-chapters) .home-page .about-socials { margin-top: calc(16 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .about-socials a { min-height: calc(44 * var(--chapter-content-unit)); padding-block: calc(12 * var(--chapter-content-unit)); font-size: calc(12 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .about-signature { max-width: calc(350 * var(--chapter-content-unit)); gap: calc(14 * var(--chapter-content-unit)); margin-top: clamp(24px, calc(var(--chapter-content-height) * 0.04), 40px); padding-top: calc(23 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .about-signature p { font-size: calc(10 * var(--chapter-content-unit)); }
-  :where(html.has-chapters) .home-page .about-signature-code { font-size: calc(9 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .connection-heading { font-size: calc(10 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .connection-card { justify-content: center; padding: calc(25 * var(--chapter-content-unit)) calc(27 * var(--chapter-content-unit)) calc(22 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .connection-card h3 { margin: calc(15 * var(--chapter-content-unit)) 0 calc(8 * var(--chapter-content-unit)); font-size: calc(19 * var(--chapter-content-unit)); }
@@ -911,7 +967,7 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   :where(html.has-chapters) .home-page .journal-sidebar h3 { font-size: calc(14 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .journal-sidebar p:not(.eyebrow) { font-size: calc(11 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page :is(.archive-heading, .archive-list) { padding: calc(37 * var(--chapter-content-unit)); }
-  :where(html.has-chapters) .home-page .archive-heading h2 { font-size: calc(35 * var(--chapter-content-unit)); }
+  :where(html.has-chapters) .home-page .archive-heading h2 { font-size: calc(40 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .archive-heading > p:last-child { font-size: calc(12 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page :is(.archive-empty, .archive-year li a) { font-size: calc(13 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .archive-empty span { font-size: calc(11 * var(--chapter-content-unit)); }
@@ -929,7 +985,6 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   .home-page .chapter-section { width: 87%; }
   .home-page .about-section { gap: 32px; }
   .home-page .about-copy { padding: 32px; }
-  .home-page .about-signature-code { display: none; }
   .home-page .connection-card { padding-inline: 23px; }
   .home-page .journal-layout { grid-template-columns: minmax(0, 1fr) 230px; }
   .home-page .journal-main { padding: 23px; }
@@ -937,10 +992,11 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   .home-page .archive-heading, .home-page .archive-list { padding: 28px; }
   .home-page .series-section { grid-template-columns: minmax(0, 1.3fr) minmax(230px, 0.9fr); }
   .home-page .series-main, .home-page .series-guide { padding: 30px; }
-  .home-page .chapter-station-subtitle { letter-spacing: 0.06em; font-size: 6px; }
+  .home-page .chapter-station-subtitle { letter-spacing: 0.06em; font-size: 7px; }
 }
 @media (max-width: 720px) {
-  .home-page { --header-height: 70px; --chapter-width: 84vw; --chapter-gap: 12px; --chapter-inset-top: max(90px, 14svh); --chapter-inset-bottom: max(122px, 17svh); }
+  /* The compact phone ruler ends 62px above the bottom edge; the reading area and its clip stop just above it. */
+  .home-page { --header-height: 70px; --chapter-width: 84vw; --chapter-gap: 12px; --chapter-inset-top: max(90px, 14svh); --chapter-inset-bottom: max(87px, 12.5svh); }
   .home-page .site-header { padding-inline: 6%; gap: 12px; }
   .home-page .site-header .brand-logo { width: 34px; height: 34px; }
   .home-page .header-brand-coordinate { display: none; }
@@ -949,7 +1005,7 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   .home-page .header-tool svg { width: 16px; height: 16px; }
   .home-page .header-search input { font-size: 16px; }
   .home-page .chapter-section { width: 88%; padding-block: 99px 105px; }
-  html.has-chapters .home-page .chapter-viewport { clip-path: inset(78px 0 110px); }
+  html.has-chapters .home-page .chapter-viewport { clip-path: inset(78px 0 75px); }
   html.has-chapters .home-page .chapter-section { padding-inline: calc(8px + var(--chapter-bleed)); }
   /* Keep intrinsic row heights inside the fixed-height, scrollable chapter. */
   .home-page .about-section { grid-template-columns: 1fr; grid-auto-rows: max-content; align-items: start; gap: 20px; }
@@ -958,7 +1014,7 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   .home-page .connection-card + .connection-card { margin-top: 12px; }
   .home-page .about-panel-top { margin-bottom: 28px; }
   .home-page .about-copy h2 { font-size: 27px; }
-  .home-page .about-name { font-size: 76px; }
+  .home-page .about-name { font-size: 62px; }
   .home-page .about-body { grid-template-columns: minmax(0, 1fr); gap: 32px; }
   .home-page .about-profile { width: min(100%, 320px); }
   .home-page .about-text > .about-lead { margin-top: 23px; }
@@ -971,10 +1027,23 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   /* Full-width and half-width faces meet different parts of the arc. */
   .home-page .journal-layout { grid-template-columns: 1fr; gap: 32px 16px; }
   .home-page .journal-main { padding: 24px 17px; }
+  /* One swipeable filter row. Buttons cover it edge to edge, without gaps or
+     padding, because chapters.js leaves gestures that start on buttons native. */
+  .home-page .chapter-section .filter-list {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    gap: 0;
+    margin: 0 0 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  }
+  .home-page .chapter-section .filter-list::-webkit-scrollbar { display: none; }
+  .home-page .chapter-section .filter-button { flex: none; padding-inline: 0 22px; }
   .home-page .journal-empty { min-height: 340px; padding-inline: 8px; }
   .home-page .journal-sidebar { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .home-page .journal-sidebar .chapter-panel { padding: 20px; }
-  .home-page .journal-sidebar .sidebar-note > .eyebrow { display: none; }
   .home-page .journal-sidebar h3 { font-size: 13px; line-height: 1.6; }
   .home-page .journal-sidebar .text-link { font-size: 10px; gap: 10px; }
   .home-page .journal-sidebar .subscribe-note { border: 0; }
@@ -988,12 +1057,12 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   html.has-chapters .home-page .archive-section { grid-template-rows: repeat(2, minmax(min-content, 1fr)) auto; }
   .home-page .archive-heading, .home-page .archive-list { min-height: 230px; padding: 28px; }
   .home-page .site-footer { margin-top: 14px; margin-bottom: 0; }
-  html.has-chapters .home-page .chapter-progress { --chapter-station-base: 30px; --chapter-station-stem: 33px; --chapter-tick-step: 3.125%; --chapter-response-radius: 36px; bottom: 15px; width: 92%; height: 82px; }
-  .home-page .chapter-progress-links a::after { left: 8px; width: 22px; }
-  .home-page .chapter-station-index { top: 2px; left: 8px; font-size: 7px; }
-  .home-page .chapter-station-title { left: 8px; font-size: 11px; letter-spacing: 0; }
-  .home-page .chapter-station-subtitle { left: 8px; font-size: 5.5px; letter-spacing: 0; }
-  .home-page .chapter-route-readout { font-size: 6px; letter-spacing: 0; }
+  /* Phones keep the titles, axis and cursor. Numbers and English labels would be
+     too small to read, and the centered cursor would cover the active label. */
+  html.has-chapters .home-page .chapter-progress { --chapter-station-base: 12px; --chapter-station-stem: 26px; --chapter-tick-step: 3.125%; --chapter-response-radius: 36px; bottom: 14px; width: 92%; height: 48px; }
+  .home-page :is(.chapter-station-index, .chapter-station-subtitle) { display: none; }
+  /* 15px above the station base leaves the cursor triangle clear of long titles. */
+  .home-page .chapter-station-title { left: 8px; bottom: calc(var(--chapter-station-base) + 15px); font-size: 12px; letter-spacing: 0; }
 }
 @media (max-width: 480px) {
   .home-page .header-tools { --header-search-reserved: 52px; gap: 8px; }
@@ -1011,7 +1080,7 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   .home-page .about-copy { padding-block: 31px; }
   .home-page .about-panel-top { margin-bottom: 24px; }
   .home-page .about-copy h2 { font-size: 29px; }
-  .home-page .about-name { font-size: 74px; }
+  .home-page .about-name { font-size: 60px; }
   .home-page .about-text > .about-lead { margin-top: 19px; margin-bottom: 13px; }
   .home-page .about-signature { margin-top: 24px; padding-top: 18px; }
   .home-page .connection-card { padding-top: 19px; padding-bottom: 17px; }
@@ -1024,9 +1093,10 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
 @media (prefers-reduced-motion: reduce) {
   html.has-chapters .home-page .chapter-section :is(.chapter-panel, .chapter-reveal-unit) { translate: none; scale: none; transform: none; }
   html.has-chapters .home-page .chapter-panel > .chapter-panel-light { display: none; }
-  .home-page .connection-card, .home-page .connection-arrow,
+  .home-page .connection-card,
   .home-page .header-search, .home-page .header-search-fields,
   .home-page .chapter-progress-response,
+  .home-page .chapter-progress-rail::before,
   .home-page .chapter-progress-links a,
   .home-page .chapter-progress-links a::before,
   .home-page .chapter-progress-links a::after,

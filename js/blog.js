@@ -126,7 +126,9 @@
       || (categoryNames.has('other') ? 'other' : '')]));
   const categoryCounts = new Map(categories.map(category => [category.slug, posts.filter(post => postCategories.get(post) === category.slug).length]));
   for (const element of document.querySelectorAll('[data-category-count]')) {
-    element.textContent = String(categoryCounts.get(element.dataset.categoryCount) || 0).padStart(2, '0');
+    const count = categoryCounts.get(element.dataset.categoryCount) || 0;
+    element.textContent = String(count).padStart(2, '0');
+    element.classList.toggle('is-empty', !count);
   }
   const searchablePosts = posts.map(post => ({
     post,

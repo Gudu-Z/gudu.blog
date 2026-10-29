@@ -5,10 +5,9 @@
   --about-unit: var(--chapter-content-unit, 1px);
   --about-code-size: clamp(10px, calc(10 * var(--about-unit)), 11px);
   --about-soft: #89939c;
-  --chapter-panel: rgb(12 14 17 / 86%);
 }
 .home-page .about-section .chapter-panel {
-  background: linear-gradient(155deg, rgb(236 240 244 / 2.5%), transparent 42%), var(--chapter-panel);
+  background: var(--chapter-panel-frame), linear-gradient(155deg, rgb(236 240 244 / 2.5%), transparent 42%), var(--chapter-panel);
 }
 .home-page .about-section .connection-card:is(:hover, :focus-visible) {
   background-color: rgb(23 26 29 / 90%);
@@ -22,7 +21,7 @@
   font-family: var(--chapter-mono);
   font-size: var(--about-code-size);
   line-height: 1.5;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.16em;
   color: var(--chapter-muted);
 }
 .home-page .about-section .about-record-label {
@@ -43,7 +42,7 @@
   position: relative;
   flex: none;
   height: 5px;
-  margin-bottom: calc(24 * var(--about-unit));
+  margin-bottom: calc(18 * var(--about-unit));
   pointer-events: none;
 }
 .home-page .about-section .about-calibration::before {
@@ -81,17 +80,7 @@
 }
 .home-page .about-section .portrait-registration::before { top: -5px; left: -5px; border-width: 1px 0 0 1px; }
 .home-page .about-section .portrait-registration::after { right: -5px; bottom: -5px; border-width: 0 1px 1px 0; }
-.home-page .about-section .about-portrait-caption {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 11px;
-  color: var(--about-soft);
-  font: var(--about-code-size)/1.5 var(--chapter-mono);
-  letter-spacing: 0.1em;
-}
-.home-page .about-section .about-portrait-caption > span:last-child { color: #c7cdd2; letter-spacing: 0.16em; }
-.home-page .about-section .about-socials { margin-top: calc(12 * var(--about-unit)); }
+.home-page .about-section .about-socials { margin-top: calc(18 * var(--about-unit)); }
 .home-page .about-section .about-socials a {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr) 18px;
@@ -118,7 +107,7 @@
 }
 .home-page .about-section .about-name {
   margin-top: 5px;
-  font-size: clamp(66px, calc(78 * var(--about-unit)), 104px);
+  font-size: clamp(54px, calc(62 * var(--about-unit)), 84px);
 }
 .home-page .about-section .about-text > .about-pronunciation {
   display: flex;
@@ -218,7 +207,6 @@
   font-size: clamp(14px, calc(14 * var(--about-unit)), 18px);
   font-weight: 500;
 }
-.home-page .about-section .about-signature-code { font-size: 9px; color: #858f99; }
 
 /* Number, title, description and action follow the same internal columns on every card. */
 .home-page .about-section .connection-heading {
@@ -226,7 +214,6 @@
   line-height: 1.5;
   color: #c0c6cd;
 }
-.home-page .about-section .connection-heading > span:last-child { font-size: 10px; letter-spacing: 0.08em; color: var(--about-soft); }
 .home-page .about-section .connection-card { justify-content: center; }
 .home-page .about-section .connection-card-head {
   display: grid;
@@ -242,7 +229,6 @@
   transition: color 180ms ease;
 }
 .home-page .about-section .connection-index { color: #a4aeb8; font-size: var(--about-code-size); line-height: 1.4; letter-spacing: 0.1em; white-space: nowrap; }
-.home-page .about-section .connection-arrow { position: static; top: auto; right: auto; margin-left: 4px; color: #abb4bc; font-size: 16px; line-height: 1; }
 .home-page .about-section .connection-rule {
   position: relative;
   display: block;
@@ -274,7 +260,6 @@
 @media (max-width: 720px) {
   .home-page .about-section .about-panel-top { flex-wrap: wrap; row-gap: 5px; margin-bottom: 13px; }
   .home-page .about-section .about-calibration { margin-bottom: 25px; }
-  .home-page .about-section .about-portrait-caption { font-size: 10px; letter-spacing: 0.07em; }
   .home-page .about-section .about-socials a { min-height: 44px; }
   .home-page .about-section .about-text > .about-pronunciation { margin-block: 12px 22px; font-size: 14px; }
   .home-page .about-section .about-dossier { row-gap: 16px; }
@@ -285,17 +270,15 @@
 }
 @media (max-width: 480px) {
   .home-page .about-section .about-record-label { font-size: 10px; }
-  .home-page .about-section .about-portrait-caption { gap: 8px; }
   .home-page .about-section .connection-heading { flex-wrap: wrap; gap: 5px 12px; }
 }
 @media (max-height: 760px) and (min-width: 721px) {
   .home-page .about-section .about-panel-top { margin-bottom: 9px; }
   .home-page .about-section .about-calibration { margin-bottom: 17px; }
-  .home-page .about-section .about-portrait-caption { margin-top: 9px; }
-  .home-page .about-section .about-socials { margin-top: 9px; }
+  .home-page .about-section .about-socials { margin-top: 13px; }
   .home-page .about-section .about-socials a { min-height: 44px; padding-block: 10px; }
   .home-page .about-section .about-copy h2 { font-size: 24px; }
-  .home-page .about-section .about-name { font-size: 66px; }
+  .home-page .about-section .about-name { font-size: 54px; }
   .home-page .about-section .about-text > .about-pronunciation { margin-block: 8px 13px; }
   .home-page .about-section .about-dossier { row-gap: 10px; }
   .home-page .about-section .about-fact-wide { padding-top: 9px; }

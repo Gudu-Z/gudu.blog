@@ -57,17 +57,13 @@
 /* The card keeps exactly the same material and geometry during interaction. */
 .home-page .chapter-section a.connection-card:any-link {
   background-color: var(--chapter-panel);
-  box-shadow: 0 9px 20px rgb(0 0 0 / 24%), 0 0 9px rgb(0 0 0 / 14%);
+  box-shadow: var(--chapter-panel-shadow);
 }
 .home-page .chapter-section a.connection-card:any-link h3 {
   color: var(--chapter-link-ink, var(--chapter-text));
 }
 .home-page .chapter-section a.connection-card:any-link .connection-number {
   color: var(--chapter-link-signal, #d3d8dd);
-}
-.home-page .chapter-section a.connection-card:any-link .connection-arrow {
-  color: var(--chapter-link-signal, #abb4bc);
-  transform: translate(var(--chapter-link-arrow-x), var(--chapter-link-arrow-y));
 }
 .home-page .chapter-section a.connection-card:any-link .connection-action > span:first-child {
   color: var(--chapter-link-ink, #c0c7ce);
@@ -81,7 +77,7 @@
   transform: scaleX(calc(0.35 + var(--chapter-link-active) * 0.65));
   transition: transform 200ms ease, opacity 180ms ease;
 }
-.home-page .chapter-section a.connection-card :is(.connection-arrow, .connection-action-arrow) {
+.home-page .chapter-section a.connection-card .connection-action-arrow {
   transition: transform 200ms ease, color 180ms ease;
 }
 .home-page .chapter-section a.connection-card .connection-action > span:first-child {
@@ -139,7 +135,7 @@
   .home-page .chapter-section a.connection-card:any-link .connection-action-arrow { transform: none; }
   .home-page .chapter-section :is(.about-socials a, .series-reading-link, .text-link, .post-link, .archive-item a, .archive-year li a)::after,
   .home-page .chapter-section .about-socials a:any-link .about-link-arrow,
-  .home-page .chapter-section a.connection-card:any-link :is(.connection-number, .connection-arrow, .connection-action-arrow),
+  .home-page .chapter-section a.connection-card:any-link :is(.connection-number, .connection-action-arrow),
   .home-page .chapter-section a.connection-card:any-link .connection-rule::after,
   .home-page .chapter-section a.connection-card .connection-action > span:first-child,
   .home-page .chapter-section .series-reading-link:any-link :is(strong, .series-reading-index, span:last-child),

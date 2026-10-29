@@ -16,20 +16,21 @@
     <link rel="preload" href="./assets/fonts/barlow-condensed-black-latin.woff2" as="font" type="font/woff2" crossorigin />
     <script src="./js/loading.js?v=20261023-responsive-startup"></script>
     <script src="./js/black-hole-theme.js?v=20261023-disk-refinement"></script>
-    <link rel="stylesheet" href="./css/style.css?v=20261020-clean-hero" />
-    <link rel="stylesheet" href="./css/blog.css?v=20261020-clean-hero" />
-    <link rel="stylesheet" href="./css/chapters.css?v=20261027-content-width" />
-    <link rel="stylesheet" href="./css/about-terminal.css?v=20261025-solid-panels" />
-    <link rel="stylesheet" href="./css/chapter-interactions.css?v=20261025-local-feedback" />
-  <link rel="stylesheet" href="./css/categories.css?v=20261028-category-exhibit" />
+    <link rel="stylesheet" href="./css/style.css?v=20261029-ui-polish" />
+    <link rel="stylesheet" href="./css/blog.css?v=20261029-ui-polish" />
+    <link rel="stylesheet" href="./css/chapters.css?v=20261029-ruler-flow" />
+    <link rel="stylesheet" href="./css/about-terminal.css?v=20261029-ui-polish" />
+    <link rel="stylesheet" href="./css/chapter-interactions.css?v=20261029-ui-polish" />
+  <link rel="stylesheet" href="./css/categories.css?v=20261030-category-motion" />
+    <link rel="stylesheet" href="./css/cursor.css?v=20261029-cursor-dock" />
     <script src="./js/ink-splatter.js?v=20261020-camera-preserved" defer></script>
     <script src="./js/particle-sky.js?v=20261020-original-stars" defer></script>
     <script src="./js/black-hole.js?v=20261023-smooth-parallax" defer></script>
     <script src="./js/main.js?v=20261023-smooth-parallax" defer></script>
     <script src="./js/posts-data.js?v=20261026-categories" defer></script>
-    <script src="./js/blog.js?v=20261026-categories" defer></script>
-    <script src="./js/chapters.js?v=20261027-content-width" defer></script>
-    <script src="./js/categories.js?v=20261028-category-exhibit" defer></script>
+    <script src="./js/blog.js?v=20261029-ui-polish" defer></script>
+    <script src="./js/chapters.js?v=20261029-ruler-flow" defer></script>
+    <script src="./js/cursor.js?v=20261029-cursor-steady" defer></script>
   </head>
   <body class="home-page">
     <a class="skip-link" href="#about">跳到主要内容</a>
@@ -155,7 +156,6 @@
             <div class="about-profile">
               <div class="about-portrait">
                 <div class="portrait-registration"><img class="about-avatar" src="./assets/profile/gudu-avatar.jpg" alt="Gudu 的头像：金色戒指与白色羽毛" width="960" height="960" loading="lazy" decoding="async" /></div>
-                <div class="about-portrait-caption" aria-hidden="true"><span>PERSONAL ARCHIVE</span><span>GUDU</span></div>
               </div>
               <nav class="about-socials" aria-label="我的个人主页">
                 <a href="https://github.com/Gudu-Z" target="_blank" rel="noopener noreferrer" aria-label="Gudu 的 GitHub 主页（新标签页打开）"><span class="about-link-index" aria-hidden="true">01</span><span class="about-link-name">GitHub</span><span class="about-link-arrow" aria-hidden="true">↗</span></a>
@@ -171,24 +171,24 @@
                 <div class="about-fact about-fact-wide"><dt>爱好 <span aria-hidden="true">/ OFF DUTY</span></dt><dd>看小说、打游戏和打游戏</dd></div>
                 <div class="about-fact about-fact-wide about-games"><dt>玩的游戏 <span aria-hidden="true">/ GAME LOG</span></dt><dd><ul><li><span aria-hidden="true">01</span><span lang="en">Minecraft</span></li><li><span aria-hidden="true">02</span><span>《刺客信条》系列</span></li><li><span aria-hidden="true">03</span><span>最近几部《塞尔达传说》</span></li></ul></dd></div>
               </dl>
-              <div class="about-signature about-preference"><span class="about-signature-mark" aria-hidden="true">↗</span><p>最喜欢的类型 <strong>冒险游戏</strong></p><span class="about-signature-code" aria-hidden="true">ADV</span></div>
+              <div class="about-signature about-preference"><span class="about-signature-mark" aria-hidden="true">↗</span><p>最喜欢的类型 <strong>冒险游戏</strong></p></div>
             </div>
           </div>
         </div>
         <div class="about-connections">
-          <p class="connection-heading" data-depth-owner="connection-journal"><span>继续探索</span><span aria-hidden="true">EXPLORE / 03</span></p>
+          <p class="connection-heading" data-depth-owner="connection-journal"><span>继续探索</span></p>
           <a class="connection-card chapter-panel" id="connection-journal" href="#journal"><span class="chapter-panel-light" aria-hidden="true"></span>
-            <div class="connection-card-head"><span class="connection-number" aria-hidden="true">01</span><span class="connection-index" aria-hidden="true">JOURNAL</span><span class="connection-arrow" aria-hidden="true">↗</span></div>
+            <div class="connection-card-head"><span class="connection-number" aria-hidden="true">01</span><span class="connection-index" aria-hidden="true">JOURNAL</span></div>
             <span class="connection-rule" aria-hidden="true"></span>
             <h3>最新文章</h3><p>思考、生活，与还未完成的想法。</p><span class="connection-action"><span>阅读文章</span><span class="connection-action-arrow" aria-hidden="true">→</span></span>
           </a>
           <a class="connection-card chapter-panel" href="#archive"><span class="chapter-panel-light" aria-hidden="true"></span>
-            <div class="connection-card-head"><span class="connection-number" aria-hidden="true">02</span><span class="connection-index" aria-hidden="true">ARCHIVE</span><span class="connection-arrow" aria-hidden="true">↗</span></div>
+            <div class="connection-card-head"><span class="connection-number" aria-hidden="true">02</span><span class="connection-index" aria-hidden="true">ARCHIVE</span></div>
             <span class="connection-rule" aria-hidden="true"></span>
             <h3>时间的切片</h3><p>沿着时间，寻找文字留下的轨迹。</p><span class="connection-action"><span>浏览归档</span><span class="connection-action-arrow" aria-hidden="true">→</span></span>
           </a>
           <a class="connection-card connection-rss chapter-panel" id="connection-rss" href="./feed.xml"><span class="chapter-panel-light" aria-hidden="true"></span>
-            <div class="connection-card-head"><span class="connection-number" aria-hidden="true">03</span><span class="connection-index" aria-hidden="true">RSS FEED</span><span class="connection-arrow" aria-hidden="true">↗</span></div>
+            <div class="connection-card-head"><span class="connection-number" aria-hidden="true">03</span><span class="connection-index" aria-hidden="true">RSS FEED</span></div>
             <span class="connection-rule" aria-hidden="true"></span>
             <h3>保持连接 <span class="rss-label">RSS</span></h3><p>让下一篇记录，抵达你的阅读器。</p><span class="connection-action"><span>订阅更新</span><span class="connection-action-arrow" aria-hidden="true">→</span></span>
           </a>
@@ -197,38 +197,34 @@
       </section>
       <section class="series-section section-wrap chapter-section" id="series" aria-labelledby="series-title" tabindex="-1">
         <div class="category-heading" data-depth-owner="category-surface">
-          <div><p class="eyebrow"><span>02</span> CATEGORIES</p><h2 id="series-title">分类<span aria-hidden="true"> /</span></h2></div>
+          <div><p class="eyebrow"><span>02</span> CATEGORIES</p><h2 id="series-title">分类<span class="accent">。</span></h2></div>
           <span class="category-heading-rule" aria-hidden="true"></span>
-          <span class="category-heading-meta" aria-hidden="true">EXPLORE<br /><b>BY INTEREST</b></span>
         </div>
         <div class="category-panel chapter-panel" id="category-surface"><span class="chapter-panel-light" aria-hidden="true"></span>
         <div class="category-columns">
           <a class="category-column" href="?category=minecraft#journal" data-category-link="minecraft" aria-label="浏览 Minecraft 分类">
-            <span class="category-index"><span class="category-symbol" aria-hidden="true">//</span><span class="category-index-line" aria-hidden="true"></span></span>
-            <span class="category-composition"><strong class="category-name category-latin">Minecraft</strong><span class="category-art category-terrain" aria-hidden="true"><span class="category-art-depth">
-              <span class="category-voxel-group">
-                <span class="category-voxel category-voxel-main"><span class="category-voxel-face category-voxel-front"></span><span class="category-voxel-face category-voxel-back"></span><span class="category-voxel-face category-voxel-left"></span><span class="category-voxel-face category-voxel-right"></span><span class="category-voxel-face category-voxel-top"></span><span class="category-voxel-face category-voxel-bottom"></span></span>
-                <span class="category-voxel category-voxel-low"><span class="category-voxel-face category-voxel-front"></span><span class="category-voxel-face category-voxel-back"></span><span class="category-voxel-face category-voxel-left"></span><span class="category-voxel-face category-voxel-right"></span><span class="category-voxel-face category-voxel-top"></span><span class="category-voxel-face category-voxel-bottom"></span></span>
-                <span class="category-voxel category-voxel-side"><span class="category-voxel-face category-voxel-front"></span><span class="category-voxel-face category-voxel-back"></span><span class="category-voxel-face category-voxel-left"></span><span class="category-voxel-face category-voxel-right"></span><span class="category-voxel-face category-voxel-top"></span><span class="category-voxel-face category-voxel-bottom"></span></span>
-                <span class="category-voxel category-voxel-satellite"><span class="category-voxel-face category-voxel-front"></span><span class="category-voxel-face category-voxel-back"></span><span class="category-voxel-face category-voxel-left"></span><span class="category-voxel-face category-voxel-right"></span><span class="category-voxel-face category-voxel-top"></span><span class="category-voxel-face category-voxel-bottom"></span></span>
-              </span>
-            </span></span><span class="category-code" aria-hidden="true">GAME JOURNAL</span><span class="category-description">关于 Minecraft<br />游戏的文章。</span></span>
-            <span class="category-bottom"><span class="category-count"><span class="category-count-number" data-category-count="minecraft">00</span><small>篇文章</small></span><span class="category-bottom-rule" aria-hidden="true"></span><span class="category-action">浏览 <span aria-hidden="true">↗</span></span></span>
+            <span class="category-index"><span class="category-symbol" aria-hidden="true">//</span><span class="category-code" aria-hidden="true">GAME JOURNAL</span><span class="category-index-line" aria-hidden="true"></span></span>
+            <span class="category-composition"><span class="category-display" aria-hidden="true"><span class="category-scene"><span class="category-stage"><span class="category-floor"></span><span class="category-specimen category-block"><i></i><i></i><i></i><i></i><i></i><i></i><span class="category-core"><i></i><i></i><i></i><i></i><i></i><i></i></span></span></span></span></span><strong class="category-name category-latin">Minecraft</strong></span>
+            <span class="category-description">关于 Minecraft<br />游戏的文章。</span>
+            <span class="category-bottom"><span class="category-count"><span class="category-count-number" data-category-count="minecraft">00</span><small>篇文章</small></span><span class="category-action">浏览 <span aria-hidden="true">↗</span></span></span>
           </a>
           <a class="category-column" href="?category=daydreams#journal" data-category-link="daydreams" aria-label="浏览 白日梦话 分类">
-            <span class="category-index"><span class="category-symbol" aria-hidden="true">//</span><span class="category-index-line" aria-hidden="true"></span></span>
-            <span class="category-composition"><strong class="category-name">白日梦话</strong><span class="category-art category-dream" aria-hidden="true"><span class="category-art-depth"><span class="category-dream-axis"></span><i class="category-dream-ring"></i><i class="category-dream-ring"></i><i class="category-dream-ring"></i><span class="category-fragment category-fragment-a"></span><span class="category-fragment category-fragment-b"></span><span class="category-fragment category-fragment-c"></span><span class="category-art-dot"></span></span></span><span class="category-code" aria-hidden="true">DAYDREAMS</span><span class="category-description">离奇的小故事，<br />像做梦一样。</span></span>
-            <span class="category-bottom"><span class="category-count"><span class="category-count-number" data-category-count="daydreams">00</span><small>篇文章</small></span><span class="category-bottom-rule" aria-hidden="true"></span><span class="category-action">浏览 <span aria-hidden="true">↗</span></span></span>
+            <span class="category-index"><span class="category-symbol" aria-hidden="true">//</span><span class="category-code" aria-hidden="true">DAYDREAMS</span><span class="category-index-line" aria-hidden="true"></span></span>
+            <span class="category-composition"><span class="category-display" aria-hidden="true"><span class="category-scene"><span class="category-stage"><span class="category-floor"></span><span class="category-specimen category-orb"><i></i><i></i><i></i><span class="category-orbit"><span class="category-moon"></span></span></span></span></span></span><strong class="category-name">白日梦话</strong></span>
+            <span class="category-description">离奇的小故事，<br />像做梦一样。</span>
+            <span class="category-bottom"><span class="category-count"><span class="category-count-number" data-category-count="daydreams">00</span><small>篇文章</small></span><span class="category-action">浏览 <span aria-hidden="true">↗</span></span></span>
           </a>
           <a class="category-column" href="?category=collected#journal" data-category-link="collected" aria-label="浏览 神秘文案 分类">
-            <span class="category-index"><span class="category-symbol" aria-hidden="true">//</span><span class="category-index-line" aria-hidden="true"></span></span>
-            <span class="category-composition"><strong class="category-name">神秘文案</strong><span class="category-art category-words" aria-hidden="true"><span class="category-art-depth"><span class="category-quote category-quote-open">“</span><span class="category-word-lines"><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="category-quote category-quote-close">”</span><span class="category-word-bracket"></span><span class="category-art-dot"></span></span></span><span class="category-code" aria-hidden="true">COLLECTED WORDS</span><span class="category-description">从互联网上收集的<br />有趣文案。</span></span>
-            <span class="category-bottom"><span class="category-count"><span class="category-count-number" data-category-count="collected">00</span><small>篇文章</small></span><span class="category-bottom-rule" aria-hidden="true"></span><span class="category-action">浏览 <span aria-hidden="true">↗</span></span></span>
+            <span class="category-index"><span class="category-symbol" aria-hidden="true">//</span><span class="category-code" aria-hidden="true">COLLECTED WORDS</span><span class="category-index-line" aria-hidden="true"></span></span>
+            <span class="category-composition"><span class="category-display" aria-hidden="true"><span class="category-scene"><span class="category-stage"><span class="category-floor"></span><span class="category-specimen category-cards"><i></i><i></i><i><span></span><span></span><span></span><span></span><span></span></i></span></span></span></span><strong class="category-name">神秘文案</strong></span>
+            <span class="category-description">从互联网上收集的<br />有趣文案。</span>
+            <span class="category-bottom"><span class="category-count"><span class="category-count-number" data-category-count="collected">00</span><small>篇文章</small></span><span class="category-action">浏览 <span aria-hidden="true">↗</span></span></span>
           </a>
           <a class="category-column" href="?category=other#journal" data-category-link="other" aria-label="浏览 其他 分类">
-            <span class="category-index"><span class="category-symbol" aria-hidden="true">//</span><span class="category-index-line" aria-hidden="true"></span></span>
-            <span class="category-composition"><strong class="category-name">其他</strong><span class="category-art category-network" aria-hidden="true"><span class="category-art-depth"><span class="category-node-line category-node-line-a"></span><span class="category-node-line category-node-line-b"></span><span class="category-node-line category-node-line-c"></span><span class="category-node-line category-node-line-d"></span><span class="category-node category-node-a"></span><span class="category-node category-node-b"></span><span class="category-node category-node-c"></span><span class="category-node category-node-d"></span><span class="category-node category-node-e"></span><span class="category-node-ring"></span><span class="category-art-dot"></span></span></span><span class="category-code" aria-hidden="true">MISCELLANY</span><span class="category-description">其他一些东西。</span></span>
-            <span class="category-bottom"><span class="category-count"><span class="category-count-number" data-category-count="other">00</span><small>篇文章</small></span><span class="category-bottom-rule" aria-hidden="true"></span><span class="category-action">浏览 <span aria-hidden="true">↗</span></span></span>
+            <span class="category-index"><span class="category-symbol" aria-hidden="true">//</span><span class="category-code" aria-hidden="true">MISCELLANY</span><span class="category-index-line" aria-hidden="true"></span></span>
+            <span class="category-composition"><span class="category-display" aria-hidden="true"><span class="category-scene"><span class="category-stage"><span class="category-floor"></span><span class="category-specimen category-crystal"><i></i><i></i><i></i><span class="category-node"></span></span></span></span></span><strong class="category-name">其他</strong></span>
+            <span class="category-description">其他一些东西。</span>
+            <span class="category-bottom"><span class="category-count"><span class="category-count-number" data-category-count="other">00</span><small>篇文章</small></span><span class="category-action">浏览 <span aria-hidden="true">↗</span></span></span>
           </a>
         </div>
         </div>
@@ -243,14 +239,14 @@
             <div class="journal-toolbar"><div class="filter-list" id="filter-list" role="group" aria-label="按分类筛选文章" hidden></div><p class="results-count" id="results-count" role="status" aria-live="polite" hidden></p></div>
             <div class="posts-list" id="posts-list">
               <!-- posts:start -->
-<div class="journal-empty"><span class="empty-orbit" aria-hidden="true"></span><p class="empty-kicker">THE NEXT CHAPTER</p><h3>文章正在酝酿</h3><p>关于技术、生活与思考的记录，会陆续出现在这里。</p><a href="#about" class="text-link">先认识一下我 <span aria-hidden="true">↗</span></a></div>
+<div class="journal-empty"><span class="empty-orbit" aria-hidden="true"></span><h3>文章正在酝酿</h3><p>关于技术、生活与思考的记录，会陆续出现在这里。</p><a href="#about" class="text-link">先认识一下我 <span aria-hidden="true">↗</span></a></div>
 <!-- posts:end -->
             </div>
             <div class="search-empty" id="empty-state" hidden><span aria-hidden="true">∅</span><h3>还没有找到这篇记录</h3><p>试试其他关键词，或者看看全部文章。</p><button class="outline-button" id="reset-filters" type="button">查看全部文章</button></div>
             <button class="load-more outline-button" id="load-more" type="button" hidden>加载更多文章 <span aria-hidden="true">↓</span></button>
           </div>
           <aside class="journal-sidebar" aria-label="博客介绍与订阅">
-            <div class="sidebar-note chapter-panel" id="journal-note"><span class="chapter-panel-light" aria-hidden="true"></span><p class="eyebrow">A SMALL CORNER</p><div class="small-orbit" aria-hidden="true">g<span>.</span></div><h3>留一处，自由书写。</h3><p>在信息的洪流之外，<br />给想法一个慢慢生长的地方。</p><a class="text-link" href="#about">关于这个博客 <span aria-hidden="true">↗</span></a></div>
+            <div class="sidebar-note chapter-panel" id="journal-note"><span class="chapter-panel-light" aria-hidden="true"></span><div class="small-orbit" aria-hidden="true">g<span>.</span></div><h3>留一处，自由书写。</h3><p>在信息的洪流之外，<br />给想法一个慢慢生长的地方。</p><a class="text-link" href="#about">关于这个博客 <span aria-hidden="true">↗</span></a></div>
             <div class="subscribe-note chapter-panel"><span class="chapter-panel-light" aria-hidden="true"></span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16" /></svg><h3>让新文章来找你</h3><p>用 RSS 订阅，在你喜欢的阅读器里，接收下一篇记录。</p><a class="text-link" href="./feed.xml">订阅 RSS <span aria-hidden="true">↗</span></a></div>
           </aside>
         </div>
@@ -281,7 +277,6 @@
         <a href="#journal" data-chapter-link><span class="chapter-station-index">03</span><strong class="chapter-station-title">最新文章</strong><small class="chapter-station-subtitle">LATEST ARTICLES</small></a>
         <a href="#archive" data-chapter-link><span class="chapter-station-index">04</span><strong class="chapter-station-title">归档</strong><small class="chapter-station-subtitle">ARCHIVE</small></a>
       </div>
-      <div class="chapter-route-readout"><span>GUDU / SITE INDEX</span><span><span data-chapter-current>01</span><span class="chapter-count-divider"> / 04</span></span></div>
     </nav>
   </body>
 </html>

@@ -1,6 +1,7 @@
 import { readFile, readdir, mkdir, writeFile, unlink } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseMarkdown } from './markdown.mjs';
 
 const defaultRoot = fileURLToPath(new URL('../', import.meta.url));
 const site = 'https://gudu.blog';
@@ -32,9 +33,9 @@ function validateBlock(block, path) {
   throw new Error(`${path}.type 不支持：${block.type}。可用 paragraph / list / code / quote / callout。`);
 }
 
-function normalizePost(value, filename) {
-  if (!value || typeof value !== 'object') throw new Error(`${filename} 必须包含文章对象。`);
-  const slug = textValue(value.slug, `${filename}.slug`);
+function normalizePost(value, filename, markdown = null) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${filename} 必须包含文章对象。`);
+  const slug = textValue(value.slug ?? (markdown ? filename.replace(/\.(?:md|markdown)$/i, '').toLowerCase() : undefined), `${filename}.slug`);
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error(`${filename}.slug 只能使用小写英文字母、数字和中间的连字符。`);
   const date = textValue(value.date, `${filename}.date`);
   const parsedDate = new Date(`${date}T00:00:00Z`);
@@ -42,9 +43,9 @@ function normalizePost(value, filename) {
   const category = textValue(value.category, `${filename}.category`);
   const tags = value.tags ?? [];
   if (!Array.isArray(tags)) throw new Error(`${filename}.tags 必须是字符串数组。`);
-  if (!Array.isArray(value.sections) || !value.sections.length) throw new Error(`${filename}.sections 需要至少一个章节。`);
+  if (!markdown && (!Array.isArray(value.sections) || !value.sections.length)) throw new Error(`${filename}.sections 需要至少一个章节。`);
   const ids = new Set(['main-content']);
-  const sections = value.sections.map((section, i) => {
+  const sections = markdown ? [] : value.sections.map((section, i) => {
     const path = `${filename}.sections[${i}]`;
     if (!section || typeof section !== 'object') throw new Error(`${path} 必须是章节对象。`);
     const id = section.id ?? `section-${i + 1}`;
@@ -58,17 +59,20 @@ function normalizePost(value, filename) {
     if (value[key] !== undefined && typeof value[key] !== 'boolean') throw new Error(`${filename}.${key} 必须是布尔值。`);
   }
   const title = textValue(value.title, `${filename}.title`);
-  const excerpt = textValue(value.excerpt ?? value.summary, `${filename}.excerpt`);
-  const plainText = [title, excerpt, ...sections.flatMap(section => [section.title, ...section.blocks.flatMap(block => block.text ?? block.code ?? block.items)])].join(' ');
+  const excerpt = textValue(value.excerpt ?? value.summary ?? markdown?.excerpt, `${filename}.excerpt`);
+  // Only a written excerpt becomes the article deck; an extracted one would repeat the first paragraph.
+  const deck = value.excerpt ?? value.summary ? excerpt : '';
+  const plainText = [title, excerpt, ...(markdown ? [markdown.plainText] : sections.flatMap(section => [section.title, ...section.blocks.flatMap(block => block.text ?? block.code ?? block.items)]))].join(' ');
   const chineseCharacters = (plainText.match(/[\u3400-\u9fff]/g) ?? []).length;
   const words = (plainText.replace(/[\u3400-\u9fff]/g, ' ').match(/\S+/g) ?? []).length;
   return {
-    id: slug, slug, title, excerpt, summary: excerpt, category,
+    id: slug, slug, title, excerpt, summary: excerpt, deck, category,
     categorySlug: categorySlugs.get(category) ?? 'other',
     tags: [...new Set(tags.map((tag, i) => textValue(tag, `${filename}.tags[${i}]`)))],
     date, readingMinutes: Math.max(1, Math.ceil(chineseCharacters / 350 + words / 200)),
     url: `./posts/${slug}.html`, demo: value.demo === true, featured: value.featured === true,
     draft: value.draft === true, sections,
+    ...(markdown ? { bodyHTML: markdown.html, toc: markdown.headings.filter(heading => heading.level <= 3) } : {}),
   };
 }
 
@@ -86,11 +90,11 @@ function renderBlock(block) {
 function siteHeader(prefix) {
   return `<a class="skip-link" href="#main-content">跳到主要内容</a>
     <header class="site-header">
-      <a class="site-brand" href="${prefix}index.html#home" aria-label="Gudu 博客首页"><img class="brand-logo" src="${prefix}assets/brand/gudu-logo-light.svg?v=20261018-logo" width="56" height="56" alt="GUDU" /></a>
+      <a class="site-brand" href="${prefix}index.html#home" aria-label="Gudu 博客首页"><img class="brand-logo" src="${prefix}assets/brand/gudu-logo-light.svg?v=20261018-logo" width="56" height="56" alt="GUDU" /><span class="header-brand-coordinate" aria-hidden="true"><span class="header-brand-name"><span>GUDU</span><span class="header-brand-slash">/</span><span class="header-brand-kind">BLOG</span></span><span class="header-brand-motto">IN MY OWN ORBIT</span><span class="header-brand-calibration"></span></span></a>
       <nav class="site-nav" aria-label="主导航">
         <a href="${prefix}index.html#journal">文章</a><a href="${prefix}index.html#archive">归档</a><a href="${prefix}index.html#about">关于</a>
       </nav>
-      <a class="header-rss" href="${prefix}feed.xml" aria-label="RSS 订阅">RSS <span aria-hidden="true">↗</span></a>
+      <a class="header-rss" href="${prefix}feed.xml" aria-label="RSS 订阅"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="5" cy="19" r="1.5" /><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16" /></svg><span>RSS</span></a>
     </header>`;
 }
 
@@ -115,13 +119,15 @@ function documentHead({ title, description, canonical, prefix, noindex = false, 
     ${article ? `<meta property="article:published_time" content="${article.date}T00:00:00Z" />` : ''}
     <link rel="icon" type="image/svg+xml" href="${prefix}assets/favicon.svg?v=20261018-logo" />
     <link rel="alternate" type="application/rss+xml" title="Gudu 的个人博客" href="${prefix}feed.xml" />
-    <link rel="stylesheet" href="${prefix}css/style.css" />
-    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261018-logo" />`.replace(/[ \t]+$/gm, '');
+    <link rel="stylesheet" href="${prefix}css/style.css?v=20261029-ui-polish" />
+    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261029-ui-polish" />`.replace(/[ \t]+$/gm, '');
 }
 
 function renderArticle(post, index, posts) {
   const newer = posts[index - 1];
   const older = posts[index + 1];
+  const toc = post.toc ?? post.sections.map(section => ({ id: section.id, text: section.title, level: 2 }));
+  const body = post.bodyHTML ?? post.sections.map(section => `<section class="article-section" aria-labelledby="${section.id}"><h2 id="${section.id}">${escape(section.title)}</h2>${section.blocks.map(renderBlock).join('\n')}</section>`).join('\n');
   const postLink = (item, className, label, arrow) => item ? `<a class="${className}" href="./${item.slug}.html"><span>${label} ${arrow}</span><strong>${escape(item.title)}</strong></a>` : `<span class="${className} is-unavailable"><span>${label}</span><strong>已到达这一端</strong></span>`;
   const structuredData = post.demo ? '' : `<script type="application/ld+json">${jsonForHTML({ '@context': 'https://schema.org', '@type': 'BlogPosting', headline: post.title, description: post.excerpt, datePublished: post.date, mainEntityOfPage: postURL(post), inLanguage: 'zh-CN' })}</script>`;
   return `<!doctype html>
@@ -138,23 +144,18 @@ ${structuredData}
     <main class="article-shell" id="main-content" tabindex="-1">
       <a class="article-back" href="../index.html#journal"><span aria-hidden="true">←</span> 返回文章列表</a>
       <header class="article-header">
-        <p class="eyebrow">${escape(post.category)} <span aria-hidden="true">/</span> FIELD NOTES</p>
-        <div class="article-meta"><time datetime="${post.date}">${displayDate(post.date)}</time><span>约 ${post.readingMinutes} 分钟阅读</span>${post.demo ? '<span>示例文章</span>' : ''}</div>
+        <div class="article-meta"><a class="article-category" href="../index.html?category=${escape(post.categorySlug)}#journal">${escape(post.category)}</a><time datetime="${post.date}">${displayDate(post.date)}</time><span>约 ${post.readingMinutes} 分钟阅读</span>${post.demo ? '<span>示例文章</span>' : ''}</div>
         <h1 class="article-title">${escape(post.title)}</h1>
-        <p class="article-deck">${escape(post.excerpt)}</p>
-        <ul class="article-tags" aria-label="文章标签">${post.tags.map(tag => `<li>${escape(tag)}</li>`).join('')}</ul>
+        ${post.deck ? `<p class="article-deck">${escape(post.deck)}</p>` : ''}
+        ${post.tags.length ? `<ul class="article-tags" aria-label="文章标签">${post.tags.map(tag => `<li>#${escape(tag)}</li>`).join('')}</ul>` : ''}
         ${post.demo ? '<p class="demo-notice">这是一篇用于预览版式的示例文章，不代表作者的真实经历或正式发布内容。</p>' : ''}
       </header>
       <div class="article-layout">
         <article class="article-body" aria-label="文章正文">
-          ${post.sections.map(section => `<section class="article-section" aria-labelledby="${section.id}"><h2 id="${section.id}">${escape(section.title)}</h2>${section.blocks.map(renderBlock).join('\n')}</section>`).join('\n')}
-          <div class="article-end"><span aria-hidden="true">✦</span><p>本文完。谢谢你的阅读。</p></div>
+          ${body}
+          <div class="article-end"><span class="article-end-mark" aria-hidden="true"></span><p>本文完。谢谢你的阅读。</p><div class="article-tools"><button class="copy-link" type="button" hidden>复制文章链接 <span aria-hidden="true">↗</span></button><p class="copy-status" role="status" aria-live="polite"></p></div></div>
         </article>
-        <aside class="article-toc" aria-label="文章目录">
-          <p class="toc-label">本文目录</p>
-          <nav><ol>${post.sections.map(section => `<li><a data-toc-link href="#${section.id}">${escape(section.title)}</a></li>`).join('')}</ol></nav>
-          <div class="article-tools"><button class="copy-link" type="button" hidden>复制文章链接 <span aria-hidden="true">↗</span></button><p class="copy-status" role="status" aria-live="polite"></p></div>
-        </aside>
+        ${toc.length ? `<aside class="article-toc" aria-label="文章目录"><p class="toc-label">本文目录</p><nav><ol>${toc.map(heading => `<li${heading.level === 3 ? ' class="toc-subheading"' : ''}><a data-toc-link href="#${escape(heading.id)}">${escape(heading.text)}</a></li>`).join('')}</ol></nav></aside>` : ''}
       </div>
       <nav class="article-pagination" aria-label="其他文章">${postLink(newer, 'article-prev', '上一篇', '←')}${postLink(older, 'article-next', '下一篇', '→')}</nav>
     </main>
@@ -191,7 +192,7 @@ ${published.map(post => `<item><title>${escape(post.title)}</title><link>${postU
 `;
 }
 
-const journalEmpty = '<div class="journal-empty"><span class="empty-orbit" aria-hidden="true"></span><p class="empty-kicker">THE NEXT CHAPTER</p><h3>文章正在酝酿</h3><p>关于技术、生活与思考的记录，会陆续出现在这里。</p><a href="#about" class="text-link">先认识一下我 <span aria-hidden="true">↗</span></a></div>';
+const journalEmpty = '<div class="journal-empty"><span class="empty-orbit" aria-hidden="true"></span><h3>文章正在酝酿</h3><p>关于技术、生活与思考的记录，会陆续出现在这里。</p><a href="#about" class="text-link">先认识一下我 <span aria-hidden="true">↗</span></a></div>';
 const archiveEmpty = '<p class="archive-empty">这里将按时间，收好每一篇文章。<span>第一篇，敬请期待。</span></p>';
 
 function renderCards(posts) {
@@ -220,15 +221,26 @@ function renderCategoryCounts(html, posts) {
 export async function buildBlog({ root = defaultRoot, checkOnly = false } = {}) {
   const sourceDirectory = resolve(root, 'content/posts');
   const postDirectory = resolve(root, 'posts');
-  const filenames = (await readdir(sourceDirectory)).filter(name => name.endsWith('.json')).sort();
-  const sources = await Promise.all(filenames.map(async filename => normalizePost(JSON.parse(await readFile(resolve(sourceDirectory, filename), 'utf8')), filename)));
+  const filenames = (await readdir(sourceDirectory, { withFileTypes: true }))
+    .filter(entry => entry.isFile() && /\.(?:json|md|markdown)$/i.test(entry.name)).map(entry => entry.name).sort();
+  const sources = await Promise.all(filenames.map(async filename => {
+    const source = await readFile(resolve(sourceDirectory, filename), 'utf8');
+    if (/\.(?:md|markdown)$/i.test(filename)) {
+      const markdown = parseMarkdown(source, filename);
+      return normalizePost(markdown.attributes, filename, markdown);
+    }
+    try { return normalizePost(JSON.parse(source), filename); }
+    catch (error) { throw new Error(`${filename}: ${error.message}`); }
+  }));
   const slugs = new Set();
   for (const post of sources) {
     if (slugs.has(post.slug)) throw new Error(`重复的文章 slug：${post.slug}`);
     slugs.add(post.slug);
   }
   const posts = sources.filter(post => !post.draft).sort((a, b) => b.date.localeCompare(a.date) || a.slug.localeCompare(b.slug));
-  const metadata = posts.map(({ sections, draft, ...post }) => post);
+  // Parsing stays in the build. The homepage receives metadata, never article
+  // markup, parser modules or full Markdown sources.
+  const metadata = posts.map(({ sections, draft, bodyHTML, toc, deck, ...post }) => post);
   const artifacts = new Map();
   artifacts.set('js/posts-data.js', `// Generated by scripts/build-blog.mjs. Do not edit directly.\nwindow.BLOG_CATEGORIES = ${jsonForHTML(categories)};\nwindow.BLOG_POSTS = ${jsonForHTML(metadata)};\n`);
   for (const [index, post] of posts.entries()) artifacts.set(`posts/${post.slug}.html`, renderArticle(post, index, posts));
