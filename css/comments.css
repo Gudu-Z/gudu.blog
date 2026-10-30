@@ -1,0 +1,50 @@
+.article-comments { margin-top: 64px; padding-top: 32px; border-top: 1px solid var(--line); color: var(--paper); }
+.article-comments > h2 { margin: 0 0 12px; font-size: 23px; font-weight: 600; line-height: 1.5; letter-spacing: -0.02em; }
+.article-comments-intro, .article-comments [data-comments-status], .article-comments noscript { color: var(--muted); font-size: 13px; line-height: 1.9; }
+.article-comments-intro { margin: 0 0 24px; }
+.article-comments [data-comments-status] { margin: 18px 0; }
+.article-comments [hidden] { display: none !important; }
+.article-comments [data-comments-retry] { margin-bottom: 20px; border: 1px solid var(--line); padding: 10px 16px; background: transparent; color: var(--paper); font: inherit; font-size: 13px; cursor: pointer; }
+.article-comments [data-comments-retry]:hover { border-color: var(--red); color: #f69b85; }
+.article-comments [data-comments-retry]:focus-visible { outline: 2px solid var(--red); outline-offset: 4px; }
+.article-comments [data-comments-thread] { min-height: 60px; overflow-wrap: anywhere; }
+
+/* Apply variables to Waline's own root so its dark-mode defaults cannot override the blog palette. */
+.article-comments [data-waline] {
+  --waline-font-size: 14px;
+  --waline-white: #fff;
+  --waline-light-grey: #8d98a6;
+  --waline-dark-grey: #b5bfca;
+  --waline-theme-color: #f06446;
+  --waline-active-color: #f69b85;
+  --waline-color: #c6ced7;
+  --waline-bg-color: #0b0e13;
+  --waline-bg-color-light: #11161e;
+  --waline-bg-color-hover: #171d26;
+  --waline-border-color: #ffffff1a;
+  --waline-disable-bg-color: #151a22;
+  --waline-disable-color: #84909e;
+  --waline-code-bg-color: #0d1219;
+  --waline-bq-color: #ffffff1a;
+  --waline-badge-color: #f06446;
+  --waline-info-bg-color: #151a22;
+  --waline-info-color: #a1adbb;
+  --waline-border: 1px solid var(--waline-border-color);
+  --waline-box-shadow: none;
+  font-family: inherit;
+}
+.article-comments .wl-panel, .article-comments .wl-btn, .article-comments .wl-card .wl-meta > span { border-radius: 2px; }
+.article-comments .wl-editor { min-height: 130px; font-family: inherit; line-height: 1.8; }
+.article-comments .wl-header { flex-wrap: wrap; }
+.article-comments .wl-header-item { min-width: min(100%, 240px); }
+.article-comments .wl-header label { white-space: nowrap; }
+.article-comments .wl-content a { text-underline-offset: 3px; }
+.article-comments .wl-content pre { max-width: 100%; overflow-x: auto; }
+.article-comments .wl-power { padding-top: 16px; color: var(--muted); }
+.article-comments :is(input, textarea, button, a):focus-visible { outline: 2px solid var(--red); outline-offset: 3px; }
+
+@media (max-width: 720px) {
+  .article-comments { margin-top: 44px; padding-top: 25px; }
+  .article-comments > h2 { font-size: 21px; }
+  .article-comments .wl-header-item { flex-basis: 100%; }
+}

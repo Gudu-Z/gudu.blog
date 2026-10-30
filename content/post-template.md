@@ -6,6 +6,8 @@ category: 白日梦话
 tags:
   - 故事
 draft: true
+# 如需关闭本篇评论，改为 false（须先配置全站评论服务）。
+comments: true
 ---
 
 在这里写文章开头。空一行可以另起一段。

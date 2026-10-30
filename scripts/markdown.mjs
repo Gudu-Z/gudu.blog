@@ -80,7 +80,7 @@ export function parseMarkdown(source, filename) {
   const env = {};
   const tokens = markdown.parse(body, env);
   const headings = [];
-  const used = new Set(['main-content']);
+  const used = new Set(['main-content', 'comments', 'comments-title', 'waline']);
   const textParts = [];
   let paragraph = '';
   for (let index = 0; index < tokens.length; index++) {

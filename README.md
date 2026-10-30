@@ -14,7 +14,7 @@ GitHub Pages 从 `main` 分支的根目录发布，推送更新后自动部署�
 
 ## 本地预览
 
-需要 Node.js 20.19 或更新版本。首次使用或依赖锁定文件更新后，先执行 `npm ci`：
+需要 Node.js 22.12 或更新版本。首次使用或依赖锁定文件更新后，先执行 `npm ci`：
 
 ```sh
 npm ci
@@ -142,6 +142,14 @@ npm run check
 然后刷新本地预览；尚未启动预览时执行 `npm run dev`。构建会同步首页列表、分类数量、归档、文章上下篇、RSS 与站点地图。删除源文章或将其改为草稿后重新构建，对应的旧生成页也会移除；手写页面不会被清理。不要手工编辑 `posts/*.html`、`js/posts-data.js` 或首页 `posts` / `archive` 标记区域，下次构建会重新生成这些内容。
 
 GitHub Pages 直接发布仓库内的静态文件，因此部署时需要一并提交源文章和生成结果。关闭 JavaScript 后，已发布的文章列表、归档和正文仍然可读。RSS 地址为 [gudu.blog/feed.xml](https://gudu.blog/feed.xml)。
+
+## 读者评论
+
+文章页已准备 Waline 评论接入：昵称必填、邮箱选填，无需注册；评论审核后显示。`content/comments.json` 的 `serverURL` 默认为空，此时不显示评论区，也不请求评论服务。部署好独立服务后填入地址并重新构建即可启用，操作见 [评论服务部署步骤](docs/comments-deployment.md)。
+
+单篇文章可在 YAML 中设置 `comments: false`；示例文章不加载评论。评论按 `/posts/slug.html` 区分，改标题不会丢失关联，已发布的 `slug` 应保持不变。本地与其他预览域名不连接正式评论服务；评论组件只在接近评论区时加载，客户端脚本与样式随网站本地发布。
+
+`services/comments/` 提供独立 Vercel 服务模板和服务端昵称校验，数据库与管理员账户尚需按部署文档创建。数据库密码、邮件密码、Turnstile secret 等只保存在评论服务的环境变量中。邮箱通知需要另行配置 SMTP。
 
 ## 黑洞视觉
 

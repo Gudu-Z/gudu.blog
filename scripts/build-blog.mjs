@@ -2,6 +2,7 @@ import { readFile, readdir, mkdir, writeFile, unlink } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseMarkdown } from './markdown.mjs';
+import { commentsAssets, readCommentsConfig, renderComments } from './comments.mjs';
 
 const defaultRoot = fileURLToPath(new URL('../', import.meta.url));
 const site = 'https://gudu.blog';
@@ -44,18 +45,19 @@ function normalizePost(value, filename, markdown = null) {
   const tags = value.tags ?? [];
   if (!Array.isArray(tags)) throw new Error(`${filename}.tags 必须是字符串数组。`);
   if (!markdown && (!Array.isArray(value.sections) || !value.sections.length)) throw new Error(`${filename}.sections 需要至少一个章节。`);
-  const ids = new Set(['main-content']);
+  const reservedIds = new Set(['main-content', 'comments', 'comments-title', 'waline']);
+  const ids = new Set(reservedIds);
   const sections = markdown ? [] : value.sections.map((section, i) => {
     const path = `${filename}.sections[${i}]`;
     if (!section || typeof section !== 'object') throw new Error(`${path} 必须是章节对象。`);
     const id = section.id ?? `section-${i + 1}`;
-    if (id === 'main-content') throw new Error(`${path}.id 的 main-content 是页面保留锚点，请使用其他唯一的小写英文锚点。`);
+    if (reservedIds.has(id)) throw new Error(`${path}.id 的 ${id} 是页面保留锚点，请使用其他唯一的小写英文锚点。`);
     if (typeof id !== 'string' || !/^[a-z][a-z0-9-]*$/.test(id) || ids.has(id)) throw new Error(`${path}.id 需要唯一的小写英文锚点，以字母开头。`);
     ids.add(id);
     if (!Array.isArray(section.blocks) || !section.blocks.length) throw new Error(`${path}.blocks 需要至少一个内容块。`);
     return { id, title: textValue(section.title, `${path}.title`), blocks: section.blocks.map((block, j) => validateBlock(block, `${path}.blocks[${j}]`)) };
   });
-  for (const key of ['draft', 'demo', 'featured']) {
+  for (const key of ['draft', 'demo', 'featured', 'comments']) {
     if (value[key] !== undefined && typeof value[key] !== 'boolean') throw new Error(`${filename}.${key} 必须是布尔值。`);
   }
   const title = textValue(value.title, `${filename}.title`);
@@ -71,7 +73,7 @@ function normalizePost(value, filename, markdown = null) {
     tags: [...new Set(tags.map((tag, i) => textValue(tag, `${filename}.tags[${i}]`)))],
     date, readingMinutes: Math.max(1, Math.ceil(chineseCharacters / 350 + words / 200)),
     url: `./posts/${slug}.html`, demo: value.demo === true, featured: value.featured === true,
-    draft: value.draft === true, sections,
+    draft: value.draft === true, comments: value.comments !== false, sections,
     ...(markdown ? { bodyHTML: markdown.html, toc: markdown.headings.filter(heading => heading.level <= 3) } : {}),
   };
 }
@@ -123,7 +125,8 @@ function documentHead({ title, description, canonical, prefix, noindex = false, 
     <link rel="stylesheet" href="${prefix}css/blog.css?v=20261029-ui-polish" />`.replace(/[ \t]+$/gm, '');
 }
 
-function renderArticle(post, index, posts) {
+function renderArticle(post, index, posts, commentsConfig) {
+  const comments = renderComments(post, commentsConfig, site);
   const newer = posts[index - 1];
   const older = posts[index + 1];
   const toc = post.toc ?? post.sections.map(section => ({ id: section.id, text: section.title, level: 2 }));
@@ -137,6 +140,7 @@ ${generated}
     ${documentHead({ title: `${post.title} · Gudu 的个人博客`, description: post.excerpt, canonical: postURL(post), prefix: '../', noindex: post.demo, article: post })}
 ${structuredData}
     <script src="../js/article.js" defer></script>
+    ${comments.head}
   </head>
   <body class="article-page">
     <div class="reading-progress" aria-hidden="true" hidden><span data-reading-progress></span></div>
@@ -158,6 +162,7 @@ ${structuredData}
         ${toc.length ? `<aside class="article-toc" aria-label="文章目录"><p class="toc-label">本文目录</p><nav><ol>${toc.map(heading => `<li${heading.level === 3 ? ' class="toc-subheading"' : ''}><a data-toc-link href="#${escape(heading.id)}">${escape(heading.text)}</a></li>`).join('')}</ol></nav></aside>` : ''}
       </div>
       <nav class="article-pagination" aria-label="其他文章">${postLink(newer, 'article-prev', '上一篇', '←')}${postLink(older, 'article-next', '下一篇', '→')}</nav>
+      ${comments.body}
     </main>
     ${siteFooter('../')}
   </body>
@@ -219,6 +224,7 @@ function renderCategoryCounts(html, posts) {
 }
 
 export async function buildBlog({ root = defaultRoot, checkOnly = false } = {}) {
+  const commentsConfig = await readCommentsConfig(root);
   const sourceDirectory = resolve(root, 'content/posts');
   const postDirectory = resolve(root, 'posts');
   const filenames = (await readdir(sourceDirectory, { withFileTypes: true }))
@@ -240,10 +246,10 @@ export async function buildBlog({ root = defaultRoot, checkOnly = false } = {}) 
   const posts = sources.filter(post => !post.draft).sort((a, b) => b.date.localeCompare(a.date) || a.slug.localeCompare(b.slug));
   // Parsing stays in the build. The homepage receives metadata, never article
   // markup, parser modules or full Markdown sources.
-  const metadata = posts.map(({ sections, draft, bodyHTML, toc, deck, ...post }) => post);
-  const artifacts = new Map();
+  const metadata = posts.map(({ sections, draft, bodyHTML, toc, deck, comments, ...post }) => post);
+  const artifacts = new Map(await commentsAssets());
   artifacts.set('js/posts-data.js', `// Generated by scripts/build-blog.mjs. Do not edit directly.\nwindow.BLOG_CATEGORIES = ${jsonForHTML(categories)};\nwindow.BLOG_POSTS = ${jsonForHTML(metadata)};\n`);
-  for (const [index, post] of posts.entries()) artifacts.set(`posts/${post.slug}.html`, renderArticle(post, index, posts));
+  for (const [index, post] of posts.entries()) artifacts.set(`posts/${post.slug}.html`, renderArticle(post, index, posts, commentsConfig));
   artifacts.set('feed.xml', renderFeed(posts));
   artifacts.set('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${site}/</loc></url>${posts.filter(post => !post.demo).map(post => `<url><loc>${postURL(post)}</loc><lastmod>${post.date}</lastmod></url>`).join('')}</urlset>\n`);
   artifacts.set('robots.txt', `User-agent: *\nAllow: /\n\nSitemap: ${site}/sitemap.xml\n`);
