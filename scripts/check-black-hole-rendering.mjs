@@ -285,6 +285,7 @@ await test('adaptive resizing keeps the presented frame until its replacement is
   const { renderer } = site;
   assert.equal(renderer.render(12, 0, 0), true);
   const width = site.canvas.width;
+  const pixels = renderer.sceneTarget.width;
   const allocations = site.count('texImage2D');
   const clears = site.count('canvasWidth');
   renderer.sampleFrame(1);
@@ -300,7 +301,9 @@ await test('adaptive resizing keeps the presented frame until its replacement is
   assert.equal(site.count('texImage2D'), allocations);
   assert.equal(site.presented, true, 'sampling performance must not erase the just-drawn frame');
   assert.equal(renderer.render(13, 0, 0), true);
-  assert.ok(site.canvas.width < width);
+  assert.ok(renderer.sceneTarget.width < pixels);
+  assert.equal(site.canvas.width, width, 'measured load resizes offscreen targets, never the canvas');
+  assert.equal(site.count('canvasWidth'), clears, 'resizing a canvas would wait for the GPU process');
   assert.equal(site.count('texImage2D'), allocations + 2);
   assert.equal(site.presented, true, 'the resizing task must also draw the replacement');
   renderer.dispose();
@@ -401,7 +404,7 @@ await test('sustained measured GPU overload reduces pixels before cadence and re
   const site = await browser({ timerQuery: true });
   const { renderer } = site;
   renderer.render(12, 0, 0);
-  const width = site.canvas.width;
+  const width = renderer.sceneTarget.width;
   for (let i = 0; i < 8; i++) {
     site.advance(50);
     site.complete(50);
@@ -410,8 +413,8 @@ await test('sustained measured GPU overload reduces pixels before cadence and re
   }
   assert.equal(renderer.frameInterval, 1000 / 30);
   assert.equal(renderer.quality, 0.75, 'measured pressure should reduce pixel work on its first sample window');
-  assert.ok(site.canvas.width < width);
-  const reducedWidth = site.canvas.width;
+  assert.ok(renderer.sceneTarget.width < width);
+  const reducedWidth = renderer.sceneTarget.width;
   assert.equal(site.resultReads, 8);
   assert.equal(site.queries.size, 1);
   costWindow(site, 80);
@@ -420,7 +423,7 @@ await test('sustained measured GPU overload reduces pixels before cadence and re
   costWindow(site, 80);
   assert.equal(renderer.frameInterval, 1000 / 30);
   assert.equal(renderer.quality, 0.6, 'heavy pressure reaches the bounded pixel floor before slowing motion');
-  assert.equal(site.canvas.width, reducedWidth, 'a scheduled resize must preserve the displayed frame');
+  assert.equal(renderer.sceneTarget.width, reducedWidth, 'a scheduled resize must preserve the displayed frame');
   site.advance(750);
   costWindow(site, 80);
   assert.equal(renderer.frameInterval, 1000 / 20, 'cadence is the fallback once pixel work reaches its floor');
@@ -429,7 +432,7 @@ await test('sustained measured GPU overload reduces pixels before cadence and re
   assert.equal(renderer.frameInterval, 1000 / 15);
   site.complete(80);
   renderer.render(24, 0, 0);
-  assert.ok(site.canvas.width < width);
+  assert.ok(renderer.sceneTarget.width < width);
   assert.equal(site.presented, true);
   for (let i = 0; i < 12; i++) {
     site.advance(2000);
@@ -476,7 +479,7 @@ await test('recovery uses sustained upper-bound headroom to restore cadence befo
   renderer.frameInterval = 1000 / 15;
   renderer.resize();
   renderer.render(12, 0, 0);
-  const width = site.canvas.width;
+  const width = renderer.sceneTarget.width;
   for (let i = 0; i < 16; i++) costWindow(site, 0, 50);
   assert.equal(renderer.quality, 0.6,
     'a completed first poll is not zero-cost evidence when its upper bound has insufficient headroom');
@@ -490,11 +493,11 @@ await test('recovery uses sustained upper-bound headroom to restore cadence befo
   assert.equal(renderer.quality, 0.6);
   for (let i = 0; i < 20; i++) costWindow(site, 4, 8);
   assert.ok(Math.abs(renderer.quality - 0.65) < 1e-9);
-  assert.equal(site.canvas.width, width, 'upscaling must keep the old frame intact until its replacement');
+  assert.equal(renderer.sceneTarget.width, width, 'upscaling must keep the old frame intact until its replacement');
   assert.equal(site.presented, true);
   site.complete();
   renderer.render(13, 0, 0);
-  assert.ok(site.canvas.width > width);
+  assert.ok(renderer.sceneTarget.width > width);
   assert.equal(site.presented, true);
   for (let i = 0; i < 5; i++) costWindow(site, 4, 8);
   assert.ok(Math.abs(renderer.quality - 0.65) < 1e-9,
@@ -829,7 +832,7 @@ await test('repeated unfinished fences reduce pixels while preserving cadence an
   const site = await browser({ webgl2: true });
   const { renderer } = site;
   renderer.render(12, 0, 0);
-  const width = site.canvas.width;
+  const width = renderer.sceneTarget.width;
   for (let i = 0; i < 8; i++) {
     site.advance(50);
     assert.equal(renderer.render(13 + i, 0, 0), false);
@@ -840,7 +843,7 @@ await test('repeated unfinished fences reduce pixels while preserving cadence an
   }
   assert.equal(renderer.frameInterval, 1000 / 30);
   assert.equal(renderer.quality, 0.75);
-  assert.ok(site.canvas.width < width);
+  assert.ok(renderer.sceneTarget.width < width);
   assert.equal(site.syncs.size, 1);
   renderer.dispose();
 });
@@ -901,92 +904,39 @@ await test('ink-only rendering binds a safe inactive star sampler even when no p
   renderer.dispose();
 });
 
-await test('chapter bloom mipmaps share one GPU fence, defer while busy, and restore hero filtering after resize', async () => {
-  const site = await browser({ webgl2: true });
-  const { renderer } = site;
-  const gl = renderer.gl;
-  const bloomOperations = () => {
-    let unit = gl.TEXTURE0;
-    const bindings = new Map();
-    return site.calls.flatMap((call, index) => {
-      if (call.name === 'activeTexture') unit = call.args[0];
-      if (call.name === 'bindTexture') bindings.set(unit, call.args[1]);
-      return bindings.get(unit) === renderer.bloomTarget.texture
-        && ['generateMipmap', 'texParameteri'].includes(call.name) ? [{ ...call, index }] : [];
-    });
-  };
+await test('chapter frames reuse the hero passes and never mipmap or refilter the bloom target', async () => {
+  // WebGL 1 cannot mipmap this non-power-of-two bloom target at all.
+  for (const options of [{ webgl2: true }, { viewport: [1001, 777] }]) {
+    const site = await browser(options);
+    const { renderer } = site;
+    const gl = renderer.gl;
+    const bloomOperations = start => {
+      let unit = gl.TEXTURE0;
+      const bindings = new Map();
+      return site.calls.flatMap((call, index) => {
+        if (call.name === 'activeTexture') unit = call.args[0];
+        if (call.name === 'bindTexture') bindings.set(unit, call.args[1]);
+        return index >= start && bindings.get(unit) === renderer.bloomTarget.texture
+          && ['generateMipmap', 'texParameteri'].includes(call.name) ? [call] : [];
+      });
+    };
 
-  assert.equal(renderer.render(12, 0, 0, 0), true);
-  const heroDraws = site.count('draw');
-  assert.equal(bloomOperations().filter(call => call.name === 'generateMipmap').length, 0);
-  site.complete();
+    const heroStart = site.calls.length;
+    const drawsBefore = site.count('draw');
+    assert.equal(renderer.render(12, 0, 0, 0), true);
+    const heroDraws = site.count('draw') - drawsBefore;
+    if (options.webgl2) site.complete();
 
-  const chapterStart = site.calls.length;
-  const fencesBefore = site.count('fenceSync');
-  assert.equal(renderer.render(13, 0, 0, 1), true);
-  assert.equal(site.count('draw') - heroDraws, heroDraws,
-    'chapter glow must reuse the existing render passes');
-  const chapterBloom = bloomOperations().filter(call => call.index >= chapterStart);
-  const mipmaps = chapterBloom.filter(call => call.name === 'generateMipmap');
-  assert.equal(mipmaps.length, 1, 'the filtered bloom gets one mip chain per submitted chapter frame');
-  assert.ok(chapterBloom.some(call => call.name === 'texParameteri'
-    && call.args[1] === gl.TEXTURE_MIN_FILTER && call.args[2] === gl.LINEAR_MIPMAP_LINEAR));
-  assert.equal(site.count('fenceSync') - fencesBefore, 1);
-  assert.equal(site.syncs.size, 1, 'chapter bloom cannot create a second in-flight frame');
-  assert.ok(site.calls.findLastIndex(call => call.name === 'fenceSync') > mipmaps[0].index,
-    'the completion fence must cover bloom mipmap generation');
-
-  site.bounds.width = site.bounds.right = 1001;
-  renderer.resize();
-  const busyCounts = ['draw', 'generateMipmap', 'texImage2D', 'canvasWidth', 'fenceSync']
-    .map(name => [name, site.count(name)]);
-  assert.equal(renderer.render(14, 0, 0, 1), false);
-  for (const [name, count] of busyCounts) {
-    assert.equal(site.count(name), count, `a busy chapter frame must defer ${name}`);
+    const chapterDraws = site.count('draw');
+    const fencesBefore = site.count('fenceSync');
+    assert.equal(renderer.render(13, 0, 0, 1), true);
+    assert.equal(site.count('draw') - chapterDraws, heroDraws,
+      'the distant disk must reuse the hero render passes');
+    if (options.webgl2) assert.equal(site.count('fenceSync') - fencesBefore, 1);
+    assert.deepEqual(bloomOperations(heroStart), [],
+      'neither view builds a bloom mip chain or changes its single-level sampler');
+    renderer.dispose();
   }
-
-  site.complete();
-  const heroStart = site.calls.length;
-  assert.equal(renderer.render(15, 0, 0, 0), true);
-  assert.equal(site.canvas.width, 1001, 'the returning hero frame applies the pending resize');
-  const heroBloom = bloomOperations().filter(call => call.index >= heroStart);
-  assert.equal(heroBloom.filter(call => call.name === 'generateMipmap').length, 0);
-  assert.ok(heroBloom.some(call => call.name === 'texParameteri'
-    && call.args[1] === gl.TEXTURE_MIN_FILTER && call.args[2] === gl.LINEAR),
-    'resized hero bloom must not require an ungenerated mip chain');
-  assert.ok(site.calls.slice(heroStart).some(call => call.name === 'uniform1f'
-    && call.args[0]?.name === 'u_softGlow' && call.args[1] === 0));
-  renderer.dispose();
-});
-
-await test('legacy chapter rendering never requests mipmaps for a non-power-of-two bloom target', async () => {
-  const site = await browser({ viewport: [1001, 777] });
-  const { renderer } = site;
-  const gl = renderer.gl;
-  const initialMipmaps = site.count('generateMipmap');
-  assert.equal(renderer.render(12, 0, 0, 0), true);
-  assert.notEqual(renderer.bloomTarget.width & (renderer.bloomTarget.width - 1), 0);
-  assert.notEqual(renderer.bloomTarget.height & (renderer.bloomTarget.height - 1), 0);
-  const heroMipmaps = site.count('generateMipmap') - initialMipmaps;
-  const beforeChapterMipmaps = site.count('generateMipmap');
-  const chapterStart = site.calls.length;
-  assert.equal(renderer.render(13, 0, 0, 1), true);
-  assert.equal(site.count('generateMipmap') - beforeChapterMipmaps, heroMipmaps,
-    'the chapter must not add bloom mipmaps to the existing particle-atlas filtering');
-  let unit = gl.TEXTURE0;
-  const bindings = new Map();
-  for (const call of site.calls) {
-    if (call.name === 'activeTexture') unit = call.args[0];
-    if (call.name === 'bindTexture') bindings.set(unit, call.args[1]);
-    if (bindings.get(unit) !== renderer.bloomTarget.texture) continue;
-    assert.notEqual(call.name, 'generateMipmap', 'WebGL 1 cannot mipmap this NPOT bloom texture');
-    if (call.name === 'texParameteri' && call.args[1] === gl.TEXTURE_MIN_FILTER) {
-      assert.equal(call.args[2], gl.LINEAR, 'legacy bloom must retain a complete, non-mipmapped sampler');
-    }
-  }
-  assert.ok(site.calls.slice(chapterStart).some(call => call.name === 'uniform1f'
-    && call.args[0]?.name === 'u_softGlow' && call.args[1] === 0));
-  renderer.dispose();
 });
 
 await test('entrance light is a clamped composite-only input that resets by default and keeps the frame budget', async () => {

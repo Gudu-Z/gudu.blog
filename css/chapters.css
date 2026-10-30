@@ -66,8 +66,9 @@ html.has-chapters .home-page .black-hole-fallback {
     calc(var(--fallback-shift-y, 0px) * var(--chapter-progress, 0))
   ) rotate(calc(18deg * var(--chapter-progress, 0)))
     scale(calc(1 - var(--chapter-progress, 0) * 0.66));
-  filter: brightness(calc(1 + var(--chapter-progress, 0) * 0.15))
-    drop-shadow(0 0 calc(12px * var(--chapter-progress, 0) + 10px * var(--chapter-entrance-glow, 0)) rgb(220 220 216 / calc(0.12 * var(--chapter-progress, 0) + 0.08 * var(--chapter-entrance-glow, 0))));
+  /* Like the live disk, chapters keep the hero's light; only the entrance
+     accent adds a brief glow. */
+  filter: drop-shadow(0 0 calc(10px * var(--chapter-entrance-glow, 0)) rgb(220 220 216 / calc(0.08 * var(--chapter-entrance-glow, 0))));
 }
 html.has-chapters .home-page .hero-heading,
 html.has-chapters .home-page .space-grid {
@@ -445,6 +446,12 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
       rgb(0 0 0 / 9%), rgb(0 0 0 / 4%) 32%, transparent 82%);
     opacity: var(--chapter-light-right, 0);
   }
+  /* The Hero transition changes this opacity every frame. Separate layers
+     blend it on the compositor instead of repainting each whole panel. */
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel > .chapter-panel-light::before,
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel > .chapter-panel-light::after {
+    will-change: opacity;
+  }
   html.has-chapters .home-page .chapter-section :where(
     .about-panel-top, .about-socials, .about-text > p, .about-dossier, .about-signature,
     .connection-heading, .connection-footnote, .connection-card-head, .connection-action,
@@ -531,6 +538,9 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     opacity: calc(var(--about-arrival-ease) * var(--chapter-reveal-open, 1));
     translate: calc(20px * (1 - var(--about-arrival-ease))) calc(5px * (1 - var(--about-arrival-ease)));
     transition: none;
+    /* Own layers keep these per-frame values on the compositor. Otherwise every
+       frame repaints and re-rasterizes the whole panel, avatar included. */
+    will-change: opacity, translate, scale;
   }
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-section.about-section :where(
     .about-panel-top, .about-socials, .about-text > h2, .about-pronunciation,
@@ -841,7 +851,8 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .hero
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page #hero-title { opacity: calc(1 - var(--chapter-title-out)); translate: 0 calc(-12px * var(--chapter-title-out)); }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .live-clock { filter: opacity(calc(1 - var(--chapter-clock-out))); translate: 0 calc(-12px * var(--chapter-clock-out)); }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .hero-bottom { opacity: calc(1 - var(--chapter-bottom-out)); translate: 0 calc(-12px * var(--chapter-bottom-out)); pointer-events: none; }
-html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .space-grid { opacity: 1; filter: opacity(calc(1 - var(--chapter-grid-out))); }
+/* Opacity, unlike filter: opacity(), fades this full-screen layer without repainting it. */
+html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .space-grid { opacity: calc(1 - var(--chapter-grid-out)); will-change: opacity; }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-viewport { pointer-events: none; }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page :is(.site-header, .chapter-progress) { visibility: visible; transform: none; pointer-events: none; transition: none; }
 html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .site-header { opacity: var(--chapter-header-in); }
@@ -1107,7 +1118,7 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   .home-page .chapter-progress-links a.is-arriving .chapter-station-title { animation: none; }
   .home-page .chapter-progress-marker::after,
   .home-page .chapter-progress-scan { display: none; }
-  html.has-chapters .home-page .black-hole-fallback { filter: brightness(calc(1 + var(--chapter-progress, 0) * 0.15)) drop-shadow(0 0 calc(12px * var(--chapter-progress, 0)) rgb(220 220 216 / calc(0.12 * var(--chapter-progress, 0)))); }
+  html.has-chapters .home-page .black-hole-fallback { filter: none; }
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page :is(#hero-title, .live-clock, .hero-bottom, .chapter-panel, .chapter-panel > *, .connection-heading, .connection-footnote, .journal-heading-part, .site-footer, .chapter-progress-links a) { translate: none; }
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-track { --chapter-response-x: var(--chapter-marker-x, 0px); background-size: 100% 100%; }
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-track::before { clip-path: none; }

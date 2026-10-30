@@ -138,8 +138,15 @@
       vec2 streakGradient = (25.0 + 14.57 * cos(laneRadius * 2.35) + 4.5 * cos(laneRadius * 5.0)) * laneGradient
         + 0.65 * cos(warpPhase) * warpFilter * warpGradient
         + 0.25 * cos(phase) * phaseFilter * phaseGradient;
-      float filament = filteredLane(streakPhase / (2.0 * PI), laneWidth * 2.0,
-        streakGradient / (2.0 * PI));
+      // Chapters view the disk at about a third of the hero's focal length.
+      // Every third strand, three times as wide on the disk, keeps the hero's
+      // on-screen weight and spacing there instead of all strands averaging
+      // into a flat band. Both patterns pass through their shared mean
+      // coverage midway through the camera move, so one filter serves both.
+      float lanes = u_chapter < 0.5 ? 1.0 : 3.0;
+      float filament = filteredLane(streakPhase / (2.0 * PI * lanes), laneWidth * 2.0,
+        streakGradient / (2.0 * PI * lanes));
+      filament = mix(filament, laneWidth * 2.0, 1.0 - smoothstep(0.0, 0.2, abs(u_chapter - 0.5)));
       float radialVariance = dot(radialGradient, radialGradient) / 12.0;
       float angularVariance = dot(angularGradient, angularGradient) / 12.0;
       float covariance = dot(radialGradient, angularGradient) / 12.0;
@@ -181,11 +188,6 @@
       float shoulder = exp(-0.5 * pow((r - 10.15) / filteredShoulder, 2.0)) * shoulderWidth / filteredShoulder;
       float edgeFacing = 0.72 - 0.22 * sin(phi);
       vec3 edgeLight = mix(pearl, white, 0.35) * (rim * 0.40 + shoulder * 0.15) * edgeFacing;
-      // A small material-light lift keeps the distant disk readable. Apply it
-      // before tone mapping and lane filtering so narrow strands stay stable.
-      float chapterLight = mix(1.0, 1.18, u_chapter);
-      energy *= chapterLight;
-      edgeLight *= chapterLight;
       // Keep the disk luminous after removing the false brightness introduced
       // by tone-mapping an already averaged stripe. Endpoints retain soft highlights.
       const float diskExposure = 1.80;
@@ -243,7 +245,7 @@
       // remain continuous. This grain follows the orbit instead of boiling.
       float dry = smoothstep(0.27, 0.61, coarse * 0.65 + fine * 0.35);
       float density = clamp(painted * mix(0.95, 1.04, dry), 0.0, 0.99);
-      vec3 color = vec3(1.06, 1.0, 0.88) * density * mix(1.0, 1.18, u_chapter);
+      vec3 color = vec3(1.06, 1.0, 0.88) * density;
       // Discontinuous dry-brush ends belong to the rotating material itself.
       // Lighting changes the ink's color, never its holes or silhouette.
       float edgeRadius = 11.1 + (rawPainted - 0.5) * 0.6 + (coarse - 0.5) * 1.1
@@ -613,7 +615,6 @@
     uniform vec4 u_crop;
     uniform float u_ink;
     uniform float u_chapter;
-    uniform float u_softGlow;
     uniform float u_entranceGlow;
     void main() {
       vec4 scene = texture2D(u_scene, v_uv);
@@ -641,30 +642,8 @@
       vec2 sceneUV = u_crop.xy + v_uv * u_crop.zw;
       float fade = 1.0 - smoothstep(0.70, 1.0, length((sceneUV - 0.5) * 1.7));
       fade = mix(fade, 1.0, u_chapter);
-      glow = glow / weights * mix(0.23, 0.42, u_chapter) * fade;
-      #ifdef HAS_TEXTURE_LOD
-        if (u_softGlow > 0.5 && u_chapter > 0.0) {
-          vec2 centerUV = mix((vec2(0.5) - u_crop.xy) / u_crop.zw, vec2(0.5), u_chapter);
-          vec2 local = (v_uv - centerUV) * vec2(u_texel.y / u_texel.x, 1.0);
-          float localFade = 1.0 - smoothstep(0.34, 0.65, length(local));
-          // Coarse levels come from the already filtered, disk-only bloom.
-          // Nine overlapping samples spread its actual light, without
-          // amplifying the star atlas or adding another full-screen pass.
-          if (localFade > 0.0) {
-            vec3 halo = vec3(0.0);
-            float haloWeights = 0.0;
-            for (int x = -1; x <= 1; x++) {
-              for (int y = -1; y <= 1; y++) {
-                vec2 offset = vec2(float(x), float(y));
-                float weight = exp(-dot(offset, offset) * 0.65);
-                halo += texture2DLodEXT(u_bloom, v_uv + offset * u_texel * 12.0, 3.0).rgb * weight;
-                haloWeights += weight;
-              }
-            }
-            glow += halo / haloWeights * (0.85 * u_chapter * localFade);
-          }
-        }
-      #endif
+      // Chapters keep the hero's glow: a distant disk gains no extra haze.
+      glow = glow / weights * 0.23 * fade;
       // The entrance accent only amplifies light extracted from the disk.
       // The scene, star field and camera keep their ordinary chapter values.
       glow *= 1.0 + 0.30 * u_entranceGlow;
@@ -1031,10 +1010,17 @@
       const scale = Math.min(devicePixelRatio || 1, this.webgl2 ? 2 : 1.5,
         (this.webgl2 ? 3200 : 2400) / visibleWidth,
         maxTexture / visibleWidth, maxTexture / visibleHeight,
-        Math.sqrt(pixelBudget / (visibleWidth * visibleHeight))) * this.quality;
-      this.nextWidth = Math.max(2, Math.round(visibleWidth * scale));
-      this.nextHeight = Math.max(2, Math.round(visibleHeight * scale));
+        Math.sqrt(pixelBudget / (visibleWidth * visibleHeight)));
+      // The canvas keeps this display resolution; measured load only resizes
+      // the offscreen targets, which the composite pass scales up. Resizing
+      // a canvas waits for the GPU process, stalling the page whenever
+      // quality adapts while it composites the chapter animation.
+      this.nextCanvasWidth = Math.max(2, Math.round(visibleWidth * scale));
+      this.nextCanvasHeight = Math.max(2, Math.round(visibleHeight * scale));
+      this.nextWidth = Math.max(2, Math.round(visibleWidth * scale * this.quality));
+      this.nextHeight = Math.max(2, Math.round(visibleHeight * scale * this.quality));
       this.resizePending = this.width !== this.nextWidth || this.height !== this.nextHeight
+        || this.canvas.width !== this.nextCanvasWidth || this.canvas.height !== this.nextCanvasHeight
         || !this.sceneTarget.width;
     }
 
@@ -1045,13 +1031,16 @@
       this.height = this.nextHeight;
       // Changing canvas dimensions clears the displayed buffer. Do it only
       // inside render(), directly before drawing its replacement in this task.
-      this.canvas.width = this.width;
-      this.canvas.height = this.height;
+      if (this.canvas.width !== this.nextCanvasWidth) this.canvas.width = this.nextCanvasWidth;
+      if (this.canvas.height !== this.nextCanvasHeight) this.canvas.height = this.nextCanvasHeight;
       for (const [target, divisor] of [[this.sceneTarget, 1], [this.bloomTarget, 2]]) {
         target.width = Math.max(2, Math.round(this.width / divisor));
         target.height = Math.max(2, Math.round(this.height / divisor));
         gl.bindTexture(gl.TEXTURE_2D, target.texture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, target.width, target.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        // Completeness depends only on the attachment format, which never
+        // changes. The query waits for the GPU, so check the first allocation.
+        if (target.verified) continue;
         gl.bindFramebuffer(gl.FRAMEBUFFER, target.buffer);
         if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
           this.ready = false;
@@ -1059,6 +1048,7 @@
           this.canvas.parentElement.classList.remove('is-ready');
           return;
         }
+        target.verified = true;
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       this.inkSplatter?.resize(this.width, this.height);
@@ -1072,7 +1062,7 @@
       gl.enableVertexAttribArray(program.position);
       gl.vertexAttribPointer(program.position, 2, gl.FLOAT, false, 0, 0);
       gl.bindFramebuffer(gl.FRAMEBUFFER, target?.buffer || null);
-      gl.viewport(0, 0, target?.width || this.width, target?.height || this.height);
+      gl.viewport(0, 0, target?.width || this.canvas.width, target?.height || this.canvas.height);
     }
 
     texture(program, name, texture, index) {
@@ -1117,17 +1107,11 @@
       if (this.particleSky) gl.uniform1f(this.scene.uniforms.u_starInset, this.particleSky.inset);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-      const hasSoftGlow = this.style !== 'ink' && this.webgl2 && this.chapter > 0;
       if (this.style !== 'ink') {
         this.use(this.bloom, this.bloomTarget);
         this.texture(this.bloom, 'u_scene', this.sceneTarget.texture, 0);
         gl.uniform2f(this.bloom.uniforms.u_texel, 1 / this.width, 1 / this.height);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
-        // WebGL 2 supports mipmaps for these viewport-sized, NPOT targets.
-        // Their generation is inside the existing completion/timing budget.
-        gl.bindTexture(gl.TEXTURE_2D, this.bloomTarget.texture);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, hasSoftGlow ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
-        if (hasSoftGlow) gl.generateMipmap(gl.TEXTURE_2D);
       }
 
       const splatter = this.style === 'ink' ? this.inkSplatter?.render({
@@ -1143,7 +1127,6 @@
       gl.uniform2f(this.composite.uniforms.u_texel, 1 / this.width, 1 / this.height);
       gl.uniform4fv(this.composite.uniforms.u_crop, this.crop);
       gl.uniform1f(this.composite.uniforms.u_chapter, this.chapter);
-      gl.uniform1f(this.composite.uniforms.u_softGlow, hasSoftGlow ? 1 : 0);
       gl.uniform1f(this.composite.uniforms.u_entranceGlow, entranceGlow);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       if (this.gpuQuery) this.timerQuery.endQueryEXT(this.timerQuery.TIME_ELAPSED_EXT);

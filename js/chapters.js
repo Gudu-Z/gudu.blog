@@ -101,6 +101,11 @@
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const y = () => window.scrollY || 0;
+  // Read the page and every chapter's native scroll before any style write.
+  function readScroll() {
+    for (const group of revealGroups) group.nativeScroll = group.chapter.scrollTop;
+    return y();
+  }
   const available = () => active && !document.hidden;
   const position = () => y() >= entry ? 1 + coordinateAt(y() - entry) : y() / Math.max(entry, 1);
   const blocked = () => root.classList.contains('is-loading') || document.body.dataset.menuOpen === 'true';
@@ -189,20 +194,23 @@
     calibratingPanels.clear();
   }
 
-  function canIdle() {
+  // knownScroll avoids reading the position again after this task's style writes.
+  function canIdle(knownScroll = null) {
     return progressNav && active && initialized && !document.hidden && !motion.matches
-      && !blocked() && !frame && !lastFrame && !transition && !railSeek && !scrub && !touching && y() >= entry - 1;
+      && !blocked() && !frame && !lastFrame && !transition && !railSeek && !scrub && !touching
+      && (knownScroll ?? y()) >= entry - 1;
   }
 
-  function scheduleIdle() {
-    if (!canIdle()) { clearIdle(); return; }
+  function scheduleIdle(knownScroll = null) {
+    if (!canIdle(knownScroll)) { clearIdle(); return; }
     if (idleTimer || progressNav.classList.contains('is-chapter-idle')) return;
     // Share the existing quiet-period timer. Each surface calibrates once per
     // visit; the ruler still starts its idle decoration after a full second.
     const pendingCalibration = revealUnits.some(unit => unit.calibrationReady && !unit.calibrated);
     idleTimer = setTimeout(() => {
       idleTimer = 0;
-      if (!canIdle()) return;
+      const scroll = y();
+      if (!canIdle(scroll)) return;
       for (const unit of revealUnits) {
         if (!unit.calibrationReady || unit.calibrated) continue;
         unit.calibrated = true;
@@ -211,7 +219,7 @@
         setClass(unit.element, 'is-chapter-calibrating', true);
       }
       if (performance.now() - lastIdleActivity >= 1000) setClass(progressNav, 'is-chapter-idle', true);
-      else scheduleIdle();
+      else scheduleIdle(scroll);
     }, Math.max(0, (pendingCalibration ? 120 : 1000) - (performance.now() - lastIdleActivity)));
   }
 
@@ -231,12 +239,18 @@
     }));
   }
 
+  // Phase changes only update state; update() paints them after its layout
+  // reads. These root variables restyle every element, so painting them
+  // before a scroll or scrollTop read would force that restyle mid-frame.
   function setTransitionPhase(phase, direction, pulseEnabled = false) {
     transitionPhase = phase;
-    setStyle(root, '--chapter-transition-phase', phase.toFixed(4));
     const pulse = (phase - 0.18) / 0.6;
     entranceGlow = pulseEnabled && direction === 'entering' && pulse > 0 && pulse < 1
       ? Math.sin(Math.PI * pulse) ** 2 : 0;
+  }
+
+  function paintTransitionPhase() {
+    setStyle(root, '--chapter-transition-phase', transitionPhase.toFixed(4));
     setStyle(root, '--chapter-entrance-glow', entranceGlow.toFixed(5));
   }
 
@@ -489,7 +503,7 @@
       // The Hero displacement shares this coordinate, with no extra animation loop.
       const parallaxPhase = clamp(index - parallaxPosition, -1, 1);
       const parallaxX = depthEnabled ? -Math.sin(parallaxPhase * Math.PI / 2) * (window.innerWidth <= 720 ? 5 : 12) : 0;
-      const scroll = chapter.scrollTop;
+      const scroll = group.nativeScroll;
       const verticalMovement = group.lastScroll === null ? 0 : scroll - group.lastScroll;
       group.lastScroll = scroll;
       // A hidden card must not make its still-visible siblings inert.
@@ -518,9 +532,12 @@
     });
   }
 
-  function update(syncHash = true, instantPanels = false, calibratePanels = false) {
+  // Callers that already read the positions in this task (readScroll) pass
+  // the page position as knownScroll: reading again after their style writes
+  // would force a synchronous restyle of the whole page.
+  function update(syncHash = true, instantPanels = false, calibratePanels = false, knownScroll = null) {
     if (!active || !positions.length) return;
-    const scroll = y();
+    const scroll = knownScroll ?? readScroll();
     renderedScroll = scroll;
     const progress = clamp(scroll / Math.max(1, entry), 0, 1);
     const x = clamp(scroll - entry, 0, travel);
@@ -528,6 +545,7 @@
     const siteProgress = chapterPosition / Math.max(1, chapters.length - 1);
     const visible = progress > 0.55;
     setStyle(root, '--chapter-progress', progress.toFixed(4));
+    paintTransitionPhase();
     // A local transform avoids inheriting a changing custom property through
     // every panel; navigation-only values belong to the small progress subtree.
     setStyle(track, 'transform', `translate3d(${-x.toFixed(3)}px, 0, 0)`);
@@ -562,7 +580,7 @@
       }
     }
     updateProgressFeedback(x, visible, changed, index, previousIndex);
-    scheduleIdle();
+    scheduleIdle(scroll);
     if (syncHash && initialized && !transition && (scroll >= entry - 1 || scroll <= 1)) writeHash(index);
   }
 
@@ -716,7 +734,7 @@
   window.addEventListener('blur', () => { pointerInside = false; resetPointerParallax(true); });
   mouseMotion.addEventListener('change', () => { finishScrub(); resetPointerParallax(true); });
 
-  function stop({ preserveInteraction = false } = {}) {
+  function stop({ preserveInteraction = false, knownScroll = null } = {}) {
     finishScrub();
     noteIdleActivity();
     cancelAnimationFrame(frame);
@@ -724,13 +742,15 @@
     lastFrame = 0;
     railSeek = null;
     transition = null;
+    // Read the position before this stop writes any style.
+    targetY = knownScroll ?? y();
+    smoothY = targetY;
     setStyle(track, '--chapter-entrance-x', '0.000px');
     setInert(viewport, !available() || !root.classList.contains('is-content'));
-    targetY = y();
-    smoothY = targetY;
     for (const name of ['is-chapter-transitioning', 'is-chapter-entering', 'is-chapter-leaving']) setClass(root, name, false);
     setTransitionPhase(0);
-    emitChapterState();
+    paintTransitionPhase();
+    emitChapterState(clamp(targetY / Math.max(1, entry), 0, 1));
     if (!preserveInteraction) setInteraction(null);
   }
 
@@ -953,7 +973,7 @@
     stop({ preserveInteraction: true });
     measure();
     if (historyMode) writeHash(index, historyMode);
-    const start = y();
+    const start = readScroll();
     const destination = positions[index];
     const started = performance.now();
     entrance = entrance || index === 0 || (start < entry - 2 && index > 0);
@@ -968,10 +988,13 @@
     targetY = destination;
     transition = { index, destination, focus, entrance, direction };
     clearIdle();
-    const finish = () => {
-      setScroll(destination, instant || Boolean(direction));
-      stop();
-      update(false, instant || Boolean(direction), direction === 'entering' && !instant);
+    // A completed step has already scrolled here. Scrolling again after its
+    // style writes would force a synchronous restyle of the whole page.
+    const finish = (scrolled = false) => {
+      if (scrolled) update(true, instant || Boolean(direction), false, renderedScroll);
+      else setScroll(destination, instant || Boolean(direction));
+      stop({ knownScroll: renderedScroll });
+      update(false, instant || Boolean(direction), direction === 'entering' && !instant, renderedScroll);
       if (focus) focusSection(index);
     };
     if (instant || motion.matches || document.hidden || (!previousDirection && Math.abs(start - destination) < 1)) { finish(); return; }
@@ -981,8 +1004,8 @@
       setTransitionPhase(phaseStart, direction, pulseEnabled);
       root.classList.add(`is-chapter-${direction}`);
       clearProgressFeedback();
-      update(false, true);
-      emitChapterState();
+      update(false, true, false, start);
+      emitChapterState(clamp(start / Math.max(1, entry), 0, 1));
     }
     const duration = Math.max(1, Math.round((direction === 'entering' ? 900 : direction === 'leaving' ? 680 : 640) * (1 - phaseStart)));
     function step(now) {
@@ -991,7 +1014,7 @@
       if (direction) setTransitionPhase(phaseStart + (1 - phaseStart) * t, direction, pulseEnabled);
       setScroll(start + (destination - start) * (1 - Math.pow(1 - t, 4)));
       if (t < 1) frame = requestAnimationFrame(step);
-      else finish();
+      else finish(true);
     }
     frame = requestAnimationFrame(step);
   }
@@ -1246,6 +1269,7 @@
 
   setStyle(root, '--chapter-count', String(chapters.length));
   setTransitionPhase(0);
+  paintTransitionPhase();
   root.classList.add('has-chapters');
   measure();
   if (window.location.hash) restoreHash();
