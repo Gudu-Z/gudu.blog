@@ -330,6 +330,9 @@
     overlay.remove();
     // Both images now match the live page, which takes over seamlessly.
     if (state.ready) state.transition.skipTransition();
+    // The clip is set on the root for its transition pseudo-element, so it
+    // would outlive this transition and clip the next one's page image.
+    state.clip?.cancel();
     if (state.queued && state.queued !== theme.current) request(state.queued);
   }
 

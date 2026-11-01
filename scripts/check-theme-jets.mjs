@@ -89,9 +89,10 @@ function loadJets({ theme = 'dark', reduced = false, transitions = true, camera 
     animate(keyframes, options) {
       const animation = {
         // Only the first and latest clips are kept, so the test allocates little.
-        options, frames: keyframes, paused: false, first: null, last: null,
+        options, frames: keyframes, paused: false, cancelled: false, first: null, last: null,
         effect: { setKeyframes: next => { animation.frames = next; animation.first ??= next[0].clipPath; animation.last = next[0].clipPath; } },
         pause() { this.paused = true; },
+        cancel() { this.cancelled = true; },
       };
       animations.push(animation);
       return animation;
@@ -228,6 +229,27 @@ await test('the column is shaded as a lit cylinder, never over the black shadow,
   page.run(400);
   assert.ok(page.fills.length === 2 && page.fills.every(fill => fill.clips.length === 0), 'without a black hole nothing is left out');
   page.finish();
+});
+
+// A clip is set on the root for a transition pseudo-element, so it outlives
+// its transition unless cancelled: a switch back to night left its empty
+// final clip on the old page image, and the next switch to day then showed
+// only the column on a blank page.
+await test('each switch takes its clip away with it, so the next switch keeps the page around its column', () => {
+  const site = loadJets({ theme: 'light' });
+  site.switcher.request('dark', site.button);
+  site.started[0].show();
+  site.finish();
+  site.switcher.request('light', site.button);
+  site.started[1].show();
+  site.run(200);
+  const [back, forth] = site.animations;
+  assert.ok(back.cancelled, 'the switch back took its clip of the old page away');
+  assert.equal(site.animations.filter(animation => !animation.cancelled
+    && animation.options.pseudoElement === '::view-transition-old(root)').length, 0, 'nothing clips the night page around the column');
+  assert.equal(forth.options.pseudoElement, '::view-transition-new(root)');
+  site.finish();
+  assert.ok(site.animations.every(animation => animation.cancelled));
 });
 
 await test('switching back clips the old day image to a column that shrinks into the hole', () => {
