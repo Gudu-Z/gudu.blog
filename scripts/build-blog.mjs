@@ -92,16 +92,17 @@ function renderBlock(block) {
 function siteHeader(prefix) {
   return `<a class="skip-link" href="#main-content">跳到主要内容</a>
     <header class="site-header">
-      <a class="site-brand" href="${prefix}index.html#home" aria-label="Gudu 博客首页"><img class="brand-logo" src="${prefix}assets/brand/gudu-logo-light.svg?v=20261018-logo" width="56" height="56" alt="GUDU" /><span class="header-brand-coordinate" aria-hidden="true"><span class="header-brand-name"><span>GUDU</span><span class="header-brand-slash">/</span><span class="header-brand-kind">BLOG</span></span><span class="header-brand-motto">IN MY OWN ORBIT</span><span class="header-brand-calibration"></span></span></a>
+      <a class="site-brand" href="${prefix}index.html#home" aria-label="Gudu 博客首页"><img class="brand-logo" src="${prefix}assets/brand/gudu-logo-light.svg?v=20261018-logo" width="56" height="56" alt="GUDU" /><img class="brand-logo brand-logo-day" src="${prefix}assets/brand/gudu-logo-dark.svg?v=20261018-logo" width="56" height="56" alt="GUDU" /><span class="header-brand-coordinate" aria-hidden="true"><span class="header-brand-name"><span>GUDU</span><span class="header-brand-slash">/</span><span class="header-brand-kind">BLOG</span></span><span class="header-brand-motto">IN MY OWN ORBIT</span><span class="header-brand-calibration"></span></span></a>
       <nav class="site-nav" aria-label="主导航">
         <a href="${prefix}index.html#journal">文章</a><a href="${prefix}index.html#archive">归档</a><a href="${prefix}index.html#about">关于</a>
       </nav>
       <a class="header-rss" href="${prefix}feed.xml" aria-label="RSS 订阅"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="5" cy="19" r="1.5" /><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16" /></svg><span>RSS</span></a>
+      <button class="header-theme" type="button" data-theme-toggle aria-label="日间模式" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><g transform="rotate(18 12 12)"><path class="theme-jet" pathLength="1" d="M12 1.2v6.3M12 16.5v6.3" /><ellipse cx="12" cy="12" rx="10.2" ry="3.1" /><circle class="theme-core" cx="12" cy="12" r="2.2" /></g></svg></button>
     </header>`;
 }
 
 function siteFooter(prefix) {
-  return `<footer class="site-footer"><a class="footer-brand" href="${prefix}index.html#home"><img class="brand-logo" src="${prefix}assets/brand/gudu-logo-light.svg?v=20261018-logo" width="56" height="56" alt="GUDU" /></a><p>在自己的轨道上，保持好奇。</p><a href="${prefix}feed.xml">RSS 订阅 <span aria-hidden="true">↗</span></a></footer>`;
+  return `<footer class="site-footer"><a class="footer-brand" href="${prefix}index.html#home"><img class="brand-logo" src="${prefix}assets/brand/gudu-logo-light.svg?v=20261018-logo" width="56" height="56" alt="GUDU" /><img class="brand-logo brand-logo-day" src="${prefix}assets/brand/gudu-logo-dark.svg?v=20261018-logo" width="56" height="56" alt="GUDU" /></a><p>在自己的轨道上，保持好奇。</p><a href="${prefix}feed.xml">RSS 订阅 <span aria-hidden="true">↗</span></a></footer>`;
 }
 
 function documentHead({ title, description, canonical, prefix, noindex = false, article }) {
@@ -121,8 +122,10 @@ function documentHead({ title, description, canonical, prefix, noindex = false, 
     ${article ? `<meta property="article:published_time" content="${article.date}T00:00:00Z" />` : ''}
     <link rel="icon" type="image/svg+xml" href="${prefix}assets/favicon.svg?v=20261018-logo" />
     <link rel="alternate" type="application/rss+xml" title="Gudu 的个人博客" href="${prefix}feed.xml" />
-    <link rel="stylesheet" href="${prefix}css/style.css?v=20261029-ui-polish" />
-    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261029-ui-polish" />`.replace(/[ \t]+$/gm, '');
+    <script src="${prefix}js/site-theme.js?v=20261030-day-mode"></script>
+    <script src="${prefix}js/theme-jets.js?v=20261101-day-mode" defer></script>
+    <link rel="stylesheet" href="${prefix}css/style.css?v=20261101-day-mode" />
+    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261101-day-mode" />`.replace(/[ \t]+$/gm, '');
 }
 
 function renderArticle(post, index, posts, commentsConfig) {

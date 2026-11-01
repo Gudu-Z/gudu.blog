@@ -190,6 +190,13 @@ async function browser({ timerQuery = false, webgl2 = false, style = 'minimal', 
   };
   const canvas = {
     style: {}, parentElement: figure,
+    getBoundingClientRect() {
+      const box = figure.getBoundingClientRect();
+      return {
+        left: box.left + parseFloat(this.style.left), top: box.top + parseFloat(this.style.top),
+        width: parseFloat(this.style.width), height: parseFloat(this.style.height),
+      };
+    },
     getContext(type) { record('getContext', type); return type === 'webgl2' ? (webgl2 ? gl : null) : gl; },
     addEventListener: (name, fn) => events.set(name, fn),
     removeEventListener: (name, fn) => { if (events.get(name) === fn) events.delete(name); },
@@ -976,4 +983,79 @@ await test('entrance light is a clamped composite-only input that resets by defa
     assert.equal(upload(capture(Number.NaN)).args[1], 0);
     renderer.dispose();
   }
+});
+
+await test('daylight inverts the disk and the stars, and skips only the bloom pass', async () => {
+  assert.match(source, /vec4\(daylight\(diskEmission\(/, 'the minimal disk emission passes through the daylight inversion');
+  assert.doesNotMatch(source, /daylight\(inkEmission/, 'the ink painting keeps its own palette');
+  assert.match(source, /skyLight = vec4\(mix\(radiance, peak - radiance, u_day\), peak\)/,
+    'each star keeps its coverage while its color inverts');
+  for (const webgl2 of [false, true]) {
+    const site = await browser({ webgl2 });
+    const { renderer } = site;
+    const frame = () => {
+      if (webgl2 && renderer.gpuSync) site.complete();
+      const start = site.calls.length, bindings = site.drawBindings.length;
+      assert.equal(renderer.render(12, 0, 0, 0), true);
+      const calls = site.calls.slice(start);
+      return {
+        particles: calls.filter(call => call.name === 'particleDraw').length,
+        bloom: site.drawBindings.slice(bindings).filter(binding => binding.framebuffer === renderer.bloomTarget.buffer).length,
+        draws: calls.filter(call => call.name === 'draw').length,
+        day: calls.filter(call => call.name === 'uniform1f' && call.args[0]?.name === 'u_day')
+          .map(call => [call.args[0].program === renderer.scene.value ? 'scene' : 'composite', call.args[1]]),
+      };
+    };
+    const night = frame();
+    assert.ok(night.particles > 0 && night.bloom === 1);
+    assert.deepEqual(night.day, [['scene', 0], ['composite', 0]]);
+    renderer.setDay(1);
+    const day = frame();
+    assert.equal(day.particles, night.particles, 'the inverted sky still needs its star atlas');
+    assert.equal(day.bloom, 0, 'the inked disk emits no glow to blur');
+    assert.equal(day.draws, night.draws - 1);
+    assert.deepEqual(day.day, [['scene', 1], ['composite', 1]]);
+    renderer.setDay(0);
+    assert.deepEqual(frame(), night, 'night returns with every pass');
+    for (const [value, expected] of [[4, 1], [-1, 0], [Number.NaN, 0], ['1', 1]]) {
+      renderer.setDay(value);
+      assert.equal(renderer.day, expected);
+    }
+    renderer.dispose();
+  }
+});
+
+await test('the theme switch sees the scene through the shader\'s own camera', async () => {
+  const site = await browser();
+  const { renderer } = site;
+  const degree = Math.PI / 180;
+  const close = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 1e-6, `${message}: ${actual} vs ${expected}`);
+  // The shader's screen coordinate for a page pixel, before its roll. The
+  // virtual figure spans 90..1755 by -42..1068 on the 1440x900 stage.
+  const screenAt = (px, py, [x, y], chapter) => {
+    const rect = renderer.canvas.getBoundingClientRect();
+    const [left, bottom, width, height] = renderer.crop;
+    const aspect = 1665 / 1110;
+    const sceneX = left + (px - rect.left) / rect.width * width;
+    const sceneY = bottom + (1 - (py - rect.top) / rect.height) * height;
+    const originX = 0.5 + (left + width / 2 - 0.5) * chapter, originY = 0.5 + (bottom + height / 2 - 0.5) * chapter;
+    return [(sceneX - originX) * aspect * 2 - x * (1 - chapter) * 0.012, (sceneY - originY) * 2 - y * (1 - chapter) * 0.009];
+  };
+  for (const [pointer, chapter] of [[[0, 0], 0], [[0.5, 0.5], 1], [[0.5, -0.25], 0]]) {
+    assert.equal(renderer.render(12, ...pointer, chapter), true);
+    const camera = renderer.jetCamera();
+    for (const [px, py] of [[0, 0], [720, 450], [1300, 820]]) {
+      const [sx, sy] = screenAt(px, py, pointer, chapter);
+      close((px - camera.x) / camera.scale, sx, `screen x at ${px},${py}`);
+      close(-(py - camera.y) / camera.scale, sy, `screen y at ${px},${py}`);
+    }
+    const [x, y] = pointer.map(value => value * (1 - chapter));
+    close(camera.roll, (18 * (1 - chapter) + x * 1.4) * degree, 'roll');
+    close(camera.inclination, (81 + y * 3.8) * degree, 'inclination');
+    close(camera.azimuth, x * 0.1, 'azimuth');
+    close(camera.focal, 4.05 * (1 - 0.66 * chapter), 'focal length');
+    close(camera.distance, 31.78443, 'distance');
+  }
+  renderer.dispose();
+  assert.equal(renderer.jetCamera(), null, 'a retired renderer has no camera to lend');
 });

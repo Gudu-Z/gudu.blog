@@ -9,7 +9,7 @@
 }
 .home-page .chapter-section a:focus-visible {
   --chapter-link-active: 1;
-  --chapter-link-ink: #f0f3f5;
+  --chapter-link-ink: light-dark(#08090b, #f0f3f5);
   --chapter-link-signal: var(--chapter-signal);
   --chapter-link-arrow-x: 2px;
   --chapter-link-arrow-y: -2px;
@@ -17,7 +17,7 @@
 @media (hover: hover) and (pointer: fine) {
   .home-page .chapter-section a:hover {
     --chapter-link-active: 1;
-    --chapter-link-ink: #f0f3f5;
+    --chapter-link-ink: light-dark(#08090b, #f0f3f5);
     --chapter-link-signal: var(--chapter-signal);
     --chapter-link-arrow-x: 2px;
     --chapter-link-arrow-y: -2px;
@@ -34,7 +34,7 @@
   position: absolute;
   inset: auto 0 -1px;
   height: 1px;
-  background: rgb(220 228 234 / 48%);
+  background: light-dark(rgb(15 20 24 / 48%), rgb(220 228 234 / 48%));
   opacity: var(--chapter-link-active);
   transform: scaleX(var(--chapter-link-active));
   transform-origin: left;
@@ -45,11 +45,11 @@
 .home-page .chapter-section :is(.text-link, .post-link)::after { bottom: -2px; }
 
 .home-page .chapter-section .about-socials a:any-link {
-  color: var(--chapter-link-ink, #a9afb7);
+  color: var(--chapter-link-ink, light-dark(#363b42, #a9afb7));
   border-bottom-color: var(--chapter-rule);
 }
 .home-page .chapter-section .about-socials a:any-link .about-link-arrow {
-  color: var(--chapter-link-signal, #6f7883);
+  color: var(--chapter-link-signal, light-dark(#656e79, #6f7883));
   transform: translate(var(--chapter-link-arrow-x), var(--chapter-link-arrow-y));
   transition: color 180ms ease, transform 200ms ease;
 }
@@ -63,13 +63,13 @@
   color: var(--chapter-link-ink, var(--chapter-text));
 }
 .home-page .chapter-section a.connection-card:any-link .connection-number {
-  color: var(--chapter-link-signal, #d3d8dd);
+  color: var(--chapter-link-signal, light-dark(#181c1f, #d3d8dd));
 }
 .home-page .chapter-section a.connection-card:any-link .connection-action > span:first-child {
-  color: var(--chapter-link-ink, #c0c7ce);
+  color: var(--chapter-link-ink, light-dark(#23292e, #c0c7ce));
 }
 .home-page .chapter-section a.connection-card:any-link .connection-action-arrow {
-  color: var(--chapter-link-signal, #939da7);
+  color: var(--chapter-link-signal, light-dark(#434c55, #939da7));
   transform: translateX(calc(var(--chapter-link-active) * 3px));
 }
 .home-page .chapter-section a.connection-card:any-link .connection-rule::after {
@@ -85,19 +85,19 @@
 }
 
 .home-page .chapter-section .series-reading-link:any-link strong {
-  color: var(--chapter-link-ink, #bcbcc3);
+  color: var(--chapter-link-ink, light-dark(#2f2f34, #bcbcc3));
   transition: color 180ms ease;
 }
 .home-page .chapter-section .series-reading-link:any-link .series-reading-index {
-  color: var(--chapter-link-signal, #66666d);
+  color: var(--chapter-link-signal, light-dark(#7c7c84, #66666d));
   transition: color 180ms ease;
 }
 .home-page .chapter-section .series-reading-link:any-link > span:last-child {
-  color: var(--chapter-link-signal, #b9b9c0);
+  color: var(--chapter-link-signal, light-dark(#313136, #b9b9c0));
   transform: translate(var(--chapter-link-arrow-x), var(--chapter-link-arrow-y));
   transition: transform 200ms ease, color 180ms ease;
 }
-.home-page .chapter-section .text-link:any-link { color: var(--chapter-link-ink, #c5ccd4); }
+.home-page .chapter-section .text-link:any-link { color: var(--chapter-link-ink, light-dark(#1f252b, #c5ccd4)); }
 .home-page .chapter-section .text-link:any-link > span[aria-hidden="true"] {
   transform: translate(var(--chapter-link-arrow-x), var(--chapter-link-arrow-y));
   transition: transform 200ms ease;
@@ -106,11 +106,11 @@
 /* The article remains a reading surface; only its real title/read links respond. */
 .home-page .chapter-section .post-title a:any-link {
   color: var(--chapter-link-ink, inherit);
-  background: linear-gradient(rgb(220 228 234 / 40%), rgb(220 228 234 / 40%)) left bottom / calc(var(--chapter-link-active) * 100%) 1px no-repeat;
+  background: linear-gradient(light-dark(rgb(15 20 24 / 40%), rgb(220 228 234 / 40%)), light-dark(rgb(15 20 24 / 40%), rgb(220 228 234 / 40%))) left bottom / calc(var(--chapter-link-active) * 100%) 1px no-repeat;
   transition: color 180ms ease, background-size 200ms ease;
 }
 .home-page .chapter-section .post-link:any-link {
-  color: var(--chapter-link-ink, #c8d0d9);
+  color: var(--chapter-link-ink, light-dark(#1c2229, #c8d0d9));
   transition: color 180ms ease;
 }
 .home-page .chapter-section .post-link > span[aria-hidden="true"],

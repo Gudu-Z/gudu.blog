@@ -14,19 +14,21 @@
     <title>Gŭdù || 个人博客</title>
     <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg?v=20261018-logo" />
     <link rel="preload" href="./assets/fonts/barlow-condensed-black-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <script src="./js/site-theme.js?v=20261030-day-mode"></script>
     <script src="./js/loading.js?v=20261023-responsive-startup"></script>
-    <script src="./js/black-hole-theme.js?v=20261023-disk-refinement"></script>
-    <link rel="stylesheet" href="./css/style.css?v=20261029-ui-polish" />
-    <link rel="stylesheet" href="./css/blog.css?v=20261029-ui-polish" />
-    <link rel="stylesheet" href="./css/chapters.css?v=20261029-ruler-flow" />
-    <link rel="stylesheet" href="./css/about-terminal.css?v=20261029-ui-polish" />
-    <link rel="stylesheet" href="./css/chapter-interactions.css?v=20261029-ui-polish" />
-  <link rel="stylesheet" href="./css/categories.css?v=20261030-category-motion" />
-    <link rel="stylesheet" href="./css/cursor.css?v=20261029-cursor-dock" />
+    <script src="./js/black-hole-theme.js?v=20261101-day-mode"></script>
+    <link rel="stylesheet" href="./css/style.css?v=20261101-day-mode" />
+    <link rel="stylesheet" href="./css/blog.css?v=20261101-day-mode" />
+    <link rel="stylesheet" href="./css/chapters.css?v=20261101-day-mode" />
+    <link rel="stylesheet" href="./css/about-terminal.css?v=20261101-day-mode" />
+    <link rel="stylesheet" href="./css/chapter-interactions.css?v=20261101-day-mode" />
+  <link rel="stylesheet" href="./css/categories.css?v=20261101-day-mode" />
+    <link rel="stylesheet" href="./css/cursor.css?v=20261101-day-mode" />
     <script src="./js/ink-splatter.js?v=20261020-camera-preserved" defer></script>
     <script src="./js/particle-sky.js?v=20261020-original-stars" defer></script>
-    <script src="./js/black-hole.js?v=20261023-smooth-parallax" defer></script>
-    <script src="./js/main.js?v=20261023-smooth-parallax" defer></script>
+    <script src="./js/black-hole.js?v=20261101-day-mode" defer></script>
+    <script src="./js/main.js?v=20261101-day-mode" defer></script>
+    <script src="./js/theme-jets.js?v=20261101-day-mode" defer></script>
     <script src="./js/posts-data.js?v=20261026-categories" defer></script>
     <script src="./js/blog.js?v=20261029-ui-polish" defer></script>
     <script src="./js/chapters.js?v=20261029-ruler-flow" defer></script>
@@ -37,6 +39,7 @@
     <header class="site-header">
       <a class="site-brand" href="#home" aria-label="Gudu，返回首页">
         <img class="brand-logo" src="./assets/brand/gudu-logo-light.svg?v=20261018-logo" width="56" height="56" alt="GUDU" />
+        <img class="brand-logo brand-logo-day" src="./assets/brand/gudu-logo-dark.svg?v=20261018-logo" width="56" height="56" alt="GUDU" />
         <span class="header-brand-coordinate" aria-hidden="true">
           <span class="header-brand-name"><span>GUDU</span><span class="header-brand-slash">/</span><span class="header-brand-kind">BLOG</span></span>
           <span class="header-brand-motto">IN MY OWN ORBIT</span>
@@ -53,6 +56,7 @@
           </span>
         </form>
         <a class="header-tool" href="./feed.xml" aria-label="RSS 订阅"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none" /><path class="header-rss-arc" pathLength="1" d="M4 11a9 9 0 0 1 9 9" /><path class="header-rss-arc header-rss-arc-outer" pathLength="1" d="M4 4a16 16 0 0 1 16 16" /></svg><span>RSS</span></a>
+        <button class="header-tool header-theme" type="button" data-theme-toggle aria-label="日间模式" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><g transform="rotate(18 12 12)"><path class="theme-jet" pathLength="1" d="M12 1.2v6.3M12 16.5v6.3" /><ellipse cx="12" cy="12" rx="10.2" ry="3.1" /><circle class="theme-core" cx="12" cy="12" r="2.2" /></g></svg></button>
       </nav>
     </header>
     <div class="site-loader" id="site-loader" role="status" aria-live="polite">
@@ -141,6 +145,7 @@
           <figure class="black-hole" id="black-hole" aria-label="实时三维黑洞：暖白与淡琥珀细线流经倾斜的吸积盘，三维星空粒子随远近距离以不同速度漂移并经引力透镜弯曲，冷灰白细小星点衬托深黑阴影，视角随鼠标轻微转动。">
             <img class="black-hole-fallback" src="./assets/black-hole-minimal-fallback.png?v=20261023-disk-refinement" data-black-hole-style="minimal" alt="" width="1536" height="1024" decoding="async" fetchpriority="high" aria-hidden="true" />
             <canvas id="black-hole-canvas" aria-hidden="true"></canvas>
+            <button class="black-hole-switch" type="button" data-theme-toggle aria-label="日间模式" aria-pressed="false"></button>
           </figure>
         </div>
         </div>
@@ -258,7 +263,7 @@
 <p class="archive-empty">这里将按时间，收好每一篇文章。<span>第一篇，敬请期待。</span></p>
 <!-- archive:end -->
         </div>
-        <footer class="site-footer" data-depth-owner="archive-list"><a class="site-brand" href="#home" aria-label="Gudu，返回顶部"><img class="brand-logo" src="./assets/brand/gudu-logo-light.svg?v=20261018-logo" width="56" height="56" alt="GUDU" /></a><p>© 2026 Gudu <span class="footer-divider" aria-hidden="true">/</span> 在自己的轨道上</p><div class="footer-links"><a href="./feed.xml">RSS</a><a href="#home">返回顶部 <span aria-hidden="true">↑</span></a></div></footer>
+        <footer class="site-footer" data-depth-owner="archive-list"><a class="site-brand" href="#home" aria-label="Gudu，返回顶部"><img class="brand-logo" src="./assets/brand/gudu-logo-light.svg?v=20261018-logo" width="56" height="56" alt="GUDU" /><img class="brand-logo brand-logo-day" src="./assets/brand/gudu-logo-dark.svg?v=20261018-logo" width="56" height="56" alt="GUDU" /></a><p>© 2026 Gudu <span class="footer-divider" aria-hidden="true">/</span> 在自己的轨道上</p><div class="footer-links"><a href="./feed.xml">RSS</a><a href="#home">返回顶部 <span aria-hidden="true">↑</span></a></div></footer>
       </section>
           </div>
         </div>

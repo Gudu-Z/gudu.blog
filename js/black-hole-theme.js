@@ -10,6 +10,7 @@
   const themes = {
     minimal: {
       fallback: './assets/black-hole-minimal-fallback.png?v=20261023-disk-refinement',
+      dayFallback: './assets/black-hole-minimal-day-fallback.png?v=20261030-day-mode',
       label: '实时三维黑洞：暖白与淡琥珀细线流经倾斜的吸积盘，三维星空粒子随远近距离以不同速度漂移并经引力透镜弯曲，冷灰白细小星点衬托深黑阴影，视角随鼠标轻微转动。',
     },
     ink: {
@@ -18,9 +19,14 @@
     },
   };
 
-  function resolve({ date = new Date(), search = window.location.search, schedule = config } = {}) {
+  function resolve({
+    date = new Date(), search = window.location.search, schedule = config,
+    siteTheme = document.documentElement.dataset.theme,
+  } = {}) {
     const override = new URLSearchParams(search).get('blackhole');
     if (override === 'ink' || override === 'minimal') return override;
+    // The ink painting is a night scene; day mode keeps the minimal disk.
+    if (siteTheme === 'light') return 'minimal';
     try {
       const formatter = new Intl.DateTimeFormat('en-CA', {
         timeZone: schedule.timeZone || config.timeZone,
@@ -44,6 +50,8 @@
   function apply(style = resolve()) {
     current = style === 'ink' ? 'ink' : 'minimal';
     const theme = themes[current];
+    const day = document.documentElement.dataset.theme === 'light' && theme.dayFallback;
+    const source = day ? theme.dayFallback : theme.fallback;
     document.documentElement.dataset.blackHoleStyle = current;
     const hero = document.querySelector('.hero');
     const figure = document.querySelector('#black-hole');
@@ -55,14 +63,14 @@
     }
     if (fallback) {
       fallback.dataset.blackHoleStyle = current;
-      if (fallback.getAttribute('src') !== theme.fallback) {
+      if (fallback.getAttribute('src') !== source) {
         // Do not show the previous theme's decoded bitmap while its replacement loads.
         fallback.dataset.themeReady = 'false';
         const reveal = () => {
-          if (fallback.getAttribute('src') === theme.fallback) delete fallback.dataset.themeReady;
+          if (fallback.getAttribute('src') === source) delete fallback.dataset.themeReady;
         };
         fallback.addEventListener('load', reveal, { once: true });
-        fallback.src = theme.fallback;
+        fallback.src = source;
         if (fallback.complete && fallback.naturalWidth > 0) reveal();
       }
     }

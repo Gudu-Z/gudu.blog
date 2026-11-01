@@ -133,3 +133,11 @@ await test('an invalid clock or time zone fails safely while an explicit preview
   }), 'minimal');
   assert.equal(theme.resolve({ date: new Date(NaN), search: '?blackhole=ink', schedule: schedule({ timeZone: 'Invalid/Zone' }) }), 'ink');
 });
+
+await test('day mode keeps the minimal disk on ink dates while an explicit ink preview still wins', () => {
+  const theme = loadTheme();
+  const options = { schedule: schedule({ fixedDates: ['2026-10-15'] }) };
+  assert.equal(resolveAt(theme, '2026-10-15T04:00:00Z', { ...options, siteTheme: 'light' }), 'minimal');
+  assert.equal(resolveAt(theme, '2026-10-15T04:00:00Z', { ...options, siteTheme: 'dark' }), 'ink');
+  assert.equal(resolveAt(theme, '2026-10-15T04:00:00Z', { ...options, siteTheme: 'light', search: '?blackhole=ink' }), 'ink');
+});

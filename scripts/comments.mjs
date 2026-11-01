@@ -34,7 +34,7 @@ export async function readCommentsConfig(root) {
 export function renderComments(post, config, site) {
   if (!config.serverURL || post.demo || !post.comments) return { head: '', body: '' };
   return {
-    head: '<link rel="stylesheet" href="../css/comments.css?v=20261030-comments" />\n    <script src="../js/comments.js?v=20261030-comments" defer></script>',
+    head: '<link rel="stylesheet" href="../css/comments.css?v=20261101-day-mode" />\n    <script src="../js/comments.js?v=20261030-comments" defer></script>',
     body: `<section class="article-comments" id="comments" aria-labelledby="comments-title" data-comments data-server-url="${escape(config.serverURL)}" data-comment-path="/posts/${post.slug}.html" data-site-origin="${escape(site)}" data-turnstile-key="${escape(config.turnstileKey)}">
         <h2 id="comments-title">读者评论</h2>
         <p class="article-comments-intro">留下你的想法。昵称必填，邮箱选填，无需注册；评论审核后显示。邮箱不会公开显示。</p>

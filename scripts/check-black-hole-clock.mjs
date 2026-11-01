@@ -52,7 +52,11 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 640, height: 480 }),
   });
   const canvas = eventTarget({ parentElement: { classList: classes() } });
-  const context = { setTransform() {}, clearRect() { work.canvasClears++; }, beginPath() {}, arc() {}, fill() { work.starDraws++; } };
+  const starColors = [];
+  const context = {
+    setTransform() {}, clearRect() { work.canvasClears++; }, beginPath() {}, arc() {}, fill() { work.starDraws++; },
+    set fillStyle(value) { starColors.push(value); },
+  };
   let starWidth = 0, starHeight = 0;
   const stars = {
     getContext: () => context,
@@ -69,10 +73,11 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
   const layers = ['1', '2'].map(depth => ({
     dataset: { depth }, style: { values: {}, setProperty(name, value) { work.layerWrites++; this.values[name] = value; } },
   }));
-  const nodes = { '.hero': hero, '#starfield': stars, '#black-hole-canvas': canvas, '#local-time': clock };
+  const sphere = { hidden: false };
+  const nodes = { '.hero': hero, '#starfield': stars, '#black-hole-canvas': canvas, '#local-time': clock, '.black-hole-switch': sphere };
   const document = eventTarget({
     hidden: false,
-    documentElement: { classList: classes(loading ? ['is-loading', 'has-site-intro'] : []) },
+    documentElement: { dataset: {}, classList: classes(loading ? ['is-loading', 'has-site-intro'] : []) },
     querySelector: name => nodes[name], querySelectorAll: () => layers,
   });
   const window = eventTarget({
@@ -138,7 +143,7 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
     now = time;
   }
   return {
-    attempts, renders, layers, renderers, samples, polls, work,
+    attempts, renders, layers, renderers, samples, polls, work, starColors, sphere, root: document.documentElement,
     get preparation() { return preparation; },
     get renderer() { return renderer; },
     get pendingFrames() { return frames.size; },
@@ -250,6 +255,20 @@ await test('cached edge stars repaint for fallback and theme changes, then stop 
   const ink = { ...site.work };
   site.frame(450);
   assert.deepEqual(site.work, ink, 'stationary ink stars are not repainted every scene frame');
+});
+
+await test('a day/night switch repaints cached edge stars as their negative, then stops', () => {
+  const site = browser();
+  site.lose(100);
+  assert.match(site.starColors.at(-1), /^rgba\(193,204,223,/);
+  const night = site.work.starDraws;
+  site.root.dataset.theme = 'light';
+  site.page(200, 'site:theme', { detail: { theme: 'light' } });
+  assert.ok(site.work.starDraws > night, 'the cached night stars repaint');
+  assert.match(site.starColors.at(-1), /^rgba\(62,51,32,/, 'each day star is its night color inverted');
+  const day = { ...site.work };
+  site.resize(300);
+  assert.deepEqual(site.work, day, 'unchanged day stars keep their pixels');
 });
 
 await test('quality-driven cadence changes reduce draws without changing orbital phase', () => {
@@ -788,4 +807,15 @@ await test('hidden, offscreen and cached pages discard entrance pulses until the
     assert.equal(site.last.chapter, 0.8);
     assert.equal(site.last.entranceGlow, 0, 'resuming must not flash a stale entrance accent');
   }
+});
+
+await test('the black sphere switches day and night on the hero only', () => {
+  const site = browser();
+  assert.equal(site.sphere.hidden, false, 'the hero offers its black sphere as the switch');
+  site.page(0, 'site:chapter', { detail: { progress: 0.2 } });
+  assert.equal(site.sphere.hidden, true, 'the chapters move the hole away and use the header toggle');
+  site.page(10, 'site:chapter', { detail: { progress: 1 } });
+  assert.equal(site.sphere.hidden, true);
+  site.page(20, 'site:chapter', { detail: { progress: 0 } });
+  assert.equal(site.sphere.hidden, false, 'back on the hero the sphere switches again');
 });

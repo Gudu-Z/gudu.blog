@@ -27,6 +27,7 @@
     uniform float u_time;
     uniform float u_ink;
     uniform float u_chapter;
+    uniform float u_day;
     uniform sampler2D u_inkAtlas;
     uniform sampler2D u_inkLight;
     uniform sampler2D u_starSky;
@@ -198,6 +199,11 @@
       vec3 baseColor = 1.0 - exp(-baseLight * 1.45);
       vec3 strandColor = 1.0 - exp(-(baseLight + strandLight) * 1.45);
       return mix(baseColor, strandColor, filament);
+    }
+    // Daylight inverts the disk's colors: its light strands become ink on
+    // paper. The shadow emits nothing to invert, so it stays black.
+    vec3 daylight(vec3 color) {
+      return mix(color, 1.0 - color, u_day);
     }
     float pigmentNoise(vec2 p) {
       vec2 cell = floor(p), f = fract(p);
@@ -403,7 +409,7 @@
       vec3 emission = vec3(0.0);
       float alpha = hit.alpha;
       if (u_ink > 0.5 && hit.material > 0.5) return inkEmission(hit.point, pointDx, pointDy, hit.order, hit.ray);
-      if (hit.material > 0.5) return vec4(diskEmission(hit.point, hit.ray, pointDx, pointDy) * alpha, alpha);
+      if (hit.material > 0.5) return vec4(daylight(diskEmission(hit.point, hit.ray, pointDx, pointDy)) * alpha, alpha);
       if (hit.material < -0.5) {
         if (u_ink < 0.5) return skyLight;
         emission = distantStars(hit.ray);
@@ -498,7 +504,10 @@
         radiance = (1.0 - exp(-radiance * 1.25)) * room;
         // Already premultiplied: do not square dim starlight by multiplying
         // it by its own opacity for a second time.
-        skyLight = vec4(radiance, max(radiance.r, max(radiance.g, radiance.b)));
+        float peak = max(radiance.r, max(radiance.g, radiance.b));
+        // Daylight shows the night sky's negative: each star keeps its
+        // coverage while its color inverts, a dark point on the paper.
+        skyLight = vec4(mix(radiance, peak - radiance, u_day), peak);
         if (primarySky) light = skyLight;
       }
       if (throughDisk) light += shadeHit(beneath, beneathDx, beneathDy, skyLight) * (1.0 - light.a);
@@ -616,6 +625,7 @@
     uniform float u_ink;
     uniform float u_chapter;
     uniform float u_entranceGlow;
+    uniform float u_day;
     void main() {
       vec4 scene = texture2D(u_scene, v_uv);
       if (u_ink > 0.5) {
@@ -643,7 +653,8 @@
       float fade = 1.0 - smoothstep(0.70, 1.0, length((sceneUV - 0.5) * 1.7));
       fade = mix(fade, 1.0, u_chapter);
       // Chapters keep the hero's glow: a distant disk gains no extra haze.
-      glow = glow / weights * 0.23 * fade;
+      // Glow is emitted light; the inked daylight disk has none.
+      glow = glow / weights * 0.23 * fade * (1.0 - u_day);
       // The entrance accent only amplifies light extracted from the disk.
       // The scene, star field and camera keep their ordinary chapter values.
       glow *= 1.0 + 0.30 * u_entranceGlow;
@@ -658,6 +669,7 @@
     constructor(canvas, { style = 'minimal' } = {}) {
       this.canvas = canvas;
       this.chapter = 0;
+      this.day = 0;
       this.setStyle(style);
       const options = { alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'low-power' };
       this.gl = canvas.getContext('webgl2', options) || canvas.getContext('webgl', options);
@@ -1076,6 +1088,7 @@
 
     render(time, x, y, chapter = this.chapter, entranceGlow = 0) {
       this.chapter = Math.max(0, Math.min(1, Number(chapter) || 0));
+      this.pointer = [Number(x) || 0, Number(y) || 0];
       entranceGlow = Math.max(0, Math.min(1, Number(entranceGlow) || 0));
       if (!this.ready || this.lost || this.disposed) return false;
       // Completion-capable contexts keep at most one frame in flight. Poll
@@ -1098,6 +1111,7 @@
       gl.uniform4fv(this.scene.uniforms.u_quiet, this.quiet);
       gl.uniform1f(this.scene.uniforms.u_time, time);
       gl.uniform1f(this.scene.uniforms.u_chapter, this.chapter);
+      gl.uniform1f(this.scene.uniforms.u_day, this.day);
       // ANGLE can retain samplers from an unreachable theme branch. Bind all
       // reflected samplers explicitly so none keeps unit 0's previous scene
       // attachment, which would form a feedback loop on the next draw.
@@ -1107,7 +1121,8 @@
       if (this.particleSky) gl.uniform1f(this.scene.uniforms.u_starInset, this.particleSky.inset);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-      if (this.style !== 'ink') {
+      // A full daylight frame inks the disk instead of lighting it: no glow.
+      if (this.style !== 'ink' && this.day < 1) {
         this.use(this.bloom, this.bloomTarget);
         this.texture(this.bloom, 'u_scene', this.sceneTarget.texture, 0);
         gl.uniform2f(this.bloom.uniforms.u_texel, 1 / this.width, 1 / this.height);
@@ -1128,6 +1143,7 @@
       gl.uniform4fv(this.composite.uniforms.u_crop, this.crop);
       gl.uniform1f(this.composite.uniforms.u_chapter, this.chapter);
       gl.uniform1f(this.composite.uniforms.u_entranceGlow, entranceGlow);
+      gl.uniform1f(this.composite.uniforms.u_day, this.day);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       if (this.gpuQuery) this.timerQuery.endQueryEXT(this.timerQuery.TIME_ELAPSED_EXT);
       if (this.webgl2) {
@@ -1314,6 +1330,37 @@
       this.gpuUpperTimes = [];
       this.headroomSince = null;
       this.gpuTimingValid = false;
+    }
+    setDay(value) {
+      this.day = Math.max(0, Math.min(1, Number(value) || 0));
+    }
+
+    // The scene camera, for the day/night switch to draw a column along the
+    // spin axis: where the hole sits on the page, the camera's orbit, roll
+    // and focal length, and page pixels per screen unit. This mirrors the
+    // scene shader, where the hole lies at the point the shifted screen
+    // coordinates reach zero.
+    jetCamera() {
+      if (!this.ready || !this.crop || !this.sceneWidth) return null;
+      const rect = this.canvas.getBoundingClientRect();
+      const chapter = this.chapter;
+      const [x, y] = (this.pointer || [0, 0]).map(value => value * (1 - chapter));
+      const ink = this.style === 'ink' ? 1 : 0;
+      const [left, bottom, width, height] = this.crop;
+      const aspect = this.sceneWidth / this.sceneHeight;
+      const sceneX = 0.5 + (left + width / 2 - 0.5) * chapter + (0.06 * ink * (1 - chapter) + 0.012 * x) / (2 * aspect);
+      const sceneY = 0.5 + (bottom + height / 2 - 0.5) * chapter + (0.009 * y - 0.01 * ink * (1 - chapter)) / 2;
+      const degree = Math.PI / 180;
+      return {
+        x: rect.left + (sceneX - left) / width * rect.width,
+        y: rect.top + (1 - (sceneY - bottom) / height) * rect.height,
+        roll: (18 * (1 - chapter) + x * 1.4) * degree,
+        inclination: ((ink ? 83 : 81) + y * 3.8) * degree,
+        azimuth: x * 0.1 * (1 - ink),
+        distance: 31.78443,
+        focal: (ink ? 3.7 : 4.05) * (1 - 0.66 * chapter),
+        scale: this.sceneHeight / 2,
+      };
     }
     setStyle(style) {
       const next = style === 'ink' ? 'ink' : 'minimal';

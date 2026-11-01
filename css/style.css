@@ -10,15 +10,37 @@
 
 :root {
   color-scheme: dark;
-  --space: #080b10;
-  --paper: #e6e9ec;
-  --red: #f06446;
+  --space: light-dark(#eef0f2, #080b10);
+  --paper: light-dark(#0e1012, #e6e9ec);
+  --red: light-dark(#f06446, #f06446);
   /* Latin text uses the system UI face; Chinese falls through to PingFang or YaHei. */
   --ui-sans: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   font-family: var(--ui-sans);
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
 }
+/* Every color is written as light-dark(day, night); scripts/day-palette.mjs
+   derives each day value from its night value. js/site-theme.js sets this. */
+:root[data-theme="light"] { color-scheme: light; }
+/* A theme change recolors everything at once, never through transitions. */
+.is-theme-switching *, .is-theme-switching *::before, .is-theme-switching *::after { transition: none !important; }
+/* Each theme shows its own logo artwork. */
+.brand-logo.brand-logo-day, :root[data-theme="light"] .brand-logo:not(.brand-logo-day) { display: none; }
+:root[data-theme="light"] .brand-logo.brand-logo-day { display: block; }
+/* The day/night switch (js/theme-jets.js): the column's fine lines are drawn
+   on a canvas whose own transition layer keeps it above both page images. */
+.theme-jets { position: fixed; inset: 0; z-index: 2147483600; overflow: hidden; pointer-events: none; contain: strict; view-transition-name: theme-jets; }
+.theme-jets > canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+::view-transition-old(theme-jets) { display: none; }
+::view-transition-group(theme-jets), ::view-transition-new(theme-jets) { animation: none; }
+/* The column clips one page image, the day page, and the script ends the
+   transition once the switch is done; the held group keeps it open until then. */
+.is-theme-jets::view-transition-group(root) { animation: theme-jets-hold 60s linear; }
+.is-theme-jets::view-transition-old(root), .is-theme-jets::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+.is-theme-jets-opening::view-transition-new(root) { clip-path: polygon(0 0, 0 0, 0 0); }
+.is-theme-jets-closing::view-transition-old(root) { z-index: 1; }
+.is-theme-fade::view-transition-old(root), .is-theme-fade::view-transition-new(root) { animation-duration: 240ms; }
+@keyframes theme-jets-hold { to { opacity: 1; } }
 
 * { box-sizing: border-box; }
 /* Hide the page scrollbar while retaining native scrolling. */
@@ -36,25 +58,25 @@ body { margin: 0; color: var(--paper); background: var(--space); }
   position: fixed;
   inset: 0;
   z-index: 20;
-  background: radial-gradient(ellipse 360px 280px at 50% 48%, #fbb03b06, transparent 72%), var(--space);
+  background: radial-gradient(ellipse 360px 280px at 50% 48%, light-dark(#fbb03b00, #fbb03b06), transparent 72%), var(--space);
   opacity: 1;
   transition: opacity 420ms ease;
 }
 .loader-content { width: min(240px, 80vw); text-align: center; transform: translateY(-10px); }
 .loader-symbol { width: clamp(132px, 24vw, 160px); margin-inline: auto; animation: loader-arrive 640ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 .loader-mark { display: block; width: 100%; height: auto; overflow: visible; }
-.loader-ring { stroke: #fbb03b; }
+.loader-ring { stroke: light-dark(#fbb03b, #fbb03b); }
 .loader-ring-reveal { stroke-dasharray: 1; animation: loader-ring-trace 680ms cubic-bezier(0.42, 0, 0.28, 1) 140ms both; }
-.loader-body { fill: #fff; stroke: #fff; stroke-width: 1; }
+.loader-body { fill: light-dark(#040404, #fff); stroke: light-dark(#040404, #fff); stroke-width: 1; }
 /* Skip the 22.2503-unit inward arc at the top; its edge appears with the fill. */
-.loader-outline { fill: none; stroke: #fff; stroke-width: 1; stroke-dasharray: 0 22.251 2000; }
+.loader-outline { fill: none; stroke: light-dark(#040404, #fff); stroke-width: 1; stroke-dasharray: 0 22.251 2000; }
 /* Accelerate into the slash, then carry its momentum into the slowing arc.
    The 90ms overlap avoids a stopped handoff; matching fill curves follow 140ms later. */
 .loader-slash-reveal { stroke-dasharray: 1; animation: loader-trace 280ms cubic-bezier(0.38, 0, 0.5, 1) 60ms both; }
 .loader-circle-reveal { stroke-dasharray: 1; animation: loader-trace 540ms cubic-bezier(0.18, 0.58, 0.38, 1) 250ms both; }
 .loader-fill-slash { animation-delay: 200ms; }
 .loader-fill-circle { animation-delay: 390ms; }
-.loader-caption { margin: 26px 0 0; color: #979b9e; font-size: 10px; line-height: 1.8; letter-spacing: 0.3em; text-indent: 0.3em; animation: loader-caption-in 300ms ease 500ms both; }
+.loader-caption { margin: 26px 0 0; color: light-dark(#494c4f, #979b9e); font-size: 10px; line-height: 1.8; letter-spacing: 0.3em; text-indent: 0.3em; animation: loader-caption-in 300ms ease 500ms both; }
 .is-loading-exit .site-loader { opacity: 0; }
 @keyframes loader-arrive {
   from { opacity: 0; transform: translateY(4px) scale(0.97); }
@@ -73,14 +95,14 @@ body { margin: 0; color: var(--paper); background: var(--space); }
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  background: radial-gradient(ellipse at 70% 58%, #14232e16, transparent 48%), var(--space);
+  background: radial-gradient(ellipse at 70% 58%, light-dark(#c6d1da16, #14232e16), transparent 48%), var(--space);
 }
 /* The occasional ink treatment stays inside the hero; the rest of the blog is unchanged. */
 html[data-black-hole-style="ink"] .hero {
-  --paper: #e8e2d4;
-  --red: #b9ab8e;
+  --paper: light-dark(#171309, #e8e2d4);
+  --red: light-dark(#473b21, #b9ab8e);
   color: var(--paper);
-  background: #080808;
+  background: light-dark(#f4f4f4, #080808);
 }
 html[data-black-hole-style="ink"] .hero::before {
   content: "";
@@ -91,16 +113,16 @@ html[data-black-hole-style="ink"] .hero::before {
   opacity: 0.28;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.78' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 .78 0 0 0 0 .74 0 0 0 0 .66 0 0 0 .10 0'/%3E%3C/filter%3E%3Cpath fill='%23fff' filter='url(%23grain)' d='M0 0h180v180H0z'/%3E%3C/svg%3E");
 }
-html[data-black-hole-style="ink"] .hero .space-grid { border-color: #e8e2d407; }
-html[data-black-hole-style="ink"] .hero .live-clock { color: #a8a296; }
-html[data-black-hole-style="ink"] .hero .clock-divider { background: #676358; }
+html[data-black-hole-style="ink"] .hero .space-grid { border-color: light-dark(#17130907, #e8e2d407); }
+html[data-black-hole-style="ink"] .hero .live-clock { color: light-dark(#49443a, #a8a296); }
+html[data-black-hole-style="ink"] .hero .clock-divider { background: light-dark(#858175, #676358); }
 .starfield { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.3; z-index: -1; }
 .space-grid {
   position: absolute;
   inset: 48px 4.2%;
   z-index: -1;
   pointer-events: none;
-  border: 1px solid #d7e6ee06;
+  border: 1px solid light-dark(#0a151a06, #d7e6ee06);
 }
 [data-depth] { transform: translate3d(var(--pointer-x, 0px), var(--pointer-y, 0px), 0); will-change: transform; }
 .hero-composition { position: absolute; inset: 0; margin-inline: auto; }
@@ -164,14 +186,14 @@ h1 > span { display: block; }
   gap: 16px;
   min-height: 20px;
   margin: 32px 0 0 7px;
-  color: #a0a9b0;
+  color: light-dark(#3a4248, #a0a9b0);
   font: 14px "Consolas", "SFMono-Regular", monospace;
   font-variant-numeric: tabular-nums;
   letter-spacing: 1.7px;
   white-space: nowrap;
 }
 .clock-dot { width: 4px; height: 4px; background: var(--red); margin-right: 2px; }
-.clock-divider { width: 25px; height: 1px; background: #656873; }
+.clock-divider { width: 25px; height: 1px; background: light-dark(#787b86, #656873); }
 .black-hole { --hole-size: clamp(1020px, 114vw, 1760px); position: absolute; width: var(--hole-size); aspect-ratio: 3 / 2; left: 64%; top: 63%; transform: translate(-50%, -50%); margin: 0; z-index: 1; pointer-events: none; }
 #black-hole-canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 400ms ease; }
 .black-hole-fallback { display: block; position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transition: opacity 400ms ease; }
@@ -179,6 +201,13 @@ h1 > span { display: block; }
 .black-hole.is-ready .black-hole-fallback { opacity: 0; }
 .black-hole-fallback[data-theme-ready="false"],
 html[data-black-hole-style="ink"] .black-hole-fallback:not([data-black-hole-style="ink"]) { visibility: hidden; }
+/* On the hero the black sphere switches day and night. The scene centres the
+   hole in this figure; seen from distance r = 31.78 its shadow spans
+   focal · tan(asin(2.6 / r · √(1 − 1/r))) of the figure's height, with focal
+   4.05, or 3.7 for ink, whose hole sits slightly right and low (jetCamera in
+   js/black-hole.js). */
+.black-hole-switch { position: absolute; left: 50%; top: 50%; height: 32.7%; aspect-ratio: 1; padding: 0; border: 0; border-radius: 50%; background: none; transform: translate(-50%, -50%); cursor: pointer; pointer-events: auto; -webkit-tap-highlight-color: transparent; }
+html[data-black-hole-style="ink"] .black-hole-switch { left: 52%; top: 50.5%; height: 29.9%; }
 
 @media (min-width: 1101px) {
   /* Keep the approved wide-screen disk/hero ratio in taller desktop windows,

@@ -4,13 +4,13 @@
 .home-page .about-section {
   --about-unit: var(--chapter-content-unit, 1px);
   --about-code-size: clamp(10px, calc(10 * var(--about-unit)), 11px);
-  --about-soft: #89939c;
+  --about-soft: light-dark(#4c555d, #89939c);
 }
 .home-page .about-section .chapter-panel {
-  background: var(--chapter-panel-frame), linear-gradient(155deg, rgb(236 240 244 / 2.5%), transparent 42%), var(--chapter-panel);
+  background: var(--chapter-panel-frame), linear-gradient(155deg, light-dark(rgb(9 11 14 / 2.5%), rgb(236 240 244 / 2.5%)), transparent 42%), var(--chapter-panel);
 }
 .home-page .about-section .connection-card:is(:hover, :focus-visible) {
-  background-color: rgb(23 26 29 / 90%);
+  background-color: light-dark(rgb(216 218 220 / 90%), rgb(23 26 29 / 90%));
 }
 .home-page .about-section .about-panel-top {
   align-items: baseline;
@@ -26,7 +26,7 @@
 }
 .home-page .about-section .about-record-label {
   flex: none;
-  color: #bbc2c8;
+  color: light-dark(#272d31, #bbc2c8);
   font-size: var(--about-code-size);
   line-height: 1.5;
   letter-spacing: 0.08em;
@@ -57,7 +57,7 @@
   top: 0;
   width: 1px;
   height: 5px;
-  background: #a8b0b84f;
+  background: light-dark(#353b424f, #a8b0b84f);
 }
 .home-page .about-section .about-calibration > span:nth-child(1) { left: 0; background: var(--chapter-signal); }
 .home-page .about-section .about-calibration > span:nth-child(2) { left: 50%; }
@@ -74,7 +74,7 @@
   z-index: 1;
   width: calc(14 * var(--about-unit));
   height: calc(14 * var(--about-unit));
-  border-color: #c5cbd180;
+  border-color: light-dark(#21252a80, #c5cbd180);
   border-style: solid;
   pointer-events: none;
 }
@@ -92,11 +92,11 @@
   line-height: 1.5;
   border-bottom-color: var(--chapter-rule);
 }
-.home-page .about-section .about-link-index { color: #858e97; font: var(--about-code-size)/1.5 var(--chapter-mono); letter-spacing: 0.05em; }
+.home-page .about-section .about-link-index { color: light-dark(#515962, #858e97); font: var(--about-code-size)/1.5 var(--chapter-mono); letter-spacing: 0.05em; }
 .home-page .about-section .about-link-name { color: inherit; }
 .home-page .about-section .about-link-arrow { justify-self: end; font-size: 15px; transition: color 180ms ease, transform 180ms ease; }
 .home-page .about-section .about-socials a:is(:hover, :focus-visible) .about-link-arrow { transform: translate(2px, -2px); }
-.home-page .about-section .about-socials a:focus-visible { outline: 1px solid #c5cbd18c; outline-offset: 4px; }
+.home-page .about-section .about-socials a:focus-visible { outline: 1px solid light-dark(#21252a8c, #c5cbd18c); outline-offset: 4px; }
 
 /* Personal details read like an archive record, without turning facts into buttons. */
 .home-page .about-section .about-copy { height: max-content; }
@@ -117,7 +117,7 @@
   max-width: none;
   margin: calc(10 * var(--about-unit)) 0 calc(19 * var(--about-unit));
   padding-top: 4px;
-  color: #a8b1b9;
+  color: light-dark(#333b41, #a8b1b9);
   font-size: clamp(13px, calc(12 * var(--about-unit)), 16px);
   line-height: 1.8;
 }
@@ -130,7 +130,7 @@
 .home-page .about-section .about-chinese-name ruby { ruby-position: over; ruby-align: center; }
 .home-page .about-section .about-chinese-name ruby + ruby { margin-left: 7px; }
 .home-page .about-section .about-chinese-name rt {
-  color: #acb6bf;
+  color: light-dark(#2f373e, #acb6bf);
   font: 500 clamp(10px, calc(10 * var(--about-unit)), 12px)/1.2 var(--chapter-mono);
   letter-spacing: 0.02em;
 }
@@ -146,20 +146,20 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 3px 7px;
-  color: #a8b2bb;
+  color: light-dark(#323a42, #a8b2bb);
   font-size: var(--about-code-size);
   line-height: 1.5;
   letter-spacing: 0.04em;
 }
 .home-page .about-section .about-fact dt > span {
-  color: #7f8993;
+  color: light-dark(#555e67, #7f8993);
   font: 9px/1.5 var(--chapter-mono);
   letter-spacing: 0.06em;
   white-space: nowrap;
 }
 .home-page .about-section .about-fact dd {
   margin: 5px 0 0;
-  color: #d0d6dc;
+  color: light-dark(#191d22, #d0d6dc);
   font-size: clamp(14px, calc(13 * var(--about-unit)), 17px);
   line-height: 1.75;
   text-wrap: pretty;
@@ -183,7 +183,7 @@
   gap: 8px;
 }
 .home-page .about-section .about-games li > span:first-child {
-  color: #7f8993;
+  color: light-dark(#555e67, #7f8993);
   font: 9px/1.5 var(--chapter-mono);
   letter-spacing: 0.06em;
 }
@@ -200,7 +200,7 @@
   gap: 3px 10px;
   font-size: var(--about-code-size);
   line-height: 1.8;
-  color: #a8b2bb;
+  color: light-dark(#323a42, #a8b2bb);
 }
 .home-page .about-section .about-preference strong {
   color: var(--chapter-text);
@@ -212,7 +212,7 @@
 .home-page .about-section .connection-heading {
   font-size: var(--about-code-size);
   line-height: 1.5;
-  color: #c0c6cd;
+  color: light-dark(#24292e, #c0c6cd);
 }
 .home-page .about-section .connection-card { justify-content: center; }
 .home-page .about-section .connection-card-head {
@@ -223,12 +223,12 @@
   min-height: 18px;
 }
 .home-page .about-section .connection-number {
-  color: #d3d8dd;
+  color: light-dark(#181c1f, #d3d8dd);
   font: 500 clamp(13px, calc(13 * var(--about-unit)), 16px)/1 var(--chapter-mono);
   letter-spacing: 0.04em;
   transition: color 180ms ease;
 }
-.home-page .about-section .connection-index { color: #a4aeb8; font-size: var(--about-code-size); line-height: 1.4; letter-spacing: 0.1em; white-space: nowrap; }
+.home-page .about-section .connection-index { color: light-dark(#353d46, #a4aeb8); font-size: var(--about-code-size); line-height: 1.4; letter-spacing: 0.1em; white-space: nowrap; }
 .home-page .about-section .connection-rule {
   position: relative;
   display: block;
@@ -240,16 +240,16 @@
 .home-page .about-section .connection-rule::before { content: ""; position: absolute; inset: 0; background: var(--chapter-rule); }
 .home-page .about-section .connection-rule::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 32px; max-width: 22%; background: var(--chapter-signal); opacity: 0.45; transform: scaleX(0.35); transform-origin: left; transition: opacity 180ms ease, transform 180ms ease; }
 .home-page .about-section .connection-card h3 { margin: 0 0 calc(7 * var(--about-unit)); color: var(--chapter-text); font-size: clamp(18px, calc(19 * var(--about-unit)), 25px); line-height: 1.4; }
-.home-page .about-section .connection-card p { font-size: clamp(13px, calc(11 * var(--about-unit)), 15px); line-height: 1.75; color: #a0aab3; }
-.home-page .about-section .connection-action { margin-top: 0; padding-top: calc(12 * var(--about-unit)); font-size: clamp(11px, calc(10 * var(--about-unit)), 13px); line-height: 1.4; letter-spacing: 0.04em; color: #c0c7ce; }
+.home-page .about-section .connection-card p { font-size: clamp(13px, calc(11 * var(--about-unit)), 15px); line-height: 1.75; color: light-dark(#384148, #a0aab3); }
+.home-page .about-section .connection-action { margin-top: 0; padding-top: calc(12 * var(--about-unit)); font-size: clamp(11px, calc(10 * var(--about-unit)), 13px); line-height: 1.4; letter-spacing: 0.04em; color: light-dark(#23292e, #c0c7ce); }
 .home-page .about-section .connection-action > span:first-child { color: inherit; }
-.home-page .about-section .connection-action > .connection-action-arrow { color: #939da7; transition: color 180ms ease, transform 180ms ease; }
+.home-page .about-section .connection-action > .connection-action-arrow { color: light-dark(#434c55, #939da7); transition: color 180ms ease, transform 180ms ease; }
 .home-page .about-section .connection-card:is(:hover, :focus-visible) .connection-number,
 .home-page .about-section .connection-card:is(:hover, :focus-visible) .connection-action-arrow { color: var(--chapter-signal); }
 .home-page .about-section .connection-card:is(:hover, :focus-visible) .connection-action-arrow { transform: translateX(3px); }
 .home-page .about-section .connection-card:is(:hover, :focus-visible) .connection-rule::after { opacity: 0.9; transform: scaleX(1); }
 .home-page .about-section .rss-label { font-size: 10px; }
-.home-page .about-section .connection-footnote { color: #959fa8; font-size: 10px; line-height: 1.6; letter-spacing: 0.05em; }
+.home-page .about-section .connection-footnote { color: light-dark(#424a52, #959fa8); font-size: 10px; line-height: 1.6; letter-spacing: 0.05em; }
 
 @media (max-width: 1200px) {
   .home-page .about-section .about-body { align-items: start; }

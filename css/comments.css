@@ -5,30 +5,30 @@
 .article-comments [data-comments-status] { margin: 18px 0; }
 .article-comments [hidden] { display: none !important; }
 .article-comments [data-comments-retry] { margin-bottom: 20px; border: 1px solid var(--line); padding: 10px 16px; background: transparent; color: var(--paper); font: inherit; font-size: 13px; cursor: pointer; }
-.article-comments [data-comments-retry]:hover { border-color: var(--red); color: #f69b85; }
+.article-comments [data-comments-retry]:hover { border-color: var(--red); color: light-dark(#c0401f, #f69b85); }
 .article-comments [data-comments-retry]:focus-visible { outline: 2px solid var(--red); outline-offset: 4px; }
 .article-comments [data-comments-thread] { min-height: 60px; overflow-wrap: anywhere; }
 
 /* Apply variables to Waline's own root so its dark-mode defaults cannot override the blog palette. */
 .article-comments [data-waline] {
   --waline-font-size: 14px;
-  --waline-white: #fff;
-  --waline-light-grey: #8d98a6;
-  --waline-dark-grey: #b5bfca;
-  --waline-theme-color: #f06446;
-  --waline-active-color: #f69b85;
-  --waline-color: #c6ced7;
-  --waline-bg-color: #0b0e13;
-  --waline-bg-color-light: #11161e;
-  --waline-bg-color-hover: #171d26;
-  --waline-border-color: #ffffff1a;
-  --waline-disable-bg-color: #151a22;
-  --waline-disable-color: #84909e;
-  --waline-code-bg-color: #0d1219;
-  --waline-bq-color: #ffffff1a;
-  --waline-badge-color: #f06446;
-  --waline-info-bg-color: #151a22;
-  --waline-info-color: #a1adbb;
+  --waline-white: light-dark(#fff, #fff);
+  --waline-light-grey: light-dark(#46505c, #8d98a6);
+  --waline-dark-grey: light-dark(#272f38, #b5bfca);
+  --waline-theme-color: light-dark(#f06446, #f06446);
+  --waline-active-color: light-dark(#c0401f, #f69b85);
+  --waline-color: light-dark(#1d232a, #c6ced7);
+  --waline-bg-color: light-dark(#e9ebef, #0b0e13);
+  --waline-bg-color-light: light-dark(#dcdfe5, #11161e);
+  --waline-bg-color-hover: light-dark(#d1d6dc, #171d26);
+  --waline-border-color: light-dark(#0404041a, #ffffff1a);
+  --waline-disable-bg-color: light-dark(#d6dadf, #151a22);
+  --waline-disable-color: light-dark(#4d5864, #84909e);
+  --waline-code-bg-color: light-dark(#e2e6ea, #0d1219);
+  --waline-bq-color: light-dark(#0404041a, #ffffff1a);
+  --waline-badge-color: light-dark(#f06446, #f06446);
+  --waline-info-bg-color: light-dark(#d6dadf, #151a22);
+  --waline-info-color: light-dark(#343e4a, #a1adbb);
   --waline-border: 1px solid var(--waline-border-color);
   --waline-box-shadow: none;
   font-family: inherit;

@@ -5,6 +5,7 @@
   const stars = document.querySelector('#starfield');
   const context = stars.getContext('2d');
   const blackHoleCanvas = document.querySelector('#black-hole-canvas');
+  const sphereSwitch = document.querySelector('.black-hole-switch');
   const blackHoleTheme = window.BlackHoleTheme;
   let blackHoleStyle = blackHoleTheme?.apply() || 'minimal';
   let blackHole = null;
@@ -51,6 +52,7 @@
   let contentMoving = false;
   let heldForInteraction = false;
   let busySince = null;
+  let drawnFrames = 0;
 
   function settleScene(ready) {
     if (sceneSettled) return;
@@ -100,6 +102,7 @@
       rendererStarted = true;
       try {
         const renderer = new window.BlackHole(blackHoleCanvas, { style: blackHoleStyle });
+        renderer.setDay?.(isDay() ? 1 : 0);
         blackHole = renderer;
         renderer.onRestore = () => {
           if (!pageActive || document.hidden || blackHole !== renderer) return;
@@ -146,6 +149,10 @@
   }
 
   function stopClock() { clearTimeout(clockTimer); }
+
+  function isDay() {
+    return document.documentElement.dataset.theme === 'light';
+  }
 
   function updateBlackHoleTheme() {
     clearTimeout(themeTimer);
@@ -211,17 +218,19 @@
     // The live minimal renderer supplies one continuous, lensed sky across
     // the hero. Keep the old edge stars for ink and the static fallback only.
     const show = fallback || blackHoleStyle !== 'minimal' || !blackHole?.ready || blackHole.lost;
+    const day = isDay();
     if (starFrame && starFrame.show === show && (!show || (starFrame.x === pointer.x
-        && starFrame.y === pointer.y && starFrame.style === blackHoleStyle))) return;
-    starFrame = { show, x: pointer.x, y: pointer.y, style: blackHoleStyle };
+        && starFrame.y === pointer.y && starFrame.style === blackHoleStyle && starFrame.day === day))) return;
+    starFrame = { show, x: pointer.x, y: pointer.y, style: blackHoleStyle, day };
     context.clearRect(0, 0, width, height);
     if (!show) return;
     for (const star of starList) {
       const x = star.x + pointer.x * star.depth * 13;
       const y = star.y + pointer.y * star.depth * 10;
+      // Daylight draws the same stars as the night sky's negative.
       context.fillStyle = blackHoleStyle === 'ink'
         ? `rgba(225,218,200,${star.light * 0.55})`
-        : `rgba(193,204,223,${star.light})`;
+        : day ? `rgba(62,51,32,${star.light})` : `rgba(193,204,223,${star.light})`;
       context.beginPath();
       context.arc(x, y, star.radius, 0, Math.PI * 2);
       context.fill();
@@ -247,6 +256,7 @@
     if (shouldHoldScene()) { holdScene(); return false; }
     drawParallax();
     const submitted = blackHole?.render(sceneTime(), pointer.x, -pointer.y, chapterProgress, entranceGlow);
+    if (submitted === true) drawnFrames++;
     if (submitted === true && !sceneSettled) {
       firstFrameSubmitted = true;
       // Let the submitted commands reach the GPU before the first zero-wait poll.
@@ -381,8 +391,42 @@
     else if (heldForInteraction) { busySince = null; start(); }
   });
 
+  // The day/night switch (js/theme-jets.js) draws its column out of the
+  // hole along the spin axis, through the scene's own camera.
+  window.SiteBlackHole = {
+    jetCamera() {
+      if (!pageActive) return null;
+      const live = blackHole?.ready && !blackHole.lost ? blackHole.jetCamera?.() : null;
+      if (live) return live;
+      // The static illustration turns and shrinks with the chapters as a
+      // whole image, around its centre.
+      const image = document.querySelector('.black-hole-fallback');
+      const box = image?.getBoundingClientRect();
+      if (!box?.width) return null;
+      return {
+        x: box.left + box.width / 2, y: box.top + box.height / 2,
+        roll: 18 * (1 - chapterProgress) * Math.PI / 180,
+        inclination: 81 * Math.PI / 180, azimuth: 0, distance: 31.78443, focal: 4.05,
+        scale: image.offsetHeight * (1 - 0.66 * chapterProgress) / 2,
+      };
+    },
+    // Frames drawn so far: a switch waits for one in its final theme.
+    drawn: () => drawnFrames,
+  };
+
+  window.addEventListener('site:theme', () => {
+    blackHole?.setDay?.(isDay() ? 1 : 0);
+    // Refresh the fallback artwork, then leave ink for day mode if needed.
+    blackHoleStyle = blackHoleTheme?.apply(blackHoleStyle) || blackHoleStyle;
+    updateBlackHoleTheme();
+    if (pageActive && visible && !document.hidden && (paused || !frame)) draw();
+  });
+
   window.addEventListener('site:chapter', event => {
     chapterProgress = Math.max(0, Math.min(1, Number(event.detail?.progress) || 0));
+    // The black sphere is the day/night switch on the hero only. The chapters
+    // move the hole away from it and use the header's toggle.
+    if (sphereSwitch && sphereSwitch.hidden !== chapterProgress > 0) sphereSwitch.hidden = chapterProgress > 0;
     entranceGlow = pageActive && visible && !document.hidden && !paused
       ? Math.max(0, Math.min(1, Number(event.detail?.entranceGlow) || 0)) : 0;
     if (chapterProgress > 0) pointer.targetX = pointer.targetY = 0;
