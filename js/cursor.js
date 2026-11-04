@@ -65,8 +65,9 @@
     const field = node.closest(editable);
     if (field) return ['field', field];
     // The track carries the axis line and the landing point of the rail preview.
+    // The vertical phone tape has no landing preview; its axis is plain page.
     const rail = node.closest('.chapter-progress-rail');
-    if (rail) return ['axis', rail.parentElement];
+    if (rail) return document.documentElement.classList.contains('has-vertical-chapters') ? ['point', null] : ['axis', rail.parentElement];
     const link = node.closest(clickable);
     if (!link) return ['point', null];
     if (link.matches('.chapter-progress-marker')) return ['grip', link];
@@ -224,7 +225,9 @@
     // The header and the ruler stay fixed and keep their lock. Only the ruler
     // cursor travels with the strip, so its grip holds just while it is dragged;
     // dragging and click easing scroll the page continuously.
-    const fixed = Boolean(target?.closest('.site-header') || target?.closest('.chapter-progress'));
+    // On the vertical phone tape the station names slide with the page.
+    const sliding = document.documentElement.classList.contains('has-vertical-chapters') && target?.closest('.chapter-progress-links');
+    const fixed = Boolean(target?.closest('.site-header') || (target?.closest('.chapter-progress') && !sliding));
     if (kind !== 'point' && (!fixed || (kind === 'grip' && !scrubbing(target)))) setKind('point', null);
     clearTimeout(scrollTimer);
     scrollTimer = setTimeout(() => {

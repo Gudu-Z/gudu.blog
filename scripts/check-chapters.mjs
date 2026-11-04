@@ -4440,3 +4440,43 @@ await test('keyboard chapter steps stay logical across unequal widths while arro
   assert.ok(Math.abs(page.top - beforeWheel - 120) < 1e-6, 'wheel distance remains a real pixel distance');
   assert.equal(page.layoutReads, reads, 'body input adds no per-frame geometry reads');
 });
+
+await test('the vertical phone page takes the chapters over and gets them back on the chapter it names', () => {
+  const site = browser({ url: 'https://gudu.blog/#series' });
+  site.advance(1000);
+  assert.equal(site.top, site.destination('series'));
+  assert.ok(parseFloat(site.runway.style.height) > 0);
+  site.jump(site.destination('archive'));
+  assert.ok(site.chapters.some(chapter => chapter.inert), 'the strip hides chapters outside the view');
+
+  // js/chapters-vertical.js announces itself before it starts.
+  site.event('site:chapter-mode', { detail: { vertical: true } });
+  site.advance(100);
+  assert.equal(site.runway.style.height, '', 'the scroll runway goes');
+  assert.equal(site.track.style.getPropertyValue('transform'), '', 'the sideways offset goes');
+  assert.equal(site.progressMarker.style.getPropertyValue('--chapter-marker-x'), '');
+  assert.equal([site.header, site.viewport, ...site.chapters, ...site.panels].some(element => element.inert), false, 'nothing stays inert');
+  const scrolls = site.scrolls.length;
+  const events = site.chapterEvents.length;
+  const entries = site.historyEntries.length;
+  assert.equal(site.wheel(120).defaultPrevented, false, 'wheel scrolling is native');
+  assert.equal(site.key('PageDown').defaultPrevented, false, 'keys scroll natively');
+  assert.equal(site.click(site.link('#journal')).defaultPrevented, false, 'section links are left to the vertical page');
+  site.jump(1234);
+  site.advance(1000);
+  assert.equal(site.track.style.getPropertyValue('transform'), '', 'scrolling writes nothing back');
+  assert.equal(site.scrolls.length, scrolls + 1, 'only the test itself scrolled');
+  assert.equal(site.chapterEvents.length, events);
+  assert.equal(site.historyEntries.length, entries);
+
+  // Going wider, the vertical page names the chapter being read and steps back.
+  site.url.hash = 'journal';
+  site.event('site:chapter-mode', { detail: { vertical: false } });
+  site.advance(100);
+  assert.equal(site.top, site.destination('journal'), 'the strip reopens on the named chapter');
+  assert.ok(parseFloat(site.runway.style.height) > 0);
+  assert.ok(Math.abs(site.x + site.destination('journal') - site.destination('about')) < 1e-3, 'the track shows the journal');
+  assert.equal(site.wheel(120).defaultPrevented, true, 'the strip drives the wheel again');
+  site.advance(1200);
+  assert.ok(site.top > site.destination('journal'));
+});

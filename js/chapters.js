@@ -97,7 +97,12 @@
   const calibratingPanels = new Set();
   let revealViewport = { top: 0, bottom: window.innerHeight };
   const chapterLabels = chapters.map((chapter, index) => links[index]?.querySelector('.chapter-station-title')?.textContent.trim() || chapter.id);
-  const styleValues = new WeakMap();
+  // Every inline style and inert state the strip writes, so it can hand the
+  // page over clean when the vertical phone page takes it (standDown).
+  const styleValues = new Map();
+  const inertElements = new Set();
+  // Phones read the chapters as one vertical page (js/chapters-vertical.js).
+  let verticalMode = false;
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const y = () => window.scrollY || 0;
@@ -106,7 +111,7 @@
     for (const group of revealGroups) group.nativeScroll = group.chapter.scrollTop;
     return y();
   }
-  const available = () => active && !document.hidden;
+  const available = () => active && !document.hidden && !verticalMode;
   const position = () => y() >= entry ? 1 + coordinateAt(y() - entry) : y() / Math.max(entry, 1);
   const blocked = () => root.classList.contains('is-loading') || document.body.dataset.menuOpen === 'true';
   const interactive = target => target?.closest?.('input, textarea, select, button, [contenteditable="true"], [role="slider"]');
@@ -151,7 +156,9 @@
   }
 
   function setInert(element, inert) {
-    if (element && element.inert !== inert) element.inert = inert;
+    if (!element) return;
+    if (inert) inertElements.add(element);
+    if (element.inert !== inert) element.inert = inert;
   }
 
   function writeHash(index, mode = 'replace') {
@@ -660,6 +667,8 @@
   }
 
   function resetPointerParallax(force = false) {
+    // The vertical page has no parallax; nothing may write the strip's layers.
+    if (verticalMode) return;
     if (!force && (pointerPressed || scrub || pointerEditing())) { holdPointerParallax(); return; }
     if (force) pointerPressed = false;
     pointerLayer.x = pointerLayer.y = pointerLayer.targetX = pointerLayer.targetY = 0;
@@ -890,7 +899,7 @@
   }
 
   function hoverRail(event) {
-    if (event.pointerType !== 'mouse' || event.buttons) { clearRailHover(); return; }
+    if (!available() || event.pointerType !== 'mouse' || event.buttons) { clearRailHover(); return; }
     railHoverX = event.clientX;
     paintRailHover();
   }
@@ -1302,7 +1311,7 @@
   });
   window.addEventListener('pageshow', () => { active = true; resumeLayout(); });
   window.addEventListener('pagehide', () => {
-    if (!active) return;
+    if (!active || verticalMode) return;
     if (positions.length) suspendedPosition = position();
     active = false;
     settleRevealMotion();
@@ -1317,7 +1326,7 @@
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) { resumeLayout(); return; }
-    if (!active) return;
+    if (!active || verticalMode) return;
     layoutObserver.disconnect();
     const destination = transition?.destination ?? targetY;
     const focusIndex = transition?.focus ? transition.index : null;
@@ -1359,4 +1368,57 @@
     for (const { element } of revealUnits) layoutObserver.observe(element);
   }
   if (available()) observeLayout();
+
+  // Below the phone breakpoint js/chapters-vertical.js runs the chapters as
+  // one vertical page. It announces each change of mode: the strip stands
+  // down and removes everything it wrote, then later reopens on the chapter
+  // the vertical page names in the URL hash.
+  function standDown() {
+    finishScrub();
+    stop();
+    clearProgressFeedback();
+    clearIdle();
+    clearRailHover();
+    resetPointerParallax(true);
+    layoutObserver.disconnect();
+    cancelAnimationFrame(updateFrame);
+    updateFrame = 0;
+    updatePending = false;
+    touch = null;
+    touching = false;
+    entryGesture = false;
+    for (const unit of revealUnits) {
+      for (const name of ['is-chapter-immediate', 'is-chapter-scanning', 'is-chapter-departing', 'is-chapter-closing', 'is-chapter-calibrating']) {
+        setClass(unit.element, name, false);
+      }
+      Object.assign(unit, { phase: 'preview', seen: false, exitMinimum: null, calibrationReady: false, calibrated: false });
+    }
+    calibratingPanels.clear();
+    for (const chapter of chapters) setClass(chapter, 'is-chapter-scrollable', false);
+    for (const [element, values] of styleValues) for (const name of values.keys()) element.style.removeProperty(name);
+    styleValues.clear();
+    for (const element of inertElements) element.inert = false;
+    inertElements.clear();
+    runway.style.height = '';
+    positions = [];
+    currentIndex = -1;
+    lastProgress = lastEntranceGlow = -1;
+    lastIndicatorX = lastRevealX = lastSliderValue = renderedScroll = suspendedPosition = null;
+  }
+
+  window.addEventListener('site:chapter-mode', event => {
+    const vertical = Boolean(event.detail?.vertical);
+    if (vertical === verticalMode) return;
+    if (vertical) {
+      standDown();
+      verticalMode = true;
+      return;
+    }
+    verticalMode = false;
+    setStyle(root, '--chapter-count', String(chapters.length));
+    setTransitionPhase(0);
+    paintTransitionPhase();
+    pendingHash = true;
+    resumeLayout();
+  });
 })();

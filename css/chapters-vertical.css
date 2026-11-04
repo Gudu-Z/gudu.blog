@@ -1,0 +1,237 @@
+/* Phones: the chapters stack into one vertical page (js/chapters-vertical.js
+   sets html.has-vertical-chapters). Tablets and desktops keep the strip. */
+html.has-vertical-chapters .home-page { --tape-room: 44px; }
+html.has-vertical-chapters .home-page .chapter-viewport {
+  position: relative;
+  height: auto;
+  visibility: visible;
+  pointer-events: auto;
+  overflow: visible;
+  clip-path: none;
+  touch-action: auto;
+}
+html.has-vertical-chapters .home-page .chapter-track {
+  display: block;
+  width: auto;
+  height: auto;
+  padding: 0 0 64px;
+  transform: none;
+  will-change: auto;
+  /* Tilted blocks project past their boxes; that must not lengthen the page. */
+  overflow: clip;
+}
+/* The altimeter tape keeps the right edge, so the reading column leaves it room. */
+html.has-vertical-chapters .home-page .chapter-section {
+  width: auto;
+  height: auto;
+  min-height: 0;
+  margin: 0 var(--tape-room) 0 6%;
+  padding: 34px 0;
+  overflow: visible;
+  pointer-events: auto;
+  scroll-margin-top: calc(var(--header-height, 70px) + 8px);
+  /* Text layers rise in place; the strip slides them in from the side. */
+  --chapter-reveal-direction: 0;
+}
+html.has-vertical-chapters .home-page .about-section { padding-top: 96px; }
+/* Chapters no longer share one screen height, so panels keep their content height. */
+html.has-vertical-chapters .home-page :is(.about-copy, .series-main) { min-height: 0; }
+html.has-vertical-chapters .home-page .chapter-section + .chapter-section::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 26px;
+  height: 1px;
+  background: var(--chapter-signal);
+  opacity: 0.6;
+}
+/* Anything still offset must not widen the page. */
+html.has-vertical-chapters .home-page :is(.chapter-scroll, .site-header) { overflow-x: clip; }
+/* Content scrolls under the toolbar, so it fades out there and at the bottom edge. */
+html.has-vertical-chapters .home-page .site-header::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 -26px;
+  z-index: -1;
+  background: linear-gradient(var(--space) 58%, transparent);
+  pointer-events: none;
+}
+html.has-vertical-chapters.is-content .home-page::after {
+  content: "";
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 8;
+  height: 48px;
+  background: linear-gradient(transparent, var(--space) 80%);
+  pointer-events: none;
+}
+
+/* The strip's arc turned on its side bends the page: js/chapters-vertical.js
+   places each content block and each slice of a panel's surface on the arc.
+   Panels stay flat; a sliced panel draws its surface on the slices instead. */
+html.has-vertical-chapters .home-page .chapter-panel { position: relative; }
+@media (prefers-reduced-motion: no-preference) {
+  html.has-vertical-chapters .home-page .chapter-section .chapter-panel { transform: none; }
+  html.has-vertical-chapters .home-page .chapter-panel.is-chapter-sliced { background: none; box-shadow: none; }
+  /* Pieces move with every scrolled frame; only their entrance fade eases. */
+  html.has-vertical-chapters .home-page .chapter-section .is-chapter-facet.is-chapter-facet { transition-property: opacity; }
+}
+/* A slice shows its band of one full-size copy of the surface. Its sides stay
+   open so the drop shadow still shows along the panel's edges. */
+html.has-vertical-chapters .home-page .chapter-panel-slice {
+  position: absolute;
+  left: 0;
+  right: 0;
+  overflow-x: visible;
+  overflow-y: clip;
+  pointer-events: none;
+}
+html.has-vertical-chapters .home-page .chapter-panel-slice > span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: var(--chapter-panel-frame), var(--chapter-panel);
+  box-shadow: var(--chapter-panel-shadow);
+}
+
+/* ---- The ruler as an altimeter tape on the right edge ----
+   The horizontal ruler turned a quarter clockwise: the axis runs down the
+   screen, ticks and names sit to its right, and the cursor points left at it.
+   The cursor stays on the reading line while the tape slides under it. */
+html.has-vertical-chapters .home-page .chapter-progress {
+  --tape-axis: 6px;
+  --chapter-response-radius: 40px;
+  top: calc(var(--header-height, 70px) + 10px);
+  bottom: 12px;
+  left: auto;
+  right: 2px;
+  width: 34px;
+  height: auto;
+  margin: 0;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(transparent, #000 44px, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(transparent, #000 44px, #000 calc(100% - 44px), transparent);
+  touch-action: none;
+  transform: translateX(10px);
+}
+html.has-vertical-chapters.is-content .home-page .chapter-progress { transform: none; }
+html.has-vertical-chapters .home-page :is(.chapter-progress-track, .chapter-progress-links) {
+  translate: 0 var(--tape-shift, 0px);
+}
+html.has-vertical-chapters .home-page .chapter-progress-track {
+  --chapter-response-y: var(--chapter-marker-y, 0px);
+  top: 0;
+  bottom: auto;
+  left: var(--tape-axis);
+  right: auto;
+  width: 1px;
+  height: calc(var(--tape-cell, 120px) * 4);
+}
+html.has-vertical-chapters .home-page .chapter-progress-track::before {
+  inset: 0 auto 0 -2px;
+  width: 9px;
+  height: auto;
+  background-image:
+    repeating-linear-gradient(180deg, light-dark(#4e4e4e2e, #9898982e) 0 1px, transparent 1px var(--chapter-tick-step)),
+    repeating-linear-gradient(180deg, light-dark(#45454548, #a2a2a248) 0 1px, transparent 1px var(--chapter-tick-mid-step)),
+    repeating-linear-gradient(180deg, light-dark(#34343466, #b7b7b766) 0 1px, transparent 1px 12.5%);
+  background-size: 3px 100%, 5px 100%, 8px 100%;
+  background-position: left top;
+}
+/* The closing stem at the far end of the tape. */
+html.has-vertical-chapters .home-page .chapter-progress-track::after {
+  inset: auto auto 0 -5px;
+  width: 27px;
+  height: 1px;
+}
+/* Taps on the axis band land on that exact spot; the names stay links. The
+   mouse preview of the horizontal axis has no vertical counterpart. */
+html.has-vertical-chapters .home-page .chapter-progress-rail { inset: 0 -10px 0 -6px; }
+html.has-vertical-chapters .home-page .chapter-progress-rail::before,
+html.has-vertical-chapters .home-page .chapter-progress-scan { display: none; }
+html.has-vertical-chapters .home-page .chapter-progress-response {
+  --chapter-response-mask: linear-gradient(180deg, transparent calc(var(--chapter-response-y) - var(--chapter-response-radius)), #000 calc(var(--chapter-response-y) - 8px), #000 calc(var(--chapter-response-y) + 8px), transparent calc(var(--chapter-response-y) + var(--chapter-response-radius)));
+  inset: 0 auto 0 -2px;
+  width: 11px;
+  height: auto;
+  background-image:
+    repeating-linear-gradient(180deg, light-dark(#161616bb, #dededebb) 0 1px, transparent 1px var(--chapter-tick-step)),
+    repeating-linear-gradient(180deg, light-dark(#101010bb, #e8e8e8bb) 0 1px, transparent 1px var(--chapter-tick-mid-step)),
+    repeating-linear-gradient(180deg, light-dark(#080808aa, #f4f4f4aa) 0 1px, transparent 1px 12.5%);
+  background-size: 5px 100%, 7px 100%, 10px 100%;
+  background-position: left top;
+}
+/* The orange stem crosses the axis; the white triangle points at it from the right. */
+html.has-vertical-chapters .home-page .chapter-progress-marker {
+  left: -5px;
+  top: 0;
+  width: 10px;
+  height: 2px;
+  transform: translate3d(0, calc(var(--chapter-marker-y, 0px) - 1px), 0);
+}
+html.has-vertical-chapters .home-page .chapter-progress-marker::before {
+  top: -4.5px;
+  left: 7.5px;
+  width: 6px;
+  height: 11px;
+  clip-path: polygon(100% 0, 100% 100%, 0 50%);
+}
+html.has-vertical-chapters .home-page .chapter-progress-marker::after {
+  left: 5px;
+  top: 1px;
+  width: 18px;
+  height: 32px;
+}
+/* The whole tape takes drags, so the handle only draws the keyboard focus ring. */
+html.has-vertical-chapters .home-page .chapter-progress-handle {
+  left: -2px;
+  top: -11px;
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
+}
+html.has-vertical-chapters .home-page .chapter-progress-links {
+  inset: 0 0 auto;
+  height: calc(var(--tape-cell, 120px) * 4);
+  grid-template-columns: 1fr;
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+}
+/* Each station's stem crosses the axis at the top of its cell. */
+html.has-vertical-chapters .home-page .chapter-progress-links a::before {
+  left: calc(var(--tape-axis) - 5px);
+  top: 0;
+  bottom: auto;
+  width: 27px;
+  height: 1px;
+}
+/* The current chapter's stretch of the axis lights up, from its stem to the next. */
+html.has-vertical-chapters .home-page .chapter-progress-links a::after {
+  left: var(--tape-axis);
+  right: auto;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  height: auto;
+  transform-origin: top;
+}
+html.has-vertical-chapters .home-page .chapter-station-title {
+  left: calc(var(--tape-axis) + 11px);
+  top: 9px;
+  bottom: auto;
+  writing-mode: vertical-rl;
+  font-size: 12px;
+  line-height: 1.4;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+}
+html.has-vertical-chapters .home-page .chapter-progress-links a.is-arriving::after { animation: chapter-tape-arrive 380ms ease-out; }
+html.has-vertical-chapters .home-page .chapter-progress-links a.is-departing::after { transform: scaleY(0); transform-origin: bottom; }
+html.has-vertical-chapters .home-page .chapter-progress.is-moving-back .chapter-progress-links a:is([aria-current], .is-active)::after { transform-origin: bottom; }
+html.has-vertical-chapters .home-page .chapter-progress.is-moving-back .chapter-progress-links a.is-departing::after { transform-origin: top; }
+@keyframes chapter-tape-arrive {
+  from { opacity: 0.15; transform: scaleY(0); }
+  to { opacity: 0.5; transform: none; }
+}
