@@ -144,6 +144,8 @@ const STATE = `(() => {
   const header = document.querySelector('.site-header').offsetHeight;
   const nav = document.querySelector('.chapter-progress');
   const marker = document.querySelector('.chapter-progress-marker').getBoundingClientRect();
+  const window = nav.getBoundingClientRect();
+  const stations = [...nav.querySelectorAll('.chapter-progress-links a')].map(link => link.getBoundingClientRect());
   const current = document.querySelector('.chapter-progress-links [aria-current]');
   return {
     y: scrollY,
@@ -158,7 +160,8 @@ const STATE = `(() => {
     focus: document.activeElement?.id || '',
     history: history.length,
     pointerY: marker.top + marker.height / 2,
-    readingLine: html.clientHeight * 0.42,
+    readingLine: window.top + window.height / 2,
+    tape: { top: window.top, bottom: window.bottom, first: stations[0].top, last: stations.at(-1).bottom },
     width: html.scrollWidth,
     height: html.scrollHeight,
     end: pageTop(document.querySelector('#chapter-scroll')) + document.querySelector('#chapter-scroll').offsetHeight,
@@ -250,7 +253,7 @@ test('the first swipe from the Hero lands on 关于, and going back returns to t
   await close(page);
 });
 
-test('the pointer stays on the reading line while the tape follows the chapters', { skip }, async () => {
+test('the pointer holds the middle while the tape follows the chapters, with both ends in view', { skip }, async () => {
   const page = await open();
   const series = await sectionTop(page, 'series');
   const readingLine = (await state(page)).readingLine;
@@ -260,6 +263,7 @@ test('the pointer stays on the reading line while the tape follows the chapters'
     const now = await state(page);
     positions.push([now.position, now.current]);
     assert.ok(Math.abs(now.pointerY - now.readingLine) <= 1.5, `pointer at ${now.pointerY}, reading line ${now.readingLine}`);
+    assert.ok(now.tape.first >= now.tape.top + 4 && now.tape.last <= now.tape.bottom - 4, `both ends of the tape stay in view (${now.tape.first}–${now.tape.last})`);
   }
   assert.deepEqual(positions[0], [0, '关于'], 'the first reading position is 关于');
   assert.ok(positions[1][0] < 0.5 && positions[1][1] === '关于', 'just before 分类 the pointer is still in 关于');
@@ -327,57 +331,40 @@ test('section links, categories, search and linked URLs land on their chapter', 
   await close(page);
 });
 
-test('the page bends towards the reader near the edges and lies flat in the middle', { skip }, async () => {
+test('each region tilts as one straight plate, flat in the middle and leaning in at the edges', { skip }, async () => {
   const page = await open();
-  // Panels split into content blocks and slices of their surface; each piece
-  // takes its place on the arc, which is flat within a tenth of the reading
-  // area around its middle.
-  const faces = async () => evaluate(page, `(() => {
+  // A panel and the headings that belong to it share one plane: the face
+  // spanning the arc points of the panel's part on screen.
+  const plates = async () => evaluate(page, `(() => {
     const pageTop = element => { let top = 0; for (let node = element; node; node = node.offsetParent) top += node.offsetTop; return top; };
     const header = document.querySelector('.site-header').offsetHeight;
     const area = document.documentElement.clientHeight - header;
     const center = header + area / 2;
-    return [...document.querySelectorAll('.is-chapter-facet')].map(element => {
+    const pitch = element => Number(element.style.transform.match(/rotateX\\((-?[\\d.]+)deg\\)/)?.[1] ?? NaN);
+    return [...document.querySelectorAll('.chapter-reveal-unit')].map(element => {
+      const owner = document.getElementById(element.dataset.depthOwnerCompact || element.dataset.depthOwner || '');
       const top = pageTop(element) - scrollY - center;
-      const pitch = Number(element.style.transform.match(/rotateX\\((-?[\\d.]+)deg\\)/)?.[1] ?? NaN);
-      return { top, bottom: top + element.offsetHeight, pitch, flat: area * 0.1, half: area / 2 };
-    }).filter(face => face.bottom > -face.half && face.top < face.half);
+      return { id: element.id || element.className.split(' ')[0], panel: element.classList.contains('chapter-panel'), top, bottom: top + element.offsetHeight, pitch: pitch(element), ownerPitch: owner ? pitch(owner) : null, flat: area * 0.1, half: area / 2 };
+    });
   })()`);
-  const panels = await evaluate(page, `[...document.querySelectorAll('.chapter-panel')].map(panel => {
-    const slices = [...panel.querySelectorAll('.chapter-panel-slice')].map(slice => [slice.offsetTop, slice.offsetHeight]);
-    return { sliced: panel.classList.contains('is-chapter-sliced'), flat: !panel.style.transform && getComputedStyle(panel).transform === 'none', height: panel.offsetHeight, slices };
-  })`);
-  for (const panel of panels) {
-    assert.ok(panel.sliced && panel.flat, 'each panel stays flat and draws its surface on slices');
-    assert.ok(panel.slices.length >= 1 && panel.slices.slice(1).every(([top], index) => top === panel.slices[index][0] + panel.slices[index][1]), 'the slices tile the surface without gaps');
-    const [first, last] = [panel.slices[0], panel.slices.at(-1)];
-    assert.ok(first[0] < 0 && last[0] + last[1] > panel.height, 'the first and last slices carry the drop shadow past the edges');
-  }
-  for (const offset of [640, 120]) {
+  assert.equal(await evaluate(page, "document.querySelectorAll('.chapter-panel-slice, .is-chapter-sliced, .is-chapter-facet').length"), 0, 'panels are never cut up');
+  assert.equal(await evaluate(page, "[...document.querySelectorAll('.chapter-panel *')].some(element => element.style.transform)"), false, 'nothing inside a panel bends on its own');
+  for (const offset of [640, 120, -300]) {
     await scroll(page, (await sectionTop(page, 'series')) - offset);
-    const visible = await faces();
-    assert.ok(visible.length && visible.every(face => Number.isFinite(face.pitch)), 'every block on screen carries its place on the arc');
-    for (const face of visible) {
-      if (face.top >= -face.flat && face.bottom <= face.flat) assert.ok(Math.abs(face.pitch) < 0.5, 'the middle band stays flat');
-      if (face.top > face.flat) assert.ok(face.pitch > 0, 'blocks below the middle lean their lower edge towards the reader');
-      if (face.bottom < -face.flat) assert.ok(face.pitch < 0, 'blocks above the middle lean their upper edge towards the reader');
+    const all = await plates();
+    assert.ok(all.every(plate => Number.isFinite(plate.pitch)), 'every region carries its place on the arc');
+    for (const plate of all) {
+      if (plate.ownerPitch !== null) assert.equal(plate.pitch, plate.ownerPitch, `${plate.id} shares its panel's plane`);
+      if (!plate.panel || plate.bottom <= -plate.half || plate.top >= plate.half) continue;
+      if (plate.top > plate.flat) assert.ok(plate.pitch > 0, `${plate.id} rising from the bottom leans its lower edge in`);
+      if (plate.bottom < -plate.flat) assert.ok(plate.pitch < 0, `${plate.id} leaving at the top leans its upper edge in`);
     }
-    // With 分类 entering low on the screen, its heading is well into the curve.
-    if (offset === 640) assert.ok(visible.some(face => face.top > face.flat && face.pitch > 8), 'a block rising from the bottom is visibly curved');
+    if (offset === 640) assert.ok(all.some(plate => plate.id === 'category-surface' && plate.pitch > 8), '分类 rising from the bottom is visibly tilted');
   }
-  // Neighbouring slices meet on the arc: no step or gap where they join.
-  const joins = await evaluate(page, `(() => {
-    const gaps = [];
-    for (const panel of document.querySelectorAll('.chapter-panel')) {
-      const boxes = [...panel.querySelectorAll('.chapter-panel-slice')].map(slice => slice.getBoundingClientRect());
-      for (let index = 1; index < boxes.length; index++) {
-        const [above, below] = [boxes[index - 1], boxes[index]];
-        if (above.bottom > 0 && below.top < innerHeight && above.height && below.height) gaps.push(Math.abs(below.top - above.bottom));
-      }
-    }
-    return gaps;
-  })()`);
-  assert.ok(joins.length > 3 && joins.every(gap => gap < 0.75), `slices meet on the arc (${Math.max(...joins).toFixed(2)}px)`);
+  // A panel that fills the screen, both its edges off it, lies flat.
+  await scroll(page, (await evaluate(page, "(() => { let top = 0; for (let node = document.querySelector('#about .chapter-panel'); node; node = node.offsetParent) top += node.offsetTop; return top; })()")) + 100);
+  const about = (await plates()).find(plate => plate.panel && plate.id.startsWith('about'));
+  assert.ok(Math.abs(about.pitch) < 3, `a screen-filling panel lies flat (${about.pitch})`);
   await close(page);
 
   const still = await open('/', { reduced: true });
@@ -388,6 +375,29 @@ test('the page bends towards the reader near the edges and lies flat in the midd
   await sleep(200);
   assert.ok((await state(still)).y < 1500, 'reduced motion still scrolls back natively');
   await close(still);
+});
+
+test('text and images rise into place one block at a time as they scroll into view', { skip }, async () => {
+  const page = await open();
+  await scroll(page, (await state(page)).entry);
+  const blocks = () => evaluate(page, `[...document.querySelectorAll('.is-vertical-reveal')].map(element => {
+    const box = element.getBoundingClientRect();
+    return { image: element.tagName === 'IMG', top: box.top, bottom: box.bottom, shown: element.classList.contains('is-vertical-shown') };
+  })`);
+  let now = await blocks();
+  assert.ok(now.length > 20, 'text blocks and the portrait each rise on their own');
+  assert.ok(now.some(block => block.image), 'the portrait is one of them');
+  assert.ok(now.filter(block => block.top > 900).every(block => !block.shown), 'blocks further down wait out of view');
+  assert.ok(now.filter(block => block.bottom > 120 && block.top < 700).every(block => block.shown), 'blocks in view have risen');
+  // Further down, the next blocks rise as they arrive; the first ones reset once off screen.
+  await scroll(page, (await sectionTop(page, 'journal')) - 78);
+  await sleep(300);
+  now = await blocks();
+  assert.ok(now.filter(block => block.bottom > 120 && block.top < 700).every(block => block.shown));
+  assert.ok(now.filter(block => block.bottom < -50).every(block => !block.shown), 'blocks above the screen reset to rise again');
+  const hidden = await evaluate(page, "getComputedStyle(document.querySelector('.is-vertical-reveal:not(.is-vertical-shown)')).opacity");
+  assert.equal(hidden, '0', 'a waiting block is hidden');
+  await close(page);
 });
 
 test('resizing hands the page between the strip and the vertical page', { skip }, async () => {

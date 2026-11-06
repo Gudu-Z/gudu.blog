@@ -1,6 +1,6 @@
 /* Phones: the chapters stack into one vertical page (js/chapters-vertical.js
    sets html.has-vertical-chapters). Tablets and desktops keep the strip. */
-html.has-vertical-chapters .home-page { --tape-room: 44px; }
+html.has-vertical-chapters .home-page { --tape-room: 50px; }
 html.has-vertical-chapters .home-page .chapter-viewport {
   position: relative;
   height: auto;
@@ -69,51 +69,60 @@ html.has-vertical-chapters.is-content .home-page::after {
   pointer-events: none;
 }
 
-/* The strip's arc turned on its side bends the page: js/chapters-vertical.js
-   places each content block and each slice of a panel's surface on the arc.
-   Panels stay flat; a sliced panel draws its surface on the slices instead. */
-html.has-vertical-chapters .home-page .chapter-panel { position: relative; }
+/* The strip's arc turned on its side: js/chapters-vertical.js tilts each
+   region (a panel and the headings that belong to it) as one straight plate,
+   flat in the middle of the screen and leaning in towards the edges. */
+
+/* Text and images rise into place one block at a time as they scroll into
+   view (js/chapters-vertical.js marks them), instead of the strip's sideways
+   slide. A block resets once it is wholly off screen and rises again. */
 @media (prefers-reduced-motion: no-preference) {
-  html.has-vertical-chapters .home-page .chapter-section .chapter-panel { transform: none; }
-  html.has-vertical-chapters .home-page .chapter-panel.is-chapter-sliced { background: none; box-shadow: none; }
-  /* Pieces move with every scrolled frame; only their entrance fade eases. */
-  html.has-vertical-chapters .home-page .chapter-section .is-chapter-facet.is-chapter-facet { transition-property: opacity; }
-}
-/* A slice shows its band of one full-size copy of the surface. Its sides stay
-   open so the drop shadow still shows along the panel's edges. */
-html.has-vertical-chapters .home-page .chapter-panel-slice {
-  position: absolute;
-  left: 0;
-  right: 0;
-  overflow-x: visible;
-  overflow-y: clip;
-  pointer-events: none;
-}
-html.has-vertical-chapters .home-page .chapter-panel-slice > span {
-  position: absolute;
-  left: 0;
-  right: 0;
-  background: var(--chapter-panel-frame), var(--chapter-panel);
-  box-shadow: var(--chapter-panel-shadow);
+  html.has-vertical-chapters .home-page .chapter-section .is-vertical-reveal {
+    opacity: 0;
+    transform: none;
+    translate: 0 28px;
+    transition:
+      opacity 520ms ease var(--vertical-reveal-delay, 0ms),
+      translate 760ms cubic-bezier(0.16, 1, 0.3, 1) var(--vertical-reveal-delay, 0ms);
+  }
+  /* Images scan in from the top, line by line like a display, instead of rising. */
+  html.has-vertical-chapters .home-page .chapter-section img.is-vertical-reveal {
+    translate: none;
+    clip-path: inset(0 0 100% 0);
+    transition:
+      opacity 360ms ease var(--vertical-reveal-delay, 0ms),
+      clip-path 900ms cubic-bezier(0.16, 1, 0.3, 1) var(--vertical-reveal-delay, 0ms);
+  }
+  html.has-vertical-chapters .home-page .chapter-section .is-vertical-reveal:is(.is-vertical-shown, :focus-within) {
+    opacity: 1;
+    translate: none;
+    clip-path: inset(0);
+  }
 }
 
 /* ---- The ruler as an altimeter tape on the right edge ----
-   The horizontal ruler turned a quarter clockwise: the axis runs down the
-   screen, ticks and names sit to its right, and the cursor points left at it.
-   The cursor stays on the reading line while the tape slides under it. */
+   The axis runs down the screen. Station numbers and names hang on its
+   reading side, the ticks face the screen edge, and the cursor points in at
+   the axis from that edge.
+   The cursor holds the middle of the window while the tape slides under it,
+   and the tape is short enough that both of its ends always stay in view.
+   Each station cell takes its place on the page's arc (js/chapters-vertical.js),
+   so the scale tightens towards its ends like a drum. */
 html.has-vertical-chapters .home-page .chapter-progress {
-  --tape-axis: 6px;
+  --tape-axis: 21px;
+  --tape-line: light-dark(#3e3e3e5c, #aaaaaa5c);
+  --tape-tick: light-dark(#4e4e4e4d, #9898984d);
+  --tape-tick-mid: light-dark(#45454575, #a2a2a275);
+  --tape-stem: light-dark(#70707099, #8a8a8a99);
   --chapter-response-radius: 40px;
   top: calc(var(--header-height, 70px) + 10px);
   bottom: 12px;
   left: auto;
-  right: 2px;
-  width: 34px;
+  right: 4px;
+  width: 40px;
   height: auto;
   margin: 0;
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(transparent, #000 44px, #000 calc(100% - 44px), transparent);
-  mask-image: linear-gradient(transparent, #000 44px, #000 calc(100% - 44px), transparent);
   touch-action: none;
   transform: translateX(10px);
 }
@@ -121,6 +130,8 @@ html.has-vertical-chapters.is-content .home-page .chapter-progress { transform: 
 html.has-vertical-chapters .home-page :is(.chapter-progress-track, .chapter-progress-links) {
   translate: 0 var(--tape-shift, 0px);
 }
+/* The track keeps the cursor, its touch band and the brighter ticks around the
+   cursor. The cells draw the axis and ticks themselves, so they can bend. */
 html.has-vertical-chapters .home-page .chapter-progress-track {
   --chapter-response-y: var(--chapter-marker-y, 0px);
   top: 0;
@@ -129,65 +140,50 @@ html.has-vertical-chapters .home-page .chapter-progress-track {
   right: auto;
   width: 1px;
   height: calc(var(--tape-cell, 120px) * 4);
+  background: none;
 }
-html.has-vertical-chapters .home-page .chapter-progress-track::before {
-  inset: 0 auto 0 -2px;
-  width: 9px;
-  height: auto;
-  background-image:
-    repeating-linear-gradient(180deg, light-dark(#4e4e4e2e, #9898982e) 0 1px, transparent 1px var(--chapter-tick-step)),
-    repeating-linear-gradient(180deg, light-dark(#45454548, #a2a2a248) 0 1px, transparent 1px var(--chapter-tick-mid-step)),
-    repeating-linear-gradient(180deg, light-dark(#34343466, #b7b7b766) 0 1px, transparent 1px 12.5%);
-  background-size: 3px 100%, 5px 100%, 8px 100%;
-  background-position: left top;
-}
-/* The closing stem at the far end of the tape. */
-html.has-vertical-chapters .home-page .chapter-progress-track::after {
-  inset: auto auto 0 -5px;
-  width: 27px;
-  height: 1px;
-}
-/* Taps on the axis band land on that exact spot; the names stay links. The
-   mouse preview of the horizontal axis has no vertical counterpart. */
-html.has-vertical-chapters .home-page .chapter-progress-rail { inset: 0 -10px 0 -6px; }
+html.has-vertical-chapters .home-page .chapter-progress-track::before,
+html.has-vertical-chapters .home-page .chapter-progress-track::after,
 html.has-vertical-chapters .home-page .chapter-progress-rail::before,
 html.has-vertical-chapters .home-page .chapter-progress-scan { display: none; }
+/* Taps on the axis band land on that exact spot; the names stay links. */
+html.has-vertical-chapters .home-page .chapter-progress-rail { inset: 0 -10px 0 -9px; }
 html.has-vertical-chapters .home-page .chapter-progress-response {
   --chapter-response-mask: linear-gradient(180deg, transparent calc(var(--chapter-response-y) - var(--chapter-response-radius)), #000 calc(var(--chapter-response-y) - 8px), #000 calc(var(--chapter-response-y) + 8px), transparent calc(var(--chapter-response-y) + var(--chapter-response-radius)));
-  inset: 0 auto 0 -2px;
-  width: 11px;
+  inset: 0 auto 0 1px;
+  width: 8px;
   height: auto;
   background-image:
-    repeating-linear-gradient(180deg, light-dark(#161616bb, #dededebb) 0 1px, transparent 1px var(--chapter-tick-step)),
-    repeating-linear-gradient(180deg, light-dark(#101010bb, #e8e8e8bb) 0 1px, transparent 1px var(--chapter-tick-mid-step)),
-    repeating-linear-gradient(180deg, light-dark(#080808aa, #f4f4f4aa) 0 1px, transparent 1px 12.5%);
-  background-size: 5px 100%, 7px 100%, 10px 100%;
+    repeating-linear-gradient(180deg, light-dark(#161616bb, #dededebb) 0 1px, transparent 1px 3.125%),
+    repeating-linear-gradient(180deg, light-dark(#101010bb, #e8e8e8bb) 0 1px, transparent 1px 12.5%);
+  background-size: 5px 100%, 8px 100%;
   background-position: left top;
 }
-/* The orange stem crosses the axis; the white triangle points at it from the right. */
+/* The orange stem crosses the axis; the white triangle points at it from
+   the screen edge. */
 html.has-vertical-chapters .home-page .chapter-progress-marker {
-  left: -5px;
+  left: -4px;
   top: 0;
   width: 10px;
   height: 2px;
   transform: translate3d(0, calc(var(--chapter-marker-y, 0px) - 1px), 0);
 }
 html.has-vertical-chapters .home-page .chapter-progress-marker::before {
-  top: -4.5px;
-  left: 7.5px;
-  width: 6px;
-  height: 11px;
+  top: -5px;
+  left: 10px;
+  width: 7px;
+  height: 12px;
   clip-path: polygon(100% 0, 100% 100%, 0 50%);
 }
 html.has-vertical-chapters .home-page .chapter-progress-marker::after {
-  left: 5px;
+  left: 4px;
   top: 1px;
   width: 18px;
   height: 32px;
 }
 /* The whole tape takes drags, so the handle only draws the keyboard focus ring. */
 html.has-vertical-chapters .home-page .chapter-progress-handle {
-  left: -2px;
+  left: -6px;
   top: -11px;
   width: 24px;
   height: 24px;
@@ -199,12 +195,26 @@ html.has-vertical-chapters .home-page .chapter-progress-links {
   grid-template-columns: 1fr;
   grid-template-rows: repeat(4, minmax(0, 1fr));
 }
-/* Each station's stem crosses the axis at the top of its cell. */
+/* Each cell draws its stretch of the axis, eight fine ticks and a longer one
+   at its middle; the last cell closes the tape with an end stem. */
+html.has-vertical-chapters .home-page .chapter-progress-links a {
+  --tape-cell-marks:
+    linear-gradient(var(--tape-line), var(--tape-line)) var(--tape-axis) 0 / 1px 100% no-repeat,
+    linear-gradient(var(--tape-tick-mid), var(--tape-tick-mid)) calc(var(--tape-axis) + 1px) 50% / 6px 1px no-repeat,
+    repeating-linear-gradient(180deg, var(--tape-tick) 0 1px, transparent 1px 12.5%) calc(var(--tape-axis) + 1px) 0 / 3px 100% no-repeat;
+  background: var(--tape-cell-marks);
+  backface-visibility: hidden;
+}
+html.has-vertical-chapters .home-page .chapter-progress-links a:last-child {
+  background: linear-gradient(var(--tape-stem), var(--tape-stem)) calc(var(--tape-axis) - 4px) 100% / 13px 1px no-repeat, var(--tape-cell-marks);
+}
+/* Each station line crosses the axis at the top of its cell and runs over its
+   number and name. */
 html.has-vertical-chapters .home-page .chapter-progress-links a::before {
-  left: calc(var(--tape-axis) - 5px);
+  left: 1px;
   top: 0;
   bottom: auto;
-  width: 27px;
+  width: calc(var(--tape-axis) + 8px);
   height: 1px;
 }
 /* The current chapter's stretch of the axis lights up, from its stem to the next. */
@@ -217,14 +227,22 @@ html.has-vertical-chapters .home-page .chapter-progress-links a::after {
   height: auto;
   transform-origin: top;
 }
+html.has-vertical-chapters .home-page .chapter-station-index {
+  display: block;
+  left: 1px;
+  top: 4px;
+  font-size: 8px;
+  line-height: 10px;
+  letter-spacing: 0.06em;
+}
 html.has-vertical-chapters .home-page .chapter-station-title {
-  left: calc(var(--tape-axis) + 11px);
-  top: 9px;
+  left: 1px;
+  top: 17px;
   bottom: auto;
   writing-mode: vertical-rl;
   font-size: 12px;
-  line-height: 1.4;
-  letter-spacing: 0.14em;
+  line-height: 1.2;
+  letter-spacing: 0.12em;
   white-space: nowrap;
 }
 html.has-vertical-chapters .home-page .chapter-progress-links a.is-arriving::after { animation: chapter-tape-arrive 380ms ease-out; }

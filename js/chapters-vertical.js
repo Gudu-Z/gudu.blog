@@ -24,20 +24,37 @@
   const query = matchMedia('(max-width: 720px), (max-height: 520px) and (pointer: coarse)');
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
   // The surfaces the strip turns in depth: panels and the loose headings and
-  // footnotes outside them. Each reveals as one unit.
+  // footnotes outside them. Each reveals as one unit and stays one straight
+  // plate, as in the strip. A heading shares the plane of the panel it
+  // belongs to, so a whole region tilts as one block.
   const units = chapters.flatMap(chapter => [...chapter.querySelectorAll('.chapter-panel, [data-depth-owner]')]
     .filter(element => element.classList.contains('chapter-panel') || !element.closest('.chapter-panel')));
   const leftoverClasses = ['is-chapter-immediate', 'is-chapter-scanning', 'is-chapter-departing', 'is-chapter-closing', 'is-chapter-calibrating'];
-  // The arc bends the page itself, so it reads at every scroll position. A
-  // panel taller than the screen cannot bend as one plate: its content blocks
-  // and horizontal slices of its surface each take their own place on the arc,
-  // and neighbouring pieces meet on it. Loose headings bend whole.
-  const FACET_HEIGHT = 160;
-  const SLICE_HEIGHT = 64;
-  // The surface's drop shadow above its first slice and below its last.
-  const SLICE_SHADOW = 32;
-  let facets = [];
-  const slices = new Map();
+  const plates = units.map(element => ({ element, owner: null, left: 0, top: 0, width: 0, height: 0, transform: '', origin: '' }));
+  const platesByElement = new Map(plates.map(plate => [plate.element, plate]));
+  for (const plate of plates) {
+    const id = plate.element.dataset.depthOwnerCompact || plate.element.dataset.depthOwner;
+    const owner = id ? platesByElement.get(document.getElementById(id)) : null;
+    plate.owner = owner?.element.classList.contains('chapter-panel') ? owner : plate;
+  }
+  // Text and images rise into place one block at a time as they scroll into
+  // view: a panel taller than the screen would otherwise reveal everything at
+  // once, long before its lower part is read. The strip's text layers, plus
+  // the About portrait.
+  const REVEAL_BLOCKS = [
+    '.about-panel-top', '.about-avatar', '.about-socials', '.about-text > p', '.about-dossier', '.about-signature',
+    '.connection-heading', '.connection-footnote', '.connection-card-head', '.connection-action',
+    '.chapter-panel h2', '.chapter-panel > :is(.eyebrow, h3, p, .text-link)',
+    '.series-empty', '.series-reading-link', '.journal-heading-part', '.category-heading',
+    '.category-index', '.category-composition', '.category-description', '.category-bottom',
+    '.journal-toolbar', '.journal-empty', '.search-empty', '.posts-list > .post-card',
+    '.archive-year > h3', '.archive-year li', '.archive-group > h3', '.archive-item', '.site-footer',
+  ].join(', ');
+  // The tape keeps both ends in view. Its cells are a seventh of the window
+  // inside these margins, so with the pointer in the middle neither end
+  // leaves it. Screens too short for readable cells keep the tape still.
+  const TAPE_INSET = 16;
+  const TAPE_MIN_CELL = 56;
 
   const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
   const px = value => `${value.toFixed(2)}px`;
@@ -73,6 +90,9 @@
   let arrivalTimer = 0;
   let moved = false;
   let reveal = null;
+  let rise = null;
+  let reset = null;
+  const risen = new Set();
   let layout = null;
   const inertStates = new Map();
 
@@ -112,11 +132,28 @@
     if (!active) return;
     const height = viewportHeight();
     headerHeight = header?.offsetHeight || 70;
-    readingLine = height * 0.42;
     tops = chapters.map(chapter => pageBox(chapter).top);
     const first = units.find(element => chapters[0].contains(element));
     entry = Math.max(1, (first ? pageBox(first).top : tops[0]) - headerHeight - 28);
     maxScroll = Math.max(entry, root.scrollHeight - height);
+
+    // The tape window is fixed. With cells a seventh of its height and the
+    // pointer in its middle, both ends of the tape stay in view from the top
+    // of the page to the bottom. On screens too short for that, the whole tape
+    // fills the window and the pointer travels along it instead.
+    const box = nav.getBoundingClientRect();
+    const usable = Math.max(1, box.height - 2 * TAPE_INSET);
+    ruler.top = box.top;
+    // Layout, not the box: the hidden tape is shifted sideways.
+    ruler.centerX = nav.offsetLeft + nav.offsetWidth / 2;
+    ruler.moving = usable / 7 >= TAPE_MIN_CELL;
+    ruler.cell = ruler.moving ? Math.min(150, usable / 7) : usable / chapters.length;
+    ruler.pointer = TAPE_INSET + usable / 2;
+    ruler.lowest = TAPE_INSET;
+    ruler.highest = Math.max(TAPE_INSET, TAPE_INSET + usable - chapters.length * ruler.cell);
+    nav.style.setProperty('--tape-cell', px(ruler.cell));
+    // The pointer's line is the reading line: the chapter crossing it is read.
+    readingLine = box.top + ruler.pointer;
 
     // The ruler coordinate: 0 is 关于 and the last station is 归档. A stem
     // passes the pointer exactly when the reading line crosses into the next
@@ -130,19 +167,20 @@
     // reading area, curving towards the reader near the top and bottom.
     const area = height - headerHeight;
     view.center = headerHeight + area / 2;
-    // Pieces bend out to just past the screen edges, under the toolbar too.
+    // The arc runs to just past the screen edges, under the toolbar too;
+    // beyond one more screen the plates stop moving.
     view.above = view.center + 24;
     view.below = height - view.center + 24;
+    view.park = height;
+    // Perspective converges on the reading column, so panels growing near the
+    // screen edges widen into its margins rather than towards the tape.
+    const column = pageBox(chapters[0]);
+    view.columnX = column.left + column.width / 2;
     view.perspective = Math.max(700, area * 1.1);
     arc.radius = area * 0.72;
     arc.flat = area * 0.1;
-
-    // The tape window is fixed; its pointer marks the reading line.
-    const box = nav.getBoundingClientRect();
-    ruler.top = box.top;
-    ruler.cell = clamp(height * 0.155, 96, 150);
-    ruler.pointer = readingLine - box.top;
-    nav.style.setProperty('--tape-cell', px(ruler.cell));
+    for (const plate of plates) Object.assign(plate, pageBox(plate.element));
+    watchBlocks();
 
     // The fallback illustration shrinks into the scene's center, as in the strip.
     const figure = document.querySelector('#black-hole')?.getBoundingClientRect();
@@ -151,99 +189,30 @@
       root.style.setProperty('--fallback-shift-x', px(scene.left + scene.width / 2 - figure.left - figure.width / 2));
       root.style.setProperty('--fallback-shift-y', px(scene.top + scene.height / 2 - figure.top - figure.height / 2));
     }
-    buildFacets();
   }
 
-  const blockLevel = element => {
-    const { display } = getComputedStyle(element);
-    return display !== 'none' && display !== 'inline' && element.offsetHeight > 0;
-  };
-
-  // Splits a container into blocks no taller than FACET_HEIGHT where its
-  // layout allows. Text, images and positioned decorations stay whole.
-  function splitBlocks(container, out) {
-    for (const child of container.children) {
-      if (child.matches('.chapter-panel-light')) continue;
-      const style = getComputedStyle(child);
-      if (style.display === 'none') continue;
-      if (style.display === 'contents') { splitBlocks(child, out); continue; }
-      if (!child.offsetHeight) continue;
-      const positioned = style.position === 'absolute' || style.position === 'fixed';
-      if (!positioned && child.offsetHeight > FACET_HEIGHT && [...child.children].some(blockLevel)) splitBlocks(child, out);
-      else out.push(child);
+  // Blocks join the rise once and leave it when they leave the page, as
+  // search results replace their cards. A match inside another rises with it.
+  function watchBlocks() {
+    if (!rise) return;
+    const blocks = [...document.querySelectorAll(REVEAL_BLOCKS)].filter(element => element.closest('.chapter-section'));
+    const matched = new Set(blocks);
+    for (const element of blocks) {
+      if (risen.has(element)) continue;
+      let nested = false;
+      for (let node = element.parentElement; node && !nested; node = node.parentElement) nested = matched.has(node);
+      if (nested) continue;
+      risen.add(element);
+      element.classList.add('is-vertical-reveal');
+      rise.observe(element);
+      reset.observe(element);
     }
-  }
-
-  // A panel's surface is redrawn as horizontal slices inside its light layer,
-  // which sits behind its content. Each slice shows its band of one full-size
-  // copy of the surface, so corners, hairlines and shadow stay where they were.
-  function sliceSurface(panel) {
-    let host = panel.querySelector(':scope > .chapter-panel-light');
-    if (!host) {
-      host = document.createElement('span');
-      host.className = 'chapter-panel-light';
-      host.setAttribute('aria-hidden', 'true');
-      panel.prepend(host);
+    for (const element of [...risen]) {
+      if (element.isConnected) continue;
+      rise.unobserve(element);
+      reset.unobserve(element);
+      risen.delete(element);
     }
-    const height = panel.offsetHeight;
-    const count = Math.max(1, Math.ceil(height / SLICE_HEIGHT));
-    const list = slices.get(panel) || [];
-    while (list.length < count) {
-      const slice = document.createElement('span');
-      slice.className = 'chapter-panel-slice';
-      slice.append(document.createElement('span'));
-      host.append(slice);
-      list.push(slice);
-    }
-    while (list.length > count) list.pop().remove();
-    list.forEach((slice, index) => {
-      const top = index === 0 ? -SLICE_SHADOW : index * SLICE_HEIGHT;
-      const bottom = index === count - 1 ? height + SLICE_SHADOW : (index + 1) * SLICE_HEIGHT;
-      slice.style.top = px(top);
-      slice.style.height = px(bottom - top);
-      slice.firstChild.style.top = px(-top);
-      slice.firstChild.style.height = px(height);
-    });
-    slices.set(panel, list);
-    panel.classList.add('is-chapter-sliced');
-    return list;
-  }
-
-  function unslice(panel) {
-    for (const slice of slices.get(panel) || []) slice.remove();
-    slices.delete(panel);
-    panel.classList.remove('is-chapter-sliced');
-  }
-
-  function flatten(facet) {
-    if (facet.transform) facet.element.style.removeProperty('transform');
-    if (facet.origin) facet.element.style.removeProperty('transform-origin');
-    facet.transform = facet.origin = '';
-  }
-
-  function resetFacet(facet) {
-    flatten(facet);
-    facet.element.classList.remove('is-chapter-facet');
-  }
-
-  function buildFacets() {
-    const previous = new Map(facets.map(facet => [facet.element, facet]));
-    const next = [];
-    if (active && !motion.matches) {
-      for (const element of units) {
-        if (!element.classList.contains('chapter-panel')) { next.push(element); continue; }
-        next.push(...sliceSurface(element));
-        splitBlocks(element, next);
-      }
-    } else {
-      for (const panel of [...slices.keys()]) unslice(panel);
-    }
-    const kept = new Set(next);
-    for (const facet of facets) if (!kept.has(facet.element)) resetFacet(facet);
-    facets = next.map(element => {
-      element.classList.add('is-chapter-facet');
-      return Object.assign(previous.get(element) || { element, transform: '', origin: '' }, pageBox(element));
-    });
   }
 
   function coordinateAt(y) {
@@ -288,41 +257,97 @@
     };
   }
 
-  // Each piece becomes a flat face spanning the arc points of its top and
-  // bottom, like the strip's cards. Pieces that touch share those points, so
-  // the page bends without seams. A piece reaching past the screen uses only
-  // its part on screen; the rest continues along the same face.
-  function placeFacet(facet, y) {
-    const start = facet.top - y - view.center;
-    // Off screen a piece lies flat and costs nothing; it takes its place on
-    // the arc just beyond the edge, where the change cannot be seen.
-    if (start >= view.below || start + facet.height <= -view.above) {
-      flatten(facet);
-      return;
+  // A region's plane, like the strip's cards: its panel is one flat face
+  // spanning the arc points of its top and bottom. A panel reaching past the
+  // screen uses only its part on screen, and comes forward less the more of
+  // the screen it fills. Off screen it waits at the edge it will enter from,
+  // still projected from where it is, so its heading on screen stays true;
+  // more than a screen away it stops moving, so nothing is rewritten.
+  function planeOf(owner, y) {
+    let start = owner.top - y - view.center;
+    const end = start + owner.height;
+    const side = start >= view.below ? 1 : end <= -view.above ? -1 : 0;
+    let top;
+    let bottom;
+    let pivot;
+    let depthScale = 1;
+    if (side) {
+      const edge = side > 0 ? view.below : -view.above;
+      top = side > 0 ? edge : edge - 1;
+      bottom = top + 1;
+      pivot = side > 0 ? 0 : owner.height;
+      if (side > 0 && start > edge + view.park) start = edge + view.park;
+      if (side < 0 && end < edge - view.park) start = edge - view.park - owner.height;
+    } else {
+      top = Math.max(start, -view.above);
+      bottom = Math.max(top + 1, Math.min(end, view.below));
+      pivot = (top + bottom) / 2 - start;
+      depthScale = 1 - (bottom - top) / (view.above + view.below);
     }
-    const top = Math.max(start, -view.above);
-    const bottom = Math.max(top + 1, Math.min(start + facet.height, view.below));
     const a = arcPoint(top);
     const b = arcPoint(bottom);
-    const pitch = Math.atan2(b.z - a.z, b.y - a.y);
-    const span = Math.hypot(b.y - a.y, b.z - a.z) / (bottom - top);
-    const shift = (a.y + b.y) / 2 - (top + bottom) / 2;
-    const pivot = (top + bottom) / 2 - start;
-    // Project from the middle of the reading area, around the pivot.
-    const cameraX = window.innerWidth / 2 - (facet.left + facet.width / 2);
-    const cameraY = -(start + pivot);
-    const transform = `translate3d(${cameraX.toFixed(2)}px, ${cameraY.toFixed(2)}px, 0) perspective(${view.perspective.toFixed(1)}px) `
-      + `translate3d(${(-cameraX).toFixed(2)}px, ${(shift - cameraY).toFixed(2)}px, ${((a.z + b.z) / 2).toFixed(2)}px) `
-      + `rotateX(${(pitch * 180 / Math.PI).toFixed(3)}deg) scaleY(${span.toFixed(5)})`;
-    const origin = `50% ${pivot.toFixed(2)}px`;
-    if (transform !== facet.transform) facet.element.style.transform = facet.transform = transform;
-    if (origin !== facet.origin) facet.element.style.transformOrigin = facet.origin = origin;
+    return {
+      x: owner.left + owner.width / 2,
+      y: owner.top + pivot,
+      cameraX: view.columnX - (owner.left + owner.width / 2),
+      cameraY: -(start + pivot),
+      shift: (a.y + b.y) / 2 - (top + bottom) / 2,
+      depth: (a.z + b.z) / 2 * depthScale,
+      pitch: Math.atan2(b.z - a.z, b.y - a.y) * 180 / Math.PI,
+      span: Math.hypot(b.y - a.y, b.z - a.z) / (bottom - top),
+    };
   }
 
-  function clearFacets() {
-    for (const facet of facets) resetFacet(facet);
-    facets = [];
-    for (const panel of [...slices.keys()]) unslice(panel);
+  function placePlates(y) {
+    const planes = new Map();
+    for (const plate of plates) {
+      let plane = planes.get(plate.owner);
+      if (!plane) planes.set(plate.owner, plane = planeOf(plate.owner, y));
+      const transform = `translate3d(${plane.cameraX.toFixed(2)}px, ${plane.cameraY.toFixed(2)}px, 0) perspective(${view.perspective.toFixed(1)}px) `
+        + `translate3d(${(-plane.cameraX).toFixed(2)}px, ${(plane.shift - plane.cameraY).toFixed(2)}px, ${plane.depth.toFixed(2)}px) `
+        + `rotateX(${plane.pitch.toFixed(3)}deg) scaleY(${plane.span.toFixed(5)})`;
+      // Every plate of a region turns about the same point of its panel.
+      const origin = `${(plane.x - plate.left).toFixed(2)}px ${(plane.y - plate.top).toFixed(2)}px`;
+      if (transform !== plate.transform) plate.element.style.transform = plate.transform = transform;
+      if (origin !== plate.origin) plate.element.style.transformOrigin = plate.origin = origin;
+    }
+  }
+
+  // The tape's station cells follow the same arc, tilting and tightening
+  // towards the tape's ends like a drum, and meet on it as one bent scale.
+  // They come forward six tenths as far as the panels, so the tape bows out
+  // with the panels beside it and its ends still stay on screen.
+  const tapeCells = links.map(element => ({ element, transform: '' }));
+  function placeTape() {
+    tapeCells.forEach((cell, index) => {
+      const start = ruler.top + ruler.shift + index * ruler.cell - view.center;
+      const a = arcPoint(start);
+      const b = arcPoint(start + ruler.cell);
+      const [az, bz] = [a.z * 0.6, b.z * 0.6];
+      const pitch = Math.atan2(bz - az, b.y - a.y) * 180 / Math.PI;
+      const span = Math.hypot(b.y - a.y, bz - az) / ruler.cell;
+      const shift = (a.y + b.y) / 2 - (start + ruler.cell / 2);
+      const cameraX = view.columnX - ruler.centerX;
+      const cameraY = -(start + ruler.cell / 2);
+      const transform = `translate3d(${cameraX.toFixed(2)}px, ${cameraY.toFixed(2)}px, 0) perspective(${view.perspective.toFixed(1)}px) `
+        + `translate3d(${(-cameraX).toFixed(2)}px, ${(shift - cameraY).toFixed(2)}px, ${((az + bz) / 2).toFixed(2)}px) rotateX(${pitch.toFixed(3)}deg) scaleY(${span.toFixed(5)})`;
+      if (transform !== cell.transform) cell.element.style.transform = cell.transform = transform;
+    });
+  }
+
+  function clearTape() {
+    for (const cell of tapeCells) {
+      if (cell.transform) cell.element.style.removeProperty('transform');
+      cell.transform = '';
+    }
+  }
+
+  function clearPlates() {
+    for (const plate of plates) {
+      if (plate.transform) plate.element.style.removeProperty('transform');
+      if (plate.origin) plate.element.style.removeProperty('transform-origin');
+      plate.transform = plate.origin = '';
+    }
   }
 
   function writeHash(index, mode = 'replace') {
@@ -373,7 +398,8 @@
     const coordinate = coordinateAt(y);
     const markerY = (coordinate + 0.5) * ruler.cell;
     ruler.coordinate = coordinate;
-    ruler.shift = ruler.pointer - markerY;
+    // The pointer holds the middle; only a short screen moves it instead.
+    ruler.shift = clamp(ruler.pointer - markerY, ruler.lowest, ruler.highest);
     nav.style.setProperty('--tape-shift', px(ruler.shift));
     nav.style.setProperty('--chapter-position', coordinate.toFixed(4));
     nav.style.setProperty('--site-progress', (coordinate / Math.max(1, chapters.length - 1)).toFixed(4));
@@ -395,7 +421,9 @@
     marker.setAttribute('aria-valuenow', percent.toFixed(1));
     marker.setAttribute('aria-valuetext', `${labels[Math.round(coordinate)]}，${Math.round(percent)}%`);
 
-    for (const facet of facets) placeFacet(facet, y);
+    if (motion.matches) { clearPlates(); clearTape(); return; }
+    placePlates(y);
+    placeTape();
   }
 
   const queue = () => { if (active && !frame) frame = requestAnimationFrame(update); };
@@ -505,6 +533,13 @@
     const link = event.target.closest('a');
     drag = { id: event.pointerId, y: event.clientY, coordinate: ruler.coordinate, shift: ruler.shift, moved: false, link: link && !axisHit(event) ? link : null };
   });
+  // One scroll per frame keeps the page, the tape and the pointer in step,
+  // however often the screen reports the finger.
+  let dragFrame = 0;
+  const applyDrag = () => {
+    dragFrame = 0;
+    if (drag?.target !== undefined) jump(scrollFor(drag.target));
+  };
   nav.addEventListener('pointermove', event => {
     if (!drag || drag.id !== event.pointerId) return;
     const distance = drag.y - event.clientY;
@@ -516,10 +551,16 @@
       setInteraction('content');
     }
     event.preventDefault();
-    jump(scrollFor(drag.coordinate + distance / ruler.cell));
+    // The moving tape follows the finger; a still tape works like a scrollbar.
+    drag.target = ruler.moving ? drag.coordinate + distance / ruler.cell : (event.clientY - ruler.top - ruler.shift) / ruler.cell - 0.5;
+    if (!dragFrame) dragFrame = requestAnimationFrame(applyDrag);
   });
+  // A finger on the tape must not also pan the page underneath (iOS can,
+  // despite touch-action), or the two scrolls fight.
+  nav.addEventListener('touchmove', event => { if (active && event.cancelable) event.preventDefault(); }, { passive: false });
   function release(event) {
     if (!drag || drag.id !== event.pointerId) return;
+    if (dragFrame) { cancelAnimationFrame(dragFrame); applyDrag(); }
     const { moved: dragged, link, y, shift } = drag;
     drag = null;
     nav.classList.remove('is-scrubbing');
@@ -698,6 +739,19 @@
       }
     }, { rootMargin: '0px 0px -10% 0px', threshold: 0.08 });
     for (const element of units) reveal.observe(element);
+    // Blocks rise as they come into view, several at once in reading order;
+    // once wholly off screen they reset, unseen, and rise again next time.
+    rise = new IntersectionObserver(entries => {
+      entries.filter(item => item.isIntersecting && !item.target.classList.contains('is-vertical-shown'))
+        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+        .forEach((item, order) => {
+          item.target.style.setProperty('--vertical-reveal-delay', `${Math.min(order, 6) * 70}ms`);
+          item.target.classList.add('is-vertical-shown');
+        });
+    }, { rootMargin: '0px 0px -8% 0px' });
+    reset = new IntersectionObserver(entries => {
+      for (const item of entries) if (!item.isIntersecting) item.target.classList.remove('is-vertical-shown');
+    });
     layout = new ResizeObserver(() => { if (active) { measure(); queue(); } });
     layout.observe(document.body);
     measure();
@@ -718,10 +772,18 @@
     drag = null;
     touch = null;
     reveal?.disconnect();
+    rise?.disconnect();
+    reset?.disconnect();
     layout?.disconnect();
-    reveal = layout = null;
+    reveal = rise = reset = layout = null;
+    for (const element of risen) {
+      element.classList.remove('is-vertical-reveal', 'is-vertical-shown');
+      element.style.removeProperty('--vertical-reveal-delay');
+    }
+    risen.clear();
     setInteraction(null);
-    clearFacets();
+    clearPlates();
+    clearTape();
     for (const element of units) element.style.removeProperty('--chapter-reveal-direction');
     for (const name of ['--tape-cell', '--tape-shift', '--chapter-position', '--site-progress', '--chapter-active-index']) nav.style.removeProperty(name);
     tape.style.removeProperty('--chapter-marker-y');
@@ -734,7 +796,7 @@
   }
 
   query.addEventListener('change', () => (query.matches ? activate() : deactivate()));
-  // Reduced motion keeps every panel whole and flat.
+  // Reduced motion keeps every panel flat.
   motion.addEventListener('change', () => { if (active) { stopAnimation(); measure(); queue(); } });
   if (query.matches) activate();
 })();
