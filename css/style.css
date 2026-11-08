@@ -22,6 +22,8 @@
 /* Every color is written as light-dark(day, night); scripts/day-palette.mjs
    derives each day value from its night value. js/site-theme.js sets this. */
 :root[data-theme="light"] { color-scheme: light; }
+/* Without light-dark() the page keeps its night palette and has no switch. */
+:root[data-legacy-colors] [data-theme-toggle] { display: none !important; }
 /* A theme change recolors everything at once, never through transitions. */
 .is-theme-switching *, .is-theme-switching *::before, .is-theme-switching *::after { transition: none !important; }
 /* Each theme shows its own logo artwork. */

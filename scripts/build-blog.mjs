@@ -122,9 +122,9 @@ function documentHead({ title, description, canonical, prefix, noindex = false, 
     ${article ? `<meta property="article:published_time" content="${article.date}T00:00:00Z" />` : ''}
     <link rel="icon" type="image/svg+xml" href="${prefix}assets/favicon.svg?v=20261018-logo" />
     <link rel="alternate" type="application/rss+xml" title="Gudu 的个人博客" href="${prefix}feed.xml" />
-    <script src="${prefix}js/site-theme.js?v=20261030-day-mode"></script>
+    <script src="${prefix}js/site-theme.js?v=20261108-legacy-colors"></script>
     <script src="${prefix}js/theme-jets.js?v=20261101-clip-fix" defer></script>
-    <link rel="stylesheet" href="${prefix}css/style.css?v=20261101-day-mode" />
+    <link rel="stylesheet" href="${prefix}css/style.css?v=20261108-legacy-colors" />
     <link rel="stylesheet" href="${prefix}css/blog.css?v=20261101-day-mode" />`.replace(/[ \t]+$/gm, '');
 }
 

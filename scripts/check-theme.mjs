@@ -10,7 +10,7 @@ const source = await read('js/site-theme.js');
 const cssFiles = (await readdir(new URL('css/', root))).filter(name => name.endsWith('.css'));
 
 // A minimal document: one toggle button, the theme-color meta and storage.
-function loadSiteTheme({ search = '', saved = null, storageBlocked = false } = {}) {
+function loadSiteTheme({ search = '', saved = null, storageBlocked = false, lightDark = true, sheets = {} } = {}) {
   const classes = new Set();
   const documentListeners = new Map();
   const windowListeners = new Map();
@@ -20,31 +20,54 @@ function loadSiteTheme({ search = '', saved = null, storageBlocked = false } = {
   const events = [];
   const meta = { setAttribute(name, value) { this[name] = value; } };
   const button = { attributes: {}, setAttribute(name, value) { this.attributes[name] = value; } };
-  const document = {
-    documentElement: { dataset: {}, classList: { add: name => classes.add(name), remove: name => classes.delete(name) } },
-    querySelector: selector => (selector === 'meta[name="theme-color"]' ? meta : null),
-    querySelectorAll: selector => (selector === '[data-theme-toggle]' ? [button] : []),
-    addEventListener: (type, listener) => documentListeners.set(type, listener),
+  const timers = [];
+  const styles = [];
+  const links = Object.keys(sheets).map(href => ({
+    href, removed: false,
+    after(style) { styles.push({ href, text: style.textContent }); },
+    remove() { this.removed = true; },
+  }));
+  const rootStyle = {
+    values: {},
+    set visibility(value) { this.values.visibility = value; },
+    get visibility() { return this.values.visibility; },
+    removeProperty(name) { delete this.values[name]; },
   };
+  const document = {
+    documentElement: { dataset: {}, style: rootStyle, classList: { add: name => classes.add(name), remove: name => classes.delete(name) } },
+    querySelector: selector => (selector === 'meta[name="theme-color"]' ? meta : null),
+    querySelectorAll: selector => (selector === '[data-theme-toggle]' ? [button]
+      : selector === 'link[rel="stylesheet"]' ? links : []),
+    createElement: () => ({ textContent: '' }),
+    addEventListener: (type, listener) => {
+      if (!documentListeners.has(type)) documentListeners.set(type, []);
+      documentListeners.get(type).push(listener);
+    },
+  };
+  const fetch = async href => href in sheets
+    ? { ok: true, text: async () => sheets[href] } : { ok: false, text: async () => '' };
   const localStorage = {
     getItem(key) { if (storageBlocked) throw new Error('blocked'); return storage.get(key) ?? null; },
     setItem(key, value) { if (storageBlocked) throw new Error('blocked'); writes.push(value); storage.set(key, value); },
   };
   const window = {
-    location: { search },
+    CSS: { supports: (property, value) => lightDark || !/light-dark/.test(value) },
+    location: { search, href: 'https://gudu.blog/posts/a.html', origin: 'https://gudu.blog' },
     addEventListener: (type, listener) => windowListeners.set(type, listener),
     dispatchEvent: event => events.push(event),
   };
   class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } }
   runInNewContext(source, {
-    window, document, localStorage, URLSearchParams, CustomEvent,
+    window, document, localStorage, URLSearchParams, URL, CustomEvent, fetch,
+    setTimeout: callback => timers.push(callback), clearTimeout: () => timers.length = 0,
     requestAnimationFrame: callback => frames.push(callback), cancelAnimationFrame() {},
   });
   return {
     theme: () => document.documentElement.dataset.theme, classes, meta, button, storage, writes, events,
-    click: inside => documentListeners.get('click')({ target: { closest: () => (inside ? button : null) } }),
+    click: inside => documentListeners.get('click')[0]({ target: { closest: () => (inside ? button : null) } }),
     otherTab: value => windowListeners.get('storage')({ key: 'gudu-theme', newValue: value }),
-    ready: () => documentListeners.get('DOMContentLoaded')(),
+    ready: () => documentListeners.get('DOMContentLoaded').forEach(listener => listener()),
+    visibility: () => rootStyle.visibility, timers, styles, links,
     flushFrames() { while (frames.length) frames.shift()(); },
     api: window.SiteTheme,
   };
@@ -100,6 +123,59 @@ await test('blocked storage still allows a session-only switch', () => {
   assert.equal(site.theme(), 'dark');
   assert.equal(site.api.set('light'), 'light');
   assert.equal(site.theme(), 'light');
+});
+
+await test('without light-dark() the page keeps night, hides nothing behind a broken switch, and patches colors in place', async () => {
+  const sheets = {
+    'https://gudu.blog/css/style.css?v=1': ':root { --space: light-dark(#eef0f2, #080b10); }\n'
+      + '.a { box-shadow: 0 8px 24px light-dark(rgb(0 0 0 / 7%), rgb(0 0 0 / 15%)), 0 0 0 1px light-dark(#000, #fff); }\n'
+      + '@font-face { src: url("../assets/fonts/x.woff2"); } .b { background: url(data:image/png;base64,AA) , url(/abs.svg); }',
+  };
+  const site = loadSiteTheme({ saved: 'light', search: '?theme=light', lightDark: false, sheets });
+  assert.equal(site.theme(), 'dark', 'neither a saved nor a previewed day theme applies');
+  assert.equal(site.api.legacyColors, true);
+  assert.equal(site.visibility(), 'hidden', 'the colorless page is not painted');
+  site.click(true);
+  site.otherTab('light');
+  assert.equal(site.theme(), 'dark');
+  assert.equal(site.api.set('light'), 'dark');
+  site.ready();
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.equal(site.visibility(), undefined, 'the page appears once its colors exist');
+  assert.equal(site.styles.length, 1);
+  assert.equal(site.links[0].removed, true);
+  const css = site.styles[0].text;
+  assert.doesNotMatch(css, /light-dark/);
+  assert.match(css, /--space: #080b10;/);
+  assert.match(css, /box-shadow: 0 8px 24px rgb\(0 0 0 \/ 15%\), 0 0 0 1px #fff;/);
+  assert.match(css, /url\("https:\/\/gudu\.blog\/assets\/fonts\/x\.woff2"\)/, 'relative urls keep their stylesheet base');
+  assert.match(css, /url\(data:image\/png;base64,AA\) , url\(\/abs\.svg\)/);
+});
+
+await test('a stalled stylesheet patch cannot keep the page hidden', () => {
+  const site = loadSiteTheme({ lightDark: false });
+  assert.equal(site.visibility(), 'hidden');
+  site.timers.forEach(callback => callback());
+  assert.equal(site.visibility(), undefined);
+});
+
+await test('browsers with light-dark() never touch the stylesheets', () => {
+  const site = loadSiteTheme({ saved: 'light', sheets: { 'https://gudu.blog/css/style.css': 'a{}' } });
+  site.ready();
+  assert.equal(site.theme(), 'light');
+  assert.equal(site.api.legacyColors, false);
+  assert.equal(site.visibility(), undefined);
+  assert.equal(site.styles.length, 0);
+});
+
+await test('every real stylesheet reduces to plain night colors', async () => {
+  const { api } = loadSiteTheme();
+  for (const name of cssFiles) {
+    const night = api.nightColors(await read(`css/${name}`));
+    assert.doesNotMatch(night, /light-dark/, name);
+    assert.doesNotMatch(night, /:\s*initial\b/, `${name}: every light-dark() has a night value`);
+    assert.equal((night.match(/\(/g) || []).length, (night.match(/\)/g) || []).length, `${name}: balanced`);
+  }
 });
 
 // Every color the CSS paints must name both of its themes.
