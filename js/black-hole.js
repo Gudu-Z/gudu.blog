@@ -671,8 +671,13 @@
       this.chapter = 0;
       this.day = 0;
       this.setStyle(style);
-      const options = { alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'low-power' };
+      // A blocklisted GPU or software fallback declines the context outright.
+      const options = { alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'low-power', failIfMajorPerformanceCaveat: true };
       this.gl = canvas.getContext('webgl2', options) || canvas.getContext('webgl', options);
+      // Some browsers still hand out a CPU rasterizer. The ray-marched disk
+      // costs seconds per frame there and stalls the whole page; the rendered
+      // illustration is the same scene.
+      if (this.gl && BlackHole.softwareRenderer(this.gl)) this.gl = null;
       this.webgl2 = typeof this.gl?.fenceSync === 'function';
       this.ready = false;
       this.lost = false;
@@ -680,6 +685,7 @@
       this.frameInterval = 1000 / 30;
       this.adaptAfter = 0;
       this.headroomSince = null;
+      this.strain = 0;
       this.frameTimes = [];
       this.lastSample = 0;
       this.resources = [];
@@ -725,6 +731,21 @@
         if (current()) console.warn(message, error);
         return false;
       });
+    }
+
+    static softwareRenderer(gl) {
+      const software = /swiftshader|llvmpipe|softpipe|software|basic render|\bwarp\b/i;
+      try {
+        // Firefox reports a sanitized renderer directly; Chromium and Safari
+        // mask it, and only then is the debug extension worth asking for.
+        const renderer = String(gl.getParameter(gl.RENDERER) || '');
+        if (software.test(renderer)) return true;
+        if (renderer && !/^webkit webgl$/i.test(renderer)) return false;
+        const info = gl.getExtension('WEBGL_debug_renderer_info');
+        return Boolean(info) && software.test(String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL) || ''));
+      } catch {
+        return false;
+      }
     }
 
     static shaderSource(gl, type, source) {
@@ -1252,9 +1273,20 @@
             this.quality = Math.max(0.7, this.quality * 0.9);
             this.resize();
           }
+          else if (cost <= this.frameInterval * 2) this.strain = 0;
+          else if (++this.strain >= 2) {
+            // Lowest detail at 15 fps still costs over two frames: the GPU
+            // cannot carry the scene and starves the page. Hand over to the
+            // rendered illustration and release the GPU work for good.
+            this.unavailable = true;
+            this.canvas.parentElement.classList.remove('is-ready');
+            this.dispose();
+            return;
+          }
           this.adaptAfter = now + (measured ? 750 : 2000);
           return;
         }
+        this.strain = 0;
         // Restore motion before detail on measured contexts. Every recovery
         // still needs sustained upper-bound headroom and a separate threshold.
         const nextQuality = Math.min(1, this.quality + 0.05);

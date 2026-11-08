@@ -10,7 +10,7 @@ const source = (await Promise.all(['particle-sky', 'black-hole'].map(name =>
 // asynchronous GPU queue. The real renderer runs unchanged; no browser or GPU
 // is needed to prove that a presented frame survives deferred work.
 async function browser({ timerQuery = false, webgl2 = false, style = 'minimal', viewport = [1440, 900], dpr = 1,
-  drawMilliseconds = 0, pollMilliseconds = 0 } = {}) {
+  drawMilliseconds = 0, pollMilliseconds = 0, rendererName = 'WebKit WebGL', unmaskedRenderer = null, expectReady = true } = {}) {
   let id = 0;
   let framebuffer = null;
   let presented = false;
@@ -68,7 +68,7 @@ async function browser({ timerQuery = false, webgl2 = false, style = 'minimal', 
     'COLOR_ATTACHMENT0', 'RGBA', 'UNSIGNED_BYTE', 'MAX_TEXTURE_SIZE', 'FRAMEBUFFER_COMPLETE',
     'FLOAT', 'TEXTURE0', 'TRIANGLES', 'POINTS', 'BLEND', 'ONE', 'COLOR_BUFFER_BIT',
     'ALIASED_POINT_SIZE_RANGE', 'LINEAR_MIPMAP_LINEAR', 'REPEAT', 'SYNC_GPU_COMMANDS_COMPLETE',
-    'TIMEOUT_EXPIRED', 'ALREADY_SIGNALED', 'CONDITION_SATISFIED', 'WAIT_FAILED', 'UNPACK_FLIP_Y_WEBGL'];
+    'TIMEOUT_EXPIRED', 'ALREADY_SIGNALED', 'CONDITION_SATISFIED', 'WAIT_FAILED', 'UNPACK_FLIP_Y_WEBGL', 'RENDERER'];
   const gl = Object.fromEntries(constants.map((name, index) => [name, index + 1]));
   Object.assign(gl, {
     getExtension(name) {
@@ -76,9 +76,12 @@ async function browser({ timerQuery = false, webgl2 = false, style = 'minimal', 
       if (name === 'EXT_disjoint_timer_query') return timerQuery ? ext : null;
       if (name === 'OES_standard_derivatives' || name === 'EXT_shader_texture_lod') return {};
       if (name === 'WEBGL_lose_context') return { loseContext: () => record('loseContext') };
+      if (name === 'WEBGL_debug_renderer_info' && unmaskedRenderer) return { UNMASKED_RENDERER_WEBGL: 'unmasked' };
       return null;
     },
     getParameter(name) {
+      if (name === gl.RENDERER) return rendererName;
+      if (name === 'unmasked') return unmaskedRenderer;
       if (name === gl.MAX_TEXTURE_SIZE) return 8192;
       if (name === gl.ALIASED_POINT_SIZE_RANGE) return [1, 1024];
       if (name === ext.GPU_DISJOINT_EXT) return disjoint;
@@ -215,7 +218,7 @@ async function browser({ timerQuery = false, webgl2 = false, style = 'minimal', 
   });
   const renderer = new window.BlackHole(canvas, { style });
   for (let i = 0; i < 30; i++) await Promise.resolve();
-  assert.equal(renderer.ready, true);
+  assert.equal(renderer.ready, expectReady);
   assert.deepEqual(warnings, []);
   return {
     renderer, canvas, calls, objects, events, queries, syncs, bounds, heading, drawBindings,
@@ -818,6 +821,59 @@ await test('a failed fence poll falls back safely instead of submitting unbounde
   assert.equal(renderer.render(14, 0, 0), false);
   assert.equal(site.calls.length, calls);
   renderer.dispose();
+});
+
+await test('software rasterizers keep the rendered illustration without compiling the scene', async () => {
+  for (const options of [
+    { unmaskedRenderer: 'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)' },
+    { webgl2: true, rendererName: 'llvmpipe, or similar' },
+    { webgl2: true, unmaskedRenderer: 'ANGLE (Microsoft, Microsoft Basic Render Driver Direct3D11 vs_5_0 ps_5_0)' },
+  ]) {
+    const site = await browser({ ...options, expectReady: false });
+    assert.equal(site.renderer.unavailable, true);
+    assert.equal(site.count('createShader'), 0, 'no shader work may start on a CPU rasterizer');
+    assert.equal(site.renderer.render(12, 0, 0), false);
+  }
+  for (const options of [{ unmaskedRenderer: 'Apple GPU' }, { webgl2: true, rendererName: 'Radeon R9 200 Series, or similar' }]) {
+    const site = await browser(options);
+    assert.equal(site.renderer.render(12, 0, 0), true, 'hardware renderers keep the live scene');
+    site.renderer.dispose();
+  }
+  const fresh = await browser();
+  assert.equal(fresh.renderer.render(12, 0, 0), true, 'an unidentified renderer keeps the live scene');
+  fresh.renderer.dispose();
+});
+
+await test('a GPU still overloaded at the lowest detail and cadence hands over to the illustration', async () => {
+  const site = await browser({ webgl2: true });
+  const { renderer } = site;
+  assert.equal(renderer.render(12, 0, 0), true);
+  // Walk down to the floor: 60% pixels, then 20 and 15 fps.
+  for (let i = 0; i < 6 && (renderer.quality > 0.6 || renderer.frameInterval < 66); i++) {
+    site.advance(750);
+    costWindow(site, 400);
+  }
+  assert.equal(renderer.quality, 0.6);
+  assert.equal(renderer.frameInterval, 1000 / 15);
+  assert.equal(renderer.unavailable, false, 'reaching the floor alone is not a reason to give up');
+  site.advance(750);
+  costWindow(site, 100);
+  assert.equal(renderer.ready, true, 'cost within two frames at the floor keeps the live scene');
+  site.advance(750);
+  costWindow(site, 400);
+  assert.equal(renderer.ready, true, 'one overloaded window may be a transient stall');
+  site.advance(750);
+  costWindow(site, 100);
+  site.advance(750);
+  costWindow(site, 400);
+  assert.equal(renderer.ready, true, 'recovered headroom resets the overload count');
+  site.advance(750);
+  costWindow(site, 400);
+  assert.equal(renderer.ready, false);
+  assert.equal(renderer.unavailable, true);
+  assert.equal(renderer.disposed, true, 'abandoned GPU resources are released');
+  assert.ok(site.calls.some(call => call.name === 'removeClass' && call.args[0] === 'is-ready'), 'the canvas fades back to the illustration');
+  assert.equal(renderer.render(14, 0, 0), false);
 });
 
 await test('failure to create a completion fence restores fallback and stops further GPU work', async () => {
