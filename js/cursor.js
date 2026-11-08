@@ -36,6 +36,7 @@
   let target = null;
   let box = null;
   let hoverX = NaN;
+  let hoverDrop = 0;
   let pressed = false;
   let frame = null;
   let lastMove = 0;
@@ -85,8 +86,12 @@
     if (kind !== 'axis' || !target) return;
     // chapters.js writes the settled landing point of a click and clears it from a
     // press until the next move, while its click eases there; the caliper waits on it.
-    const landing = parseFloat(target.style.getPropertyValue('--chapter-hover-x'));
-    if (Number.isFinite(landing)) hoverX = landing;
+    // On a folded station the mark shows where the fold projects it, a little
+    // below the flat axis.
+    const landing = parseFloat(target.style.getPropertyValue('--chapter-hover-view-x') || target.style.getPropertyValue('--chapter-hover-x'));
+    if (!Number.isFinite(landing)) return;
+    hoverX = landing;
+    hoverDrop = parseFloat(target.style.getPropertyValue('--chapter-hover-view-y')) || 0;
   }
 
   function setKind(nextKind, nextTarget) {
@@ -96,6 +101,7 @@
       target = nextTarget;
       box = null;
       hoverX = NaN;
+      hoverDrop = 0;
       if (target) measure();
     }
     if (!changed) return;
@@ -110,7 +116,7 @@
     if (box && kind === 'axis') {
       // A narrow caliper around the ruler's own landing hairline (13px tall).
       const center = Number.isFinite(hoverX) ? box.left + hoverX : x;
-      const axis = box.top + box.height / 2;
+      const axis = box.top + box.height / 2 + hoverDrop;
       return { l: center - 5, t: axis - 10 + inset, r: center + 5, b: axis + 10 - inset, arm: 4 };
     }
     if (box && kind === 'grip') {

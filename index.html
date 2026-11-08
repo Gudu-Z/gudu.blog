@@ -19,7 +19,7 @@
     <script src="./js/black-hole-theme.js?v=20261101-day-mode"></script>
     <link rel="stylesheet" href="./css/style.css?v=20261101-day-mode" />
     <link rel="stylesheet" href="./css/blog.css?v=20261101-day-mode" />
-    <link rel="stylesheet" href="./css/chapters.css?v=20261101-day-mode" />
+    <link rel="stylesheet" href="./css/chapters.css?v=20261109-hud-fold" />
     <link rel="stylesheet" href="./css/about-terminal.css?v=20261101-day-mode" />
     <link rel="stylesheet" href="./css/chapter-interactions.css?v=20261101-day-mode" />
   <link rel="stylesheet" href="./css/categories.css?v=20261101-day-mode" />
@@ -32,9 +32,9 @@
     <script src="./js/theme-jets.js?v=20261101-clip-fix" defer></script>
     <script src="./js/posts-data.js?v=20261026-categories" defer></script>
     <script src="./js/blog.js?v=20261029-ui-polish" defer></script>
-    <script src="./js/chapters.js?v=20261104-vertical-phones" defer></script>
+    <script src="./js/chapters.js?v=20261109-hud-fold" defer></script>
     <script src="./js/chapters-vertical.js?v=20261106-tape-arc" defer></script>
-    <script src="./js/cursor.js?v=20261104-vertical-phones" defer></script>
+    <script src="./js/cursor.js?v=20261109-hud-fold" defer></script>
   </head>
   <body class="home-page">
     <a class="skip-link" href="#about">跳到主要内容</a>
@@ -273,16 +273,17 @@
     </main>
     <nav class="chapter-progress" aria-label="网站章节">
       <div class="chapter-progress-track">
-        <span class="chapter-progress-rail" aria-hidden="true"></span>
+        <span class="chapter-progress-rail" aria-hidden="true"><i></i><i></i></span>
+        <span class="chapter-progress-scales" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
         <span class="chapter-progress-response" aria-hidden="true"></span>
         <span class="chapter-progress-scan" aria-hidden="true"></span>
         <span class="chapter-progress-marker" role="slider" tabindex="0" aria-label="浏览网站章节" aria-controls="chapter-track" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="关于，0%"><span class="chapter-progress-handle" aria-hidden="true"></span></span>
       </div>
       <div class="chapter-progress-links">
-        <a href="#about" data-chapter-link><span class="chapter-station-index">01</span><strong class="chapter-station-title">关于</strong><small class="chapter-station-subtitle">ABOUT ME</small></a>
-        <a href="#series" data-chapter-link><span class="chapter-station-index">02</span><strong class="chapter-station-title">分类</strong><small class="chapter-station-subtitle">CATEGORIES</small></a>
-        <a href="#journal" data-chapter-link><span class="chapter-station-index">03</span><strong class="chapter-station-title">最新文章</strong><small class="chapter-station-subtitle">LATEST ARTICLES</small></a>
-        <a href="#archive" data-chapter-link><span class="chapter-station-index">04</span><strong class="chapter-station-title">归档</strong><small class="chapter-station-subtitle">ARCHIVE</small></a>
+        <a href="#about" data-chapter-link><span class="chapter-station-index">01</span><strong class="chapter-station-title">关于</strong><small class="chapter-station-subtitle">ABOUT ME</small><i class="chapter-station-reach" aria-hidden="true"></i></a>
+        <a href="#series" data-chapter-link><span class="chapter-station-index">02</span><strong class="chapter-station-title">分类</strong><small class="chapter-station-subtitle">CATEGORIES</small><i class="chapter-station-reach" aria-hidden="true"></i></a>
+        <a href="#journal" data-chapter-link><span class="chapter-station-index">03</span><strong class="chapter-station-title">最新文章</strong><small class="chapter-station-subtitle">LATEST ARTICLES</small><i class="chapter-station-reach" aria-hidden="true"></i></a>
+        <a href="#archive" data-chapter-link><span class="chapter-station-index">04</span><strong class="chapter-station-title">归档</strong><small class="chapter-station-subtitle">ARCHIVE</small><i class="chapter-station-reach" aria-hidden="true"></i></a>
       </div>
     </nav>
   </body>

@@ -1129,3 +1129,144 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-links a:is([aria-current], .is-active)::after { transform: none; }
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-marker { transform: translate3d(calc(var(--chapter-marker-x, 0px) - 1px), 0, 0); }
 }
+
+/* ---- The HUD folds in with the chapters' arc ----
+   The ruler draws its axis and ticks as four station segments. On wide screens
+   the outer segments, with their stations, fold towards the reader about the
+   stems next to them, and the header's brand and tools fold in about their
+   inner edges, so the instruments wrap around the reader like the panels
+   between them. js/chapters.js supplies the camera, the middle of the screen,
+   and moves the cursor, its tick response, the hover mark and the idle scan
+   onto the fold they are in. The middle two stations stay flat. These are the
+   design angles; on a tall or narrow screen chapters.js turns a part less
+   (--hud-header-turn, --hud-ruler-turn) when its far corner would leave the screen. */
+html.has-chapters .home-page .site-header { --hud-fold-header: 8deg; }
+html.has-chapters .home-page .chapter-progress { --hud-fold-ruler: 12deg; }
+.home-page .chapter-progress-scales { display: none; }
+html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-track { background: none; }
+html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-track::before,
+html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-track::after { display: none; }
+html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scales {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  height: 9px;
+  pointer-events: none;
+}
+/* Each segment repeats the ruler's marks for its quarter: the axis, fine and
+   middle ticks, and a longer tick at its station and its middle. */
+html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scales > span {
+  position: relative;
+  background:
+    linear-gradient(light-dark(#3e3e3e43, #aaaaaa43), light-dark(#3e3e3e43, #aaaaaa43)) left 0 bottom 2px / 100% 1px no-repeat,
+    repeating-linear-gradient(90deg, light-dark(#4e4e4e2e, #9898982e) 0 1px, transparent 1px calc(var(--chapter-tick-step) * 4)) left bottom / 100% 3px no-repeat,
+    repeating-linear-gradient(90deg, light-dark(#45454548, #a2a2a248) 0 1px, transparent 1px calc(var(--chapter-tick-mid-step) * 4)) left bottom / 100% 5px no-repeat,
+    repeating-linear-gradient(90deg, light-dark(#34343466, #b7b7b766) 0 1px, transparent 1px 50%) left bottom / 100% 8px no-repeat;
+}
+/* The closing stem at the far right. */
+html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scales > span:last-child::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: calc(var(--chapter-station-base) - var(--chapter-axis-bottom) - 3px);
+  width: 1px;
+  height: calc(var(--chapter-station-stem) + 5px);
+  background: light-dark(#70707099, #74747499);
+}
+/* Entering and leaving the Hero, the axis still draws from left to right. */
+html.has-chapters:not(.has-vertical-chapters):is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-scales > span {
+  clip-path: inset(-80px calc((1 - clamp(0, calc(var(--chapter-line-in) * 4 - var(--hud-scale-step, 0)), 1)) * 100%) -4px 0);
+}
+html.has-chapters .home-page .chapter-progress-scales > span:nth-child(2) { --hud-scale-step: 1; }
+html.has-chapters .home-page .chapter-progress-scales > span:nth-child(3) { --hud-scale-step: 2; }
+html.has-chapters .home-page .chapter-progress-scales > span:nth-child(4) { --hud-scale-step: 3; }
+html.has-chapters:not(.has-vertical-chapters):is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-scales > span:last-child::after {
+  opacity: var(--chapter-terminal-in);
+  transform: scaleY(var(--chapter-terminal-in));
+  transform-origin: bottom;
+}
+/* Hit areas for the folded end stations, below; flat rulers have no use for them. */
+.home-page :is(.chapter-progress-rail > i, .chapter-station-reach) { display: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* A fold: move the hinge to the screen's middle, project, move it back, turn. */
+  html.has-chapters:not(.has-vertical-chapters) .home-page .site-header .site-brand {
+    transform-origin: 100% 50%;
+    transform: translate(var(--hud-brand-cx, 0px), var(--hud-brand-cy, 0px)) perspective(var(--hud-perspective, 1600px))
+      translate(calc(-1 * var(--hud-brand-cx, 0px)), calc(-1 * var(--hud-brand-cy, 0px))) rotateY(var(--hud-header-turn, var(--hud-fold-header)));
+  }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .site-header .header-tools {
+    transform-origin: 0% 50%;
+    transform: translate(var(--hud-tools-cx, 0px), var(--hud-tools-cy, 0px)) perspective(var(--hud-perspective, 1600px))
+      translate(calc(-1 * var(--hud-tools-cx, 0px)), calc(-1 * var(--hud-tools-cy, 0px))) rotateY(calc(-1 * var(--hud-header-turn, var(--hud-fold-header))));
+  }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress {
+    --hud-left: translate(var(--hud-left-cx, 0px), var(--hud-left-cy, 0px)) perspective(var(--hud-perspective, 1600px))
+      translate(calc(-1 * var(--hud-left-cx, 0px)), calc(-1 * var(--hud-left-cy, 0px))) rotateY(var(--hud-ruler-turn, var(--hud-fold-ruler)));
+    --hud-right: translate(var(--hud-right-cx, 0px), var(--hud-right-cy, 0px)) perspective(var(--hud-perspective, 1600px))
+      translate(calc(-1 * var(--hud-right-cx, 0px)), calc(-1 * var(--hud-right-cy, 0px))) rotateY(calc(-1 * var(--hud-ruler-turn, var(--hud-fold-ruler))));
+  }
+  /* The first station folds about its right stem, the last about its left.
+     Every hinge sits on the top edge of the 1px axis, where js/chapters.js
+     aims the camera from. */
+  html.has-chapters:not(.has-vertical-chapters) .home-page :is(.chapter-progress-links > a:first-child, .chapter-progress-scales > span:first-child, .chapter-progress-rail > i:first-child) {
+    transform: var(--hud-left);
+  }
+  html.has-chapters:not(.has-vertical-chapters) .home-page :is(.chapter-progress-links > a:last-child, .chapter-progress-scales > span:last-child, .chapter-progress-rail > i:last-child) {
+    transform: var(--hud-right);
+  }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-links > a:first-child { transform-origin: 100% calc(100% - var(--chapter-axis-bottom) - 1px); }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-links > a:last-child { transform-origin: 0% calc(100% - var(--chapter-axis-bottom) - 1px); }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scales > span:first-child { transform-origin: 100% calc(100% - 3px); }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scales > span:last-child { transform-origin: 0% calc(100% - 3px); }
+  /* A folded station turns as one piece, which makes it a layer of its own,
+     so its names can no longer rise above the ruler's axis band (z-index 3
+     over the track's 2) the way the flat stations' names do. The whole station
+     rises above the band instead and lets the pointer through its own axis
+     band. Its names, and a reach that covers the rest of its cell above and
+     below that band, keep everything else a link. The track stops being a
+     layer, so its parts stack among the stations: the band and the marks under
+     a folded station, the cursor over it, the flat names still over the cursor. */
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-track { z-index: auto; }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-track > :is(.chapter-progress-rail, .chapter-progress-scales, .chapter-progress-response, .chapter-progress-scan) { z-index: 2; }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-marker { z-index: 3; }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-links > a:is(:first-child, :last-child) { z-index: 2; pointer-events: none; }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-links > a:is(:first-child, :last-child) .chapter-station-reach {
+    display: block;
+    position: absolute;
+    inset: 0;
+    /* The cell above the band, then below it; the band is the 1px axis and 19.5px either side. */
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--chapter-axis-bottom) - 20.5px), 0 calc(100% - var(--chapter-axis-bottom) - 20.5px),
+      0 calc(100% - var(--chapter-axis-bottom) + 19.5px), 100% calc(100% - var(--chapter-axis-bottom) + 19.5px), 100% 100%, 0 100%);
+  }
+  html.has-chapters.is-content:not(.is-chapter-entering):not(.is-chapter-leaving):not(.has-vertical-chapters) .home-page .chapter-progress-links > a:is(:first-child, :last-child) :is(.chapter-station-index, .chapter-station-title, .chapter-station-subtitle, .chapter-station-reach) {
+    pointer-events: auto;
+  }
+  /* The ruler keeps its flat axis band over the middle stations and folds a
+     wing of it over each end station, under the station's open band. The
+     hover mark still spans the whole track. */
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-rail { left: 25%; right: 25%; }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-rail::before { left: -50%; right: -50%; }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-rail > i { display: block; position: absolute; top: 0; bottom: 0; width: 50%; }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-rail > i:first-child { right: 100%; transform-origin: 100% 19.5px; }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-rail > i:last-child { left: 100%; transform-origin: 0% 19.5px; }
+  /* Moving parts turn with the fold they are on. Their boxes start at the
+     track's left edge, so the hinge sits at its offset along the track. */
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-marker[data-fold="left"] {
+    transform: var(--hud-left) translate3d(calc(var(--chapter-marker-x, 0px) * var(--chapter-marker-in, 1) - 1px), 0, 0);
+    transform-origin: var(--hud-left-x, 0px) 4px;
+  }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-marker[data-fold="right"] {
+    transform: var(--hud-right) translate3d(calc(var(--chapter-marker-x, 0px) * var(--chapter-marker-in, 1) - 1px), 0, 0);
+    transform-origin: var(--hud-right-x, 0px) 4px;
+  }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-response[data-fold="left"] { transform: var(--hud-left); transform-origin: var(--hud-left-x, 0px) calc(100% - 3px); }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-response[data-fold="right"] { transform: var(--hud-right); transform-origin: var(--hud-right-x, 0px) calc(100% - 3px); }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-rail[data-fold="left"]::before { transform: var(--hud-left); transform-origin: var(--hud-left-x, 0px) 19.5px; }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-rail[data-fold="right"]::before { transform: var(--hud-right); transform-origin: var(--hud-right-x, 0px) 19.5px; }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scan[data-fold="left"] { transform: var(--hud-left); transform-origin: 100% calc(100% - 3px); }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scan[data-fold="right"] { transform: var(--hud-right); transform-origin: 0% calc(100% - 3px); }
+}

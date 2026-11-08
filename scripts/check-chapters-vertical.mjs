@@ -1,7 +1,9 @@
 // Checks the phone layout in a real browser: below the phone breakpoint
 // js/chapters-vertical.js runs the chapters as one vertical page with an
 // altimeter tape, and hands the page back to the horizontal strip when the
-// viewport grows. Needs Chrome, Chromium or Edge; CHROME_PATH picks a build.
+// viewport grows. On wide screens it also checks that the folded ends of the
+// HUD still answer the pointer where they show. Needs Chrome, Chromium or
+// Edge; CHROME_PATH picks a build.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -398,6 +400,125 @@ test('text and images rise into place one block at a time as they scroll into vi
   const hidden = await evaluate(page, "getComputedStyle(document.querySelector('.is-vertical-reveal:not(.is-vertical-shown)')).opacity");
   assert.equal(hidden, '0', 'a waiting block is hidden');
   await close(page);
+});
+
+// Where a point of the ruler shows once its segment is folded: a probe at a
+// fraction of one of the four scale segments, on the axis.
+const RULER_POINT = (segment, fraction) => `(() => {
+  const host = document.querySelector('.chapter-progress-scales > span:nth-child(${segment})');
+  const probe = document.createElement('i');
+  probe.style.cssText = 'position: absolute; left: ${fraction * 100}%; bottom: 2px; width: 0; height: 1px';
+  host.append(probe);
+  const box = probe.getBoundingClientRect();
+  probe.remove();
+  return { x: box.left, y: box.top + 0.5 };
+})()`;
+const RAIL_HOVER = `(() => {
+  const track = document.querySelector('.chapter-progress-track');
+  const box = track.getBoundingClientRect();
+  return {
+    x: box.left + parseFloat(track.style.getPropertyValue('--chapter-hover-view-x')),
+    drop: parseFloat(track.style.getPropertyValue('--chapter-hover-view-y')),
+    coordinate: parseFloat(track.style.getPropertyValue('--chapter-hover-x')) / (box.width / 4) - 0.5,
+    fold: document.querySelector('.chapter-progress-rail').getAttribute('data-fold'),
+  };
+})()`;
+const MARKER = "(box => ({ x: box.left + box.width / 2, y: box.top + 5 }))(document.querySelector('.chapter-progress-marker').getBoundingClientRect())";
+// The HUD drifts after the mouse for about half a second, and a press holds it.
+async function stillHud(page) {
+  let last = null;
+  for (let tries = 0; tries < 40; tries++) {
+    const now = await evaluate(page, "document.querySelector('.chapter-progress').style.translate");
+    if (now === last) return;
+    last = now;
+    await sleep(120);
+  }
+}
+async function settledPosition(page) {
+  let last = NaN;
+  for (let tries = 0; tries < 40; tries++) {
+    await sleep(150);
+    const now = (await state(page)).position;
+    if (now === last) return now;
+    last = now;
+  }
+  return last;
+}
+
+test('on wide screens the HUD folds in at both ends and still answers where it shows', { skip }, async () => {
+  const page = await open('/#about', { width: 1600, height: 860, mobile: false });
+  await waitFor(page, "document.documentElement.classList.contains('is-content')");
+  await sleep(400);
+  const turned = await evaluate(page, `(() => {
+    const turned = element => getComputedStyle(element).transform.startsWith('matrix3d');
+    return {
+      stations: [...document.querySelectorAll('.chapter-progress-links > a')].map(turned),
+      scales: [...document.querySelectorAll('.chapter-progress-scales > span')].map(turned),
+      header: [turned(document.querySelector('.site-brand')), turned(document.querySelector('.header-tools'))],
+    };
+  })()`);
+  assert.deepEqual(turned, { stations: [true, false, false, true], scales: [true, false, false, true], header: [true, true] }, 'the end stations and the header ends turn; the middle stays flat');
+  const far = await evaluate(page, RULER_POINT(1, 0));
+  const hinge = await evaluate(page, RULER_POINT(2, 0));
+  const end = await evaluate(page, RULER_POINT(4, 1));
+  assert.ok(far.y - hinge.y > 8 && end.y - hinge.y > 8, 'both ends come towards the reader, below the flat middle');
+
+  // A folded station is one layer: its names, its label and the rest of its
+  // cell must still be the link, and its axis band the ruler, as on the flat ones.
+  const links = await evaluate(page, `[...document.querySelectorAll('.chapter-progress-links > a')].map(link => {
+    const at = (x, y) => document.elementFromPoint(x, y)?.closest('a') === link;
+    const title = link.querySelector('.chapter-station-title').getBoundingClientRect();
+    const label = link.querySelector('.chapter-station-subtitle').getBoundingClientRect();
+    const cell = link.getBoundingClientRect();
+    return [at(title.left + title.width / 2, title.bottom - 3), at(label.left + label.width / 2, label.top + label.height / 2), at(cell.left + cell.width / 2, cell.top + 16)];
+  })`);
+  assert.deepEqual(links, Array(4).fill([true, true, true]), 'names, labels and cells stay links');
+  for (const [segment, fraction] of [[1, 0.8], [4, 0.3]]) {
+    const point = await evaluate(page, RULER_POINT(segment, fraction));
+    const band = await evaluate(page, `[-10, 0, 10].map(dy => Boolean(document.elementFromPoint(${point.x}, ${point.y} + dy)?.closest('.chapter-progress-rail')))`);
+    assert.deepEqual(band, [true, true, true], 'the axis band of a folded station belongs to the ruler');
+  }
+
+  // Hover and press on each fold: the landing mark shows under the pointer and
+  // the page lands where it showed.
+  for (const [segment, fraction, side] of [[1, 0.8, 'left'], [4, 0.3, 'right']]) {
+    const point = await evaluate(page, RULER_POINT(segment, fraction));
+    await mouse(page, 'mouseMoved', point.x - 12, point.y);
+    await mouse(page, 'mouseMoved', point.x, point.y);
+    await stillHud(page);
+    const hover = await evaluate(page, RAIL_HOVER);
+    assert.equal(hover.fold, side);
+    assert.ok(Math.abs(hover.x - point.x) < 0.75, `the landing mark on the ${side} fold shows under the pointer (${hover.x} vs ${point.x})`);
+    assert.ok(hover.drop > 1, 'below the flat axis, where the fold shows it');
+    await mouse(page, 'mousePressed', point.x, point.y, 1);
+    await mouse(page, 'mouseReleased', point.x, point.y);
+    const landed = await settledPosition(page);
+    assert.ok(Math.abs(landed - hover.coordinate) < 0.01, `a press on the ${side} fold lands where its mark showed (${landed} vs ${hover.coordinate})`);
+  }
+
+  // Dragging the cursor along a fold keeps it under the pointer.
+  const start = await evaluate(page, MARKER);
+  await mouse(page, 'mouseMoved', start.x, start.y);
+  await stillHud(page);
+  const grip = await evaluate(page, MARKER);
+  await mouse(page, 'mousePressed', grip.x, grip.y, 1);
+  const goal = await evaluate(page, RULER_POINT(4, 0.1));
+  for (let step = 1; step <= 10; step++) {
+    await mouse(page, 'mouseMoved', grip.x + (goal.x - grip.x) * step / 10, grip.y, 1);
+    await sleep(16);
+  }
+  await sleep(200);
+  const held = await evaluate(page, MARKER);
+  assert.ok(Math.abs(held.x - goal.x) < 1, `the dragged cursor stays under the pointer (${held.x} vs ${goal.x})`);
+  await mouse(page, 'mouseReleased', goal.x, grip.y);
+  assert.ok(Math.abs((await settledPosition(page)) - 2.6) < 0.01, 'and lands where it was let go');
+  await close(page);
+
+  const still = await open('/#about', { width: 1600, height: 860, mobile: false, reduced: true });
+  await waitFor(still, "document.documentElement.classList.contains('is-content')");
+  assert.equal(await evaluate(still, "[...document.querySelectorAll('.chapter-progress-links > a, .chapter-progress-scales > span, .site-brand, .header-tools')].every(element => getComputedStyle(element).transform === 'none')"), true, 'reduced motion keeps the HUD flat');
+  await close(still);
+  assert.deepEqual(failures, []);
 });
 
 test('resizing hands the page between the strip and the vertical page', { skip }, async () => {

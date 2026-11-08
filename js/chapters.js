@@ -15,6 +15,8 @@
   const progressNav = document.querySelector('.chapter-progress');
   const progressTrack = document.querySelector('.chapter-progress-track');
   const progressRail = document.querySelector('.chapter-progress-rail');
+  const progressResponse = document.querySelector('.chapter-progress-response');
+  const progressScan = document.querySelector('.chapter-progress-scan');
   const progressMarker = document.querySelector('.chapter-progress-marker');
   const links = [...document.querySelectorAll('[data-chapter-link]')];
   const heroText = [...stage.querySelectorAll('.hero-heading')];
@@ -37,6 +39,7 @@
   let pointerPressed = false;
   let pointerInside = false;
   let pointerNavX = 0;
+  let pointerNavY = 0;
   const pointerLayer = { x: 0, y: 0, targetX: 0, targetY: 0 };
   let lastFrame = 0;
   let active = true;
@@ -558,9 +561,13 @@
     setStyle(track, 'transform', `translate3d(${-x.toFixed(3)}px, 0, 0)`);
     setStyle(progressNav, '--chapter-position', chapterPosition.toFixed(5));
     setStyle(progressNav, '--site-progress', siteProgress.toFixed(5));
-    const markerX = `${((chapterPosition + 0.5) * progressTrackWidth / chapters.length).toFixed(3)}px`;
+    const markerOffset = (chapterPosition + 0.5) * progressTrackWidth / chapters.length;
+    const markerX = `${markerOffset.toFixed(3)}px`;
     setStyle(progressMarker, '--chapter-marker-x', markerX);
     setStyle(progressTrack, '--chapter-marker-x', markerX);
+    // The cursor and the ticks it lights turn with the fold they are on.
+    setFold(progressMarker, foldAt(markerOffset));
+    setFold(progressResponse, foldAt(markerOffset));
     setClass(root, 'is-content', visible);
     // A partly assembled toolbar must not accept Tab focus before docking.
     setInert(header, !visible || Boolean(transition?.direction));
@@ -571,6 +578,8 @@
     emitChapterState(progress);
     const index = visible ? Math.min(chapters.length, 1 + Math.round(chapterPosition)) : 0;
     setStyle(progressNav, '--chapter-active-index', String(clamp(index - 1, 0, chapters.length - 1)));
+    // The idle scan runs along the current station, folded with it.
+    setFold(progressScan, foldAt((clamp(index - 1, 0, chapters.length - 1) + 0.5) * progressTrackWidth / chapters.length));
     const changed = index !== currentIndex;
     const previousIndex = currentIndex;
     const sliderValue = (siteProgress * 100).toFixed(1);
@@ -609,6 +618,7 @@
     // Cache the layout origin, not the ruler's current mouse displacement.
     progressTrackLeft = (ruler?.left || 0) - pointerNavX;
     progressTrackWidth = ruler?.width || 0;
+    measureFolds(ruler);
     paintRailHover();
     for (const group of revealGroups) {
       setClass(group.chapter, 'is-chapter-scrollable', group.scrollable);
@@ -647,6 +657,7 @@
     setStyle(track, 'translate', moved ? `calc(var(--chapter-entrance-x, 0px) + ${(x * 0.75).toFixed(3)}px) ${(vertical * 0.75).toFixed(3)}px` : '');
     setStyle(header, 'translate', hudTranslate);
     pointerNavX = Number(x.toFixed(3));
+    pointerNavY = Number(vertical.toFixed(3));
     setStyle(progressNav, 'translate', hudTranslate);
     paintRailHover();
     // These angles sit inside each unit's shared camera projection, before its
@@ -779,7 +790,7 @@
     if (!available() || blocked()) { finishScrub(); return; }
     // Use the grabbed point as the origin: the large hit target must not jump
     // the page when pressed away from the tiny visual cursor. Geometry is cached.
-    const coordinate = drag.startPosition + (drag.latestX - drag.startX) * drag.positionPerPixel;
+    const coordinate = drag.startPosition + (unfold(drag.latestX - pointerNavX) - drag.startFlat) * drag.positionPerPixel;
     const top = clamp(entry + offsetAt(coordinate), entry, maximum);
     targetY = smoothY = top;
     if (Math.abs(top - y()) > 0.01) {
@@ -865,11 +876,13 @@
     const grabbedMarker = progressMarker.contains(event.target);
     // Rail presses seek between chapter centers; label links still navigate
     // to exact chapter anchors. Keep the outer half-cells within the content.
-    const railPosition = (event.clientX - progressTrackLeft - pointerNavX) / progressTrackWidth * chapters.length - 0.5;
+    const railPosition = (unfold(event.clientX - pointerNavX) - progressTrackLeft) / progressTrackWidth * chapters.length - 0.5;
     // Clamp only when applying the position so a drag starting in an outer
     // half-cell stays aligned with the pointer as it enters the usable range.
     const startPosition = grabbedMarker ? coordinateAt(y() - entry) : railPosition;
-    scrub = { pointerId: event.pointerId, startX: event.clientX, latestX: event.clientX, startPosition, positionPerPixel: chapters.length / progressTrackWidth, dragging: grabbedMarker, keepFocus };
+    // On a fold, equal screen steps are unequal steps along the ruler, so a
+    // drag follows the pointer's place on the flat ruler.
+    scrub = { pointerId: event.pointerId, startX: event.clientX, latestX: event.clientX, startFlat: unfold(event.clientX - pointerNavX), startPosition, positionPerPixel: chapters.length / progressTrackWidth, dragging: grabbedMarker, keepFocus };
     setClass(progressNav, 'is-scrubbing', grabbedMarker);
     progressMarker.setPointerCapture(event.pointerId);
   });
@@ -882,19 +895,122 @@
     setClass(railTarget, 'is-rail-target', true);
   }
 
+  // The HUD folds in with the chapters' arc (css/chapters.css): the ruler's
+  // outer stations turn towards the reader about the stems next to them, and
+  // the header's brand and tools about their inner edges. Every fold is
+  // projected from the middle of the screen, like the panels, so the camera
+  // is that point seen from each hinge. The HUD's mouse parallax moves the
+  // camera with it, so hinges are measured where the HUD rests.
+  let hudFold = null;
+  // A turned part comes nearer and grows away from the screen's middle, so a
+  // tall screen or a short camera (a narrow screen) can lift a far corner off
+  // the screen. The design angle eases off just enough to keep that corner on
+  // it: `lever` is how far the corner lies from the middle, `room` how far it
+  // may move, `reach` how far it lies from the hinge.
+  function foldTurn(design, reach, lever, room, perspective) {
+    if (![design, reach, lever, room].every(Number.isFinite) || reach <= 0 || lever <= 0) return design;
+    const depth = perspective * Math.max(0, room) / (lever + Math.max(0, room));
+    return Math.min(design, Math.asin(Math.min(1, depth / reach)) * 180 / Math.PI);
+  }
+  const offsetWithin = (element, ancestor) => {
+    let top = 0;
+    for (let node = element; node && node !== ancestor; node = node.offsetParent) top += node.offsetTop;
+    return top;
+  };
+  function measureFolds(ruler) {
+    hudFold = null;
+    if (!progressNav || !ruler || !progressTrackWidth) return;
+    const perspective = Math.max(700, window.innerWidth * 1.1);
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    const px = value => `${value.toFixed(2)}px`;
+    setStyle(root, '--hud-perspective', px(perspective));
+    const left = progressTrackLeft + progressTrackWidth / 4;
+    const right = progressTrackLeft + progressTrackWidth * 3 / 4;
+    // Hinges lie on the top edge of the 1px axis.
+    const axisY = ruler.top - pointerNavY;
+    // The station labels hang lowest; they keep 4px above the screen's bottom.
+    const label = links[0]?.querySelector?.('.chapter-station-subtitle');
+    const labelBottom = label ? axisY - offsetWithin(progressTrack, progressNav) + offsetWithin(label, progressNav) + label.offsetHeight : NaN;
+    const angle = foldTurn(parseFloat(getComputedStyle(progressNav).getPropertyValue('--hud-fold-ruler')) || 0,
+      progressTrackWidth / 4, labelBottom - centerY, window.innerHeight - 4 - labelBottom, perspective);
+    setStyle(progressNav, '--hud-ruler-turn', `${angle.toFixed(3)}deg`);
+    setStyle(progressNav, '--hud-left-x', px(progressTrackWidth / 4));
+    setStyle(progressNav, '--hud-right-x', px(progressTrackWidth * 3 / 4));
+    setStyle(progressNav, '--hud-left-cx', px(centerX - left));
+    setStyle(progressNav, '--hud-right-cx', px(centerX - right));
+    setStyle(progressNav, '--hud-left-cy', px(centerY - axisY));
+    setStyle(progressNav, '--hud-right-cy', px(centerY - axisY));
+    const box = header?.getBoundingClientRect?.();
+    const brand = header?.querySelector?.('.site-brand');
+    const tools = header?.querySelector?.('.header-tools');
+    if (box && brand && tools) {
+      const headerLeft = box.left - pointerNavX;
+      const headerTop = box.top - pointerNavY;
+      setStyle(header, '--hud-brand-cx', px(centerX - (headerLeft + brand.offsetLeft + brand.offsetWidth)));
+      setStyle(header, '--hud-brand-cy', px(centerY - (headerTop + brand.offsetTop + brand.offsetHeight / 2)));
+      setStyle(header, '--hud-tools-cx', px(centerX - (headerLeft + tools.offsetLeft)));
+      setStyle(header, '--hud-tools-cy', px(centerY - (headerTop + tools.offsetTop + tools.offsetHeight / 2)));
+      // Both header ends turn alike; their outer top corners keep 4px below the screen's top.
+      const design = parseFloat(getComputedStyle(header).getPropertyValue('--hud-fold-header')) || 0;
+      const turn = part => foldTurn(design, part.offsetWidth, centerY - (headerTop + part.offsetTop), headerTop + part.offsetTop - 4, perspective);
+      setStyle(header, '--hud-header-turn', `${Math.min(turn(brand), turn(tools)).toFixed(3)}deg`);
+    }
+    if (angle && !motion.matches) hudFold = { angle: angle * Math.PI / 180, perspective, centerX, centerY, axisY, left, right };
+  }
+
+  // Which fold a point along the ruler lies on.
+  const foldAt = offset => !hudFold ? '' : offset < progressTrackWidth / 4 ? 'left' : offset > progressTrackWidth * 3 / 4 ? 'right' : '';
+  const foldedElements = new Set();
+  function setFold(element, side) {
+    if (!element || (element.getAttribute('data-fold') || '') === side) return;
+    if (side) { element.setAttribute('data-fold', side); foldedElements.add(element); } else element.removeAttribute('data-fold');
+  }
+
+  // A screen point on a folded station, back to its place on the flat ruler,
+  // and the reverse. A point d from the hinge turns d·sin θ towards the reader.
+  function unfold(x) {
+    if (!hudFold) return x;
+    const { angle, perspective: p, centerX, left, right } = hudFold;
+    const u = x - centerX;
+    if (x < left) return left - p * (left - centerX - u) / (p * Math.cos(angle) - u * Math.sin(angle));
+    if (x > right) return right + p * (u - (right - centerX)) / (p * Math.cos(angle) + u * Math.sin(angle));
+    return x;
+  }
+  // Where a point of the flat axis shows: its x, and how far below the flat
+  // axis it appears, since the fold brings it nearer than the screen.
+  function onFold(x) {
+    if (!hudFold || (x >= hudFold.left && x <= hudFold.right)) return { x, drop: 0 };
+    const { angle, perspective: p, centerX, centerY, axisY, left, right } = hudFold;
+    const d = x < left ? left - x : x - right;
+    const hinge = x < left ? left : right;
+    const reach = x < left ? -d * Math.cos(angle) : d * Math.cos(angle);
+    const scale = p / (p - d * Math.sin(angle));
+    return { x: centerX + (hinge - centerX + reach) * scale, drop: (axisY - centerY) * (scale - 1) };
+  }
+
   // Hovering the axis previews where a click lands, already settled near a
   // chapter center. Parallax frames and remeasurement redraw it, so the mark
   // stays under a still mouse while the ruler moves; geometry stays cached.
   function paintRailHover() {
     if (railHoverX === null || scrub || !progressTrackWidth) return;
-    const coordinate = settleCoordinate((railHoverX - progressTrackLeft - pointerNavX) / progressTrackWidth * chapters.length - 0.5);
-    setStyle(progressTrack, '--chapter-hover-x', `${((coordinate + 0.5) * progressTrackWidth / chapters.length).toFixed(3)}px`);
+    const coordinate = settleCoordinate((unfold(railHoverX - pointerNavX) - progressTrackLeft) / progressTrackWidth * chapters.length - 0.5);
+    const offset = (coordinate + 0.5) * progressTrackWidth / chapters.length;
+    setStyle(progressTrack, '--chapter-hover-x', `${offset.toFixed(3)}px`);
+    // Where the mark shows on a folded station, for the focus-frame cursor.
+    const view = onFold(progressTrackLeft + offset);
+    setStyle(progressTrack, '--chapter-hover-view-x', `${(view.x - progressTrackLeft).toFixed(3)}px`);
+    setStyle(progressTrack, '--chapter-hover-view-y', `${view.drop.toFixed(3)}px`);
+    setFold(progressRail, foldAt(offset));
     setRailTarget(links[Math.round(coordinate)] || null);
   }
 
   function clearRailHover() {
     railHoverX = null;
     setStyle(progressTrack, '--chapter-hover-x', '');
+    setStyle(progressTrack, '--chapter-hover-view-x', '');
+    setStyle(progressTrack, '--chapter-hover-view-y', '');
+    setFold(progressRail, '');
     setRailTarget(null);
   }
 
@@ -1399,6 +1515,9 @@
     styleValues.clear();
     for (const element of inertElements) element.inert = false;
     inertElements.clear();
+    for (const element of foldedElements) element.removeAttribute('data-fold');
+    foldedElements.clear();
+    hudFold = null;
     runway.style.height = '';
     positions = [];
     currentIndex = -1;
