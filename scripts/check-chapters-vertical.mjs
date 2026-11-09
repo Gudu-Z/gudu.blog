@@ -462,6 +462,10 @@ test('on wide screens the HUD folds in at both ends and still answers where it s
   const hinge = await evaluate(page, RULER_POINT(2, 0));
   const end = await evaluate(page, RULER_POINT(4, 1));
   assert.ok(far.y - hinge.y > 8 && end.y - hinge.y > 8, 'both ends come towards the reader, below the flat middle');
+  // The ends' drift away from the middle is split: each HUD moves in by half of it.
+  const shift = await evaluate(page, "({ lift: parseFloat(document.querySelector('.chapter-progress').style.getPropertyValue('--hud-ruler-lift')), drop: parseFloat(getComputedStyle(document.querySelector('.site-header')).marginTop) })");
+  assert.ok(Math.abs((far.y - hinge.y) / 2 - shift.lift) < 0.75, `the ruler sits higher by half the dip of its ends (${shift.lift} vs ${(far.y - hinge.y) / 2})`);
+  assert.ok(shift.drop > 2, 'and the header lower by half the rise of its ends');
 
   // A folded station is one layer: its names, its label and the rest of its
   // cell must still be the link, and its axis band the ruler, as on the flat ones.

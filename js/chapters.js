@@ -917,6 +917,14 @@
     for (let node = element; node && node !== ancestor; node = node.offsetParent) top += node.offsetTop;
     return top;
   };
+  // The same nearness spreads each folded HUD away from the middle: the
+  // ruler's ends dip and the header's ends rise. Each HUD therefore sits
+  // nearer the middle by half of its far end's drift, so on average it stays
+  // where it is laid out. The drift is the lever times the far end's
+  // magnification m, and shrinks as the HUD moves in: s = (lever - s) m / 2.
+  const hudShift = { ruler: 0, header: 0 };
+  const settleShift = (lever, magnification) => Number.isFinite(lever * magnification) && lever > 0
+    ? lever * magnification / 2 / (1 + magnification / 2) : 0;
   function measureFolds(ruler) {
     hudFold = null;
     if (!progressNav || !ruler || !progressTrackWidth) return;
@@ -924,17 +932,23 @@
     const centerX = window.innerWidth / 2;
     const centerY = window.innerHeight / 2;
     const px = value => `${value.toFixed(2)}px`;
+    const nearer = (reach, degrees) => perspective / (perspective - reach * Math.sin(degrees * Math.PI / 180)) - 1;
+    const folding = !motion.matches;
     setStyle(root, '--hud-perspective', px(perspective));
     const left = progressTrackLeft + progressTrackWidth / 4;
     const right = progressTrackLeft + progressTrackWidth * 3 / 4;
-    // Hinges lie on the top edge of the 1px axis.
-    const axisY = ruler.top - pointerNavY;
+    // Hinges lie on the top edge of the 1px axis; laidY is where it is laid
+    // out, before the shift below.
+    const laidY = ruler.top - pointerNavY + hudShift.ruler;
     // The station labels hang lowest; they keep 4px above the screen's bottom.
     const label = links[0]?.querySelector?.('.chapter-station-subtitle');
-    const labelBottom = label ? axisY - offsetWithin(progressTrack, progressNav) + offsetWithin(label, progressNav) + label.offsetHeight : NaN;
+    const labelBottom = label ? laidY - offsetWithin(progressTrack, progressNav) + offsetWithin(label, progressNav) + label.offsetHeight : NaN;
     const angle = foldTurn(parseFloat(getComputedStyle(progressNav).getPropertyValue('--hud-fold-ruler')) || 0,
       progressTrackWidth / 4, labelBottom - centerY, window.innerHeight - 4 - labelBottom, perspective);
+    hudShift.ruler = folding && angle ? settleShift(laidY - centerY, nearer(progressTrackWidth / 4, angle)) : 0;
+    const axisY = laidY - hudShift.ruler;
     setStyle(progressNav, '--hud-ruler-turn', `${angle.toFixed(3)}deg`);
+    setStyle(progressNav, '--hud-ruler-lift', px(hudShift.ruler));
     setStyle(progressNav, '--hud-left-x', px(progressTrackWidth / 4));
     setStyle(progressNav, '--hud-right-x', px(progressTrackWidth * 3 / 4));
     setStyle(progressNav, '--hud-left-cx', px(centerX - left));
@@ -946,17 +960,25 @@
     const tools = header?.querySelector?.('.header-tools');
     if (box && brand && tools) {
       const headerLeft = box.left - pointerNavX;
-      const headerTop = box.top - pointerNavY;
+      const laidTop = box.top - pointerNavY - hudShift.header;
+      // Both header ends turn alike; their outer top corners keep 4px below the screen's top.
+      const design = parseFloat(getComputedStyle(header).getPropertyValue('--hud-fold-header')) || 0;
+      const turn = part => foldTurn(design, part.offsetWidth, centerY - (laidTop + part.offsetTop), laidTop + part.offsetTop - 4, perspective);
+      const headerTurn = Math.min(turn(brand), turn(tools));
+      // The header follows the end that rises most.
+      const lever = part => centerY - (laidTop + part.offsetTop + part.offsetHeight / 2);
+      const drift = part => lever(part) * nearer(part.offsetWidth, headerTurn);
+      const highest = drift(tools) >= drift(brand) ? tools : brand;
+      hudShift.header = folding && headerTurn ? settleShift(lever(highest), nearer(highest.offsetWidth, headerTurn)) : 0;
+      const headerTop = laidTop + hudShift.header;
+      setStyle(header, '--hud-header-turn', `${headerTurn.toFixed(3)}deg`);
+      setStyle(header, '--hud-header-drop', px(hudShift.header));
       setStyle(header, '--hud-brand-cx', px(centerX - (headerLeft + brand.offsetLeft + brand.offsetWidth)));
       setStyle(header, '--hud-brand-cy', px(centerY - (headerTop + brand.offsetTop + brand.offsetHeight / 2)));
       setStyle(header, '--hud-tools-cx', px(centerX - (headerLeft + tools.offsetLeft)));
       setStyle(header, '--hud-tools-cy', px(centerY - (headerTop + tools.offsetTop + tools.offsetHeight / 2)));
-      // Both header ends turn alike; their outer top corners keep 4px below the screen's top.
-      const design = parseFloat(getComputedStyle(header).getPropertyValue('--hud-fold-header')) || 0;
-      const turn = part => foldTurn(design, part.offsetWidth, centerY - (headerTop + part.offsetTop), headerTop + part.offsetTop - 4, perspective);
-      setStyle(header, '--hud-header-turn', `${Math.min(turn(brand), turn(tools)).toFixed(3)}deg`);
     }
-    if (angle && !motion.matches) hudFold = { angle: angle * Math.PI / 180, perspective, centerX, centerY, axisY, left, right };
+    if (angle && folding) hudFold = { angle: angle * Math.PI / 180, perspective, centerX, centerY, axisY, left, right };
   }
 
   // Which fold a point along the ruler lies on.
@@ -1518,6 +1540,8 @@
     for (const element of foldedElements) element.removeAttribute('data-fold');
     foldedElements.clear();
     hudFold = null;
+    // The shifts went with the inline styles above.
+    hudShift.ruler = hudShift.header = 0;
     runway.style.height = '';
     positions = [];
     currentIndex = -1;

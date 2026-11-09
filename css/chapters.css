@@ -1209,6 +1209,11 @@ html.has-chapters:not(.has-vertical-chapters):is(.is-chapter-entering, .is-chapt
     --hud-right: translate(var(--hud-right-cx, 0px), var(--hud-right-cy, 0px)) perspective(var(--hud-perspective, 1600px))
       translate(calc(-1 * var(--hud-right-cx, 0px)), calc(-1 * var(--hud-right-cy, 0px))) rotateY(calc(-1 * var(--hud-ruler-turn, var(--hud-fold-ruler))));
   }
+  /* The folds spread the HUD's ends away from the screen's middle, so both
+     HUDs sit nearer the middle by half of that drift (js/chapters.js). A
+     margin moves them on top of whatever offset the screen size gives them. */
+  html.has-chapters:not(.has-vertical-chapters) .home-page .site-header { margin-top: var(--hud-header-drop, 0px); }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress { margin-bottom: var(--hud-ruler-lift, 0px); }
   /* The first station folds about its right stem, the last about its left.
      Every hinge sits on the top edge of the 1px axis, where js/chapters.js
      aims the camera from. */
