@@ -163,7 +163,7 @@ html.has-chapters .home-page .chapter-viewport {
   pointer-events: none;
   overflow: hidden;
   overflow: clip;
-  clip-path: inset(calc(var(--header-height) + 8px) 0 118px);
+  clip-path: inset(calc(var(--header-height) + 8px + var(--hud-inset-top, 0px)) 0 calc(118px + var(--hud-inset-bottom, 0px)));
   touch-action: pan-y pinch-zoom;
 }
 html.has-chapters:is(.is-content, .is-chapter-entering, .is-chapter-leaving) .home-page .chapter-viewport { visibility: visible; pointer-events: auto; }
@@ -1130,6 +1130,23 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-progress-marker { transform: translate3d(calc(var(--chapter-marker-x, 0px) - 1px), 0, 0); }
 }
 
+/* ---- The HUD keeps in step with the panels ----
+   The panels' top and bottom margins grow with the window's height (14svh and
+   17svh), but the header and the ruler sit a fixed distance from the screen's
+   edges, so a tall window would leave both at the edges with an empty band
+   between them and the panels. On wide screens each moves in by half of what
+   its panels' margin gains over a 860px-tall window's (120px and 146px), and
+   the panels' clip moves in with it. The header also keeps 6px further off
+   the top, where even a short window has room; the ruler has none there. */
+@media (min-width: 721px) {
+  html.has-chapters:not(.has-vertical-chapters) .home-page {
+    --hud-inset-top: calc(6px + max(0px, (14svh - 120px) / 2));
+    --hud-inset-bottom: max(0px, (17svh - 146px) / 2);
+  }
+}
+html.has-chapters:not(.has-vertical-chapters) .home-page .site-header { margin-top: var(--hud-inset-top, 0px); }
+html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress { margin-bottom: var(--hud-inset-bottom, 0px); }
+
 /* ---- The HUD folds in with the chapters' arc ----
    The ruler draws its axis and ticks as four station segments. On wide screens
    the outer segments, with their stations, fold towards the reader about the
@@ -1137,11 +1154,14 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
    inner edges, so the instruments wrap around the reader like the panels
    between them. js/chapters.js supplies the camera, the middle of the screen,
    and moves the cursor, its tick response, the hover mark and the idle scan
-   onto the fold they are in. The middle two stations stay flat. These are the
-   design angles; on a tall or narrow screen chapters.js turns a part less
-   (--hud-header-turn, --hud-ruler-turn) when its far corner would leave the screen. */
-html.has-chapters .home-page .site-header { --hud-fold-header: 8deg; }
-html.has-chapters .home-page .chapter-progress { --hud-fold-ruler: 12deg; }
+   onto the fold they are in. The middle two stations stay flat. The tools
+   fold about their search icon, the left edge of what shows of them, so both
+   header ends turn alike, and every far end lands back on the frame the flat
+   page draws the HUD in. These are the design angles; on a tall or narrow
+   screen chapters.js turns a part less (--hud-header-turn, --hud-ruler-turn)
+   when its far corner would leave the screen. */
+html.has-chapters .home-page .site-header { --hud-fold-header: 6deg; }
+html.has-chapters .home-page .chapter-progress { --hud-fold-ruler: 8deg; }
 .home-page .chapter-progress-scales { display: none; }
 html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-track { background: none; }
 html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-track::before,
@@ -1192,15 +1212,19 @@ html.has-chapters:not(.has-vertical-chapters):is(.is-chapter-entering, .is-chapt
 .home-page :is(.chapter-progress-rail > i, .chapter-station-reach) { display: none; }
 
 @media (prefers-reduced-motion: no-preference) {
-  /* A fold: move the hinge to the screen's middle, project, move it back, turn. */
+  /* A fold: move the hinge to the screen's middle, project, move it back, turn.
+     The projection spreads a header end away from the middle; the pin in front
+     moves the projected end back onto the frame. The tools' hinge is their
+     search icon's left edge (--hud-tools-hinge); the room the search field
+     opens into, left of it, is empty until it opens. */
   html.has-chapters:not(.has-vertical-chapters) .home-page .site-header .site-brand {
     transform-origin: 100% 50%;
-    transform: translate(var(--hud-brand-cx, 0px), var(--hud-brand-cy, 0px)) perspective(var(--hud-perspective, 1600px))
+    transform: translateX(var(--hud-brand-pin, 0px)) translate(var(--hud-brand-cx, 0px), var(--hud-brand-cy, 0px)) perspective(var(--hud-perspective, 1600px))
       translate(calc(-1 * var(--hud-brand-cx, 0px)), calc(-1 * var(--hud-brand-cy, 0px))) rotateY(var(--hud-header-turn, var(--hud-fold-header)));
   }
   html.has-chapters:not(.has-vertical-chapters) .home-page .site-header .header-tools {
-    transform-origin: 0% 50%;
-    transform: translate(var(--hud-tools-cx, 0px), var(--hud-tools-cy, 0px)) perspective(var(--hud-perspective, 1600px))
+    transform-origin: var(--hud-tools-hinge, 0px) 50%;
+    transform: translateX(var(--hud-tools-pin, 0px)) translate(var(--hud-tools-cx, 0px), var(--hud-tools-cy, 0px)) perspective(var(--hud-perspective, 1600px))
       translate(calc(-1 * var(--hud-tools-cx, 0px)), calc(-1 * var(--hud-tools-cy, 0px))) rotateY(calc(-1 * var(--hud-header-turn, var(--hud-fold-header))));
   }
   html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress {
@@ -1211,9 +1235,17 @@ html.has-chapters:not(.has-vertical-chapters):is(.is-chapter-entering, .is-chapt
   }
   /* The folds spread the HUD's ends away from the screen's middle, so both
      HUDs sit nearer the middle by half of that drift (js/chapters.js). A
-     margin moves them on top of whatever offset the screen size gives them. */
-  html.has-chapters:not(.has-vertical-chapters) .home-page .site-header { margin-top: var(--hud-header-drop, 0px); }
-  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress { margin-bottom: var(--hud-ruler-lift, 0px); }
+     margin moves them on top of whatever offset the screen size gives them,
+     with the inset above. */
+  html.has-chapters:not(.has-vertical-chapters) .home-page .site-header { margin-top: calc(var(--hud-inset-top, 0px) + var(--hud-header-drop, 0px)); }
+  html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress { margin-bottom: calc(var(--hud-inset-bottom, 0px) + var(--hud-ruler-lift, 0px)); }
+  /* The ruler's stations and axis are laid out narrower by --hud-ruler-inset
+     at each end, just enough for the folded ends to show where the flat
+     ruler ends, on the frame (js/chapters.js). */
+  html.has-chapters:not(.has-vertical-chapters) .home-page :is(.chapter-progress-track, .chapter-progress-links) {
+    left: var(--hud-ruler-inset, 0px);
+    right: var(--hud-ruler-inset, 0px);
+  }
   /* The first station folds about its right stem, the last about its left.
      Every hinge sits on the top edge of the 1px axis, where js/chapters.js
      aims the camera from. */

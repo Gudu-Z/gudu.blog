@@ -2,8 +2,8 @@
 // js/chapters-vertical.js runs the chapters as one vertical page with an
 // altimeter tape, and hands the page back to the horizontal strip when the
 // viewport grows. On wide screens it also checks that the folded ends of the
-// HUD still answer the pointer where they show. Needs Chrome, Chromium or
-// Edge; CHROME_PATH picks a build.
+// HUD land on the flat page's frame and still answer the pointer where they
+// show. Needs Chrome, Chromium or Edge; CHROME_PATH picks a build.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -461,11 +461,41 @@ test('on wide screens the HUD folds in at both ends and still answers where it s
   const far = await evaluate(page, RULER_POINT(1, 0));
   const hinge = await evaluate(page, RULER_POINT(2, 0));
   const end = await evaluate(page, RULER_POINT(4, 1));
-  assert.ok(far.y - hinge.y > 8 && end.y - hinge.y > 8, 'both ends come towards the reader, below the flat middle');
+  assert.ok(far.y - hinge.y > 6 && end.y - hinge.y > 6, 'both ends come towards the reader, below the flat middle');
   // The ends' drift away from the middle is split: each HUD moves in by half of it.
-  const shift = await evaluate(page, "({ lift: parseFloat(document.querySelector('.chapter-progress').style.getPropertyValue('--hud-ruler-lift')), drop: parseFloat(getComputedStyle(document.querySelector('.site-header')).marginTop) })");
+  const shift = await evaluate(page, "({ lift: parseFloat(document.querySelector('.chapter-progress').style.getPropertyValue('--hud-ruler-lift')), drop: parseFloat(document.querySelector('.site-header').style.getPropertyValue('--hud-header-drop')) })");
   assert.ok(Math.abs((far.y - hinge.y) / 2 - shift.lift) < 0.75, `the ruler sits higher by half the dip of its ends (${shift.lift} vs ${(far.y - hinge.y) / 2})`);
-  assert.ok(shift.drop > 2, 'and the header lower by half the rise of its ends');
+  assert.ok(shift.drop > 1, 'and the header lower by half the rise of its ends');
+  // Sideways, every far end lands back on the frame the flat page draws the
+  // HUD in: the ruler's on the ends of its box, the header's on the brand's
+  // and the tools' laid-out edges. The tools fold about their search icon, so
+  // the logo and the icons stay level.
+  const frame = await evaluate(page, `(() => {
+    const probe = (host, css) => {
+      const point = document.createElement('i');
+      point.style.cssText = 'position: absolute; width: 0; height: 0; ' + css;
+      host.append(point);
+      const left = point.getBoundingClientRect().left;
+      point.remove();
+      return left;
+    };
+    const middle = element => { const box = element.getBoundingClientRect(); return (box.top + box.bottom) / 2; };
+    const shown = element => element.getBoundingClientRect().width > 0;
+    const header = document.querySelector('.site-header');
+    const brand = header.querySelector('.site-brand');
+    const tools = header.querySelector('.header-tools');
+    const box = header.getBoundingClientRect();
+    const nav = document.querySelector('.chapter-progress').getBoundingClientRect();
+    const logo = [...brand.querySelectorAll('.brand-logo')].find(shown);
+    return {
+      ruler: [probe(document.querySelector('.chapter-progress-scales > span:first-child'), 'left: 0') - nav.left,
+        probe(document.querySelector('.chapter-progress-scales > span:last-child'), 'right: 0') - nav.right],
+      header: [probe(brand, 'left: 0; top: 0') - (box.left + brand.offsetLeft), probe(tools, 'right: 0; top: 0') - (box.left + tools.offsetLeft + tools.offsetWidth)],
+      level: [...tools.querySelectorAll('svg')].filter(shown).map(icon => middle(icon) - middle(logo)),
+    };
+  })()`);
+  assert.ok([...frame.ruler, ...frame.header].every(offset => Math.abs(offset) < 1), `the HUD's far ends land on the flat frame (ruler ${frame.ruler}, header ${frame.header})`);
+  assert.ok(frame.level.length === 3 && frame.level.every(offset => Math.abs(offset) < 3), `the logo and the tools' icons sit level (${frame.level})`);
 
   // A folded station is one layer: its names, its label and the rest of its
   // cell must still be the link, and its axis band the ruler, as on the flat ones.
@@ -522,6 +552,38 @@ test('on wide screens the HUD folds in at both ends and still answers where it s
   await waitFor(still, "document.documentElement.classList.contains('is-content')");
   assert.equal(await evaluate(still, "[...document.querySelectorAll('.chapter-progress-links > a, .chapter-progress-scales > span, .site-brand, .header-tools')].every(element => getComputedStyle(element).transform === 'none')"), true, 'reduced motion keeps the HUD flat');
   await close(still);
+  assert.deepEqual(failures, []);
+});
+
+test('on tall windows the HUD moves in with the panels and their clip follows', { skip }, async () => {
+  const seen = {};
+  for (const [width, height] of [[1600, 860], [1774, 1266]]) {
+    const page = await open('/#about', { width, height, mobile: false });
+    await waitFor(page, "document.documentElement.classList.contains('is-content')");
+    await sleep(400);
+    seen[height] = await evaluate(page, `(() => {
+      const header = document.querySelector('.site-header');
+      const nav = document.querySelector('.chapter-progress');
+      const clip = getComputedStyle(document.querySelector('.chapter-viewport')).clipPath.match(/^inset\\(([^)]+)\\)/)[1].split(/\\s+/).map(parseFloat);
+      const panels = [...document.querySelectorAll('#about .chapter-panel')].map(panel => panel.getBoundingClientRect());
+      return {
+        // The inset alone, without the folds' half-drift shift.
+        top: parseFloat(getComputedStyle(header).marginTop) - parseFloat(header.style.getPropertyValue('--hud-header-drop') || 0),
+        bottom: parseFloat(getComputedStyle(nav).marginBottom) - parseFloat(nav.style.getPropertyValue('--hud-ruler-lift') || 0),
+        clip: [clip[0], clip[2]],
+        headerHeight: header.getBoundingClientRect().height,
+        panels: [Math.min(...panels.map(box => box.top)), Math.max(...panels.map(box => box.bottom))],
+      };
+    })()`);
+    await close(page);
+  }
+  const short = seen[860], tall = seen[1266];
+  assert.ok(Math.abs(short.top - 6) < 1 && short.bottom < 1, `a short window moves only the header in, by 6px (${short.top}, ${short.bottom})`);
+  assert.ok(tall.top > 30 && tall.bottom > 30, `a tall window moves both in by half of the panels' extra margin (${tall.top}, ${tall.bottom})`);
+  for (const view of [short, tall]) {
+    assert.ok(Math.abs(view.clip[0] - (view.headerHeight + 8 + view.top)) < 1 && Math.abs(view.clip[1] - (118 + view.bottom)) < 1, `the panels' clip follows the HUD (${view.clip})`);
+  }
+  assert.ok(tall.panels[0] >= tall.clip[0] && tall.panels[1] <= 1266 - tall.clip[1], `the panels stay clear of the moved clip (${tall.panels} within ${tall.clip})`);
   assert.deepEqual(failures, []);
 });
 
