@@ -673,6 +673,8 @@
       this.canvas = canvas;
       this.chapter = 0;
       this.day = 0;
+      this.intro = 0;
+      this.introLayout = null;
       this.setStyle(style);
       const options = { alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'low-power' };
       this.gl = canvas.getContext('webgl2', options) || canvas.getContext('webgl', options);
@@ -1107,9 +1109,11 @@
         this.gpuTimingValid = true;
       }
       if (this.style !== 'ink') this.particleSky.render(time, x * (1 - this.chapter), y * (1 - this.chapter));
+      // The page entrance frames another part of the same virtual figure.
+      const crop = this.viewCrop();
       this.use(this.scene, this.sceneTarget);
       gl.uniform2f(this.scene.uniforms.u_resolution, this.sceneWidth, this.sceneHeight);
-      gl.uniform4fv(this.scene.uniforms.u_crop, this.crop);
+      gl.uniform4fv(this.scene.uniforms.u_crop, crop);
       gl.uniform2f(this.scene.uniforms.u_pointer, x, y);
       gl.uniform4fv(this.scene.uniforms.u_quiet, this.quiet);
       gl.uniform1f(this.scene.uniforms.u_time, time);
@@ -1135,7 +1139,7 @@
       const splatter = this.style === 'ink' ? this.inkSplatter?.render({
         time, x, y, chapter: this.chapter, width: this.width, height: this.height,
         sceneWidth: this.sceneWidth, sceneHeight: this.sceneHeight,
-        crop: this.crop, sceneTexture: this.sceneTarget.texture,
+        crop, sceneTexture: this.sceneTarget.texture,
       }) : null;
       this.use(this.composite, null);
       this.texture(this.composite, 'u_scene', this.sceneTarget.texture, 0);
@@ -1143,7 +1147,7 @@
       this.texture(this.composite, 'u_splatter', splatter?.texture || this.inkTexture, 2);
       gl.uniform1f(this.composite.uniforms.u_hasSplatter, splatter ? 1 : 0);
       gl.uniform2f(this.composite.uniforms.u_texel, 1 / this.width, 1 / this.height);
-      gl.uniform4fv(this.composite.uniforms.u_crop, this.crop);
+      gl.uniform4fv(this.composite.uniforms.u_crop, crop);
       gl.uniform1f(this.composite.uniforms.u_chapter, this.chapter);
       gl.uniform1f(this.composite.uniforms.u_entranceGlow, entranceGlow);
       gl.uniform1f(this.composite.uniforms.u_day, this.day);
@@ -1338,6 +1342,98 @@
       this.day = Math.max(0, Math.min(1, Number(value) || 0));
     }
 
+    // The page entrance (js/intro.js) opens on empty sky and pulls back until
+    // the hole sits in its hero composition: 1 is that starting sky, 0 the
+    // composition itself.
+    setIntro(amount) {
+      this.intro = Math.max(0, Math.min(1, Number(amount) || 0));
+    }
+
+    // The entrance magnifies the view about one fixed point of the stage, so
+    // the shader keeps its own projection and draws the disk natively sharp
+    // at every magnification. The point lies beyond the stage's top-left
+    // corner, where the heading sits, on the line from that corner through
+    // the hole, far enough that the whole disk has left the stage at the
+    // starting magnification; the hole then enters from the opposite side.
+    // Stage coordinates here have y upward.
+    introAnchor() {
+      const [left, bottom, width, height] = this.crop;
+      const key = [left, bottom, width, height, this.sceneWidth, this.sceneHeight, this.style].join();
+      if (this.introLayout?.key === key) return this.introLayout;
+      const zoom = 1.8;
+      const stageWidth = width * this.sceneWidth, stageHeight = height * this.sceneHeight;
+      const ink = this.style === 'ink' ? 1 : 0;
+      const aspect = this.sceneWidth / this.sceneHeight;
+      // The hole, where the shader's shifted screen coordinates reach zero.
+      const holeX = (0.5 + 0.06 * ink / (2 * aspect) - left) / width * stageWidth;
+      const holeY = (0.5 - 0.01 * ink / 2 - bottom) / height * stageHeight;
+      let dx = holeX, dy = holeY - stageHeight;
+      const length = Math.hypot(dx, dy);
+      if (length < 1) { dx = 0.8; dy = -0.6; }
+      else { dx /= length; dy /= length; }
+      // The disk and its lensed arcs fit an ellipse along the 18° screen roll.
+      const major = 0.75 * this.sceneHeight * zoom, minor = 0.36 * this.sceneHeight * zoom;
+      const cos = Math.cos(18 * Math.PI / 180), sin = Math.sin(18 * Math.PI / 180);
+      const margin = 0.03 * Math.min(stageWidth, stageHeight);
+      // The stage in the ellipse's own frame, where the ellipse is a unit
+      // circle: clear once that parallelogram lies wholly outside the circle.
+      const clear = distance => {
+        const centreX = holeX + dx * distance, centreY = holeY + dy * distance;
+        const corners = [[-margin, -margin], [stageWidth + margin, -margin],
+          [stageWidth + margin, stageHeight + margin], [-margin, stageHeight + margin]].map(([x, y]) => [
+          ((x - centreX) * cos + (y - centreY) * sin) / major,
+          ((y - centreY) * cos - (x - centreX) * sin) / minor,
+        ]);
+        let inside = true, nearest = Infinity;
+        for (let i = 0; i < 4; i++) {
+          const [ax, ay] = corners[i], [bx, by] = corners[(i + 1) % 4];
+          const ex = bx - ax, ey = by - ay;
+          if (ey * ax - ex * ay < 0) inside = false;
+          const t = Math.max(0, Math.min(1, -(ax * ex + ay * ey) / (ex * ex + ey * ey)));
+          nearest = Math.min(nearest, Math.hypot(ax + ex * t, ay + ey * t));
+        }
+        return !inside && nearest > 1;
+      };
+      const limit = 12 * Math.max(stageWidth, stageHeight);
+      let near = 0, far = 0.25 * Math.max(stageWidth, stageHeight);
+      while (!clear(far) && far < limit) { near = far; far *= 1.5; }
+      for (let i = 0; i < 14; i++) {
+        const middle = (near + far) / 2;
+        if (clear(middle)) far = middle; else near = middle;
+      }
+      // Magnifying by `zoom` about the anchor moves the hole `far` pixels.
+      const reach = far / (zoom - 1);
+      this.introLayout = {
+        key, zoom,
+        u: (holeX - dx * reach) / stageWidth,
+        v: (holeY - dy * reach) / stageHeight,
+      };
+      return this.introLayout;
+    }
+
+    // The part of the virtual figure the canvas shows: its laid-out crop,
+    // magnified about the entrance anchor while the entrance plays.
+    viewCrop() {
+      if (!(this.intro > 0) || !this.crop || !this.sceneWidth) return this.crop;
+      const { u, v, zoom } = this.introAnchor();
+      const scale = zoom ** this.intro;
+      const [left, bottom, width, height] = this.crop;
+      return [left + u * width * (1 - 1 / scale), bottom + v * height * (1 - 1 / scale), width / scale, height / scale];
+    }
+
+    // For the entrance's own layers: the fixed page point of that
+    // magnification and how far the scene is magnified at `amount`.
+    introView(amount = this.intro) {
+      if (!this.ready || !this.crop || !this.sceneWidth) return null;
+      const rect = this.canvas.getBoundingClientRect();
+      const { u, v, zoom } = this.introAnchor();
+      return {
+        x: rect.left + u * rect.width,
+        y: rect.top + (1 - v) * rect.height,
+        zoom: zoom ** Math.max(0, Math.min(1, Number(amount) || 0)),
+      };
+    }
+
     // The scene camera, for the day/night switch to draw a column along the
     // spin axis: where the hole sits on the page, the camera's orbit, roll
     // and focal length, and page pixels per screen unit. This mirrors the
@@ -1349,7 +1445,7 @@
       const chapter = this.chapter;
       const [x, y] = (this.pointer || [0, 0]).map(value => value * (1 - chapter));
       const ink = this.style === 'ink' ? 1 : 0;
-      const [left, bottom, width, height] = this.crop;
+      const [left, bottom, width, height] = this.viewCrop();
       const aspect = this.sceneWidth / this.sceneHeight;
       const sceneX = 0.5 + (left + width / 2 - 0.5) * chapter + (0.06 * ink * (1 - chapter) + 0.012 * x) / (2 * aspect);
       const sceneY = 0.5 + (bottom + height / 2 - 0.5) * chapter + (0.009 * y - 0.01 * ink * (1 - chapter)) / 2;
@@ -1362,7 +1458,8 @@
         azimuth: x * 0.1 * (1 - ink),
         distance: 31.78443,
         focal: (ink ? 3.7 : 4.05) * (1 - 0.66 * chapter),
-        scale: this.sceneHeight / 2,
+        // Page pixels per screen unit; the entrance magnifies them.
+        scale: this.sceneHeight / 2 * (this.crop[3] / height),
       };
     }
     setStyle(style) {

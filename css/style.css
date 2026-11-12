@@ -61,9 +61,11 @@ body { margin: 0; color: var(--paper); background: var(--space); }
   z-index: 20;
   background: radial-gradient(ellipse 360px 280px at 50% 48%, light-dark(#fbb03b00, #fbb03b06), transparent 72%), var(--space);
   opacity: 1;
-  transition: opacity 420ms ease;
+  /* The curtain lifts a moment after the logo and readout start to leave. */
+  transition: opacity 360ms ease 60ms;
 }
-.loader-content { width: min(240px, 80vw); text-align: center; transform: translateY(-10px); }
+.loader-content { width: min(240px, 80vw); text-align: center; transform: translateY(-10px); transition: opacity 200ms ease, transform 260ms cubic-bezier(0.4, 0, 1, 1); }
+.is-loading-exit .loader-content { opacity: 0; transform: translateY(-10px) scale(0.965); }
 .loader-symbol { width: clamp(132px, 24vw, 160px); margin-inline: auto; animation: loader-arrive 640ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 .loader-mark { display: block; width: 100%; height: auto; overflow: visible; }
 .loader-ring { stroke: light-dark(#fbb03b, #fbb03b); }
@@ -77,8 +79,67 @@ body { margin: 0; color: var(--paper); background: var(--space); }
 .loader-circle-reveal { stroke-dasharray: 1; animation: loader-trace 540ms cubic-bezier(0.18, 0.58, 0.38, 1) 250ms both; }
 .loader-fill-slash { animation-delay: 200ms; }
 .loader-fill-circle { animation-delay: 390ms; }
-.loader-caption { margin: 26px 0 0; color: light-dark(#494c4f, #979b9e); font-size: 10px; line-height: 1.8; letter-spacing: 0.3em; text-indent: 0.3em; animation: loader-caption-in 300ms ease 500ms both; }
+/* The readout names what the loader is really waiting for (js/loading.js):
+   the row being waited on blinks, a finished row reads OK, and a scene the
+   device cannot run reads "--". */
+.loader-readout { display: grid; gap: 9px; width: 176px; max-width: 100%; margin: 30px auto 0; color: light-dark(#6e7379, #6d7278); font: 10px/1 "Consolas", "SFMono-Regular", monospace; letter-spacing: 0.14em; text-align: left; }
+.loader-step { display: flex; align-items: center; gap: 8px; position: relative; animation: loader-caption-in 300ms ease 420ms both; }
+.loader-step:nth-child(2) { animation-delay: 500ms; }
+.loader-step:nth-child(3) { animation-delay: 580ms; }
+.loader-step b { font-weight: 400; transition: color 160ms ease; }
+.loader-step:not([data-state="pending"]) b { color: light-dark(#494c4f, #979b9e); }
+.loader-step i { flex: 1; height: 1px; background: repeating-linear-gradient(90deg, light-dark(#6e737980, #6d727880) 0 2px, transparent 2px 6px); }
+.loader-step em { min-width: 2ch; font-style: normal; text-align: right; color: light-dark(#161619, #dedee3); opacity: 0; transition: opacity 160ms ease; }
+.loader-step:is([data-state="done"], [data-state="off"]) em { opacity: 1; }
+.loader-step[data-state="off"] em { color: light-dark(#6e7379, #6d7278); font-size: 0; }
+.loader-step[data-state="off"] em::before { content: "--"; font-size: 10px; }
+.loader-step[data-state="active"]::after { content: ""; position: absolute; right: 0.14em; top: 50%; width: 4px; height: 4px; margin-top: -2px; background: var(--red); animation: loader-step-wait 900ms steps(1, end) infinite; }
 .is-loading-exit .site-loader { opacity: 0; }
+
+/* Four corner marks frame the logo while the loader waits, then open out to
+   the hero's own frame as the curtain lifts and fade once the page settles.
+   They sit above the loader and outlive it, so they are their own layer.
+   js/intro.js measures the hero's frame; the defaults match its CSS. */
+.intro-frame { display: none; }
+.has-site-intro .intro-frame {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 21;
+  pointer-events: none;
+  container-type: size;
+  --mark: 14px;
+  --frame-left: var(--page-left, 4.2cqw);
+  --frame-top: var(--page-top, 48px);
+  --frame-right: var(--page-right, 95.8cqw);
+  --frame-bottom: var(--page-bottom, calc(100cqh - 48px));
+}
+.is-loading:not(.is-loading-exit) .intro-frame {
+  --boot-x: min(168px, 44cqw);
+  --frame-left: calc(50cqw - var(--boot-x));
+  --frame-right: calc(50cqw + var(--boot-x));
+  --frame-top: calc(50cqh - 186px);
+  --frame-bottom: calc(50cqh + 166px);
+}
+.intro-frame > i { position: absolute; left: 0; top: 0; width: var(--mark); height: var(--mark); transform: translate(var(--mark-x), var(--mark-y)); transition: transform calc(640ms * var(--intro-slow, 1)) cubic-bezier(0.16, 1, 0.3, 1); }
+.intro-frame > i:nth-child(1) { --mark-x: var(--frame-left); --mark-y: var(--frame-top); }
+.intro-frame > i:nth-child(2) { --mark-x: calc(var(--frame-right) - var(--mark)); --mark-y: var(--frame-top); }
+.intro-frame > i:nth-child(3) { --mark-x: var(--frame-left); --mark-y: calc(var(--frame-bottom) - var(--mark)); }
+.intro-frame > i:nth-child(4) { --mark-x: calc(var(--frame-right) - var(--mark)); --mark-y: calc(var(--frame-bottom) - var(--mark)); }
+.intro-frame > i::before, .intro-frame > i::after { content: ""; position: absolute; background: light-dark(rgb(9 11 14 / 72%), rgb(236 240 244 / 72%)); }
+/* Each arm grows out of its corner. */
+.intro-frame > i::before { width: 100%; height: 1px; animation: intro-mark-across 420ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both; }
+.intro-frame > i::after { width: 1px; height: 100%; animation: intro-mark-down 420ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both; }
+.intro-frame > i:nth-child(odd)::before, .intro-frame > i:nth-child(odd)::after { left: 0; }
+.intro-frame > i:nth-child(even)::before, .intro-frame > i:nth-child(even)::after { right: 0; }
+.intro-frame > i:nth-child(-n + 2)::before, .intro-frame > i:nth-child(-n + 2)::after { top: 0; }
+.intro-frame > i:nth-child(n + 3)::before, .intro-frame > i:nth-child(n + 3)::after { bottom: 0; }
+.intro-frame > i:nth-child(odd)::before { transform-origin: left; }
+.intro-frame > i:nth-child(even)::before { transform-origin: right; }
+.intro-frame > i:nth-child(-n + 2)::after { transform-origin: top; }
+.intro-frame > i:nth-child(n + 3)::after { transform-origin: bottom; }
+/* Opened, the marks hold at the hero's frame and then fade. */
+.is-loading-exit .intro-frame, .has-site-intro:not(.is-loading) .intro-frame { animation: intro-frame-out calc(var(--intro-frame-fade, 260ms) * var(--intro-slow, 1)) ease calc(var(--intro-frame-hold, 320ms) * var(--intro-slow, 1)) both; }
 @keyframes loader-arrive {
   from { opacity: 0; transform: translateY(4px) scale(0.97); }
   24% { opacity: 1; }
@@ -87,6 +148,10 @@ body { margin: 0; color: var(--paper); background: var(--space); }
 @keyframes loader-trace { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 @keyframes loader-ring-trace { from { stroke-dashoffset: -1; } to { stroke-dashoffset: 0; } }
 @keyframes loader-caption-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes loader-step-wait { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@keyframes intro-mark-across { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes intro-mark-down { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes intro-frame-out { to { opacity: 0; } }
 
 .hero {
   --hero-height: clamp(760px, 100svh, 1400px);
@@ -157,29 +222,40 @@ h1 > span { display: block; }
   from { opacity: 0; translate: 0 12px; }
   to { opacity: 1; translate: 0 0; }
 }
-@keyframes hero-nav-enter {
-  from { opacity: 0; translate: 0 -8px; }
-  to { opacity: 1; translate: 0 0; }
-}
 @keyframes hero-scene-enter { from { opacity: 0; } to { opacity: 1; } }
 @keyframes hero-stars-enter { from { opacity: 0; } to { opacity: 0.3; } }
+/* The entrance's own stars (js/intro.js) share the star canvas's place. */
+.intro-stars { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
 @media (prefers-reduced-motion: no-preference) {
   .title-period.is-cursor-blinking { animation: title-cursor-blink 1s steps(1, end) infinite; }
-  .has-site-intro .black-hole { animation: hero-scene-enter 800ms ease-out both; }
-  .has-site-intro .starfield { animation: hero-stars-enter 720ms ease-out both; }
-  .has-site-intro .space-grid { animation: hero-scene-enter 620ms ease-out 160ms both; }
-  .has-site-intro .title-first-content { animation: title-first-enter 720ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both; }
-  .has-site-intro .title-second-content { animation: title-second-enter 700ms cubic-bezier(0.22, 1, 0.36, 1) 160ms both; }
-  .has-site-intro .title-period { animation: title-period-enter 240ms cubic-bezier(0.22, 1, 0.36, 1) 720ms both; }
-  .has-site-intro .live-clock { animation: hero-element-enter 600ms cubic-bezier(0.22, 1, 0.36, 1) 280ms both; }
-  .has-site-intro .site-header .site-brand { animation: hero-nav-enter 520ms cubic-bezier(0.22, 1, 0.36, 1) 200ms both; }
-  .has-site-intro .site-header .menu-toggle { animation: hero-nav-enter 480ms cubic-bezier(0.22, 1, 0.36, 1) 300ms both; }
-  .has-site-intro .site-header .site-nav a { animation: hero-nav-enter 480ms cubic-bezier(0.22, 1, 0.36, 1) var(--nav-enter-delay, 240ms) both; }
-  .site-header .site-nav a:nth-child(2) { --nav-enter-delay: 290ms; }
-  .site-header .site-nav a:nth-child(3) { --nav-enter-delay: 340ms; }
-  .site-header .site-nav a:nth-child(4) { --nav-enter-delay: 390ms; }
+  /* The short entrance: coming back to the page within a session (a reload
+     plays the full one again), a device without the live scene, or a page
+     whose entrance script never ran. About half a second, and it needs no
+     script to finish. */
+  .has-site-intro .black-hole { animation: hero-scene-enter 520ms ease-out both; }
+  .has-site-intro .starfield { animation: hero-stars-enter 480ms ease-out both; }
+  .has-site-intro .space-grid { animation: hero-scene-enter 420ms ease-out 120ms both; }
+  .has-site-intro .title-first-content { animation: title-first-enter 460ms cubic-bezier(0.22, 1, 0.36, 1) 40ms both; }
+  .has-site-intro .title-second-content { animation: title-second-enter 460ms cubic-bezier(0.22, 1, 0.36, 1) 100ms both; }
+  .has-site-intro .title-period { animation: title-period-enter 200ms cubic-bezier(0.22, 1, 0.36, 1) 420ms both; }
+  .has-site-intro .live-clock { animation: hero-element-enter 400ms cubic-bezier(0.22, 1, 0.36, 1) 180ms both; }
+  /* The full entrance (js/intro.js): the curtain lifts on stars alone and the
+     camera pulls back until the hole sits in place, so nothing fades in with
+     the curtain. The script types the second title line and rolls the clock;
+     ?intro=slow stretches every time here by --intro-slow. */
+  .is-intro .black-hole, .is-intro .starfield, .is-intro .title-period { animation: none; }
+  /* The live scene is certain here and its first frame is already the opening
+     sky. Neither that frame's fade-in nor the illustration it replaces, which
+     shows the settled composition, may ghost through the lifting curtain. */
+  .is-intro #black-hole-canvas { opacity: 1; transition: none; }
+  .is-intro .black-hole-fallback { opacity: 0; transition: none; }
+  .is-intro .space-grid { animation: hero-scene-enter calc(420ms * var(--intro-slow, 1)) ease-out calc(1480ms * var(--intro-slow, 1)) both; }
+  .is-intro .title-first-content { animation: title-first-enter calc(720ms * var(--intro-slow, 1)) cubic-bezier(0.22, 1, 0.36, 1) calc(900ms * var(--intro-slow, 1)) both; }
+  .is-intro .title-second-content { animation: none; clip-path: inset(-0.3em 100% -0.3em -0.2em); }
+  .is-intro .live-clock { animation: hero-scene-enter calc(320ms * var(--intro-slow, 1)) ease calc(1260ms * var(--intro-slow, 1)) both; }
+  .is-intro .intro-frame { --intro-frame-hold: 1480ms; --intro-frame-fade: 420ms; }
   /* Resume while the loader fades, so the page is already arriving underneath. */
-  .is-loading:not(.is-loading-exit) :is(.black-hole, .starfield, .space-grid, .title-first-content, .title-second-content, .title-period, .live-clock, .site-header .site-brand, .site-header .menu-toggle, .site-header .site-nav a) { animation-play-state: paused; }
+  .is-loading:not(.is-loading-exit) :is(.black-hole, .starfield, .space-grid, .title-first-content, .title-second-content, .title-period, .live-clock) { animation-play-state: paused; }
 }
 .live-clock {
   display: flex;
@@ -248,5 +324,6 @@ html[data-black-hole-style="ink"] .black-hole-switch { left: 52%; top: 50.5%; he
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; }
   [data-depth] { will-change: auto; }
-  .loader-symbol, .loader-ring-reveal, .loader-slash-reveal, .loader-circle-reveal, .loader-caption { animation: none; }
+  .loader-symbol, .loader-ring-reveal, .loader-slash-reveal, .loader-circle-reveal, .loader-step, .loader-step::after,
+  .intro-frame, .intro-frame > i::before, .intro-frame > i::after { animation: none; }
 }

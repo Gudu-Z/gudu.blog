@@ -15,9 +15,9 @@
     <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg?v=20261018-logo" />
     <link rel="preload" href="./assets/fonts/barlow-condensed-black-latin.woff2" as="font" type="font/woff2" crossorigin />
     <script src="./js/site-theme.js?v=20261030-day-mode"></script>
-    <script src="./js/loading.js?v=20261023-responsive-startup"></script>
+    <script src="./js/loading.js?v=20261112-intro"></script>
     <script src="./js/black-hole-theme.js?v=20261101-white-hole"></script>
-    <link rel="stylesheet" href="./css/style.css?v=20261101-day-mode" />
+    <link rel="stylesheet" href="./css/style.css?v=20261112-intro" />
     <link rel="stylesheet" href="./css/blog.css?v=20261101-day-mode" />
     <link rel="stylesheet" href="./css/chapters.css?v=20261109-hud-inset" />
     <link rel="stylesheet" href="./css/about-terminal.css?v=20261101-day-mode" />
@@ -27,8 +27,9 @@
     <link rel="stylesheet" href="./css/cursor.css?v=20261101-day-mode" />
     <script src="./js/ink-splatter.js?v=20261020-camera-preserved" defer></script>
     <script src="./js/particle-sky.js?v=20261020-original-stars" defer></script>
-    <script src="./js/black-hole.js?v=20261101-white-hole" defer></script>
-    <script src="./js/main.js?v=20261101-day-mode" defer></script>
+    <script src="./js/black-hole.js?v=20261112-intro" defer></script>
+    <script src="./js/main.js?v=20261112-intro" defer></script>
+    <script src="./js/intro.js?v=20261112-intro" defer></script>
     <script src="./js/theme-jets.js?v=20261101-white-hole" defer></script>
     <script src="./js/posts-data.js?v=20261026-categories" defer></script>
     <script src="./js/blog.js?v=20261029-ui-polish" defer></script>
@@ -121,9 +122,15 @@
             </g>
           </svg>
         </div>
-        <p class="loader-caption">正在载入</p>
+        <p class="sr-only">正在载入</p>
+        <div class="loader-readout" aria-hidden="true">
+          <span class="loader-step" data-step="font" data-state="active"><b>FONT</b><i></i><em>OK</em></span>
+          <span class="loader-step" data-step="scene" data-state="pending"><b>SCENE</b><i></i><em>OK</em></span>
+          <span class="loader-step" data-step="frame" data-state="pending"><b>FRAME</b><i></i><em>OK</em></span>
+        </div>
       </div>
     </div>
+    <div class="intro-frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
     <main>
       <section class="hero" id="home" aria-labelledby="hero-title">
         <div class="hero-stage" id="hero-stage">

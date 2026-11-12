@@ -1061,3 +1061,96 @@ await test('the theme switch sees the scene through the shader\'s own camera', a
   renderer.dispose();
   assert.equal(renderer.jetCamera(), null, 'a retired renderer has no camera to lend');
 });
+
+await test('the entrance camera opens on empty sky and keeps the shader\'s own projection', async () => {
+  const close = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 1e-6, `${message}: ${actual} vs ${expected}`);
+  for (const options of [{}, { viewport: [1001, 777] }, { viewport: [390, 844] }, { style: 'ink', webgl2: true }]) {
+    const label = JSON.stringify(options);
+    const site = await browser(options);
+    const { renderer } = site;
+    const ink = options.style === 'ink' ? 1 : 0;
+    const aspect = 1665 / 1110;
+    const frame = () => {
+      if (options.webgl2 && renderer.gpuSync) site.complete();
+      const start = site.calls.length;
+      assert.equal(renderer.render(12, 0, 0, 0), true);
+      const calls = site.calls.slice(start);
+      const uniforms = calls.filter(call => call.name.startsWith('uniform') && call.args[0]?.name);
+      return {
+        crops: uniforms.filter(call => call.args[0].name === 'u_crop').map(call => call.args[1]),
+        others: uniforms.filter(call => call.args[0].name !== 'u_crop').map(call => [call.name, call.args[0].name, ...call.args.slice(1)]),
+        draws: calls.filter(call => call.name === 'draw').length,
+        camera: renderer.jetCamera(),
+      };
+    };
+    // The disk and its lensed arcs, as an ellipse along the 18° screen roll.
+    const diskTouchesStage = (x, y, scale) => {
+      const stage = renderer.canvas.getBoundingClientRect();
+      const major = 0.75 * 1110 * scale, minor = 0.36 * 1110 * scale;
+      const cos = Math.cos(18 * Math.PI / 180), sin = Math.sin(18 * Math.PI / 180);
+      for (let index = 0; index < 720; index++) {
+        const angle = index / 720 * Math.PI * 2;
+        const along = Math.cos(angle) * major, across = Math.sin(angle) * minor;
+        // Page coordinates run downward; the disk rises to the right.
+        const px = x + along * cos + across * sin, py = y - along * sin + across * cos;
+        if (px >= stage.left && px <= stage.left + stage.width && py >= stage.top && py <= stage.top + stage.height) return true;
+      }
+      return x >= stage.left && x <= stage.left + stage.width && y >= stage.top && y <= stage.top + stage.height;
+    };
+    const home = frame();
+    assert.ok(home.crops.length >= 2 && home.crops.every(crop => crop === renderer.crop),
+      `${label}: a settled camera uploads the laid-out crop itself`);
+    assert.equal(diskTouchesStage(home.camera.x, home.camera.y, 1), true, `${label}: the hero shows the hole`);
+
+    renderer.setIntro(1);
+    const sky = frame();
+    assert.ok(sky.crops.every(crop => crop === sky.crops[0]), `${label}: every pass frames the same view`);
+    assert.deepEqual(sky.others, home.others, `${label}: only the framed part of the figure changes`);
+    assert.equal(sky.draws, home.draws, `${label}: the entrance adds no pass`);
+    close(renderer.crop[2] / sky.crops[0][2], 1.8, `${label}: horizontal magnification`);
+    close(renderer.crop[3] / sky.crops[0][3], 1.8, `${label}: vertical magnification`);
+    close(sky.camera.scale, home.camera.scale * 1.8, `${label}: page pixels per screen unit`);
+    assert.equal(diskTouchesStage(sky.camera.x, sky.camera.y, 1.8), false, `${label}: the opening sky holds no part of the disk`);
+    const dx = sky.camera.x - home.camera.x, dy = sky.camera.y - home.camera.y;
+    assert.ok(dx > 0 && dy > 0, `${label}: the hole waits beyond the corner opposite the heading`);
+    assert.equal(diskTouchesStage(home.camera.x + dx * 0.9, home.camera.y + dy * 0.9, 1.8), true,
+      `${label}: it waits no farther away than it must`);
+
+    // The shader maps page pixels through the uploaded crop; the camera lent
+    // to the page's own layers must agree with it at every magnification.
+    const rect = renderer.canvas.getBoundingClientRect();
+    const sceneAt = (px, py, [left, bottom, width, height]) => [
+      left + (px - rect.left) / rect.width * width, bottom + (1 - (py - rect.top) / rect.height) * height];
+    for (const [px, py] of [[0, 0], [rect.width / 2, rect.height / 2], [rect.width * 0.9, rect.height * 0.8]]) {
+      const [sceneX, sceneY] = sceneAt(px, py, sky.crops[0]);
+      close((px - sky.camera.x) / sky.camera.scale, (sceneX - 0.5) * aspect * 2 - 0.06 * ink, `${label}: screen x at ${px},${py}`);
+      close(-(py - sky.camera.y) / sky.camera.scale, (sceneY - 0.5) * 2 + 0.01 * ink, `${label}: screen y at ${px},${py}`);
+    }
+    // One page point stays fixed while everything else closes in on it.
+    const anchor = renderer.introView(1);
+    close(anchor.zoom, 1.8, `${label}: starting magnification`);
+    close(renderer.introView(0).zoom, 1, `${label}: settled magnification`);
+    const fixedHome = sceneAt(anchor.x, anchor.y, renderer.crop), fixedSky = sceneAt(anchor.x, anchor.y, sky.crops[0]);
+    close(fixedSky[0], fixedHome[0], `${label}: the anchor's scene x`);
+    close(fixedSky[1], fixedHome[1], `${label}: the anchor's scene y`);
+    assert.equal(renderer.introAnchor(), renderer.introAnchor(), `${label}: the layout is solved once`);
+
+    renderer.setIntro(0.5);
+    const halfway = frame();
+    close(halfway.camera.scale, home.camera.scale * Math.sqrt(1.8), `${label}: magnification eases geometrically`);
+    const hx = halfway.camera.x - home.camera.x, hy = halfway.camera.y - home.camera.y;
+    assert.ok(Math.abs(hx * dy - hy * dx) < 1e-3 * Math.hypot(dx, dy), `${label}: the hole travels one straight line`);
+    assert.ok(hx > 0 && hx < dx, `${label}: and is on its way home`);
+
+    for (const [value, expected] of [[4, 1], [-1, 0], [Number.NaN, 0], ['0.25', 0.25]]) {
+      renderer.setIntro(value);
+      assert.equal(renderer.intro, expected);
+    }
+    renderer.setIntro(0);
+    const settled = frame();
+    assert.ok(settled.crops.every(crop => crop === renderer.crop), `${label}: the camera returns to the laid-out crop`);
+    assert.deepEqual(settled.camera, home.camera);
+    renderer.dispose();
+    assert.equal(renderer.introView(), null, 'a retired renderer has no view to lend');
+  }
+});

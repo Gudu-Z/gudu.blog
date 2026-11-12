@@ -55,7 +55,12 @@ function browser({ reduced = false, hidden = false, pendingResources = false } =
   const image = deferred();
   if (!pendingResources) { font.resolve(); image.resolve(); }
   const root = { classList: classList() };
-  const loader = eventTarget({ remove() { removed = true; } });
+  // The readout rows as index.html ships them: the font is waited on first.
+  const rows = ['font', 'scene', 'frame'].map(step => ({ dataset: { step, state: step === 'font' ? 'active' : 'pending' } }));
+  const loader = eventTarget({
+    remove() { removed = true; },
+    querySelectorAll: selector => (selector === '[data-step]' ? rows : []),
+  });
   const blackHole = { classList: classList() };
   const fallback = { decode: () => image.promise };
   const reducedMotion = eventTarget({ matches: reduced });
@@ -93,6 +98,7 @@ function browser({ reduced = false, hidden = false, pendingResources = false } =
   return {
     window, document, root, loader, frames, timers, events,
     get removed() { return removed; },
+    steps: () => rows.map(row => row.dataset.state).join(' '),
     async flushPromises() {
       // Includes Promise.allSettled's handlers and its final continuation.
       for (let i = 0; i < 12; i += 1) await Promise.resolve();
@@ -233,6 +239,62 @@ test('unavailable or rejected scenes wait for the fallback already decoding in p
     assertReleased(page);
     assert.deepEqual(page.events, ['site:revealing', 'site:revealed']);
   }
+});
+
+test('the readout follows the font, the compiled scene and its first frame, never a made-up figure', async () => {
+  const page = browser({ pendingResources: true });
+  const scene = deferred();
+  const compiled = deferred();
+  assert.equal(page.steps(), 'active pending pending', 'the font is waited on before the page script runs');
+  page.window.SiteLoader.ready({ scene: scene.promise, compiled: compiled.promise });
+  await page.flushPromises();
+  assert.equal(page.steps(), 'active pending pending', 'nothing is reported before it has happened');
+  page.resolveFont();
+  await page.flushPromises();
+  assert.equal(page.steps(), 'done active pending');
+  compiled.resolve(true);
+  await page.flushPromises();
+  assert.equal(page.steps(), 'done done active', 'a compiled scene still owes its first frame');
+  assert.equal(page.frames.size, 0, 'compilation alone cannot dismiss the loader');
+  scene.resolve(true);
+  await page.flushPromises();
+  assert.equal(page.steps(), 'done done done');
+  assert.equal(page.frames.size, 1);
+});
+
+test('the readout marks a scene the device cannot run and counts the decoded illustration as the frame', async () => {
+  for (const mode of ['compiled', 'scene', 'legacy']) {
+    const page = browser({ pendingResources: true });
+    const scene = deferred();
+    if (mode === 'compiled') page.window.SiteLoader.ready({ scene: scene.promise, compiled: Promise.resolve(false) });
+    else if (mode === 'scene') page.window.SiteLoader.ready({ scene: scene.promise });
+    else page.window.SiteLoader.ready();
+    scene.resolve(false);
+    page.resolveFont();
+    await page.flushPromises();
+    assert.equal(page.steps(), 'done off active', `${mode}: the illustration is still decoding`);
+    page.resolveImage();
+    await page.flushPromises();
+    assert.equal(page.steps(), 'done off done', mode);
+  }
+  // A scene that reports only readiness is compiled once it is ready.
+  const live = browser();
+  live.window.SiteLoader.ready({ scene: Promise.resolve(true) });
+  await live.flushPromises();
+  assert.equal(live.steps(), 'done done done');
+});
+
+test('a released loader leaves its readout alone when late resources arrive', async () => {
+  const page = browser({ pendingResources: true });
+  const scene = deferred();
+  page.window.SiteLoader.ready({ scene: scene.promise, compiled: scene.promise });
+  page.advance(4000);
+  assertReleased(page);
+  const before = page.steps();
+  scene.resolve(true);
+  page.resolveResources();
+  await page.flushPromises();
+  assert.equal(page.steps(), before);
 });
 
 test('a stalled scene or font starts fallback dismissal at 3450ms and is released by 4000ms', async () => {

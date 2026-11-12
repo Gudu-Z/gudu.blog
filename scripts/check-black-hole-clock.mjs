@@ -106,10 +106,12 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
       sampleFrame(timestamp) { samples.push(timestamp); }
       dispose(options) { this.disposeOptions = options; this.disposed = true; this.ready = false; }
       setStyle(style) { this.style = style; this.ready = !(deferInk && style === 'ink'); }
+      setIntro(amount) { this.intro = amount; }
+      introView(amount) { return { x: -674, y: -326, zoom: 1.8 ** amount }; }
       render(time, x, y, chapter = 0, entranceGlow = 0) {
         attempts.push({ time, x, y, chapter, entranceGlow, at: now });
         if (!this.ready || this.lost || this.disposed || this.busy) return false;
-        renders.push({ time, x, y, chapter, entranceGlow, at: now });
+        renders.push({ time, x, y, chapter, entranceGlow, intro: this.intro ?? 0, at: now });
         now += renderCost;
         return true;
       }
@@ -144,6 +146,8 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
   }
   return {
     attempts, renders, layers, renderers, samples, polls, work, starColors, sphere, root: document.documentElement,
+    hero,
+    get scene() { return window.SiteBlackHole; },
     get preparation() { return preparation; },
     get renderer() { return renderer; },
     get pendingFrames() { return frames.size; },
@@ -818,4 +822,65 @@ await test('the black sphere switches day and night on the hero only', () => {
   assert.equal(site.sphere.hidden, true);
   site.page(20, 'site:chapter', { detail: { progress: 0 } });
   assert.equal(site.sphere.hidden, false, 'back on the hero the sphere switches again');
+});
+
+await test('the entrance camera frames its opening sky from the first frame and moves at the interactive cadence', async () => {
+  const site = browser({ loading: true });
+  site.scene.intro(1);
+  assert.equal(site.renders.length, 0, 'no renderer exists before the logo has drawn');
+  assert.equal(site.rendererDelay, 1100, 'asking for the opening sky does not hurry GPU setup');
+  site.warmup(1100);
+  assert.equal(site.last.intro, 1, 'the first frame behind the loader is the opening sky');
+  assert.equal(site.renders.length, 1);
+  site.checkPreparation(1200);
+  assert.equal(await site.preparation, true);
+  assert.equal(site.scene.live(), true);
+  assert.deepEqual(site.scene.introView(1), { x: -674, y: -326, zoom: 1.8 });
+  site.page(1250, 'site:revealing');
+  site.renderer.cameraInterval = 1000 / 60;
+  const idleFrom = site.renders.length;
+  for (let index = 1; index <= 30; index++) site.frame(1250 + index * 1000 / 60);
+  assert.ok(site.renders.length - idleFrom <= 16, 'a resting entrance camera keeps the idle budget');
+  site.scene.intro(0.6, true);
+  const movingFrom = site.renders.length;
+  for (let index = 31; index <= 60; index++) site.frame(1250 + index * 1000 / 60);
+  assert.ok(site.renders.length - movingFrom >= 29, 'the pull-back draws every display frame');
+  assert.equal(site.last.intro, 0.6);
+  site.scene.intro(4, true);
+  site.frame(2300);
+  assert.equal(site.last.intro, 1, 'the amount is clamped');
+  assert.equal(site.pendingFrames, 1, 'the entrance adds no animation loop of its own');
+  site.page(2400, 'site:intro-complete');
+  assert.equal(site.root.classList.contains('has-site-intro'), false);
+  assert.equal(site.hero.classList.contains('intro-complete'), true);
+  site.frame(2500);
+  assert.equal(site.last.intro, 0, 'however the entrance ends, the camera is home');
+  phase(site.last.time, 12 + (2500 - 1250) / 1000);
+});
+
+await test('every other way the entrance ends also returns its camera, and a still scene redraws at once', () => {
+  const hidden = browser();
+  hidden.scene.intro(0.7, true);
+  hidden.frame(100);
+  assert.equal(hidden.last.intro, 0.7);
+  hidden.hidden(200, true);
+  hidden.hidden(900, false);
+  hidden.frame(1000);
+  assert.equal(hidden.last.intro, 0, 'a hidden page ends its entrance');
+  const finished = browser();
+  finished.scene.intro(0.4, true);
+  finished.finishIntro(50);
+  finished.frame(100);
+  assert.equal(finished.last.intro, 0, 'the short entrance ends with the title period');
+
+  const still = browser({ reduced: true });
+  const before = still.renders.length;
+  still.scene.intro(0.5);
+  assert.equal(still.renders.length, before + 1, 'a paused scene cannot keep a stale camera');
+  assert.equal(still.last.intro, 0.5);
+  still.scene.intro(0.5);
+  assert.equal(still.renders.length, before + 1, 'an unchanged amount draws nothing');
+  still.scene.intro(0);
+  assert.equal(still.last.intro, 0);
+  assert.equal(still.pendingFrames, 0, 'reduced motion still starts no animation');
 });

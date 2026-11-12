@@ -1,0 +1,450 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { test } from 'node:test';
+import { runInNewContext } from 'node:vm';
+
+const source = await readFile(new URL('../js/intro.js', import.meta.url), 'utf8');
+
+function eventTarget(extra = {}) {
+  const listeners = new Map();
+  return Object.assign(extra, {
+    addEventListener(type, callback) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type).add(callback);
+    },
+    removeEventListener(type, callback) { listeners.get(type)?.delete(callback); },
+    dispatchEvent(event) {
+      for (const callback of [...(listeners.get(event.type) || [])]) callback(event);
+      return true;
+    },
+    listening: type => listeners.get(type)?.size || 0,
+  });
+}
+
+function classList(initial = []) {
+  const values = new Set(initial);
+  return {
+    contains: name => values.has(name),
+    add: (...names) => names.forEach(name => values.add(name)),
+    remove: (...names) => names.forEach(name => values.delete(name)),
+    list: () => [...values],
+  };
+}
+
+function style() {
+  const properties = new Map();
+  return {
+    clipPath: '', transform: '', opacity: '',
+    setProperty(name, value) { properties.set(name, value); },
+    removeProperty(name) { properties.delete(name); },
+    getPropertyValue: name => properties.get(name) ?? '',
+    properties,
+  };
+}
+
+// Execute the real entrance script against a controlled page: a hero with its
+// two-part title and clock, the scene's camera hooks, and a manual clock.
+function browser({ search = '', hash = '', seen = false, storageBlocked = false, reduced = false, loading = true,
+  live = true, text = '个人博客', navigation = 'navigate' } = {}) {
+  let now = 0;
+  let sequence = 0;
+  const frames = new Map();
+  const timers = new Map();
+  const events = [];
+  const storage = new Map(seen ? [['gudu-intro', 'seen']] : []);
+  const draws = { clears: 0, dots: 0, streaks: 0 };
+  const canvases = [];
+  const root = { classList: classList(loading ? ['is-loading', 'has-site-intro'] : []), dataset: {}, style: style() };
+
+  const period = { style: style() };
+  const second = { style: style(), childNodes: [], getBoundingClientRect: () => ({ left: 100, top: 300, width: 560, height: 120 }) };
+  const place = node => second.childNodes.indexOf(node);
+  const titleText = {
+    nodeType: 3, nodeValue: text,
+    replaceWith(...nodes) { second.childNodes.splice(place(titleText), 1, ...nodes); },
+  };
+  second.childNodes.push(titleText, period);
+  const glyph = () => {
+    const node = {
+      nodeType: 1, textContent: '', style: style(),
+      // Each character is 60px wide, laid out in document order.
+      getBoundingClientRect: () => ({ left: 100 + place(node) * 60, right: 160 + place(node) * 60 }),
+      before(other) { second.childNodes.splice(place(node), 0, other); },
+      remove() { second.childNodes.splice(place(node), 1); },
+    };
+    return node;
+  };
+  const clockParts = [{ textContent: '' }, { textContent: '' }];
+  const clock = { querySelector: selector => clockParts[selector === '[data-clock-date]' ? 0 : 1] };
+  const grid = { getBoundingClientRect: () => ({ left: 67, top: 48, right: 1533, bottom: 812 }) };
+  const heroNodes = { '.space-grid': grid, '.title-second-content': second, '.title-period': period, '#local-time': clock };
+  const hero = { querySelector: selector => heroNodes[selector] ?? null };
+  const stageNodes = [];
+  const starfield = { after(node) { stageNodes.push(node); } };
+  const stage = {
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 1600, height: 860 }),
+    querySelector: selector => (selector === '#starfield' ? starfield : null),
+    prepend(node) { stageNodes.unshift(node); },
+  };
+  const frameLayer = { clientHeight: 860, style: style() };
+  const context = {
+    setTransform() {}, beginPath() {}, moveTo() {}, lineTo() {},
+    clearRect() { draws.clears++; }, arc() {}, fill() { draws.dots++; }, stroke() { draws.streaks++; },
+  };
+  const scene = {
+    calls: [],
+    intro(amount, moving = false) { this.calls.push([amount, moving]); },
+    introView: (amount = 1) => (live ? { x: -674, y: -326, zoom: 1.8 ** amount } : null),
+    live: () => live,
+  };
+  const pageNodes = { '.hero': hero, '#hero-stage': stage, '.intro-frame': frameLayer };
+  const document = eventTarget({
+    hidden: false,
+    documentElement: root,
+    querySelector: selector => pageNodes[selector] ?? null,
+    createElement(name) {
+      if (name === 'span') return glyph();
+      const canvas = {
+        className: '', width: 0, height: 0, removed: false,
+        setAttribute() {}, getContext: () => context,
+        remove() { this.removed = true; stageNodes.splice(stageNodes.indexOf(this), 1); },
+      };
+      canvases.push(canvas);
+      return canvas;
+    },
+  });
+  const media = eventTarget({ matches: reduced });
+  const window = eventTarget({
+    location: { search, hash }, scrollY: 0, innerHeight: 860, devicePixelRatio: 1,
+    SiteBlackHole: scene,
+    sessionStorage: {
+      getItem(key) { if (storageBlocked) throw new Error('blocked'); return storage.get(key) ?? null; },
+      setItem(key, value) { if (storageBlocked) throw new Error('blocked'); storage.set(key, value); },
+    },
+  });
+  window.addEventListener('site:intro-complete', () => events.push('site:intro-complete'));
+  // The wall clock the title's time locks onto.
+  class FixedDate extends Date { constructor() { super(2026, 10, 12, 14, 31, 38); } }
+  const warnings = [];
+  runInNewContext(source, {
+    window, document, URLSearchParams, Date: FixedDate,
+    console: { warn: (...args) => warnings.push(args.map(String).join(' ')) },
+    Event: class { constructor(type) { this.type = type; } },
+    // How this page was reached; an older browser has no such record.
+    performance: navigation === null ? { now: () => now }
+      : { now: () => now, getEntriesByType: type => (type === 'navigation' ? [{ type: navigation }] : []) },
+    matchMedia: () => media,
+    requestAnimationFrame(callback) { const id = ++sequence; frames.set(id, callback); return id; },
+    cancelAnimationFrame(id) { frames.delete(id); },
+    setTimeout(callback, delay = 0) { const id = ++sequence; timers.set(id, { callback, at: now + delay }); return id; },
+    clearTimeout(id) { timers.delete(id); },
+  }, { filename: 'js/intro.js' });
+
+  const visible = () => second.childNodes.filter(node => node !== period && node.nodeType === 1 && node.style.opacity !== '0').length;
+  return {
+    window, document, root, scene, second, period, titleText, clockParts, frameLayer, stageNodes, canvases,
+    events, draws, storage, warnings, media, frames, timers,
+    get now() { return now; },
+    amount: () => scene.calls.at(-1)?.[0],
+    moving: () => scene.calls.at(-1)?.[1],
+    typed: () => (second.childNodes.includes(titleText) ? null : visible()),
+    // The loader's animated exit: the class first, then the announcement.
+    reveal() {
+      root.classList.add('is-loading-exit');
+      window.dispatchEvent({ type: 'site:revealing' });
+    },
+    release() {
+      root.classList.remove('is-loading', 'is-loading-exit');
+      window.dispatchEvent({ type: 'site:revealed' });
+    },
+    // Display frames every 16ms; `frames: false` models a stalled frame loop.
+    advance(milliseconds, { frames: animate = true } = {}) {
+      const end = now + milliseconds;
+      while (now < end) {
+        now = Math.min(end, now + 16);
+        for (const [id, timer] of [...timers]) {
+          if (timer.at > now || !timers.has(id)) continue;
+          timers.delete(id);
+          timer.callback();
+        }
+        if (!animate) continue;
+        const pending = [...frames.values()];
+        frames.clear();
+        for (const callback of pending) callback(now);
+      }
+    },
+    input(type) { window.dispatchEvent({ type }); },
+    chapter(progress) { window.dispatchEvent({ type: 'site:chapter', detail: { progress } }); },
+    hide() { document.hidden = true; document.dispatchEvent({ type: 'visibilitychange' }); },
+    reduce() { media.matches = true; media.dispatchEvent({ type: 'change' }); },
+    setLive(value) { live = value; },
+  };
+}
+
+function assertSettled(page, completions = 1) {
+  assert.equal(page.amount(), 0, 'the camera is back on the hero composition');
+  assert.equal(page.moving(), false);
+  assert.equal(page.root.classList.contains('is-intro'), false);
+  assert.equal(page.root.style.getPropertyValue('--intro-slow'), '');
+  assert.deepEqual(page.second.childNodes, [page.titleText, page.period], 'the title keeps its own text node');
+  assert.equal(page.second.style.clipPath, '');
+  assert.equal(page.period.style.transform, '');
+  assert.deepEqual(page.clockParts.map(part => part.textContent), ['2026.11.12', '14:31:38']);
+  assert.ok(page.canvases.every(canvas => canvas.removed), 'the entrance stars are removed');
+  assert.equal(page.stageNodes.length, 0);
+  assert.equal(page.frameLayer.style.properties.size, 0);
+  for (const type of ['wheel', 'touchstart', 'keydown', 'pointerdown']) assert.equal(page.window.listening(type), 0, type);
+  assert.equal(page.frames.size, 0, 'no frame stays queued');
+  assert.equal(page.timers.size, 0, 'no timer stays queued');
+  assert.deepEqual(page.events, Array(completions).fill('site:intro-complete'));
+}
+
+test('the full entrance opens on the sky, pulls back, types the title and reports its end once', () => {
+  const page = browser();
+  assert.deepEqual(page.scene.calls, [[1, false]], 'the first frame behind the loader already frames the opening sky');
+  page.reveal();
+  assert.equal(page.root.classList.contains('is-intro'), true);
+  assert.equal(page.storage.get('gudu-intro'), 'seen');
+  assert.equal(page.stageNodes.length, 1, 'the entrance stars join the stage');
+  assert.deepEqual([...page.frameLayer.style.properties], [['--page-left', '67px'], ['--page-top', '48px'],
+    ['--page-right', '1533px'], ['--page-bottom', '812px']], 'the corner marks open out to the hero frame');
+  assert.equal(page.typed(), 0, 'every character waits for the cursor');
+  assert.equal(page.second.style.clipPath, '', 'the line stays hidden until its cursor appears');
+  assert.equal(page.draws.dots, 0, 'the stars rise with the lifting curtain, not ahead of it');
+  page.advance(120);
+  assert.ok(page.draws.dots > 0);
+  page.release();
+
+  page.advance(320);
+  assert.equal(page.amount(), 1, 'stars alone: the camera has not moved yet');
+  assert.equal(page.moving(), false);
+  const amounts = [], counts = [];
+  let moved = false;
+  for (let time = 440; time < 1880; time += 16) {
+    page.advance(16);
+    amounts.push(page.amount());
+    counts.push(page.typed());
+    if (page.moving()) moved = true;
+    if (page.now > 1750) assert.equal(page.moving(), false, 'a settled camera returns to the idle cadence');
+  }
+  assert.ok(moved, 'the pull-back draws at the interactive cadence');
+  assert.ok(amounts.every((amount, index) => index === 0 || amount <= amounts[index - 1]), 'the camera only pulls back');
+  assert.ok(amounts[0] > 0.9 && amounts.at(-1) === 0);
+  assert.ok(counts.every((count, index) => index === 0 || count >= counts[index - 1]), 'typing never retreats');
+  assert.deepEqual([...new Set(counts)], [0, 1, 2, 3, 4], 'each character appears in turn');
+  assert.equal(page.second.style.clipPath, 'none');
+  assert.equal(page.period.style.transform, 'translate3d(0px, 0, 0)', 'the cursor ends after the last character');
+  assert.deepEqual(page.events, []);
+  page.advance(40);
+  assertSettled(page);
+  page.advance(5000);
+  page.reveal();
+  page.input('wheel');
+  assertSettled(page);
+});
+
+test('the cursor steps one character at a time and the clock locks onto the real time', () => {
+  const page = browser();
+  page.reveal();
+  page.advance(1170);
+  assert.equal(page.second.style.clipPath, '');
+  page.advance(30);
+  assert.equal(page.second.style.clipPath, 'none', 'the cursor appears at the start of the line');
+  assert.equal(page.typed(), 0);
+  assert.equal(page.period.style.transform, 'translate3d(-240px, 0, 0)');
+  page.advance(106);
+  assert.equal(page.typed(), 1);
+  assert.equal(page.period.style.transform, 'translate3d(-180px, 0, 0)');
+  // While rolling, the digits keep the clock's own punctuation and length.
+  const rolling = page.clockParts.map(part => part.textContent);
+  assert.match(rolling[0], /^\d{4}\.\d{2}\.\d{2}$/);
+  assert.match(rolling[1], /^\d{2}:\d{2}:\d{2}$/);
+  page.advance(1806 - page.now);
+  assert.deepEqual(page.clockParts.map(part => part.textContent), ['2026.11.12', '14:31:38']);
+});
+
+test('the entrance plays once per session and again on a reload, and ?intro overrides both', () => {
+  const seen = browser({ seen: true });
+  assert.deepEqual(seen.scene.calls, [], 'a return visit never frames the opening sky');
+  seen.reveal();
+  seen.advance(2500);
+  assert.equal(seen.root.classList.contains('is-intro'), false);
+  assert.deepEqual(seen.events, []);
+
+  // Reloading is asking for the page afresh; coming back to it is not.
+  const reloaded = browser({ seen: true, navigation: 'reload' });
+  assert.deepEqual(reloaded.scene.calls, [[1, false]], 'a reload opens on the sky again');
+  reloaded.reveal();
+  assert.equal(reloaded.root.classList.contains('is-intro'), true);
+  reloaded.advance(2000);
+  assertSettled(reloaded);
+  for (const navigation of ['back_forward', 'navigate', 'prerender', null]) {
+    assert.deepEqual(browser({ seen: true, navigation }).scene.calls, [], `${navigation}: still the short entrance`);
+  }
+  assert.deepEqual(browser({ navigation: null }).scene.calls, [[1, false]], 'a first visit needs no navigation record');
+  assert.deepEqual(browser({ seen: true, navigation: 'reload', search: '?intro=short' }).scene.calls, [],
+    '?intro=short still forces the short entrance');
+  assert.deepEqual(browser({ seen: true, navigation: 'reload', reduced: true }).scene.calls, [],
+    'reduced motion still shows the page directly');
+
+  const replay = browser({ seen: true, search: '?intro=full' });
+  assert.deepEqual(replay.scene.calls, [[1, false]]);
+  const short = browser({ search: '?intro=short' });
+  assert.deepEqual(short.scene.calls, []);
+  const blocked = browser({ storageBlocked: true });
+  blocked.reveal();
+  assert.equal(blocked.root.classList.contains('is-intro'), true, 'a blocked store still plays');
+  blocked.advance(2000);
+  assertSettled(blocked);
+});
+
+test('?intro=slow stretches the same entrance to a fifth of its speed', () => {
+  const page = browser({ search: '?intro=slow' });
+  page.reveal();
+  assert.equal(page.root.style.getPropertyValue('--intro-slow'), '5');
+  page.advance(2200);
+  assert.equal(page.amount(), 1, 'five times the stars-only hold');
+  page.advance(7200);
+  assert.deepEqual(page.events, []);
+  assert.equal(page.typed(), 4);
+  page.advance(200);
+  assertSettled(page);
+});
+
+test('any input, a chapter, a scroll, a theme switch or a hidden page lands on the settled hero at once', () => {
+  const exits = {
+    wheel: page => page.input('wheel'),
+    touch: page => page.input('touchstart'),
+    key: page => page.input('keydown'),
+    pointer: page => page.input('pointerdown'),
+    chapter: page => page.chapter(0.2),
+    scroll: page => { page.window.scrollY = 40; page.input('scroll'); },
+    theme: page => page.input('site:theme'),
+    hidden: page => page.hide(),
+    pagehide: page => page.input('pagehide'),
+    reduced: page => page.reduce(),
+    resizeWithoutScene: page => { page.setLive(false); page.input('resize'); },
+  };
+  for (const [name, leave] of Object.entries(exits)) {
+    for (const at of [200, 900, 1400]) {
+      const page = browser();
+      page.reveal();
+      page.advance(at);
+      leave(page);
+      assertSettled(page);
+      page.advance(4000);
+      assertSettled(page);
+      assert.deepEqual(page.warnings, [], name);
+    }
+  }
+});
+
+test('a page that cannot open on the sky keeps the short entrance and its camera at home', () => {
+  const cases = {
+    noScene: page => page.setLive(false),
+    chapter: page => page.chapter(0.5),
+    scrolled: page => { page.window.scrollY = 300; },
+    hidden: page => { page.document.hidden = true; },
+  };
+  for (const [name, arrange] of Object.entries(cases)) {
+    const page = browser();
+    arrange(page);
+    page.reveal();
+    assert.equal(page.amount(), 0, name);
+    assert.equal(page.root.classList.contains('is-intro'), false, name);
+    assert.equal(page.stageNodes.length, 0, name);
+    assert.equal(page.storage.has('gudu-intro'), false, `${name}: an entrance that never played is not counted`);
+    page.advance(3000);
+    assert.deepEqual(page.events, [], `${name}: the short entrance ends itself`);
+    assert.deepEqual(page.second.childNodes, [page.titleText, page.period]);
+  }
+  // A refresh restores the last scroll offset. The chapters treat a pixel of
+  // it as still being the hero, and so does the entrance: it plays, and that
+  // residue does not end it part-way either.
+  const restored = browser();
+  restored.window.scrollY = 1;
+  restored.chapter(0.0012);
+  restored.reveal();
+  assert.equal(restored.root.classList.contains('is-intro'), true, 'a stray restored pixel does not cancel the entrance');
+  restored.advance(600);
+  restored.chapter(0.0012);
+  restored.input('scroll');
+  assert.equal(restored.root.classList.contains('is-intro'), true);
+  assert.deepEqual(restored.events, []);
+  restored.chapter(0.03);
+  assertSettled(restored);
+  // A link straight to a chapter leaves the hero as soon as it is revealed;
+  // the hero's own anchor still opens on the sky.
+  const linked = browser({ hash: '#about' });
+  linked.reveal();
+  assert.equal(linked.amount(), 0);
+  assert.equal(linked.root.classList.contains('is-intro'), false);
+  const home = browser({ hash: '#home' });
+  home.reveal();
+  assert.equal(home.root.classList.contains('is-intro'), true);
+});
+
+test('a loader released without its animated exit never starts the entrance', () => {
+  for (const leave of ['release', 'reduce', 'hide', 'pagehide']) {
+    const page = browser();
+    if (leave === 'release') page.release();
+    else if (leave === 'reduce') page.reduce();
+    else if (leave === 'hide') page.hide();
+    else page.input('pagehide');
+    assert.equal(page.amount(), 0, `${leave}: the camera returns before anything is shown`);
+    page.reveal();
+    page.advance(3000);
+    assert.equal(page.root.classList.contains('is-intro'), false, leave);
+    assert.deepEqual(page.events, [], leave);
+  }
+  // Reduced motion, a finished loader or a page without the scene: no part.
+  for (const options of [{ reduced: true }, { loading: false }]) {
+    const page = browser(options);
+    assert.deepEqual(page.scene.calls, []);
+    page.reveal();
+    assert.equal(page.root.classList.contains('is-intro'), false);
+  }
+});
+
+test('a stalled frame loop or a failing frame cannot hold the page on its entrance', () => {
+  const stalled = browser();
+  stalled.reveal();
+  stalled.advance(3390, { frames: false });
+  assert.deepEqual(stalled.events, [], 'the watchdog allows the full entrance and a margin');
+  stalled.advance(20, { frames: false });
+  stalled.frames.clear();
+  assertSettled(stalled);
+
+  // Even when returning the camera is itself the failing call, the page's
+  // own content settles and the end is still reported once.
+  const failing = browser();
+  failing.reveal();
+  failing.advance(1300);
+  failing.scene.intro = () => { throw new Error('camera failed'); };
+  failing.advance(16);
+  assert.equal(failing.root.classList.contains('is-intro'), false);
+  assert.deepEqual(failing.second.childNodes, [failing.titleText, failing.period]);
+  assert.equal(failing.second.style.clipPath, '');
+  assert.equal(failing.stageNodes.length, 0);
+  assert.deepEqual(failing.events, ['site:intro-complete']);
+  assert.equal(failing.warnings.length, 2, 'the failed frame and the failed camera reset are both reported');
+  failing.advance(5000);
+  assert.deepEqual(failing.events, ['site:intro-complete']);
+  assert.equal(failing.frames.size + failing.timers.size, 0);
+});
+
+test('a resize re-measures the frame, the stars and the cursor without losing its place', () => {
+  const page = browser();
+  page.reveal();
+  page.advance(1420);
+  const typed = page.typed();
+  assert.ok(typed >= 2);
+  const before = page.period.style.transform;
+  page.frameLayer.style.properties.clear();
+  page.input('resize');
+  assert.equal(page.frameLayer.style.properties.size, 4, 'the corner marks follow the new frame');
+  assert.equal(page.typed(), typed);
+  assert.equal(page.period.style.transform, before);
+  page.advance(600);
+  assertSettled(page);
+});

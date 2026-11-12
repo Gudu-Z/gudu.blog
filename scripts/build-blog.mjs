@@ -124,7 +124,7 @@ function documentHead({ title, description, canonical, prefix, noindex = false, 
     <link rel="alternate" type="application/rss+xml" title="Gudu 的个人博客" href="${prefix}feed.xml" />
     <script src="${prefix}js/site-theme.js?v=20261030-day-mode"></script>
     <script src="${prefix}js/theme-jets.js?v=20261101-white-hole" defer></script>
-    <link rel="stylesheet" href="${prefix}css/style.css?v=20261101-day-mode" />
+    <link rel="stylesheet" href="${prefix}css/style.css?v=20261112-intro" />
     <link rel="stylesheet" href="${prefix}css/blog.css?v=20261101-day-mode" />`.replace(/[ \t]+$/gm, '');
 }
 

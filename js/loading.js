@@ -13,7 +13,28 @@
   let closeTimer = 0;
   let exitTimer = 0;
   let readyFrame = 0;
+  // The readout under the logo reports real milestones, never a made-up
+  // percentage: the heading font, the compiled scene, and its first frame
+  // (or the decoded illustration when there is no live scene).
+  const steps = { font: 'active', scene: 'pending', frame: 'pending' };
   root.classList.add('is-loading', 'has-site-intro');
+
+  function markStep(name, state) {
+    if (released || steps[name] === 'done' || steps[name] === 'off') return;
+    steps[name] = state;
+    // The first unfinished row is the one being waited on.
+    let waiting = true;
+    for (const key of Object.keys(steps)) {
+      if (steps[key] === 'done' || steps[key] === 'off') continue;
+      steps[key] = waiting ? 'active' : 'pending';
+      waiting = false;
+    }
+    const rows = document.querySelector('#site-loader')?.querySelectorAll?.('[data-step]') || [];
+    for (const row of rows) {
+      const next = steps[row.dataset.step];
+      if (next && row.dataset.state !== next) row.dataset.state = next;
+    }
+  }
 
   // Measure the short logo intro from its first paint, not the head-script download.
   function introStarted(event) {
@@ -81,19 +102,24 @@
     finishIntro();
   }
 
-  function ready({ scene } = {}) {
+  function ready({ scene, compiled } = {}) {
     if (released || readyRequested) return;
     readyRequested = true;
     waitingForScene = scene !== undefined;
     const font = Promise.resolve().then(() => document.fonts?.load('900 1em "Barlow Condensed"'));
+    font.then(() => markStep('font', 'done'), () => markStep('font', 'off'));
     const image = document.querySelector('.black-hole-fallback');
     // Decode the fallback in parallel so a failed renderer never starts a new
     // image wait. A live first frame need not wait for an unused fallback.
     const fallback = Promise.resolve().then(() => image?.decode?.()).catch(() => {});
     const sceneReady = document.querySelector('.black-hole')?.classList.contains('is-ready');
+    // A scene without its own compile report is compiled once it is ready.
+    const built = compiled !== undefined ? compiled : waitingForScene ? scene : sceneReady;
+    Promise.resolve(built).then(ok => markStep('scene', ok === true ? 'done' : 'off'), () => markStep('scene', 'off'));
     const visual = waitingForScene
       ? Promise.resolve(scene).then(ready => ready === true ? undefined : fallback, () => fallback)
       : sceneReady ? Promise.resolve() : fallback;
+    visual.then(() => markStep('frame', 'done'), () => markStep('frame', 'off'));
     Promise.allSettled([font, visual]).then(() => {
       waitingForScene = false;
       if (!active || released) return;

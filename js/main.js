@@ -17,6 +17,9 @@
   let sceneSettled = false;
   let resolveScene;
   const scenePreparation = new Promise(resolve => { resolveScene = resolve; });
+  // The loader's readout marks the compiled scene before its first frame.
+  let resolveCompiled;
+  const sceneCompiled = new Promise(resolve => { resolveCompiled = resolve; });
   const layers = [...document.querySelectorAll('[data-depth]')].map(element => ({ element, depth: Number(element.dataset.depth) }));
   const titlePeriod = document.querySelector('.title-period');
   const clock = document.querySelector('#local-time');
@@ -49,6 +52,10 @@
   let layerY = NaN;
   let chapterProgress = 0;
   let entranceGlow = 0;
+  // The page entrance (js/intro.js) owns the camera's pull-back: 1 frames the
+  // empty sky it starts on, 0 the hero composition.
+  let introAmount = 0;
+  let introMoving = false;
   let contentMoving = false;
   let heldForInteraction = false;
   let busySince = null;
@@ -59,6 +66,7 @@
     sceneSettled = true;
     clearTimeout(preparationTimer);
     preparationTimer = 0;
+    resolveCompiled(ready);
     resolveScene(ready);
   }
 
@@ -73,6 +81,9 @@
   function finishIntro() {
     hero.classList.add('intro-complete');
     document.documentElement.classList.remove('has-site-intro');
+    // However the entrance ends, the camera is back on the hero composition.
+    introAmount = 0;
+    introMoving = false;
     updateTitleBlink();
   }
   function revealScene() {
@@ -90,6 +101,12 @@
     // The title's period is the final remaining entrance animation.
     if (event.animationName === 'title-period-enter') { finishIntro(); start(); }
   });
+  // The full entrance types the title itself and reports its own end.
+  window.addEventListener('site:intro-complete', () => {
+    finishIntro();
+    if (pageActive && visible && !document.hidden && (paused || !frame)) draw();
+    start();
+  });
 
   // Prepare behind the loader after the logo strokes, rather than waiting for
   // the page entrance to finish. Readiness is the first completed scene frame.
@@ -106,11 +123,12 @@
         blackHole = renderer;
         renderer.onRestore = () => {
           if (!pageActive || document.hidden || blackHole !== renderer) return;
+          resolveCompiled(true);
           draw();
           start();
         };
         // Also support an already-ready renderer (including older cached builds).
-        if (blackHole.ready) { draw(); start(); }
+        if (blackHole.ready) { resolveCompiled(true); draw(); start(); }
         renderer.initialization?.then(ready => {
           if (!pageActive || document.hidden || blackHole !== renderer) return;
           if (!ready && !renderer.ready) settleScene(false);
@@ -255,6 +273,7 @@
     if (!pageActive || document.hidden) return false;
     if (shouldHoldScene()) { holdScene(); return false; }
     drawParallax();
+    blackHole?.setIntro?.(introAmount);
     const submitted = blackHole?.render(sceneTime(), pointer.x, -pointer.y, chapterProgress, entranceGlow);
     if (submitted === true) drawnFrames++;
     if (submitted === true && !sceneSettled) {
@@ -327,7 +346,7 @@
     // Lightweight layers follow the display even when the GPU is occupied.
     drawParallax();
     const requestedInterval = animated
-      ? blackHole.getFrameInterval?.(!settled && chapterProgress === 0) ?? blackHole.frameInterval : 1000 / 60;
+      ? blackHole.getFrameInterval?.((!settled || introMoving) && chapterProgress === 0) ?? blackHole.frameInterval : 1000 / 60;
     const frameInterval = Number.isFinite(requestedInterval) && requestedInterval > 0
       ? requestedInterval : 1000 / 30;
     // Retain fractional cadence across 60/75/120/144 Hz displays. A busy GPU
@@ -412,6 +431,20 @@
     },
     // Frames drawn so far: a switch waits for one in its final theme.
     drawn: () => drawnFrames,
+    // The page entrance moves the camera; a moving camera draws at the
+    // interactive cadence. A still scene redraws at once, so no page is
+    // ever left showing the entrance's starting sky.
+    intro(amount, moving = false) {
+      const next = Math.max(0, Math.min(1, Number(amount) || 0));
+      const changed = next !== introAmount;
+      introAmount = next;
+      introMoving = Boolean(moving) && next > 0;
+      if (changed && pageActive && visible && !document.hidden && (paused || loading || !frame)) draw();
+      start();
+    },
+    // The entrance's own layers follow the camera's fixed point and zoom.
+    introView: amount => (blackHole?.ready && !blackHole.lost ? blackHole.introView?.(amount) ?? null : null),
+    live: () => Boolean(blackHole?.ready && !blackHole.lost),
   };
 
   window.addEventListener('site:theme', () => {
@@ -505,5 +538,5 @@
   updateClock();
   updateBlackHoleTheme();
   if (!blackHoleCanvas || !window.BlackHole) settleScene(false);
-  window.SiteLoader?.ready({ scene: scenePreparation });
+  window.SiteLoader?.ready({ scene: scenePreparation, compiled: sceneCompiled });
 })();
