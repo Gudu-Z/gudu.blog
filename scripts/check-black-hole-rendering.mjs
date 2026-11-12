@@ -985,9 +985,11 @@ await test('entrance light is a clamped composite-only input that resets by defa
   }
 });
 
-await test('daylight inverts the disk and the stars, and skips only the bloom pass', async () => {
+await test('daylight inverts the disk, the shadow and the stars, and skips only the bloom pass', async () => {
   assert.match(source, /vec4\(daylight\(diskEmission\(/, 'the minimal disk emission passes through the daylight inversion');
   assert.doesNotMatch(source, /daylight\(inkEmission/, 'the ink painting keeps its own palette');
+  assert.match(source, /if \(hit\.material > -0\.5\) return vec4\(vec3\(u_day \* \(1\.0 - u_ink\)\) \* alpha, alpha\);/,
+    'captured rays draw the shadow opaque: black at night, white by day, black in the ink painting');
   assert.match(source, /skyLight = vec4\(mix\(radiance, peak - radiance, u_day\), peak\)/,
     'each star keeps its coverage while its color inverts');
   for (const webgl2 of [false, true]) {

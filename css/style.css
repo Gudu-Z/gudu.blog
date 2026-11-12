@@ -27,14 +27,15 @@
 /* Each theme shows its own logo artwork. */
 .brand-logo.brand-logo-day, :root[data-theme="light"] .brand-logo:not(.brand-logo-day) { display: none; }
 :root[data-theme="light"] .brand-logo.brand-logo-day { display: block; }
-/* The day/night switch (js/theme-jets.js): the column's fine lines are drawn
-   on a canvas whose own transition layer keeps it above both page images. */
+/* The day/night switch (js/theme-jets.js): the white beam is drawn on a
+   canvas whose own transition layer keeps it above both page images. */
 .theme-jets { position: fixed; inset: 0; z-index: 2147483600; overflow: hidden; pointer-events: none; contain: strict; view-transition-name: theme-jets; }
 .theme-jets > canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 ::view-transition-old(theme-jets) { display: none; }
 ::view-transition-group(theme-jets), ::view-transition-new(theme-jets) { animation: none; }
-/* The column clips one page image, the day page, and the script ends the
-   transition once the switch is done; the held group keeps it open until then. */
+/* The beam clips one page image, the day page, beneath its white; the script
+   ends the transition once the switch is done, and the held group keeps it
+   open until then. */
 .is-theme-jets::view-transition-group(root) { animation: theme-jets-hold 60s linear; }
 .is-theme-jets::view-transition-old(root), .is-theme-jets::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
 .is-theme-jets-opening::view-transition-new(root) { clip-path: polygon(0 0, 0 0, 0 0); }

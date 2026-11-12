@@ -37,8 +37,8 @@ function signal() {
 }
 
 // A page with a synthetic clock, display frames, a 2D canvas that records
-// its strokes and fills, and view transitions whose restyle pause ends only
-// when a test resolves it.
+// its fills, and view transitions whose restyle pause ends only when a test
+// resolves it.
 function loadJets({ theme = 'dark', reduced = false, transitions = true, camera = heroCamera(), drawsWithTheme = true } = {}) {
   let now = 0;
   let switcher = null;
@@ -49,32 +49,19 @@ function loadJets({ theme = 'dark', reduced = false, transitions = true, camera 
   const animations = [];
   const started = [];
   const listeners = new Set();
-  const strokes = [];
   const fills = [];
   const body = { children: [], append(element) { this.children.push(element); } };
   class Path2D {
-    constructor() { this.segments = 0; this.arcs = []; }
-    moveTo() {}
-    lineTo() { this.segments++; }
+    constructor() { this.points = []; }
+    moveTo(x, y) { this.points.push([x, y]); }
+    lineTo(x, y) { this.points.push([x, y]); }
     closePath() {}
-    rect() {}
-    arc(x, y, radius) { this.arcs.push({ x, y, radius }); }
   }
-  // Gradients keep their axis and the opacity at each stop; fills keep the
-  // clips they were drawn under.
-  let clips = [];
-  const saved = [];
   const context = {
-    setTransform() {}, clearRect() { strokes.length = 0; fills.length = 0; },
-    stroke(path) { strokes.push({ style: this.strokeStyle, segments: path.segments }); },
-    createLinearGradient: (...axis) => ({
-      axis, stops: [],
-      addColorStop(offset, color) { this.stops.push([offset, Number(/([\d.]+)\)$/.exec(color)[1])]); },
-    }),
-    save() { saved.push(clips); clips = [...clips]; },
-    restore() { clips = saved.pop(); },
-    clip(path, rule) { clips.push({ arcs: path.arcs, rule }); },
-    fill(path) { fills.push({ style: this.fillStyle, segments: path.segments, clips }); },
+    globalAlpha: 1,
+    setTransform() {}, clearRect() { fills.length = 0; },
+    fill(path) { fills.push({ style: this.fillStyle, alpha: this.globalAlpha, points: path.points }); },
+    fillRect(...rect) { fills.push({ style: this.fillStyle, alpha: this.globalAlpha, rect }); },
   };
   const element = tag => ({
     tag, className: '', attributes: {}, children: [], width: 0, height: 0,
@@ -134,7 +121,7 @@ function loadJets({ theme = 'dark', reduced = false, transitions = true, camera 
   });
   const overlay = () => body.children.find(child => child.className === 'theme-jets');
   return {
-    switcher, sets, classes, animations, started, listeners, strokes, fills, overlay,
+    switcher, sets, classes, animations, started, listeners, fills, overlay,
     button: { getBoundingClientRect: () => ({ left: 900, top: 20, width: 40, height: 40 }) },
     run(milliseconds) {
       const end = now + milliseconds;
@@ -156,7 +143,7 @@ const area = shape => Math.abs(shape.reduce((sum, [x, y], i) => {
   const [nx, ny] = shape[(i + 1) % shape.length];
   return sum + x * ny - nx * y;
 }, 0)) / 2;
-// The column's two ends: the outline's farthest points from the hole, either way along it.
+// The beam's two ends: the outline's farthest points from the hole, either way along it.
 function ends(shape, [x, y]) {
   const far = shape.reduce((best, point) => (Math.hypot(point[0] - x, point[1] - y) > Math.hypot(best[0] - x, best[1] - y) ? point : best));
   const other = shape.reduce((best, point) => {
@@ -167,7 +154,9 @@ function ends(shape, [x, y]) {
   return far[1] < other[1] ? [far, other] : [other, far];
 }
 
-await test('a switch to day restyles at once, then a column of the day page shoots out of the hole and swells over the screen', () => {
+const isClip = animation => animation.frames.some(frame => 'clipPath' in frame);
+
+await test('a switch to day fires a solid white beam out of the hole, swells it into a white-out, and develops the day page out of the white', () => {
   const site = loadJets();
   site.switcher.request('light', site.button);
   assert.equal(site.started.length, 1, 'the one view transition starts at the click');
@@ -179,20 +168,30 @@ await test('a switch to day restyles at once, then a column of the day page shoo
   site.run(200);
   assert.equal(site.animations.length, 0, 'nothing moves before the restyled page is ready');
   site.started[0].show();
-  const [clip] = site.animations;
-  assert.equal(clip.options.pseudoElement, '::view-transition-new(root)', 'the new day page fills the column');
+  const [clip, kick] = site.animations;
+  assert.equal(clip.options.pseudoElement, '::view-transition-new(root)', 'the new day page lies under the beam');
   assert.ok(clip.paused);
-  assert.ok(area(points(clip.first)) < 50, 'the column starts inside the hole');
-  site.run(400);
+  assert.ok(area(points(clip.first)) < 50, 'the beam starts inside the hole');
+  assert.equal(kick.options.pseudoElement, '::view-transition-old(root)', 'the night page kicks as the beam fires');
+  assert.deepEqual(Array.from(kick.frames, frame => frame.transform), ['scale(1)', 'scale(1.018)', 'scale(1)']);
+  assert.ok(kick.frames.every(frame => frame.transformOrigin === '400px 300px'), 'around the hole');
+  site.run(300);
   const shot = points(clip.last);
   const xs = shot.map(point => point[0]), ys = shot.map(point => point[1]);
-  assert.ok(Math.min(...ys) < -60 && Math.max(...ys) > 860, 'after its shot the column runs off both edges');
+  assert.ok(Math.min(...ys) < -60 && Math.max(...ys) > 860, 'after its shot the beam runs off both edges');
   assert.ok(Math.max(...xs) - Math.min(...xs) < 160, 'and is still thin');
-  assert.ok(site.strokes.length > 0 && site.strokes.every(stroke => stroke.segments > 0), 'fine lines draw its rims');
-  assert.ok(site.strokes.reduce((sum, stroke) => sum + stroke.segments, 0) <= 128, 'only its two end rims, without strands');
+  assert.equal(site.fills.length, 1);
+  const [beam] = site.fills;
+  assert.deepEqual([beam.style, beam.alpha, beam.points.length], ['#fff', 1, shot.length], 'the beam is solid white over the clipped day page');
+  site.run(530);
+  assert.equal(clip.last, 'none', 'from the white-out the whole day page lies beneath');
+  assert.ok(site.fills.length === 1 && site.fills[0].rect && site.fills[0].alpha > 0.95, 'the screen is white');
+  site.run(200);
+  assert.ok(site.fills[0].alpha > 0.05 && site.fills[0].alpha < 0.5, `and the white lifts off the day page: ${site.fills[0].alpha}`);
   site.finish();
-  assert.equal(clip.last, 'none', 'the column swallowed the screen before the live page took over');
+  assert.equal(clip.last, 'none');
   assert.ok(site.started[0].skipped);
+  assert.ok(clip.cancelled && kick.cancelled, 'the clip and the kick go with their transition');
   assert.equal(site.overlay(), undefined);
   assert.equal(site.classes.size, 0);
   assert.equal(site.listeners.size, 0);
@@ -200,42 +199,11 @@ await test('a switch to day restyles at once, then a column of the day page shoo
   assert.equal(site.switcher.target, null);
 });
 
-await test('the column is shaded as a lit cylinder, never over the black shadow, and leaves the day page as it is', () => {
-  const site = loadJets();
-  site.switcher.request('light', site.button);
-  site.started[0].show();
-  site.run(400);
-  assert.equal(site.fills.length, 2, 'a shade and a highlight cover the column');
-  const [dark, light] = site.fills.map(fill => fill.style);
-  const opacity = (gradient, offset) => gradient.stops.find(([stop]) => Math.abs(stop - offset) < 1e-9)[1];
-  assert.ok(opacity(dark, 0) > 0.2 && opacity(dark, 1) > 0.2, 'the wall darkens towards both edges');
-  assert.ok(opacity(dark, 0.5) < 0.01, 'and keeps the page as it is along the middle');
-  const peak = light.stops.reduce((best, stop) => (stop[1] > best[1] ? stop : best));
-  assert.ok(Math.abs(peak[0] - 0.33) < 0.03 && peak[1] > 0.5, 'a highlight runs a third of the way across');
-  const [x0, y0, x1, y1] = dark.axis;
-  assert.ok(Math.abs(y1 - y0) < Math.abs(x1 - x0) * 0.05, 'the shading runs across the upright column');
-  for (const fill of site.fills) {
-    const hole = fill.clips.find(clip => clip.rule === 'evenodd')?.arcs[0];
-    assert.ok(hole, 'the black shadow is left out of the shading');
-    assert.deepEqual([hole.x, hole.y], [400, 300]);
-    assert.ok(Math.abs(hole.radius - 2.6 / 31.78443 * 4.05 * 450) < 3, `the cut-out follows the shadow's rim: ${hole.radius}`);
-  }
-  site.run(500);
-  assert.equal(site.fills.length, 0, 'the shading has faded before the column fills the screen');
-  site.finish();
-  const page = loadJets({ camera: null });
-  page.switcher.request('light', page.button);
-  page.started[0].show();
-  page.run(400);
-  assert.ok(page.fills.length === 2 && page.fills.every(fill => fill.clips.length === 0), 'without a black hole nothing is left out');
-  page.finish();
-});
-
 // A clip is set on the root for a transition pseudo-element, so it outlives
 // its transition unless cancelled: a switch back to night left its empty
 // final clip on the old page image, and the next switch to day then showed
-// only the column on a blank page.
-await test('each switch takes its clip away with it, so the next switch keeps the page around its column', () => {
+// only the beam on a blank page.
+await test('each switch takes its clip away with it, so the next switch keeps the page around its beam', () => {
   const site = loadJets({ theme: 'light' });
   site.switcher.request('dark', site.button);
   site.started[0].show();
@@ -245,29 +213,33 @@ await test('each switch takes its clip away with it, so the next switch keeps th
   site.run(200);
   const [back, forth] = site.animations;
   assert.ok(back.cancelled, 'the switch back took its clip of the old page away');
-  assert.equal(site.animations.filter(animation => !animation.cancelled
-    && animation.options.pseudoElement === '::view-transition-old(root)').length, 0, 'nothing clips the night page around the column');
+  assert.equal(site.animations.filter(animation => isClip(animation) && !animation.cancelled
+    && animation.options.pseudoElement === '::view-transition-old(root)').length, 0, 'nothing clips the night page around the beam');
   assert.equal(forth.options.pseudoElement, '::view-transition-new(root)');
   site.finish();
   assert.ok(site.animations.every(animation => animation.cancelled));
 });
 
-await test('switching back clips the old day image to a column that shrinks into the hole', () => {
+await test('switching back turns the day page white, then the beam shrinks back into the hole', () => {
   const site = loadJets({ theme: 'light' });
   site.switcher.request('dark', site.button);
   assert.equal(site.started.length, 1);
   assert.ok(site.classes.has('is-theme-jets-closing'));
   site.started[0].show();
+  assert.equal(site.animations.length, 1, 'no kick on the way back');
   const [clip] = site.animations;
-  assert.equal(clip.options.pseudoElement, '::view-transition-old(root)', 'the old day page fills the column');
+  assert.equal(clip.options.pseudoElement, '::view-transition-old(root)', 'the old day page lies under the beam');
   assert.equal(clip.first, 'none', 'at first the day page still covers the screen');
+  assert.ok(site.fills[0].rect && site.fills[0].alpha < 0.01, 'as it is');
+  site.run(320);
+  assert.ok(site.fills[0].rect && site.fills[0].alpha > 0.95, 'then turns white');
   site.finish();
-  assert.ok(area(points(clip.last)) < 50, 'the column ends inside the hole');
+  assert.ok(area(points(clip.last)) < 50, 'the beam ends inside the hole');
   assert.ok(site.started[0].skipped);
   assert.deepEqual(site.sets, ['dark']);
 });
 
-await test('a toggle midway turns the column back, and the first theme returns once its image covers the screen', () => {
+await test('a toggle midway turns the beam back, and the first theme returns once its image covers the screen', () => {
   const site = loadJets();
   site.switcher.request('light', site.button);
   site.started[0].show();
@@ -275,7 +247,7 @@ await test('a toggle midway turns the column back, and the first theme returns o
   site.switcher.request('dark', site.button);
   assert.equal(site.switcher.target, 'dark');
   site.run(200);
-  assert.deepEqual(site.sets, ['light'], 'the page keeps its restyle while the column retreats');
+  assert.deepEqual(site.sets, ['light'], 'the page keeps its restyle while the beam retreats');
   site.finish();
   assert.equal(site.started.length, 1, 'no second transition');
   assert.deepEqual(site.sets, ['light', 'dark']);
@@ -339,7 +311,7 @@ await test('reduced motion crossfades; without view transitions the theme change
   assert.equal(legacy.overlay(), undefined);
 });
 
-await test('the column leaves the hole along the spin axis, rolled with the disk, or the toggle where there is none', () => {
+await test('the beam leaves the hole along the spin axis, rolled with the disk, or the toggle where there is none', () => {
   for (const [roll, label] of [[0, 'level'], [18 * degree, 'rolled like the hero']]) {
     const site = loadJets({ camera: heroCamera(roll) });
     site.switcher.request('light', site.button);
@@ -347,7 +319,7 @@ await test('the column leaves the hole along the spin axis, rolled with the disk
     site.run(400);
     const [top, bottom] = ends(points(site.animations[0].last), [400, 300]);
     const lean = Math.atan2(top[0] - bottom[0], bottom[1] - top[1]);
-    assert.ok(Math.abs(lean + roll) < 2 * degree, `${label}: the column's top leans left by the roll, got ${(lean / degree).toFixed(2)}°`);
+    assert.ok(Math.abs(lean + roll) < 2 * degree, `${label}: the beam's top leans left by the roll, got ${(lean / degree).toFixed(2)}°`);
     site.finish();
   }
   const page = loadJets({ camera: null });
@@ -356,7 +328,7 @@ await test('the column leaves the hole along the spin axis, rolled with the disk
   page.run(120);
   const shape = points(page.animations[0].last);
   const [cx, cy] = shape.reduce(([sx, sy], [x, y]) => [sx + x / shape.length, sy + y / shape.length], [0, 0]);
-  assert.ok(Math.hypot(cx - 920, cy - 40) < 140, 'the column starts at the toggle');
+  assert.ok(Math.hypot(cx - 920, cy - 40) < 140, 'the beam starts at the toggle');
   page.run(300);
   const [top, bottom] = ends(points(page.animations[0].last), [920, 40]);
   assert.ok(top[0] > bottom[0], 'from the top right corner it leans so as to cross the page');

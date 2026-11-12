@@ -201,7 +201,7 @@
       return mix(baseColor, strandColor, filament);
     }
     // Daylight inverts the disk's colors: its light strands become ink on
-    // paper. The shadow emits nothing to invert, so it stays black.
+    // paper. The shadow, black at night, turns pure white (in shadeHit).
     vec3 daylight(vec3 color) {
       return mix(color, 1.0 - color, u_day);
     }
@@ -410,6 +410,9 @@
       float alpha = hit.alpha;
       if (u_ink > 0.5 && hit.material > 0.5) return inkEmission(hit.point, pointDx, pointDy, hit.order, hit.ray);
       if (hit.material > 0.5) return vec4(daylight(diskEmission(hit.point, hit.ray, pointDx, pointDy)) * alpha, alpha);
+      // Rays the hole captured: the black shadow at night, the white one by
+      // day. The ink painting keeps its black shadow.
+      if (hit.material > -0.5) return vec4(vec3(u_day * (1.0 - u_ink)) * alpha, alpha);
       if (hit.material < -0.5) {
         if (u_ink < 0.5) return skyLight;
         emission = distantStars(hit.ray);
