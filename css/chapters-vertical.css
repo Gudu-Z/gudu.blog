@@ -29,11 +29,64 @@ html.has-vertical-chapters .home-page .chapter-section {
   padding: 34px 0;
   overflow: visible;
   pointer-events: auto;
-  scroll-margin-top: calc(var(--header-height, 70px) + 8px);
+  scroll-margin-top: var(--vertical-scroll-margin, calc(var(--header-height, 70px) + 8px));
   /* Text layers rise in place; the strip slides them in from the side. */
   --chapter-reveal-direction: 0;
 }
 html.has-vertical-chapters .home-page .about-section { padding-top: 96px; }
+/* The filter row owns its scrollport; its edges fade into the panel without
+   masking the layer that shares the phone's moving tape. */
+html.has-vertical-chapters .home-page .journal-toolbar {
+  --filter-edge: light-dark(#eaebed, #0c0e11);
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+html.has-vertical-chapters .home-page .journal-toolbar > .filter-list {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  gap: 0;
+  margin: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pinch-zoom;
+  scroll-padding-inline: 24px;
+  scrollbar-width: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+html.has-vertical-chapters .home-page .journal-toolbar > .filter-list::-webkit-scrollbar { display: none; }
+html.has-vertical-chapters .home-page .filter-list .filter-button {
+  flex: none;
+  padding-inline: 0 22px;
+  white-space: nowrap;
+  outline-offset: -2px;
+}
+html.has-vertical-chapters .home-page .journal-toolbar::before,
+html.has-vertical-chapters .home-page .journal-toolbar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  width: 24px;
+  height: var(--filter-row-height, 0px);
+  pointer-events: none;
+  opacity: 0;
+}
+html.has-vertical-chapters .home-page .journal-toolbar::before {
+  left: 0;
+  background: linear-gradient(to right, var(--filter-edge), light-dark(#eaebed00, #0c0e1100));
+}
+html.has-vertical-chapters .home-page .journal-toolbar::after {
+  right: 0;
+  background: linear-gradient(to left, var(--filter-edge), light-dark(#eaebed00, #0c0e1100));
+}
+html.has-vertical-chapters .home-page .journal-toolbar.has-filter-left::before,
+html.has-vertical-chapters .home-page .journal-toolbar.has-filter-right::after { opacity: 1; }
 /* Chapters no longer share one screen height, so panels keep their content height. */
 html.has-vertical-chapters .home-page :is(.about-copy, .series-main) { min-height: 0; }
 html.has-vertical-chapters .home-page .chapter-section + .chapter-section::before {

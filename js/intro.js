@@ -5,7 +5,7 @@
  * the entrance ends on the sky the page keeps.
  * It plays once per browser session, and again whenever the visitor reloads
  * the page themselves. Coming back to the page within the session, a device
- * without the live scene and reduced motion keep the short CSS entrance, which
+ * without the live scene, a slow GPU and reduced motion keep the short CSS entrance, which
  * needs no script; if anything here fails the page falls back to that same
  * settled state.
  * ?intro=slow plays it at a fifth of its speed, ?intro=full replays it, and
@@ -18,13 +18,14 @@
   const hero = document.querySelector('.hero');
   const requested = new URLSearchParams(window.location.search).get('intro');
   const slow = requested === 'slow' ? 5 : 1;
+  const forcedFull = requested === 'slow' || requested === 'full';
   let seen = false;
   // A blocked store simply plays the full entrance on every visit.
   try { seen = window.sessionStorage.getItem('gudu-intro') === 'seen'; } catch { seen = false; }
   // A reload is the visitor asking for the page afresh; following a link back
   // to it, or stepping back through history, is not.
   const reloaded = performance.getEntriesByType?.('navigation')?.[0]?.type === 'reload';
-  const wanted = requested === 'short' ? false : requested === 'slow' || requested === 'full' || !seen || reloaded;
+  const wanted = requested === 'short' ? false : forcedFull || !seen || reloaded;
   // Only a page still behind its loader can open on the starting sky.
   if (!hero || !wanted || reducedMotion.matches || !window.SiteBlackHole?.intro
       || !root.classList.contains('is-loading') || root.classList.contains('is-loading-exit')) return;
@@ -34,6 +35,8 @@
   const TYPE_FROM = 1180, TYPE_FIRST = 110, TYPE_STEP = 106;
   const CLOCK_FROM = 1260, CLOCK_TO = 1800;
   const END = 1900;
+  // Match the renderer's measured quality floor and its 30 fps motion budget.
+  const MIN_QUALITY = 0.6, FRAME_BUDGET = 1000 / 30;
   // Any of these skips straight to the settled hero.
   const INPUTS = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
   // The hero is still the hero within a few pixels of the top, as the chapters
@@ -65,9 +68,39 @@
   let stops = null;
   let typed = -1;
   let clockSettled = false;
+  let measured = false;
+  let decided = false;
+  const listeners = [];
 
-  // The scene's first frame, drawn behind the loader, already frames that sky.
-  scene.intro(1);
+  function listen(target, type, callback, options) {
+    target.addEventListener(type, callback, options);
+    listeners.push(() => target.removeEventListener(type, callback, options));
+  }
+
+  function shouldShorten(time) {
+    if (forcedFull) return false;
+    const timing = scene.introPerformance?.();
+    // Older scenes without timing keep their existing entrance behavior.
+    if (!timing) return false;
+    if (timing.frameInterval > FRAME_BUDGET) return true;
+    if (!timing.measured) return false;
+    const costs = timing.gpuTimes.filter(cost => Number.isFinite(cost) && cost >= 0);
+    // Three completed frames establish a window; repeated reads of the same
+    // frame do not add evidence. Keep that evidence when adaptation drains it.
+    if (costs.length >= 3) measured = true;
+    // An unfinished fence can prove overload, but cannot prove headroom.
+    if (Number.isFinite(timing.gpuPending) && timing.gpuPending >= 0) costs.push(timing.gpuPending);
+    if (costs.length >= 3) {
+      const recent = costs.slice(-3).sort((a, b) => a - b);
+      // The renderer scales pixel work by area. Even this optimistic estimate
+      // must fit 30 fps at its floor; a lone expensive frame is not sustained load.
+      const floorCost = recent[1] * (MIN_QUALITY / timing.quality) ** 2;
+      if (floorCost > FRAME_BUDGET) return true;
+    }
+    // A very slow or stalled timed scene may not finish three frames in the
+    // sky hold. Do not start moving an unproven camera after that deadline.
+    return time >= PULL_FROM && !measured;
+  }
 
   function bezier(x1, y1, x2, y2) {
     const curve = (a, b, t) => 3 * (1 - t) * (1 - t) * t * a + 3 * (1 - t) * t * t * b + t * t * t;
@@ -192,21 +225,33 @@
     frame = 0;
     if (!playing) return;
     const time = (now - startedAt) / slow;
-    // A lost or retired scene has no camera left to move.
-    if (time >= END || !scene.live?.()) { finish(); return; }
-    try { render(time); } catch (error) { finish(); console.warn('The page entrance stopped early.', error); return; }
+    try {
+      // A lost or retired scene has no camera left to move.
+      if (time >= END || !scene.live?.()) { finish(); return; }
+      // Decide before the first moving frame, even if this tick arrived late.
+      // Once movement starts, later load cannot jump the camera home.
+      if (!decided) {
+        if (shouldShorten(time)) { finish({ short: true }); return; }
+        if (time >= PULL_FROM) {
+          decided = true;
+          try { window.sessionStorage.setItem('gudu-intro', 'seen'); } catch { /* A blocked store plays again next visit. */ }
+        }
+      }
+      render(time);
+    } catch (error) { fail(error); return; }
     frame = requestAnimationFrame(tick);
   }
 
   // Every way out lands on the settled hero: a finished entrance, any input,
   // a hidden or leaving page, reduced motion, or an error.
-  function finish() {
-    if (!playing) return;
-    playing = false;
+  function finish({ short = false } = {}) {
+    if (!playing && !armed) return;
+    const complete = playing && !short;
+    armed = playing = false;
     cancelAnimationFrame(frame);
     clearTimeout(watchdog);
     frame = watchdog = 0;
-    for (const input of INPUTS) window.removeEventListener(input, finish, true);
+    for (const remove of listeners.splice(0)) remove();
     // The page's own content first: nothing below can leave the title split.
     restoreTitle();
     for (const [node, property] of [[second, 'clipPath'], [period, 'transform']]) {
@@ -223,59 +268,67 @@
     if (frameLayer?.getAttribute?.('style') === '') frameLayer.removeAttribute('style');
     // js/main.js returns the camera as well when it hears the entrance end.
     try { scene.intro(0); } catch (error) { console.warn('The entrance camera could not be reset.', error); }
-    window.dispatchEvent(new Event('site:intro-complete'));
+    // Keeping has-site-intro lets the short CSS fade hide the camera reset.
+    // Its title-period animation, rather than this event, will finish it.
+    if (complete) window.dispatchEvent(new Event('site:intro-complete'));
   }
 
-  // The short entrance takes over: the camera returns before the curtain lifts.
+  function fail(error) {
+    finish();
+    console.warn('The page entrance stopped early.', error);
+  }
+
+  // A release without an animated exit returns the camera before it is shown.
   function disarm() {
     if (!armed) return;
-    armed = false;
-    scene.intro(0);
+    finish({ short: true });
   }
 
   function begin() {
     if (!armed) return;
-    armed = false;
     // The opening sky needs the live scene, on the hero, at the top of the
     // page: a link straight to a chapter is about to leave the hero.
     const hash = window.location.hash || '';
-    if (document.hidden || reducedMotion.matches || chapter > HERO_PROGRESS || window.scrollY > HERO_SCROLL
-        || (hash.length > 1 && hash !== '#home') || !scene.live?.()) {
-      scene.intro(0);
-      return;
+    try {
+      if (document.hidden || reducedMotion.matches || chapter > HERO_PROGRESS || window.scrollY > HERO_SCROLL
+          || (hash.length > 1 && hash !== '#home') || !scene.live?.() || shouldShorten(0)) {
+        disarm();
+        return;
+      }
+      armed = false;
+      playing = true;
+      startedAt = performance.now();
+      // The title is measured as the full entrance lays it out.
+      if (slow !== 1) root.style.setProperty('--intro-slow', String(slow));
+      root.classList.add('is-intro');
+      splitTitle();
+      if (!layout()) { finish({ short: true }); return; }
+      for (const input of INPUTS) listen(window, input, finish, { capture: true, passive: true });
+      // A throttled or stalled frame loop cannot hold the page on its entrance.
+      watchdog = setTimeout(finish, (END + 1500) * slow);
+      render(0);
+      frame = requestAnimationFrame(tick);
+    } catch (error) {
+      fail(error);
     }
-    // The title is measured as the full entrance lays it out.
-    if (slow !== 1) root.style.setProperty('--intro-slow', String(slow));
-    root.classList.add('is-intro');
-    splitTitle();
-    if (!layout()) {
-      restoreTitle();
-      root.classList.remove('is-intro');
-      root.style.removeProperty('--intro-slow');
-      scene.intro(0);
-      return;
-    }
-    try { window.sessionStorage.setItem('gudu-intro', 'seen'); } catch { /* played again next visit */ }
-    playing = true;
-    startedAt = performance.now();
-    for (const input of INPUTS) window.addEventListener(input, finish, { capture: true, passive: true });
-    // A throttled or stalled frame loop cannot hold the page on its entrance.
-    watchdog = setTimeout(finish, (END + 1500) * slow);
-    render(0);
-    frame = requestAnimationFrame(tick);
   }
 
-  window.addEventListener('site:revealing', begin);
+  listen(window, 'site:revealing', begin);
   // Released without an animated exit: no entrance follows.
-  window.addEventListener('site:revealed', disarm);
-  window.addEventListener('site:chapter', event => {
+  listen(window, 'site:revealed', disarm);
+  listen(window, 'site:chapter', event => {
     chapter = Math.max(0, Math.min(1, Number(event.detail?.progress) || 0));
     if (chapter > HERO_PROGRESS) finish();
   });
-  window.addEventListener('site:theme', finish);
-  window.addEventListener('scroll', () => { if (window.scrollY > HERO_SCROLL) finish(); }, { passive: true });
-  window.addEventListener('resize', () => { if (playing && !layout()) finish(); });
-  window.addEventListener('pagehide', () => { disarm(); finish(); });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { disarm(); finish(); } });
-  reducedMotion.addEventListener('change', () => { if (reducedMotion.matches) { disarm(); finish(); } });
+  listen(window, 'site:theme', finish);
+  listen(window, 'scroll', () => { if (window.scrollY > HERO_SCROLL) finish(); }, { passive: true });
+  listen(window, 'resize', () => {
+    try { if (playing && !layout()) finish(); } catch (error) { fail(error); }
+  });
+  listen(window, 'pagehide', finish);
+  listen(document, 'visibilitychange', () => { if (document.hidden) finish(); });
+  listen(reducedMotion, 'change', () => { if (reducedMotion.matches) finish(); });
+
+  // The scene's first frame, drawn behind the loader, already frames that sky.
+  try { scene.intro(1); } catch (error) { fail(error); }
 })();

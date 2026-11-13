@@ -3,7 +3,11 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 
-const source = await readFile(new URL('../js/main.js', import.meta.url), 'utf8');
+// main.js draws the hero's sky from js/star-sky.js, loaded before it on the page.
+const source = [
+  await readFile(new URL('../js/star-sky.js', import.meta.url), 'utf8'),
+  await readFile(new URL('../js/main.js', import.meta.url), 'utf8'),
+].join('\n');
 
 function eventTarget(extra = {}) {
   const listeners = new Map();
@@ -319,6 +323,37 @@ await test('the sky dims around the clock, and nowhere else', () => {
     else assert.ok(light(star) <= light(same) && light(star) >= 0.15 * light(same) - 1e-9, 'the edge fades over 16px');
   }
   assert.ok(inside >= 2 && outside > 90, `${inside} stars lie inside the clock's line`);
+});
+
+await test('by day the sky fades to two fifths in the chapters; by night it keeps its light', () => {
+  const light = star => Number(star.color.match(/,([\d.e-]+)\)$/)[1]);
+  for (const theme of ['light', 'dark']) {
+    const site = browser();
+    site.root.dataset.theme = theme;
+    site.page(100, 'site:theme', { detail: { theme } });
+    site.frame(116);
+    const hero = [...site.sky.values()];
+    site.page(200, 'site:chapter', { detail: { progress: 1 } });
+    site.frame(216);
+    const chapters = [...site.sky.values()];
+    assert.equal(chapters.length, hero.length, theme);
+    const ratios = chapters.map((star, index) => light(star) / light(hero[index]));
+    const expected = theme === 'light' ? 0.4 : 1;
+    assert.ok(ratios.every(ratio => Math.abs(ratio - expected) < 1e-9), `${theme}: every star at ${expected} of its hero light`);
+    site.page(300, 'site:chapter', { detail: { progress: 0 } });
+    site.frame(316);
+    assert.deepEqual([...site.sky.values()].map(light), hero.map(light), `${theme}: back on the hero the sky is whole again`);
+  }
+});
+
+await test('the hero\'s scroll cue leaves at the first scroll, not at a restored pixel', () => {
+  const site = browser();
+  site.page(0, 'site:chapter', { detail: { progress: 0.0012 } });
+  assert.equal(site.hero.classList.contains('is-scrolled'), false);
+  site.page(10, 'site:chapter', { detail: { progress: 0.2 } });
+  assert.equal(site.hero.classList.contains('is-scrolled'), true);
+  site.page(20, 'site:chapter', { detail: { progress: 0 } });
+  assert.equal(site.hero.classList.contains('is-scrolled'), true, 'coming back to the hero does not bring it back');
 });
 
 await test('quality-driven cadence changes reduce draws without changing orbital phase', () => {
@@ -966,4 +1001,55 @@ await test('every other way the entrance ends also returns its camera, and a sti
   still.scene.intro(0);
   assert.equal(still.last.intro, 0);
   assert.equal(still.pendingFrames, 0, 'reduced motion still starts no animation');
+});
+
+await test('the entrance reads GPU performance without polling, drawing or changing adaptation', () => {
+  const site = browser({ loading: true });
+  assert.equal(site.scene.introPerformance(), null, 'an unprepared scene has no measurements');
+  site.warmup(1100);
+  const renderer = site.renderer;
+  Object.assign(renderer, { webgl2: true, quality: 0.75, cameraInterval: 1000 / 60,
+    gpuTimes: [12, 8, 16], gpuSync: {}, gpuTimingValid: true, gpuWaitMs: 48 });
+  const before = { polls: site.polls.length, draws: site.renders.length, samples: site.samples.length,
+    frames: site.pendingFrames, timers: site.pendingTimers, resets: renderer.timingResets, resizes: renderer.resizes };
+  const snapshot = site.scene.introPerformance();
+  assert.deepEqual({ ...snapshot, gpuTimes: [...snapshot.gpuTimes] }, {
+    measured: true, quality: 0.75, frameInterval: 1000 / 60, gpuTimes: [12, 8, 16], gpuPending: 48,
+  });
+  snapshot.gpuTimes.push(999);
+  assert.deepEqual(renderer.gpuTimes, [12, 8, 16], 'a reader cannot mutate the renderer\'s timing window');
+  assert.deepEqual({ polls: site.polls.length, draws: site.renders.length, samples: site.samples.length,
+    frames: site.pendingFrames, timers: site.pendingTimers, resets: renderer.timingResets, resizes: renderer.resizes }, before);
+  assert.equal(renderer.quality, 0.75);
+  assert.equal(renderer.frameInterval, 1000 / 30);
+
+  renderer.gpuTimingValid = false;
+  renderer.gpuTimes = [];
+  assert.equal(site.scene.introPerformance().gpuPending, null, 'reset timing cannot expose a stale pending bound');
+  assert.equal(site.scene.introPerformance().gpuTimes.length, 0);
+  renderer.gpuTimingValid = true;
+  renderer.gpuSync = null;
+  assert.equal(site.scene.introPerformance().gpuPending, null, 'a completed fence has no pending cost');
+  renderer.webgl2 = false;
+  renderer.timerQuery = {};
+  renderer.gpuTimes = [40, 41, 42];
+  assert.equal(site.scene.introPerformance().measured, true, 'timer queries remain first-class GPU evidence');
+  assert.deepEqual([...site.scene.introPerformance().gpuTimes], [40, 41, 42]);
+  assert.equal(site.scene.introPerformance().gpuPending, null);
+  renderer.timerQuery = null;
+  renderer.cameraInterval = 50;
+  assert.equal(site.scene.introPerformance().measured, false, 'legacy cadence is not labelled GPU timing');
+  assert.equal(site.scene.introPerformance().frameInterval, 50, 'the interactive cadence keeps adaptive slowdowns');
+  renderer.getFrameInterval = undefined;
+  renderer.gpuTimes = undefined;
+  assert.equal(site.scene.introPerformance().frameInterval, 1000 / 30, 'older renderers expose their existing cadence');
+  assert.equal(site.scene.introPerformance().gpuTimes.length, 0);
+
+  for (const property of ['ready', 'lost', 'disposed']) {
+    renderer[property] = property !== 'ready';
+    assert.equal(site.scene.introPerformance(), null, property);
+    renderer[property] = property === 'ready';
+  }
+  site.page(1200, 'pagehide', { persisted: true });
+  assert.equal(site.scene.introPerformance(), null, 'a cached inactive page exposes no stale measurements');
 });

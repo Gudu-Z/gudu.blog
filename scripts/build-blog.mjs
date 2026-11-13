@@ -124,8 +124,8 @@ function documentHead({ title, description, canonical, prefix, noindex = false, 
     <link rel="alternate" type="application/rss+xml" title="Gudu 的个人博客" href="${prefix}feed.xml" />
     <script src="${prefix}js/site-theme.js?v=20261030-day-mode"></script>
     <script src="${prefix}js/theme-jets.js?v=20261101-white-hole" defer></script>
-    <link rel="stylesheet" href="${prefix}css/style.css?v=20261113-sky" />
-    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261101-day-mode" />`.replace(/[ \t]+$/gm, '');
+    <link rel="stylesheet" href="${prefix}css/style.css?v=20261113-polish" />
+    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261113-polish" />`.replace(/[ \t]+$/gm, '');
 }
 
 function renderArticle(post, index, posts, commentsConfig) {
@@ -179,8 +179,10 @@ ${generated}
 <html lang="zh-CN">
   <head>
     ${documentHead({ title: '404 · 这一页暂时偏离了轨道', description: '你寻找的页面没有找到，回到 Gudu 的博客继续探索。', canonical: `${site}/404.html`, prefix: '/', noindex: true })}
+    <script src="/js/star-sky.js?v=20261113-polish" defer></script>
   </head>
   <body class="not-found-page">
+    <canvas class="lost-sky" data-star-sky aria-hidden="true"></canvas>
     ${siteHeader('/')}
     <main class="not-found" id="main-content" tabindex="-1"><p class="eyebrow">LOST IN SPACE</p><p class="error-code" aria-hidden="true">404<span>.</span></p><h1>这一页，偏离了轨道。</h1><p>链接可能已经改变，或这段故事还没有写下。<br />回到熟悉的坐标，继续探索。</p><a class="text-link" href="/index.html#journal">返回文章列表 <span aria-hidden="true">↗</span></a></main>
     ${siteFooter('/')}
@@ -201,7 +203,7 @@ ${published.map(post => `<item><title>${escape(post.title)}</title><link>${postU
 }
 
 const journalEmpty = '<div class="journal-empty"><span class="empty-orbit" aria-hidden="true"></span><h3>文章正在酝酿</h3><p>关于技术、生活与思考的记录，会陆续出现在这里。</p><a href="#about" class="text-link">先认识一下我 <span aria-hidden="true">↗</span></a></div>';
-const archiveEmpty = '<p class="archive-empty">这里将按时间，收好每一篇文章。<span>第一篇，敬请期待。</span></p>';
+const archiveEmpty = '<p class="archive-empty">这里将按时间，收好每一篇文章。<span>第一篇，敬请期待。</span></p><span class="archive-axis" aria-hidden="true"></span>';
 
 function renderCards(posts) {
   if (!posts.length) return journalEmpty;

@@ -223,6 +223,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .article-pagination a strong { font-weight: 500; }
 .reading-progress { position: fixed; top: 0; left: 0; width: 100%; height: 2px; z-index: 30; pointer-events: none; }
 .reading-progress span { display: block; width: 0; height: 100%; background: var(--red); }
+/* The lost page floats in the site's own star sky (js/star-sky.js). The body
+   leaves its background to the root, which is painted beneath the sky. */
+.not-found-page { background: transparent; }
+.lost-sky { position: fixed; inset: 0; z-index: -1; width: 100%; height: 100%; pointer-events: none; }
 .not-found { width: min(800px, 85%); min-height: 70svh; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; margin: 0 auto; padding: 60px 0; }
 .not-found .error-code { font: 900 clamp(100px, 18vw, 190px)/1 "Barlow Condensed", sans-serif; color: light-dark(#46546344, #8595a644); letter-spacing: 0; margin: 0; }
 .error-code span { display: inline-block; width: 0.12em; height: 0.12em; margin-left: 0.06em; overflow: hidden; color: transparent; background: var(--red); }

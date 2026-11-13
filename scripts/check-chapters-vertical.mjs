@@ -4,6 +4,7 @@
 // viewport grows. On wide screens it also checks that the folded ends of the
 // HUD land on the flat page's frame and still answer the pointer where they
 // show. Needs Chrome, Chromium or Edge; CHROME_PATH picks a build.
+// Restricted test hosts can opt out of Chrome's nested sandbox with CHROME_NO_SANDBOX=1.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -67,11 +68,14 @@ before(async () => {
   profile = await mkdtemp(join(tmpdir(), 'gudu-vertical-'));
   // Without WebGL the page shows its static black hole: quick and identical everywhere.
   browser = spawn(chrome, ['--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-extensions',
-    '--disable-background-networking', '--disable-3d-apis', '--hide-scrollbars', '--remote-debugging-port=0',
+    '--disable-background-networking', '--disable-3d-apis', '--disable-gpu', '--hide-scrollbars', '--remote-debugging-port=0',
+    ...(process.env.CHROME_NO_SANDBOX === '1' ? ['--no-sandbox'] : []),
     `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
   const endpoint = await new Promise((done, fail) => {
     let log = '';
     const timer = setTimeout(() => fail(new Error('Chrome did not start')), 20000);
+    browser.once('error', error => { clearTimeout(timer); fail(error); });
+    browser.once('exit', code => { clearTimeout(timer); fail(new Error(`Chrome exited before connecting (${code}): ${log}`)); });
     browser.stderr.on('data', data => {
       log += data;
       const match = log.match(/DevTools listening on (ws:\/\/\S+)/);
@@ -80,6 +84,10 @@ before(async () => {
   });
   socket = new WebSocket(endpoint);
   await new Promise((done, fail) => { socket.onopen = done; socket.onerror = fail; });
+  socket.onclose = () => {
+    for (const call of pending.values()) call.fail(new Error('Chrome disconnected during a check'));
+    pending.clear();
+  };
   socket.onmessage = message => {
     const data = JSON.parse(message.data);
     if (data.id && pending.has(data.id)) {
@@ -94,7 +102,7 @@ before(async () => {
 
 after(async () => {
   socket?.close();
-  if (browser && browser.exitCode === null) {
+  if (browser && browser.exitCode === null && browser.signalCode === null) {
     browser.kill();
     await new Promise(done => browser.once('exit', done));
   }
@@ -213,6 +221,168 @@ const TAPE = `(() => {
   });
   return { axisX: axis.left + axis.width / 2, stations };
 })()`;
+
+test('phone chapter hashes survive the loader and native fragment scrolling', { skip }, async () => {
+  for (const id of ['about', 'series', 'journal', 'archive', 'home', '']) {
+    const page = await open(`/?intro=short${id ? '#' + id : ''}`, { width: 375, height: 812 });
+    try {
+      const now = await state(page);
+      const target = !id || id === 'home' ? 0 : id === 'about' ? now.entry
+        : Math.min((await sectionTop(page, id)) - now.header - 8, now.height - 812);
+      assert.ok(Math.abs(now.y - target) <= 2, `${id || 'no hash'} lands at ${now.y}, expected ${target}`);
+      assert.equal(now.hash, id ? '#' + id : '');
+    } finally {
+      await close(page);
+    }
+  }
+});
+
+test('phone hash changes keep the measured landing in portrait, landscape and reduced motion', { skip }, async () => {
+  for (const view of [{ width: 375, height: 812 }, { width: 844, height: 390 }, { width: 375, height: 812, reduced: true }]) {
+    const page = await open('/index.html?intro=short#about', view);
+    try {
+      assert.ok(Math.abs((await state(page)).y - (await state(page)).entry) <= 2, 'the 404 destination opens About');
+      for (const id of ['journal', 'about', 'series', 'archive', 'about', 'home']) {
+        await evaluate(page, `location.hash = '${id}'`);
+        await sleep(1100);
+        const now = await state(page);
+        const target = id === 'home' ? 0 : id === 'about' ? now.entry
+          : Math.min((await sectionTop(page, id)) - now.header - 8, now.height - view.height);
+        assert.ok(Math.abs(now.y - target) <= 2, `${id} lands at ${now.y}, expected ${target} on ${view.width}x${view.height}`);
+        assert.equal(now.hash, '#' + id);
+      }
+    } finally {
+      await close(page);
+    }
+  }
+});
+
+test('the final loader correction follows layout changes until the reader interacts', { skip }, async () => {
+  const page = await open('/?intro=short#series', { width: 375, height: 812 });
+  try {
+    await evaluate(page, `(() => {
+      document.querySelector('#about').style.paddingBottom = '180px';
+      window.dispatchEvent(new Event('site:revealed'));
+    })()`);
+    let now = await state(page);
+    assert.ok(Math.abs(now.y - ((await sectionTop(page, 'series')) - now.header - 8)) <= 2, 'startup scroll events do not cancel the final landing correction');
+    await swipe(page, 180, 600, 520);
+    await sleep(600);
+    now = await state(page);
+    await evaluate(page, "window.dispatchEvent(new Event('site:revealed'))");
+    assert.equal((await state(page)).y, now.y, 'the loader leaves a reader who has scrolled in place');
+  } finally {
+    await close(page);
+  }
+});
+
+const FILTERS = `(() => {
+  const row = document.querySelector('.journal-toolbar > .filter-list');
+  const toolbar = row.parentElement;
+  const panel = row.closest('.chapter-panel');
+  const style = getComputedStyle(row);
+  const panelStyle = getComputedStyle(panel);
+  return {
+    left: row.scrollLeft, width: row.clientWidth, total: row.scrollWidth,
+    panelWidth: panel.clientWidth - parseFloat(panelStyle.paddingLeft) - parseFloat(panelStyle.paddingRight),
+    pageWidth: document.documentElement.scrollWidth, y: scrollY, x: scrollX,
+    mask: style.maskImage, scrollbar: style.scrollbarWidth, touch: style.touchAction,
+    before: { opacity: getComputedStyle(toolbar, '::before').opacity, background: getComputedStyle(toolbar, '::before').backgroundImage },
+    after: { opacity: getComputedStyle(toolbar, '::after').opacity, background: getComputedStyle(toolbar, '::after').backgroundImage },
+    buttons: [...row.querySelectorAll('button')].map(button => ({
+      label: button.querySelector('.filter-label').textContent, left: button.offsetLeft, right: button.offsetLeft + button.offsetWidth,
+      active: button.getAttribute('aria-pressed') === 'true', focused: button === document.activeElement, tab: button.tabIndex,
+    })),
+  };
+})()`;
+
+test('phone category filters scroll inside the panel with overlays and keyboard access', { skip }, async () => {
+  const page = await open('/?intro=short#journal', { width: 375, height: 812 });
+  try {
+    let row = await evaluate(page, FILTERS);
+    const initialY = row.y;
+    assert.ok(row.width <= row.panelWidth + 1, 'the filter row stays inside the panel');
+    assert.ok(row.total > row.width, 'the categories have their own horizontal scroll range');
+    assert.equal(row.pageWidth, 375);
+    assert.equal(row.mask, 'none', 'the row does not mask the phone compositor layer');
+    assert.equal(row.scrollbar, 'none');
+    assert.ok(row.touch.includes('pan-x') && !row.touch.includes('pan-y'));
+    assert.equal(row.before.opacity, '0');
+    assert.equal(row.after.opacity, '1');
+    assert.match(row.after.background, /linear-gradient/);
+    assert.deepEqual(row.buttons.map(button => button.label), ['全部', 'Minecraft', '白日梦话', '神秘文案', '其他']);
+    assert.ok(row.buttons.every(button => button.tab === 0), 'every category stays in the tab order');
+
+    await evaluate(page, "document.querySelector('.filter-list').scrollLeft = 40");
+    await waitFor(page, "document.querySelector('.journal-toolbar').classList.contains('has-filter-left')");
+    row = await evaluate(page, FILTERS);
+    assert.equal(row.before.opacity, '1');
+    assert.equal(row.after.opacity, '1');
+
+    await evaluate(page, "document.querySelector('.filter-list button:last-child').click()");
+    await waitFor(page, "!document.querySelector('.journal-toolbar').classList.contains('has-filter-right')");
+    row = await evaluate(page, FILTERS);
+    const selected = row.buttons.find(button => button.active);
+    assert.ok(selected.left >= row.left - 1 && selected.right <= row.left + row.width + 1, 'an active category is fully visible');
+    assert.equal(row.before.opacity, '1');
+    assert.equal(row.after.opacity, '0');
+    assert.equal(row.y, initialY, 'changing the selection only scrolls the row');
+
+    await evaluate(page, "document.querySelector('.filter-list button').focus({ preventScroll: true })");
+    const beforeKeys = (await state(page)).y;
+    for (let index = 0; index < row.buttons.length; index++) {
+      if (index) {
+        await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 }, page.sessionId);
+        await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 }, page.sessionId);
+      }
+      row = await evaluate(page, FILTERS);
+      const focused = row.buttons[index];
+      assert.equal(focused.focused, true, `${focused.label} is reachable with Tab`);
+      assert.ok(focused.left >= row.left - 1 && focused.right <= row.left + row.width + 1, `${focused.label} is visible when focused`);
+      assert.equal(row.y, beforeKeys, 'revealing a filter only scrolls the row');
+    }
+    assert.equal(row.x, 0);
+
+    await evaluate(page, "document.activeElement.blur(); document.querySelector('.filter-list button').click()");
+    await waitFor(page, "document.querySelector('.filter-list').scrollLeft === 0");
+    const start = await evaluate(page, `(() => {
+      const box = document.querySelector('.filter-list').getBoundingClientRect();
+      return { x: box.right - 12, end: box.left + 12, y: box.top + box.height / 2, pageY: scrollY };
+    })()`);
+    const points = step => [{ x: start.x + (start.end - start.x) * step / 8, y: start.y + step, id: 1, radiusX: 4, radiusY: 4 }];
+    await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: points(0) }, page.sessionId);
+    for (let step = 1; step <= 8; step++) {
+      await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: points(step) }, page.sessionId);
+      await sleep(16);
+    }
+    await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, page.sessionId);
+    await sleep(500);
+    row = await evaluate(page, FILTERS);
+    assert.ok(row.left > 40, 'a horizontal touch swipe scrolls the row');
+    assert.equal(row.y, start.pageY, 'a slightly diagonal horizontal swipe leaves the page in place');
+    assert.equal(row.x, 0);
+    assert.equal(row.pageWidth, 375);
+
+    for (const [theme, color] of [['light', 'rgb(234, 235, 237)'], ['dark', 'rgb(12, 14, 17)']]) {
+      await evaluate(page, `window.SiteTheme.set('${theme}')`);
+      assert.ok((await evaluate(page, FILTERS)).after.background.includes(color), 'the overlay uses the panel color in each theme');
+    }
+    await viewport(page, { width: 844, height: 390, mobile: true });
+    await sleep(400);
+    row = await evaluate(page, FILTERS);
+    assert.ok(row.width <= row.panelWidth + 1, 'landscape also contains the row');
+    assert.equal(row.pageWidth, 844);
+    assert.equal(row.mask, 'none');
+    assert.equal(row.before.opacity, row.left > 1 ? '1' : '0');
+    assert.equal(row.after.opacity, row.left < row.total - row.width - 1 ? '1' : '0');
+    await viewport(page, { width: 1200, height: 800, mobile: false });
+    await waitFor(page, "!document.documentElement.classList.contains('has-vertical-chapters')");
+    assert.equal(await evaluate(page, "document.querySelector('.journal-toolbar').matches('.has-filter-left, .has-filter-right')"), false, 'desktop mode releases the phone overlays');
+    assert.deepEqual(failures, []);
+  } finally {
+    await close(page);
+  }
+});
 
 test('phones get the vertical page and the strip hands over everything it wrote', { skip }, async () => {
   const page = await open();

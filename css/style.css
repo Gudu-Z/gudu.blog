@@ -254,6 +254,49 @@ h1 > span { display: block; }
   /* Resume while the loader fades, so the page is already arriving underneath. */
   .is-loading:not(.is-loading-exit) :is(.black-hole, .starfield, .space-grid, .title-first-content, .title-second-content, .title-period, .live-clock) { animation-play-state: paused; }
 }
+/* A quiet cue at the foot of the hero that the page goes on. It arrives once
+   the entrance has settled and leaves for good at the first scroll. */
+.scroll-cue {
+  position: absolute;
+  left: 50%;
+  /* Inside the hero's frame (.space-grid), clear of its bottom line. */
+  bottom: 60px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  translate: -50% 0;
+  color: light-dark(#4a535b, #8d969e);
+  font: 9px/1 "Consolas", "SFMono-Regular", monospace;
+  letter-spacing: 0.32em;
+  text-decoration: none;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 600ms ease, color 180ms ease;
+}
+/* The letter spacing trails the last letter; this keeps the word centred. */
+.scroll-cue-label { margin-right: -0.32em; }
+.scroll-cue-line { position: relative; width: 1px; height: 30px; overflow: hidden; background: light-dark(#2a303630, #c3cbd230); }
+.scroll-cue-line::after { content: ""; position: absolute; top: 0; left: 0; width: 1px; height: 12px; background: light-dark(#1a1f24, #e6e9ec); translate: 0 -12px; }
+.hero.intro-complete .scroll-cue { opacity: 1; pointer-events: auto; transition-delay: 300ms, 0s; }
+.hero.is-scrolled .scroll-cue { opacity: 0; pointer-events: none; transition-duration: 220ms, 180ms; transition-delay: 0s; }
+.scroll-cue:is(:hover, :focus-visible) { color: light-dark(#0e1012, #e6e9ec); }
+.scroll-cue:focus-visible { outline: 1px solid light-dark(#21252a8c, #c5cbd18c); outline-offset: 2px; }
+@keyframes scroll-cue-fall {
+  from { translate: 0 -12px; }
+  70%, to { translate: 0 30px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .hero.intro-complete .scroll-cue-line::after { animation: scroll-cue-fall 2.4s cubic-bezier(0.6, 0, 0.3, 1) 900ms infinite; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scroll-cue-line::after { translate: 0 9px; }
+}
+@media (max-width: 700px) {
+  .scroll-cue { bottom: 38px; }
+}
 .live-clock {
   display: flex;
   align-items: center;

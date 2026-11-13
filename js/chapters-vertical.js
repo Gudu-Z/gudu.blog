@@ -21,6 +21,8 @@
   const heroText = [...stage.querySelectorAll('.hero-heading')];
   const labels = chapters.map((chapter, index) => links[index]?.querySelector('.chapter-station-title')?.textContent.trim() || chapter.id);
   const journalIndex = sections.findIndex(section => section.id === 'journal');
+  const filterList = document.querySelector('.journal-toolbar > .filter-list');
+  const filterToolbar = filterList?.parentElement;
   const query = matchMedia('(max-width: 720px), (max-height: 520px) and (pointer: coarse)');
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
   // The surfaces the strip turns in depth: panels and the loose headings and
@@ -88,12 +90,15 @@
   let settleTimer = 0;
   let movingTimer = 0;
   let arrivalTimer = 0;
-  let moved = false;
+  let interacted = false;
   let reveal = null;
   let rise = null;
   let reset = null;
   const risen = new Set();
   let layout = null;
+  let filterChanges = null;
+  let activeFilter = null;
+  let filterWidth = 0;
   const inertStates = new Map();
 
   function setInert(element, inert) {
@@ -136,6 +141,9 @@
     const first = units.find(element => chapters[0].contains(element));
     entry = Math.max(1, (first ? pageBox(first).top : tops[0]) - headerHeight - 28);
     maxScroll = Math.max(entry, root.scrollHeight - height);
+    // Native fragment navigation can run after our initial jump. It must use
+    // the same landing, or About falls back inside the Hero hand-over.
+    chapters.forEach((chapter, index) => chapter.style.setProperty('--vertical-scroll-margin', px(tops[index] - landing(index + 1))));
 
     // The tape window is fixed. With cells a seventh of its height and the
     // pointer in its middle, both ends of the tape stay in view from the top
@@ -181,6 +189,7 @@
     arc.flat = area * 0.1;
     for (const plate of plates) Object.assign(plate, pageBox(plate.element));
     watchBlocks();
+    syncFilters();
 
     // The fallback illustration shrinks into the scene's center, as in the strip.
     const figure = document.querySelector('#black-hole')?.getBoundingClientRect();
@@ -190,6 +199,41 @@
       root.style.setProperty('--fallback-shift-y', px(scene.top + scene.height / 2 - figure.top - figure.height / 2));
     }
   }
+
+  function updateFilterEdges() {
+    if (!active || !filterList) return;
+    const end = filterList.scrollWidth - filterList.clientWidth;
+    filterToolbar.classList.toggle('has-filter-left', filterList.scrollLeft > 1);
+    filterToolbar.classList.toggle('has-filter-right', filterList.scrollLeft < end - 1);
+  }
+
+  // Layout offsets ignore the panel's tilt. Scroll only this row so selecting
+  // or tabbing to a category cannot pull the vertical page away from its place.
+  function revealFilter(button) {
+    if (!active || !button || !filterList?.contains(button) || !filterList.clientWidth) return;
+    const inset = parseFloat(getComputedStyle(filterList).scrollPaddingLeft) || 0;
+    const left = button.offsetLeft;
+    const right = left + button.offsetWidth;
+    const start = filterList.scrollLeft;
+    const width = filterList.clientWidth;
+    const destination = left < start + inset ? left - inset : right > start + width - inset ? right - width + inset : start;
+    filterList.scrollTo({ left: clamp(destination, 0, filterList.scrollWidth - width), behavior: 'instant' });
+    updateFilterEdges();
+  }
+
+  function syncFilters() {
+    if (!active || !filterList) return;
+    const selected = filterList.querySelector('.filter-button[aria-pressed="true"]');
+    const width = filterList.clientWidth;
+    filterToolbar.style.setProperty('--filter-row-height', px(filterList.offsetHeight));
+    if (selected !== activeFilter || width !== filterWidth) revealFilter(selected);
+    activeFilter = selected;
+    filterWidth = width;
+    updateFilterEdges();
+  }
+
+  filterList?.addEventListener('scroll', updateFilterEdges, { passive: true });
+  filterList?.addEventListener('focusin', event => revealFilter(event.target.closest('.filter-button')));
 
   // Blocks join the rise once and leave it when they leave the page, as
   // search results replace their cards. A match inside another rises with it.
@@ -487,7 +531,7 @@
     const index = sections.findIndex(section => `#${section.id}` === window.location.hash);
     if (index < 0) return false;
     if (smooth) animateTo(landing(index), { kind: index === 0 || window.scrollY < entry - 2 ? 'hero' : 'content' });
-    else jump(landing(index));
+    else { stopAnimation(); jump(landing(index)); }
     return true;
   }
 
@@ -507,7 +551,6 @@
     const y = window.scrollY;
     if (Math.abs(y - lastScroll) > 0.5) scrollDirection = Math.sign(y - lastScroll);
     lastScroll = y;
-    moved = true;
     queue();
     nav.classList.add('is-chapter-moving');
     clearTimeout(movingTimer);
@@ -616,7 +659,8 @@
     if (!active) return;
     clearTimeout(settleTimer);
     if (animation && animation.kind !== 'hero') stopAnimation();
-    touch = event.touches.length === 1 && !event.target.closest?.('.chapter-progress') && !interactive(event.target)
+    // The whole filter row, including its gaps, owns its horizontal gestures.
+    touch = event.touches.length === 1 && !event.target.closest?.('.chapter-progress, .journal-toolbar > .filter-list') && !interactive(event.target)
       ? { y: event.touches[0].clientY, scroll: window.scrollY, decided: false } : null;
   }, { passive: true });
   window.addEventListener('touchmove', event => {
@@ -704,12 +748,17 @@
   window.addEventListener('resize', () => { if (active) { measure(); queue(); } }, { passive: true });
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('scrollend', () => { if (active && !touch) settle(); });
+  // Scroll events also come from fragment navigation and our own jumps.
+  // Only reader input should cancel the loader's final landing correction.
+  for (const type of ['pointerdown', 'touchstart', 'wheel', 'keydown']) {
+    window.addEventListener(type, () => { if (active) interacted = true; }, { passive: true });
+  }
   // Fonts, images and search results change the page under the loader; a
-  // reader who has not moved yet still lands on the linked chapter.
+  // reader who has not interacted yet still lands on the linked chapter.
   window.addEventListener('site:revealed', () => {
     if (!active) return;
     measure();
-    if (!moved && window.location.hash) restoreHash();
+    if (!interacted && window.location.hash) restoreHash();
     else queue();
   });
   window.addEventListener('pageshow', () => { if (active) { measure(); queue(); } });
@@ -721,7 +770,7 @@
     active = true;
     current = -1;
     lastProgress = -1;
-    moved = false;
+    interacted = false;
     root.classList.add('has-chapters', 'has-vertical-chapters');
     marker.setAttribute('aria-orientation', 'vertical');
     for (const element of units) {
@@ -754,6 +803,11 @@
     });
     layout = new ResizeObserver(() => { if (active) { measure(); queue(); } });
     layout.observe(document.body);
+    if (filterList) {
+      layout.observe(filterList);
+      filterChanges = new MutationObserver(syncFilters);
+      filterChanges.observe(filterList, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-pressed', 'hidden'] });
+    }
     measure();
     lastScroll = window.scrollY;
     if (!(window.location.hash && restoreHash())) update();
@@ -776,6 +830,11 @@
     reset?.disconnect();
     layout?.disconnect();
     reveal = rise = reset = layout = null;
+    filterChanges?.disconnect();
+    filterChanges = activeFilter = null;
+    filterWidth = 0;
+    filterToolbar?.classList.remove('has-filter-left', 'has-filter-right');
+    filterToolbar?.style.removeProperty('--filter-row-height');
     for (const element of risen) {
       element.classList.remove('is-vertical-reveal', 'is-vertical-shown');
       element.style.removeProperty('--vertical-reveal-delay');
@@ -785,6 +844,7 @@
     clearPlates();
     clearTape();
     for (const element of units) element.style.removeProperty('--chapter-reveal-direction');
+    for (const chapter of chapters) chapter.style.removeProperty('--vertical-scroll-margin');
     for (const name of ['--tape-cell', '--tape-shift', '--chapter-position', '--site-progress', '--chapter-active-index']) nav.style.removeProperty(name);
     tape.style.removeProperty('--chapter-marker-y');
     for (const [element, inert] of inertStates) if (inert) element.inert = false;

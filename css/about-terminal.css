@@ -272,7 +272,27 @@
   .home-page .about-section .about-record-label { font-size: 10px; }
   .home-page .about-section .connection-heading { flex-wrap: wrap; gap: 5px 12px; }
 }
-@media (max-height: 760px) and (min-width: 721px) {
+/* Wide but short windows: the type and spacing already scale down with the
+   chapter (chapters.css), but the record's readable text keeps its size, so
+   its lines and gaps close up instead, to keep both panels above the ruler. */
+@media (min-width: 1201px) and (max-height: 820px) {
+  .home-page .about-section .about-copy h2 { line-height: 1.2; }
+  .home-page .about-section .about-name { margin-top: 2px; font-size: clamp(46px, calc(62 * var(--about-unit)), 54px); }
+  .home-page .about-section .about-text > .about-pronunciation { margin: 4px 0 8px; padding-top: 2px; line-height: 1.5; }
+  .home-page .about-section .about-dossier { row-gap: 6px; }
+  .home-page .about-section .about-fact-wide { padding-top: 6px; }
+  .home-page .about-section .about-fact dd { margin-top: 2px; font-size: 13px; line-height: 1.5; }
+  .home-page .about-section .about-games ul { gap: 0; }
+  .home-page .about-section .about-preference { margin-top: 8px; padding-top: 7px; }
+  .home-page .about-section .connection-heading { margin-bottom: 10px; }
+  .home-page .about-section .connection-card { padding-block: 12px 11px; }
+  .home-page .about-section .connection-rule { margin-block: 6px 7px; }
+  .home-page .about-section .connection-card h3 { margin-bottom: 3px; }
+  .home-page .about-section .connection-action { padding-top: 6px; }
+  .home-page .about-section .connection-footnote { margin-top: 10px; }
+}
+/* Narrower short windows keep their own fixed tightening. */
+@media (max-height: 760px) and (min-width: 721px) and (max-width: 1200px) {
   .home-page .about-section .about-panel-top { margin-bottom: 9px; }
   .home-page .about-section .about-calibration { margin-bottom: 17px; }
   .home-page .about-section .about-socials { margin-top: 13px; }

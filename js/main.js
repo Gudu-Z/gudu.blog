@@ -196,12 +196,6 @@
     }
   }
 
-  // Seeded, so every visit and every resize shows the same sky.
-  function random(seed) {
-    let state = seed;
-    return () => { state = (state * 16807) % 2147483647; return state / 2147483647; };
-  }
-
   function resize() {
     if (!pageActive || document.hidden) return;
     const bounds = stage.getBoundingClientRect();
@@ -218,24 +212,11 @@
       starFrame = null;
     }
     context?.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // The hero's sky: clear points at their own depths, behind the scene. The
-    // shader adds the few stars it bends around the hole on top of them.
+    // The hero's sky (js/star-sky.js): clear points at their own depths,
+    // behind the scene. The shader adds the few stars it bends around the
+    // hole on top of them.
     if (dimensionsChanged) {
-      const next = random(9);
-      const count = Math.max(120, Math.min(820, Math.round(width * height / 2500)));
-      starList = Array.from({ length: count }, () => {
-        const x = (next() * 1.12 - 0.06) * width, y = (next() * 1.12 - 0.06) * height;
-        const bright = next(), near = next();
-        // Broad clusters leave dark room between them.
-        const group = 0.5 + 0.5 * Math.sin(x * 0.006 + Math.sin(y * 0.005)) * Math.cos(y * 0.007);
-        return {
-          x, y, lastX: NaN, lastY: NaN,
-          radius: 0.5 + 1.05 * bright * bright * bright,
-          light: (0.14 + 0.86 * bright * bright) * (0.25 + 0.75 * group),
-          // How much of the camera's travel a star shares: most lie far away.
-          depth: 0.04 + 0.4 * near * near,
-        };
-      });
+      starList = window.StarSky?.stars(width, height) ?? [];
       starFrame = null;
     }
     starAnchor = null;
@@ -272,14 +253,17 @@
     if (!pageActive || document.hidden || !context) return;
     const day = isDay();
     const zoom = starZoom();
+    // By day the dark points read as dust on the chapters' pale panels, so
+    // they fade to two fifths as the chapters arrive; the hero keeps them all.
+    const fade = day ? 1 - 0.6 * chapterProgress : 1;
     if (starFrame && starFrame.x === pointer.x && starFrame.y === pointer.y && starFrame.zoom === zoom
-        && starFrame.amount === introAmount && starFrame.style === blackHoleStyle && starFrame.day === day) return;
-    starFrame = { x: pointer.x, y: pointer.y, zoom, amount: introAmount, style: blackHoleStyle, day };
+        && starFrame.amount === introAmount && starFrame.style === blackHoleStyle && starFrame.day === day
+        && starFrame.fade === fade) return;
+    starFrame = { x: pointer.x, y: pointer.y, zoom, amount: introAmount, style: blackHoleStyle, day, fade };
     context.clearRect(0, 0, width, height);
-    const ink = blackHoleStyle === 'ink';
     // Daylight draws the same stars as the night sky's negative.
-    const color = ink ? '225,218,200' : day ? '62,51,32' : '193,204,223';
-    const gain = ink ? 0.55 : day ? 0.8 : 1;
+    const { color, gain: tone } = window.StarSky?.tone({ day, ink: blackHoleStyle === 'ink' }) ?? { color: '193,204,223', gain: 1 };
+    const gain = tone * fade;
     const anchorX = starAnchor?.x ?? 0, anchorY = starAnchor?.y ?? 0;
     // The clock's line, with room for its own parallax; the opening sky of the
     // entrance has no clock yet.
@@ -510,6 +494,18 @@
     },
     // The entrance's own layers follow the camera's fixed point and zoom.
     introView: amount => (blackHole?.ready && !blackHole.lost ? blackHole.introView?.(amount) ?? null : null),
+    // The entrance reads the renderer's measurements without polling or
+    // disturbing its adaptive window. A pending fence proves only a lower bound.
+    introPerformance() {
+      if (!pageActive || !blackHole?.ready || blackHole.lost || blackHole.disposed) return null;
+      return {
+        measured: Boolean(blackHole.webgl2 || blackHole.timerQuery),
+        quality: blackHole.quality,
+        frameInterval: blackHole.getFrameInterval?.(true) ?? blackHole.frameInterval,
+        gpuTimes: blackHole.gpuTimes?.slice() || [],
+        gpuPending: blackHole.webgl2 && blackHole.gpuSync && blackHole.gpuTimingValid ? blackHole.gpuWaitMs : null,
+      };
+    },
     live: () => Boolean(blackHole?.ready && !blackHole.lost),
   };
 
@@ -526,6 +522,9 @@
     // The black sphere is the day/night switch on the hero only. The chapters
     // move the hole away from it and use the header's toggle.
     if (sphereSwitch && sphereSwitch.hidden !== chapterProgress > 0) sphereSwitch.hidden = chapterProgress > 0;
+    // The hero's scroll cue has done its job once the visitor has left the
+    // hero; a restored pixel of scroll is still the hero.
+    if (chapterProgress > 0.01) hero.classList.add('is-scrolled');
     entranceGlow = pageActive && visible && !document.hidden && !paused
       ? Math.max(0, Math.min(1, Number(event.detail?.entranceGlow) || 0)) : 0;
     if (chapterProgress > 0) pointer.targetX = pointer.targetY = 0;
