@@ -48,6 +48,8 @@
   let height = 0;
   let starList = [];
   let starFrame = null;
+  let starAnchor = null;
+  let starQuiet = null;
   let layerX = NaN;
   let layerY = NaN;
   let chapterProgress = 0;
@@ -194,10 +196,10 @@
     }
   }
 
-  // Seeded positions stay in place when the viewport is resized.
+  // Seeded, so every visit and every resize shows the same sky.
   function random(seed) {
-    const n = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
-    return n - Math.floor(n);
+    let state = seed;
+    return () => { state = (state * 16807) % 2147483647; return state / 2147483647; };
   }
 
   function resize() {
@@ -216,42 +218,106 @@
       starFrame = null;
     }
     context?.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // The shader owns the lensed background; these few dim points fill its edges.
+    // The hero's sky: clear points at their own depths, behind the scene. The
+    // shader adds the few stars it bends around the hole on top of them.
     if (dimensionsChanged) {
-      starList = Array.from({ length: Math.round(width * height / 24000) }, (_, i) => ({
-        x: random(i * 5 + 1) * width,
-        y: random(i * 5 + 2) * height,
-        radius: 0.35 + random(i * 5 + 3) * 0.65,
-        light: 0.04 + random(i * 5 + 4) * 0.12,
-        depth: 0.2 + random(i * 5 + 5) * 1.2,
-      }));
+      const next = random(9);
+      const count = Math.max(120, Math.min(820, Math.round(width * height / 2500)));
+      starList = Array.from({ length: count }, () => {
+        const x = (next() * 1.12 - 0.06) * width, y = (next() * 1.12 - 0.06) * height;
+        const bright = next(), near = next();
+        // Broad clusters leave dark room between them.
+        const group = 0.5 + 0.5 * Math.sin(x * 0.006 + Math.sin(y * 0.005)) * Math.cos(y * 0.007);
+        return {
+          x, y, lastX: NaN, lastY: NaN,
+          radius: 0.5 + 1.05 * bright * bright * bright,
+          light: (0.14 + 0.86 * bright * bright) * (0.25 + 0.75 * group),
+          // How much of the camera's travel a star shares: most lie far away.
+          depth: 0.04 + 0.4 * near * near,
+        };
+      });
+      starFrame = null;
+    }
+    starAnchor = null;
+    // A bright point among the clock's digits would read as punctuation, so
+    // the sky dims around that one line. Offsets ignore the line's parallax
+    // and entrance transforms.
+    const quiet = clock.offsetWidth ? { left: 0, top: 0, width: clock.offsetWidth, height: clock.offsetHeight } : null;
+    for (let node = clock; quiet && node && node !== stage; node = node.offsetParent) {
+      quiet.left += node.offsetLeft;
+      quiet.top += node.offsetTop;
+    }
+    if (quiet?.left !== starQuiet?.left || quiet?.top !== starQuiet?.top
+        || quiet?.width !== starQuiet?.width || quiet?.height !== starQuiet?.height) {
+      starQuiet = quiet;
       starFrame = null;
     }
     blackHole?.resize();
     draw();
   }
 
-  function drawStars(fallback = false) {
+  // The page entrance magnifies the sky about its camera's fixed point.
+  function starZoom() {
+    if (!(introAmount > 0) || !blackHole?.ready || blackHole.lost) return 1;
+    if (!starAnchor) {
+      const view = blackHole.introView?.(1);
+      if (!view) return 1;
+      const box = stage.getBoundingClientRect();
+      starAnchor = { x: view.x - box.left, y: view.y - box.top, zoom: view.zoom };
+    }
+    return starAnchor.zoom ** introAmount;
+  }
+
+  function drawStars() {
     if (!pageActive || document.hidden || !context) return;
-    // The live minimal renderer supplies one continuous, lensed sky across
-    // the hero. Keep the old edge stars for ink and the static fallback only.
-    const show = fallback || blackHoleStyle !== 'minimal' || !blackHole?.ready || blackHole.lost;
     const day = isDay();
-    if (starFrame && starFrame.show === show && (!show || (starFrame.x === pointer.x
-        && starFrame.y === pointer.y && starFrame.style === blackHoleStyle && starFrame.day === day))) return;
-    starFrame = { show, x: pointer.x, y: pointer.y, style: blackHoleStyle, day };
+    const zoom = starZoom();
+    if (starFrame && starFrame.x === pointer.x && starFrame.y === pointer.y && starFrame.zoom === zoom
+        && starFrame.amount === introAmount && starFrame.style === blackHoleStyle && starFrame.day === day) return;
+    starFrame = { x: pointer.x, y: pointer.y, zoom, amount: introAmount, style: blackHoleStyle, day };
     context.clearRect(0, 0, width, height);
-    if (!show) return;
+    const ink = blackHoleStyle === 'ink';
+    // Daylight draws the same stars as the night sky's negative.
+    const color = ink ? '225,218,200' : day ? '62,51,32' : '193,204,223';
+    const gain = ink ? 0.55 : day ? 0.8 : 1;
+    const anchorX = starAnchor?.x ?? 0, anchorY = starAnchor?.y ?? 0;
+    // The clock's line, with room for its own parallax; the opening sky of the
+    // entrance has no clock yet.
+    const quiet = starQuiet && introAmount < 1 ? starQuiet : null;
+    const quietRight = quiet ? quiet.left + quiet.width + 8 : 0, quietBottom = quiet ? quiet.top + quiet.height + 6 : 0;
+    context.lineCap = 'round';
     for (const star of starList) {
-      const x = star.x + pointer.x * star.depth * 13;
-      const y = star.y + pointer.y * star.depth * 10;
-      // Daylight draws the same stars as the night sky's negative.
-      context.fillStyle = blackHoleStyle === 'ink'
-        ? `rgba(225,218,200,${star.light * 0.55})`
-        : day ? `rgba(62,51,32,${star.light})` : `rgba(193,204,223,${star.light})`;
-      context.beginPath();
-      context.arc(x, y, star.radius, 0, Math.PI * 2);
-      context.fill();
+      // Magnified, a star moves away from the fixed point by its depth's
+      // share. The scene pans a few pixels with the pointer; far stars go
+      // with it and nearer ones lag behind.
+      const spread = (zoom - 1) * star.depth;
+      const x = star.x + (star.x - anchorX) * spread + pointer.x * (7 - 30 * star.depth);
+      const y = star.y + (star.y - anchorY) * spread + pointer.y * (5 - 22 * star.depth);
+      const fromX = star.lastX, fromY = star.lastY;
+      star.lastX = x;
+      star.lastY = y;
+      if (x < -8 || y < -8 || x > width + 8 || y > height + 8) continue;
+      let alpha = Math.min(1, star.light * gain);
+      if (quiet) {
+        const outside = Math.hypot(Math.max(quiet.left - 8 - x, 0, x - quietRight), Math.max(quiet.top - 6 - y, 0, y - quietBottom));
+        if (outside < 16) alpha *= 1 - 0.85 * (1 - outside / 16) * (1 - introAmount);
+      }
+      const travel = introMoving ? Math.hypot(x - fromX, y - fromY) : 0;
+      if (travel > 1.2 && travel < 90) {
+        // Under the entrance's moving camera a star leaves the trace of one
+        // frame's travel.
+        context.strokeStyle = `rgba(${color},${alpha * 0.85})`;
+        context.lineWidth = star.radius * 1.7;
+        context.beginPath();
+        context.moveTo(fromX, fromY);
+        context.lineTo(x, y);
+        context.stroke();
+      } else {
+        context.fillStyle = `rgba(${color},${alpha})`;
+        context.beginPath();
+        context.arc(x, y, star.radius, 0, Math.PI * 2);
+        context.fill();
+      }
     }
   }
 
@@ -503,7 +569,7 @@
   // A late web font changes the heading's quiet zone without resizing the hero.
   const heading = document.querySelector('.hero-heading');
   if (heading) sceneResize.observe(heading);
-  blackHoleCanvas?.addEventListener('webglcontextlost', () => { stop(); settleScene(false); drawStars(true); });
+  blackHoleCanvas?.addEventListener('webglcontextlost', () => { stop(); settleScene(false); drawStars(); });
   window.addEventListener('pagehide', event => {
     // pagehide can precede visibilitychange. Gate every late completion before
     // retiring the renderer, while preserving it for BFCache.

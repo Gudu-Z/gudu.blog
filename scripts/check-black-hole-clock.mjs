@@ -26,7 +26,8 @@ function classes(initial = []) {
 
 // Execute the real main.js against controlled browser events and a monotonic
 // clock. Assertions observe the time and camera passed to the renderer.
-function browser({ reduced = false, loading = false, deferInk = false, deferReady = false, unavailable = false } = {}) {
+function browser({ reduced = false, loading = false, deferInk = false, deferReady = false, unavailable = false,
+  clockBox = null } = {}) {
   let now = 0;
   let sequence = 0;
   let renderCost = 0;
@@ -42,7 +43,7 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
   const renderers = [];
   const samples = [];
   const polls = [];
-  const work = { canvasClears: 0, canvasResizes: 0, starDraws: 0, layerWrites: 0 };
+  const work = { canvasClears: 0, canvasResizes: 0, starDraws: 0, starStreaks: 0, layerWrites: 0 };
   const media = {
     '(prefers-reduced-motion: reduce)': eventTarget({ matches: reduced }),
     '(pointer: fine)': eventTarget({ matches: true }),
@@ -53,8 +54,13 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
   });
   const canvas = eventTarget({ parentElement: { classList: classes() } });
   const starColors = [];
+  // The sky as last painted: each point's place, size and color.
+  let sky = [];
   const context = {
-    setTransform() {}, clearRect() { work.canvasClears++; }, beginPath() {}, arc() {}, fill() { work.starDraws++; },
+    setTransform() {}, clearRect() { work.canvasClears++; sky = []; }, beginPath() {},
+    arc(x, y, radius) { sky.push({ x, y, radius, color: starColors.at(-1) }); },
+    fill() { work.starDraws++; },
+    moveTo() {}, lineTo() {}, stroke() { work.starStreaks++; },
     set fillStyle(value) { starColors.push(value); },
   };
   let starWidth = 0, starHeight = 0;
@@ -69,6 +75,9 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
   const clock = {
     querySelector: name => clockParts[name === '[data-clock-date]' ? 0 : 1],
     setAttribute() {},
+    // Laid out inside the hero, which is the stage on this page.
+    ...(clockBox && { offsetLeft: clockBox.left, offsetTop: clockBox.top, offsetWidth: clockBox.width,
+      offsetHeight: clockBox.height, offsetParent: hero }),
   };
   const layers = ['1', '2'].map(depth => ({
     dataset: { depth }, style: { values: {}, setProperty(name, value) { work.layerWrites++; this.values[name] = value; } },
@@ -148,6 +157,9 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
     attempts, renders, layers, renderers, samples, polls, work, starColors, sphere, root: document.documentElement,
     hero,
     get scene() { return window.SiteBlackHole; },
+    // Keyed by size and color, which no two points share, so one star can be
+    // followed from one painting to the next.
+    get sky() { return new Map(sky.map(star => [`${star.radius} ${star.color}`, star])); },
     get preparation() { return preparation; },
     get renderer() { return renderer; },
     get pendingFrames() { return frames.size; },
@@ -229,50 +241,84 @@ await test('the default cadence renders every second 60 Hz frame despite timesta
   phase(site.last.time, 12.99996);
 });
 
-await test('settled live animation does not repaint the empty star canvas or rewrite parallax layers', () => {
+await test('settled live animation does not repaint the sky or rewrite parallax layers', () => {
   const site = browser();
+  // A 640 by 480 stage holds 123 stars; a few lie in the margin beyond it.
+  assert.ok(site.sky.size > 100 && site.sky.size <= 123, 'the live scene shows the hero\'s sky');
   const before = { ...site.work };
+  const rest = site.sky;
   for (let index = 1; index <= 60; index++) site.frame(index * 16.666);
   assert.equal(site.renders.length, 31, 'the black hole keeps its animation cadence');
   assert.deepEqual(site.work, before, 'unchanged 2D and DOM layers do no per-frame work');
   site.resize(1100);
   assert.deepEqual(site.work, before, 'a heading-only resize must not reset the full-screen 2D buffer');
   site.move(1200);
-  site.frame(1250);
+  for (let index = 1; index <= 90; index++) site.frame(1200 + index * 16.666);
   assert.ok(site.work.layerWrites > before.layerWrites, 'pointer parallax still updates when the camera moves');
-  assert.equal(site.work.canvasClears, before.canvasClears, 'the live minimal sky keeps the edge canvas empty');
+  assert.ok(site.work.canvasClears > before.canvasClears, 'the sky follows the pointer');
+  assert.equal(site.work.starStreaks, 0, 'only the entrance camera draws traces');
+  // The pointer rests at (0.9375, -0.875): the scene pans with it by a few
+  // pixels, far stars with the scene and near stars the other way.
+  const shifts = [...site.sky].filter(([key]) => rest.has(key)).map(([key, star]) => [star.x - rest.get(key).x, star.y - rest.get(key).y]);
+  assert.ok(shifts.length > 100);
+  assert.ok(shifts.every(([x, y]) => x > -5.9 && x < 5.5 && y > -3.7 && y < 4.1));
+  assert.ok(shifts.some(([x, y]) => x > 4 && y < -2.5) && shifts.some(([x, y]) => x < -2 && y > 1.5));
 });
 
-await test('cached edge stars repaint for fallback and theme changes, then stop when unchanged', () => {
+await test('one sky serves the live scene, its fallback and ink, repainted only when it changes', () => {
   const site = browser();
-  const before = site.work.starDraws;
+  const live = { ...site.work };
+  const rest = site.sky;
   site.lose(100);
-  assert.ok(site.work.starDraws > before, 'context loss restores the visible fallback stars');
-  const fallback = { ...site.work };
+  assert.deepEqual(site.work, live, 'context loss keeps the sky already painted');
   site.resize(200);
-  assert.deepEqual(site.work, fallback, 'an unchanged fallback retains its pixels');
   site.restore(300);
-  assert.equal(site.work.canvasClears, fallback.canvasClears + 1, 'live recovery clears the fallback once');
-  const recovered = site.work.starDraws;
+  assert.deepEqual(site.work, live, 'and so does recovery');
+  assert.match(site.starColors.at(-1), /^rgba\(193,204,223,/);
   site.theme(400, 'ink');
-  assert.ok(site.work.starDraws > recovered, 'ink keeps its edge stars');
+  assert.ok(site.work.starDraws > live.starDraws, 'ink repaints the same stars in its own tone');
+  assert.match(site.starColors.at(-1), /^rgba\(225,218,200,/);
+  assert.equal(site.sky.size, rest.size);
   const ink = { ...site.work };
   site.frame(450);
   assert.deepEqual(site.work, ink, 'stationary ink stars are not repainted every scene frame');
 });
 
-await test('a day/night switch repaints cached edge stars as their negative, then stops', () => {
+await test('a day/night switch repaints the sky as its negative, then stops', () => {
   const site = browser();
-  site.lose(100);
   assert.match(site.starColors.at(-1), /^rgba\(193,204,223,/);
   const night = site.work.starDraws;
+  const places = [...site.sky.values()].map(star => [star.x, star.y, star.radius]);
   site.root.dataset.theme = 'light';
   site.page(200, 'site:theme', { detail: { theme: 'light' } });
-  assert.ok(site.work.starDraws > night, 'the cached night stars repaint');
+  // A running scene repaints its sky on the next display frame.
+  site.frame(216);
+  assert.ok(site.work.starDraws > night, 'the night stars repaint');
   assert.match(site.starColors.at(-1), /^rgba\(62,51,32,/, 'each day star is its night color inverted');
+  assert.deepEqual([...site.sky.values()].map(star => [star.x, star.y, star.radius]), places, 'every star keeps its place and size');
   const day = { ...site.work };
   site.resize(300);
   assert.deepEqual(site.work, day, 'unchanged day stars keep their pixels');
+});
+
+await test('the sky dims around the clock, and nowhere else', () => {
+  const plain = browser();
+  const site = browser({ clockBox: { left: 60, top: 200, width: 240, height: 40 } });
+  const light = star => Number(star.color.match(/,([\d.e-]+)\)$/)[1]);
+  const open = [...plain.sky.values()], dimmed = [...site.sky.values()];
+  assert.equal(dimmed.length, open.length, 'no star is removed');
+  let inside = 0, outside = 0;
+  for (const [index, star] of dimmed.entries()) {
+    const same = open[index];
+    assert.deepEqual([star.x, star.y, star.radius], [same.x, same.y, same.radius]);
+    // The line itself plus the room its own parallax needs: 8px and 6px.
+    const within = star.x >= 52 && star.x <= 308 && star.y >= 194 && star.y <= 246;
+    const far = star.x < 36 || star.x > 324 || star.y < 178 || star.y > 262;
+    if (within) { inside++; assert.ok(Math.abs(light(star) - 0.15 * light(same)) < 1e-9, 'a star among the digits keeps 15% of its light'); }
+    else if (far) { outside++; assert.equal(star.color, same.color); }
+    else assert.ok(light(star) <= light(same) && light(star) >= 0.15 * light(same) - 1e-9, 'the edge fades over 16px');
+  }
+  assert.ok(inside >= 2 && outside > 90, `${inside} stars lie inside the clock's line`);
 });
 
 await test('quality-driven cadence changes reduce draws without changing orbital phase', () => {
@@ -826,11 +872,15 @@ await test('the black sphere switches day and night on the hero only', () => {
 
 await test('the entrance camera frames its opening sky from the first frame and moves at the interactive cadence', async () => {
   const site = browser({ loading: true });
+  const rest = site.sky;
   site.scene.intro(1);
   assert.equal(site.renders.length, 0, 'no renderer exists before the logo has drawn');
   assert.equal(site.rendererDelay, 1100, 'asking for the opening sky does not hurry GPU setup');
+  assert.deepEqual([...site.sky], [...rest], 'without the camera the sky stays as it is');
   site.warmup(1100);
   assert.equal(site.last.intro, 1, 'the first frame behind the loader is the opening sky');
+  assert.ok([...site.sky].some(([key, star]) => rest.has(key) && star.x > rest.get(key).x + 20),
+    'and the stars behind the loader are already magnified with it');
   assert.equal(site.renders.length, 1);
   site.checkPreparation(1200);
   assert.equal(await site.preparation, true);
@@ -856,6 +906,39 @@ await test('the entrance camera frames its opening sky from the first frame and 
   site.frame(2500);
   assert.equal(site.last.intro, 0, 'however the entrance ends, the camera is home');
   phase(site.last.time, 12 + (2500 - 1250) / 1000);
+});
+
+await test('the entrance magnifies the hero\'s own sky and ends with every star where the page keeps it', () => {
+  const site = browser();
+  const rest = site.sky;
+  site.scene.intro(1);
+  site.frame(20);
+  // Each star moves straight away from the camera's fixed point (-674, -326)
+  // by its depth's share of the 1.8 magnification.
+  let followed = 0;
+  for (const [key, star] of site.sky) {
+    const from = rest.get(key);
+    if (!from) continue;
+    followed++;
+    const scale = (star.x + 674) / (from.x + 674);
+    assert.ok(Math.abs((star.y + 326) / (from.y + 326) - scale) < 1e-9, 'along the line from that point');
+    assert.ok(scale > 1.03 && scale < 1.36, `between the farthest and nearest depths, got ${scale}`);
+  }
+  assert.ok(followed > 60, 'the opening sky is the same stars');
+  assert.equal(site.work.starStreaks, 0, 'a resting camera draws points');
+  site.scene.intro(0.6, true);
+  site.frame(40);
+  assert.ok(site.work.starStreaks > 0, 'the moving camera leaves one frame\'s trace');
+  const traces = site.work.starStreaks;
+  site.scene.intro(0.2, true);
+  site.frame(60);
+  site.page(70, 'site:intro-complete');
+  site.frame(80);
+  assert.deepEqual([...site.sky], [...rest], 'the entrance ends on the sky the page keeps: no star is lost or moved');
+  const settled = { ...site.work };
+  assert.ok(settled.starStreaks > traces);
+  for (let index = 1; index <= 30; index++) site.frame(80 + index * 16.666);
+  assert.deepEqual(site.work, settled, 'and the settled sky is not repainted');
 });
 
 await test('every other way the entrance ends also returns its camera, and a still scene redraws at once', () => {

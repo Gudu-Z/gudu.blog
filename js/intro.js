@@ -1,6 +1,8 @@
 /* The home page's full entrance. As the loader's curtain lifts (js/loading.js)
  * the page shows stars alone, the camera pulls back until the black hole sits
  * in its hero composition, and the title is typed in behind its own cursor.
+ * The stars are the hero's own sky (js/main.js), magnified with the camera, so
+ * the entrance ends on the sky the page keeps.
  * It plays once per browser session, and again whenever the visitor reloads
  * the page themselves. Coming back to the page within the session, a device
  * without the live scene and reduced motion keep the short CSS entrance, which
@@ -14,7 +16,6 @@
   const root = document.documentElement;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const hero = document.querySelector('.hero');
-  const stage = document.querySelector('#hero-stage') || hero;
   const requested = new URLSearchParams(window.location.search).get('intro');
   const slow = requested === 'slow' ? 5 : 1;
   let seen = false;
@@ -30,7 +31,6 @@
 
   // Milliseconds after the curtain starts to lift, before --intro-slow.
   const PULL_FROM = 460, PULL_TO = 1700;
-  const STARS_IN = 260, STARS_FADE_FROM = 1000, STARS_FADE_TO = 1820;
   const TYPE_FROM = 1180, TYPE_FIRST = 110, TYPE_STEP = 106;
   const CLOCK_FROM = 1260, CLOCK_TO = 1800;
   const END = 1900;
@@ -60,11 +60,6 @@
   let startedAt = 0;
   let frame = 0;
   let watchdog = 0;
-  let canvas = null;
-  let context = null;
-  let stars = [];
-  let width = 0, height = 0;
-  let anchorX = 0, anchorY = 0, zoom = 1;
   let titleText = null;
   let glyphs = [];
   let stops = null;
@@ -89,23 +84,10 @@
   }
   // A short push, then a long settle as the hole reaches its place.
   const pull = bezier(0.32, 0, 0.14, 1);
-  const smooth = x => { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t); };
-
-  // Seeded, so every visit opens on the same sky.
-  function random(seed) {
-    let state = seed;
-    return () => { state = (state * 16807) % 2147483647; return state / 2147483647; };
-  }
 
   function layout() {
-    const view = scene.introView?.(1);
-    if (!view) return false;
-    const box = stage.getBoundingClientRect();
-    width = box.width;
-    height = box.height;
-    anchorX = view.x - box.left;
-    anchorY = view.y - box.top;
-    zoom = view.zoom;
+    // Without the scene's camera there is no opening sky to pull back from.
+    if (!scene.introView?.(1)) return false;
     // The corner marks open out to the hero's own frame, kept on screen.
     if (frameLayer && grid) {
       const edge = grid.getBoundingClientRect();
@@ -113,28 +95,6 @@
       for (const [name, value] of [['left', edge.left], ['top', edge.top], ['right', edge.right], ['bottom', bottom]]) {
         frameLayer.style.setProperty(`--page-${name}`, `${value}px`);
       }
-    }
-    if (canvas) {
-      const ratio = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.round(width * ratio);
-      canvas.height = Math.round(height * ratio);
-      context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      // The hero keeps its sparse sky; this denser one is the entrance's own.
-      const next = random(9);
-      const count = Math.max(120, Math.min(820, Math.round(width * height / 2500)));
-      stars = Array.from({ length: count }, () => {
-        const x = (next() * 1.12 - 0.06) * width, y = (next() * 1.12 - 0.06) * height;
-        const bright = next(), near = next();
-        // Broad clusters leave dark room between them, as the hero's sky does.
-        const group = 0.5 + 0.5 * Math.sin(x * 0.006 + Math.sin(y * 0.005)) * Math.cos(y * 0.007);
-        return {
-          x, y, lastX: NaN, lastY: NaN,
-          radius: 0.5 + 1.05 * bright * bright * bright,
-          light: (0.14 + 0.86 * bright * bright) * (0.25 + 0.75 * group),
-          // How much of the camera's travel a star shares: most lie far away.
-          depth: 0.04 + 0.4 * near * near,
-        };
-      });
     }
     measureTitle();
     return true;
@@ -215,50 +175,11 @@
     clockTime.textContent = spin(clockNow);
   }
 
-  function drawStars(time, magnification) {
-    if (!context) return;
-    const fadeIn = smooth(time / STARS_IN);
-    const fadeOut = 1 - smooth((time - STARS_FADE_FROM) / (STARS_FADE_TO - STARS_FADE_FROM));
-    const strength = fadeIn * fadeOut;
-    context.clearRect(0, 0, width, height);
-    if (strength <= 0) return;
-    const ink = root.dataset.blackHoleStyle === 'ink';
-    const day = root.dataset.theme === 'light';
-    // Daylight shows the night sky's negative, as the scene itself does.
-    const color = ink ? '225,218,200' : day ? '62,51,32' : '193,204,223';
-    const gain = strength * (ink ? 0.55 : day ? 0.8 : 1);
-    context.lineCap = 'round';
-    for (const star of stars) {
-      const scale = 1 + (magnification - 1) * star.depth;
-      const x = anchorX + (star.x - anchorX) * scale, y = anchorY + (star.y - anchorY) * scale;
-      const fromX = star.lastX, fromY = star.lastY;
-      star.lastX = x;
-      star.lastY = y;
-      if (x < -8 || y < -8 || x > width + 8 || y > height + 8) continue;
-      const alpha = Math.min(1, star.light * gain);
-      const travel = Math.hypot(x - fromX, y - fromY);
-      if (travel > 1.2 && travel < 90) {
-        // A moving star leaves the trace of one frame's travel.
-        context.strokeStyle = `rgba(${color},${alpha * 0.85})`;
-        context.lineWidth = star.radius * 1.7;
-        context.beginPath();
-        context.moveTo(fromX, fromY);
-        context.lineTo(x, y);
-        context.stroke();
-      } else {
-        context.fillStyle = `rgba(${color},${alpha})`;
-        context.beginPath();
-        context.arc(x, y, star.radius, 0, Math.PI * 2);
-        context.fill();
-      }
-    }
-  }
-
   function render(time) {
     const progress = Math.max(0, Math.min(1, (time - PULL_FROM) / (PULL_TO - PULL_FROM)));
     const amount = 1 - pull(progress);
+    // The scene and the hero's sky both follow this camera.
     scene.intro(amount, progress > 0 && progress < 1);
-    drawStars(time, zoom ** amount);
     if (time >= TYPE_FROM) {
       if (stops) type(Math.max(0, Math.min(glyphs.length, 1 + Math.floor((time - TYPE_FROM - TYPE_FIRST) / TYPE_STEP))));
       // A line that could not be split simply appears.
@@ -294,9 +215,6 @@
       // Leave the markup as it was written, without an emptied attribute.
       if (node.getAttribute?.('style') === '') node.removeAttribute('style');
     }
-    canvas?.remove();
-    canvas = context = null;
-    stars = [];
     if (clockDate && clockTime && !clockSettled) [clockDate.textContent, clockTime.textContent] = clockText();
     clockSettled = true;
     root.classList.remove('is-intro');
@@ -326,24 +244,17 @@
       scene.intro(0);
       return;
     }
-    canvas = document.createElement('canvas');
-    canvas.className = 'intro-stars';
-    canvas.setAttribute('aria-hidden', 'true');
-    context = canvas.getContext('2d');
     // The title is measured as the full entrance lays it out.
     if (slow !== 1) root.style.setProperty('--intro-slow', String(slow));
     root.classList.add('is-intro');
     splitTitle();
-    if (!context || !layout()) {
-      canvas = context = null;
+    if (!layout()) {
       restoreTitle();
       root.classList.remove('is-intro');
       root.style.removeProperty('--intro-slow');
       scene.intro(0);
       return;
     }
-    const before = stage.querySelector('#starfield');
-    if (before) before.after(canvas); else stage.prepend(canvas);
     try { window.sessionStorage.setItem('gudu-intro', 'seen'); } catch { /* played again next visit */ }
     playing = true;
     startedAt = performance.now();
