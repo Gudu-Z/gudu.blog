@@ -182,10 +182,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
   /* The root paints the page colour, so the opening sky can sit beneath the body. */
   background: transparent;
 }
-/* The site's still star sky (js/star-sky.js) over the article's opening only;
-   it fades out before the text. By day it shows at 40%, as in the chapters. */
-.article-sky { position: absolute; top: 0; left: 0; z-index: -1; width: 100%; height: min(780px, 100svh); pointer-events: none; -webkit-mask-image: linear-gradient(#000 35%, transparent 92%); mask-image: linear-gradient(#000 35%, transparent 92%); }
-:root[data-theme="light"] .article-sky { opacity: 0.4; }
+/* The home page's sky stays fixed behind the page, so scrolling moves only
+   the article. As on the hero, its dense still stars (js/star-sky.js) lie
+   beneath the XYZ particle stars, which drift at the hero's speed
+   (js/article-sky.js). By day the still stars show at two fifths, as in the
+   chapters; the particle stars dim in their own shader. */
+.article-sky { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+.article-sky > canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+:root[data-theme="light"] .article-sky > [data-star-sky] { opacity: 0.4; }
 .article-shell { --article-width: min(1010px, 85%); width: var(--article-width); margin: 0 auto; padding: 48px 0 80px; }
 .article-back { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 60px; padding-block: 8px; color: var(--muted); font-size: 12px; letter-spacing: 0.06em; transition: color 180ms ease; }
 .article-back > span { color: var(--red); font-family: var(--mono); transition: transform 180ms ease; }

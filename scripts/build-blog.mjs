@@ -126,7 +126,7 @@ function documentHead({ title, description, canonical, prefix, noindex = false, 
     <script src="${prefix}js/site-theme.js?v=20261030-day-mode"></script>
     <script src="${prefix}js/theme-jets.js?v=20261118-beam" defer></script>
     <link rel="stylesheet" href="${prefix}css/style.css?v=20261118-beam" />
-    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261118-article" />`.replace(/[ \t]+$/gm, '');
+    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261119-sky" />`.replace(/[ \t]+$/gm, '');
 }
 
 function renderArticle(post, index, posts, commentsConfig) {
@@ -158,11 +158,13 @@ ${generated}
     ${documentHead({ title: `${post.title} · Gudu 的个人博客`, description: post.excerpt, canonical: postURL(post), prefix: '../', noindex: post.demo, article: post })}
 ${structuredData}
     <script src="../js/star-sky.js?v=20261113-polish" defer></script>
+    <script src="../js/particle-sky.js?v=20261020-original-stars" defer></script>
+    <script src="../js/article-sky.js?v=20261118-sky" defer></script>
     <script src="../js/article.js?v=20261118-article" defer></script>${post.hasScenes ? '\n    <link rel="stylesheet" href="../css/mc-article.css?v=20261118-article" />\n    <script type="module" src="../js/mc-article.mjs"></script>' : ''}
     ${comments.head}
   </head>
   <body class="article-page">
-    <canvas class="article-sky" data-star-sky aria-hidden="true"></canvas>
+    <div class="article-sky" aria-hidden="true"><canvas data-star-sky></canvas><canvas data-particle-sky></canvas></div>
     <div class="reading-progress" aria-hidden="true" hidden><span data-reading-progress></span></div>
     ${siteHeader('../')}
     <main class="article-shell" id="main-content" tabindex="-1">
