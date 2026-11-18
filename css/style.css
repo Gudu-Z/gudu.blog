@@ -41,6 +41,12 @@
 .is-theme-jets-opening::view-transition-new(root) { clip-path: polygon(0 0, 0 0, 0 0); }
 .is-theme-jets-closing::view-transition-old(root) { z-index: 1; }
 .is-theme-fade::view-transition-old(root), .is-theme-fade::view-transition-new(root) { animation-duration: 240ms; }
+/* The solid beam (?beam=3d while it is a prototype) is drawn inside the hero's
+   scene, which then paints each pixel in its own theme. Its canvas becomes a
+   live layer of its own, above both page images and below the sparks. */
+.is-theme-jets-solid #black-hole-canvas { view-transition-name: theme-jets-scene; }
+::view-transition-old(theme-jets-scene) { display: none; }
+::view-transition-group(theme-jets-scene), ::view-transition-new(theme-jets-scene) { animation: none; }
 @keyframes theme-jets-hold { to { opacity: 1; } }
 
 * { box-sizing: border-box; }

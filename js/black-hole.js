@@ -28,6 +28,19 @@
     uniform float u_ink;
     uniform float u_chapter;
     uniform float u_day;
+    #ifdef BEAM
+      // During the day/night switch (js/theme-jets.js) each pixel takes its
+      // theme from the beam's mask instead: day where the beam is seen, night
+      // everywhere else. Everything below reads it wherever it reads u_day.
+      uniform sampler2D u_beamMask;
+      float beamDay = 0.0;
+      #define u_day beamDay
+    #endif
+    #ifdef ORBIT
+      // The debug page's camera: inclination from the spin axis, azimuth and
+      // screen roll in radians, then distance in Rs.
+      uniform vec4 u_orbit;
+    #endif
     uniform sampler2D u_inkAtlas;
     uniform sampler2D u_inkLight;
     uniform sampler2D u_starSky;
@@ -422,6 +435,9 @@
       return vec4(emission * alpha, alpha);
     }
     void main() {
+      #ifdef BEAM
+        beamDay = texture2D(u_beamMask, v_uv).r;
+      #endif
       float aspect = u_resolution.x / u_resolution.y;
       vec2 sceneUV = u_crop.xy + v_uv * u_crop.zw;
       vec2 cameraPointer = u_pointer * (1.0 - u_chapter);
@@ -446,6 +462,19 @@
       vec3 right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
       vec3 up = cross(right, forward);
       float focal = mix(4.05, 3.70, u_ink) * mix(1.0, 0.34, u_chapter);
+      #ifdef ORBIT
+        // The debug page's own camera (debug/black-hole.html) instead: it
+        // orbits the hole at u_orbit's inclination from the spin axis, azimuth,
+        // screen roll and distance, looking at the hole from the screen's centre.
+        screen = (sceneUV - 0.5) * vec2(aspect, 1.0) * 2.0;
+        screenRoll = u_orbit.z;
+        screen = mat2(cos(screenRoll), -sin(screenRoll), sin(screenRoll), cos(screenRoll)) * screen;
+        cameraDistance = u_orbit.w;
+        origin = cameraDistance * vec3(sin(u_orbit.y) * sin(u_orbit.x), cos(u_orbit.x), cos(u_orbit.y) * sin(u_orbit.x));
+        forward = normalize(-origin);
+        right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
+        up = cross(right, forward);
+      #endif
       vec3 direction = normalize(forward * focal + screen.x * right + screen.y * up);
       RayHit hit = traceRay(origin, direction);
       hit = orientSky(hit, origin, direction, right, up, forward, screenRoll);
@@ -589,6 +618,9 @@
     varying vec2 v_uv;
     uniform sampler2D u_scene;
     uniform vec2 u_texel;
+    #ifdef BEAM
+      uniform sampler2D u_beamMask;
+    #endif
     void main() {
       vec3 light = vec3(0.0);
       float weights = 0.0;
@@ -608,6 +640,10 @@
           // their bloom: the normalized RGB8 sky, including ambient light,
           // stays below 0.74 after its 1.25-exposure tone map.
           foreground = max(foreground, smoothstep(0.78, 0.94, sampleLight.a));
+          #ifdef BEAM
+            // Only the night side glows: the day page inside the beam is ink.
+            foreground *= 1.0 - texture2D(u_beamMask, v_uv + vec2(x, float(j)) * u_texel).r;
+          #endif
           light += max(sampleLight.rgb - 0.22, 0.0) * foreground * w;
           weights += w;
         }
@@ -629,7 +665,24 @@
     uniform float u_chapter;
     uniform float u_entranceGlow;
     uniform float u_day;
+    #ifdef BEAM
+      // Red: where the beam is seen. Green: its plain outline, which the page
+      // around this canvas is clipped to. See beamSource below.
+      uniform sampler2D u_beamMask;
+      // The page's own background in each theme, and a flash over the beam.
+      uniform vec3 u_beamNight;
+      uniform vec3 u_beamPaper;
+      uniform vec4 u_beamFlash;
+      // Over the daylight inside the beam, dimming and cooling it.
+      uniform vec4 u_beamTint;
+      float beamDay = 0.0;
+      #define u_day beamDay
+    #endif
     void main() {
+      #ifdef BEAM
+        vec4 beam = texture2D(u_beamMask, v_uv);
+        beamDay = beam.r;
+      #endif
       vec4 scene = texture2D(u_scene, v_uv);
       if (u_ink > 0.5) {
         if (u_hasSplatter > 0.5) {
@@ -663,14 +716,295 @@
       glow *= 1.0 + 0.30 * u_entranceGlow;
       vec3 color = 1.0 - (1.0 - scene.rgb) * exp(-glow * 1.2);
       float alpha = max(scene.a, max(color.r, max(color.g, color.b)));
+      #ifdef BEAM
+        // The page behind this canvas shows day inside the beam's plain
+        // outline and night outside it. Where the scene disagrees (the disk
+        // in front of the beam, the beam bent round the hole) the canvas
+        // paints the page's background of its own theme over the page's.
+        float differs = abs(beam.r - beam.g);
+        color += mix(u_beamNight, u_beamPaper, beam.r) * (1.0 - alpha) * differs;
+        alpha += (1.0 - alpha) * differs;
+        float tint = u_beamTint.a * beam.r;
+        color = mix(color, u_beamTint.rgb, tint);
+        alpha = mix(alpha, 1.0, tint);
+        float flash = u_beamFlash.a * beam.r;
+        color = mix(color, u_beamFlash.rgb, flash);
+        alpha = mix(alpha, 1.0, flash);
+      #endif
       // Straight-alpha output; the light remains luminous over the star field.
       gl_FragColor = vec4(color / max(alpha, 0.001), alpha);
     }
   `;
 
+  // The day/night switch's beam (js/theme-jets.js), as the scene sees it: a
+  // slightly conical column along the spin axis with a rounded end each way.
+  // Red is where the beam is seen along the scene's own bent light, and only
+  // where the disk does not stand in front of it. Green is its plain outline
+  // along straight sight lines: the shape the rest of the page is clipped to.
+  const beamSource = `
+    precision highp float;
+    varying vec2 v_uv;
+    uniform vec2 u_resolution;
+    uniform vec4 u_crop;
+    uniform vec2 u_pointer;
+    uniform float u_chapter;
+    // Radius where it crosses the disk, half length, taper per Rs of height,
+    // and each rounded end's length as a share of that end's radius.
+    uniform vec4 u_beam;
+    // The radius of the dark ball round the hole that both jets rise out of.
+    uniform float u_beamBall;
+    // How deep the beam's frayed edge eats into it, in Rs, and the time in
+    // seconds that the fraying flows outward with.
+    uniform vec2 u_beamFray;
+    // While the plain outline is traced, the ball is left out: the page's own
+    // clip is the bare column.
+    float ballRadius = 0.0;
+    // Likewise the fraying: the page's clip is the smooth column.
+    float fray = 0.0;
+    // A pixel's width per Rs of distance, then the distances from the hole,
+    // in Rs, between which the beam's shape eases from bent to straight sight.
+    uniform vec3 u_beamView;
+    #ifdef ORBIT
+      // The debug page's camera: inclination from the spin axis, azimuth and
+      // screen roll in radians, then distance in Rs.
+      uniform vec4 u_orbit;
+    #endif
+    #define PI 3.14159265359
+    vec3 acceleration(vec3 p, float h2) {
+      float r2 = dot(p, p);
+      return -1.5 * h2 * p / (r2 * r2 * sqrt(r2));
+    }
+    // How far inside the column a point lies, in Rs; negative outside it.
+    float beamColumn(vec3 p) {
+      float radius = u_beam.x * max(0.0, 1.0 + u_beam.z * clamp(p.y, -u_beam.y, u_beam.y));
+      float over = abs(p.y) - u_beam.y;
+      if (over > 0.0) {
+        float cap = max(radius * u_beam.w, 0.0001);
+        if (over >= cap) return cap - over - length(p.xz);
+        radius *= sqrt(1.0 - over * over / (cap * cap));
+      }
+      return radius - length(p.xz);
+    }
+    // Value noise in 3D, from 0 to 1.
+    float frayHash(vec3 p) {
+      p = fract(p * 0.3183099 + 0.1) * 17.0;
+      return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+    }
+    float frayNoise(vec3 p) {
+      vec3 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(
+        mix(mix(frayHash(i), frayHash(i + vec3(1.0, 0.0, 0.0)), f.x),
+          mix(frayHash(i + vec3(0.0, 1.0, 0.0)), frayHash(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
+        mix(mix(frayHash(i + vec3(0.0, 0.0, 1.0)), frayHash(i + vec3(1.0, 0.0, 1.0)), f.x),
+          mix(frayHash(i + vec3(0.0, 1.0, 1.0)), frayHash(i + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z);
+    }
+    // How far inside the beam a point lies: inside the column and outside
+    // the ball, so that each jet starts on the ball's face.
+    float beamDepth(vec3 p) {
+      return min(beamColumn(p), length(p) - ballRadius);
+    }
+    // Near its surface the beam's edge frays: noise drawn out along the axis
+    // eats into it in strands that flow outward along each jet, about 3 Rs
+    // a second. It never reaches past the smooth surface. Each jet's foot,
+    // on the ball's face, is seen at a glancing angle where a small dent
+    // draws out into a long spike, so it frays a third as much.
+    float beamFrayed(vec3 p, float depth) {
+      if (fray <= 0.0 || depth < -fray || depth > 2.0 * fray) return depth;
+      float onBall = smoothstep(0.0, fray, beamColumn(p) - (length(p) - ballRadius));
+      vec3 q = vec3(p.x * 2.6, p.y * 0.9 - u_beamFray.y * 2.7 * sign(p.y), p.z * 2.6);
+      return depth - fray * (1.0 - 0.7 * onBall) * (0.62 * frayNoise(q) + 0.38 * frayNoise(q * vec3(2.7, 2.3, 2.7) + 7.1));
+    }
+    // A candidate point along a chord: kept if it lies deeper in the beam.
+    void beamTry(vec3 a, vec3 d, float t, inout float deepest, inout float best) {
+      float depth = beamDepth(a + d * t);
+      if (depth > deepest) {
+        deepest = depth;
+        best = t;
+      }
+    }
+    // The deepest the chord a + d t reaches into the beam for t in [from, to].
+    // On the cone that point is where radius² - distance² peaks, a quadratic;
+    // it is sought only where the chord lies within the beam's height, or a
+    // peak beyond either end would hide the chord's real way through.
+    float beamDeepest(vec3 a, vec3 d, float from, float to) {
+      float r2 = u_beam.x * u_beam.x, k = u_beam.z;
+      float top = u_beam.y + u_beam.x * max(0.0, 1.0 + k * u_beam.y) * u_beam.w;
+      float low = from, high = to;
+      if (abs(d.y) > 0.000001) {
+        float enter = (-top - a.y) / d.y, leave = (top - a.y) / d.y;
+        low = max(from, min(enter, leave));
+        high = min(to, max(enter, leave));
+      }
+      // The fraying is taken once, at the deepest point found.
+      float deepest = beamDepth(a + d * from), best = from;
+      beamTry(a, d, to, deepest, best);
+      if (low > high) return beamFrayed(a + d * best, deepest);
+      float bend = dot(d.xz, d.xz) - r2 * k * k * d.y * d.y;
+      float slope = dot(a.xz, d.xz) - r2 * k * (1.0 + k * a.y) * d.y;
+      beamTry(a, d, bend > 0.000001 ? clamp(-slope / bend, low, high) : low, deepest, best);
+      beamTry(a, d, low, deepest, best);
+      beamTry(a, d, high, deepest, best);
+      // Where the chord leaves the ball the column may already have it, and
+      // the deepest point lies just past that face: look a few spans out
+      // from each crossing of the ball, so the jet's foot is not left to
+      // wherever the steps happen to land.
+      if (ballRadius > 0.0) {
+        float span = dot(d, d), along = dot(a, d);
+        float reach = along * along - span * (dot(a, a) - ballRadius * ballRadius);
+        if (reach > 0.0 && span > 0.000001) {
+          float root = sqrt(reach);
+          float enter = (-along - root) / span, leave = (-along + root) / span;
+          float unit = 0.02 / sqrt(span);
+          for (int k = 0; k < 4; k++) {
+            float past = unit * exp2(float(k) * 1.5);
+            if (enter - past >= low && enter - past <= high) beamTry(a, d, enter - past, deepest, best);
+            if (leave + past >= low && leave + past <= high) beamTry(a, d, leave + past, deepest, best);
+          }
+        }
+      }
+      return beamFrayed(a + d * best, deepest);
+    }
+    // An edge one pixel wide instead of a hard step.
+    float beamCover(float depth, float pixel) {
+      return clamp(depth / max(pixel, 0.00001) + 0.5, 0.0, 1.0);
+    }
+    // How much of the beam a ray sees before the hole takes it, the disk
+    // stands in front of it, or it leaves; the same steps as the scene's
+    // traceLayers, so the disk stands where the scene draws it.
+    float beamSeen(vec3 origin, vec3 direction, float straight) {
+      float seen = 0.0, clear = 1.0, travelled = 0.0;
+      vec3 p = origin, v = direction;
+      vec3 angular = cross(p, v);
+      float h2 = dot(angular, angular);
+      vec3 a = acceleration(p, h2);
+      for (int i = 0; i < 180; i++) {
+        float r = length(p);
+        if (r < 1.015 || r > 42.0 || clear < 0.004) break;
+        float dt = clamp(r * 0.095, 0.055, 1.8);
+        vec3 next = p + v * dt + 0.5 * a * dt * dt;
+        vec3 nextA = acceleration(next, h2);
+        vec3 nextV = v + 0.5 * (a + nextA) * dt;
+        float stride = length(next - p);
+        vec3 from = mix(p, origin + direction * travelled, straight);
+        vec3 to = mix(next, origin + direction * (travelled + stride), straight);
+        float pixel = u_beamView.x * (travelled + 0.5 * stride);
+        // The step that falls into the hole ends where it crosses the horizon:
+        // the beam's root goes into the hole along that sphere, not along
+        // wherever the step happened to land past it.
+        float into = 1.0;
+        if (dot(next, next) < 1.030225) {
+          vec3 chord = next - p;
+          float along = dot(p, chord), span = dot(chord, chord);
+          float reach = max(along * along - span * (dot(p, p) - 1.030225), 0.0);
+          into = clamp((-along - sqrt(reach)) / max(span, 0.000001), 0.0, 1.0);
+        }
+        // The disk is opaque: beyond a crossing the beam is hidden.
+        float split = 1.0, shade = 0.0;
+        if (p.y * next.y < 0.0 && p.y / (p.y - next.y) < into) {
+          split = p.y / (p.y - next.y);
+          float radius = length(mix(p, next, split).xz);
+          shade = smoothstep(3.0, 3.05, radius) * (1.0 - smoothstep(9.8, 11.0, radius));
+        }
+        if (split < 1.0) {
+          seen = max(seen, clear * beamCover(beamDeepest(from, to - from, 0.0, split), pixel));
+          clear *= 1.0 - shade;
+          seen = max(seen, clear * beamCover(beamDeepest(from, to - from, split, into), pixel));
+        } else if (into < 1.0) {
+          seen = max(seen, clear * beamCover(beamDeepest(from, to - from, 0.0, into), pixel));
+        } else {
+          // Close to the hole one step bends sharply, and a single chord
+          // would cut its corner. Test the step's own arc through its middle.
+          vec3 middle = mix(p + v * (0.5 * dt) + a * (0.125 * dt * dt), origin + direction * (travelled + 0.5 * stride), straight);
+          seen = max(seen, clear * beamCover(max(beamDeepest(from, middle - from, 0.0, 1.0),
+            beamDeepest(middle, to - middle, 0.0, 1.0)), pixel));
+        }
+        if (into < 1.0) break;
+        travelled += stride;
+        p = next;
+        v = nextV;
+        a = nextA;
+      }
+      return seen;
+    }
+    void main() {
+      // The scene's own camera: keep in step with sceneSource's main().
+      float aspect = u_resolution.x / u_resolution.y;
+      vec2 sceneUV = u_crop.xy + v_uv * u_crop.zw;
+      vec2 cameraPointer = u_pointer * (1.0 - u_chapter);
+      vec2 screenOrigin = mix(vec2(0.50), u_crop.xy + u_crop.zw * 0.5, u_chapter);
+      vec2 screen = (sceneUV - screenOrigin) * vec2(aspect, 1.0) * 2.0;
+      screen -= cameraPointer * vec2(0.012, 0.009);
+      float screenRoll = (18.0 * (1.0 - u_chapter) + cameraPointer.x * 1.4) * PI / 180.0;
+      screen = mat2(cos(screenRoll), -sin(screenRoll), sin(screenRoll), cos(screenRoll)) * screen;
+      float diskInclination = (81.0 + cameraPointer.y * 3.8) * PI / 180.0;
+      float cameraDistance = 31.784430;
+      float azimuth = cameraPointer.x * 0.10;
+      vec3 origin = cameraDistance * vec3(sin(azimuth) * sin(diskInclination),
+        cos(diskInclination), cos(azimuth) * sin(diskInclination));
+      vec3 forward = normalize(-origin);
+      vec3 right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
+      vec3 up = cross(right, forward);
+      float focal = 4.05 * mix(1.0, 0.34, u_chapter);
+      #ifdef ORBIT
+        // The debug page's own camera (debug/black-hole.html) instead: it
+        // orbits the hole at u_orbit's inclination from the spin axis, azimuth,
+        // screen roll and distance, looking at the hole from the screen's centre.
+        screen = (sceneUV - 0.5) * vec2(aspect, 1.0) * 2.0;
+        screenRoll = u_orbit.z;
+        screen = mat2(cos(screenRoll), -sin(screenRoll), sin(screenRoll), cos(screenRoll)) * screen;
+        cameraDistance = u_orbit.w;
+        origin = cameraDistance * vec3(sin(u_orbit.y) * sin(u_orbit.x), cos(u_orbit.x), cos(u_orbit.y) * sin(u_orbit.x));
+        forward = normalize(-origin);
+        right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
+        up = cross(right, forward);
+      #endif
+      vec3 direction = normalize(forward * focal + screen.x * right + screen.y * up);
+
+      ballRadius = -1000.0;
+      float plain = beamCover(beamDeepest(origin, direction * 96.0, 0.0, 1.0), u_beamView.x * cameraDistance);
+      ballRadius = u_beamBall;
+      fray = u_beamFray.x;
+      // Far from the hole light barely bends, yet the little it does would
+      // set this edge a few pixels off the page's. The beam is tested along
+      // a path that eases to the straight one there, so both edges meet.
+      float straight = smoothstep(u_beamView.y, u_beamView.z, length(screen) * cameraDistance / focal);
+      // Near the shadow's edge light winds round the hole and neighbouring
+      // pixels see far-apart parts of the beam: average four rays there, as
+      // the scene does along its critical curve; elsewhere the pixel's own.
+      // One call site keeps the compiled shader small.
+      vec3 angular = cross(origin, direction);
+      float h2 = dot(angular, angular);
+      bool winding = h2 > 4.0 && h2 < 12.0;
+      float pixelStep = u_beamView.x * focal;
+      float total = 0.0;
+      for (int i = 0; i < 5; i++) {
+        if (i == 0 && winding) continue;
+        if (i > 0 && !winding) break;
+        vec2 offset = vec2(0.0);
+        if (i == 1) offset = vec2(-0.375, -0.125);
+        if (i == 2) offset = vec2(0.125, -0.375);
+        if (i == 3) offset = vec2(0.375, 0.125);
+        if (i == 4) offset = vec2(-0.125, 0.375);
+        vec2 sub = screen + offset * pixelStep;
+        total += beamSeen(origin, normalize(forward * focal + sub.x * right + sub.y * up), straight);
+      }
+      float seen = winding ? total * 0.25 : total;
+      #ifdef ORBIT
+        // The debug page has no page behind the canvas clipped to the beam:
+        // the canvas paints the day page's paper wherever the beam is seen.
+        plain = 0.0;
+      #endif
+      gl_FragColor = vec4(seen, plain, 0.0, 1.0);
+    }
+  `;
+
   class BlackHole {
-    constructor(canvas, { style = 'minimal' } = {}) {
+    constructor(canvas, { style = 'minimal', orbit = false } = {}) {
       this.canvas = canvas;
+      // The debug page (debug/black-hole.html) orbits its own camera; the
+      // site's pages never compile it in.
+      this.orbit = orbit ? { inclination: 81 * Math.PI / 180, azimuth: 0, roll: 18 * Math.PI / 180, distance: 31.78443 } : null;
       this.chapter = 0;
       this.day = 0;
       this.intro = 0;
@@ -829,6 +1163,7 @@
       this.particleSky = null;
       this.scene = this.bloom = this.composite = null;
       this.sceneTarget = this.bloomTarget = null;
+      this.beamPrograms = this.beamBuild = this.beam = null;
       this.generation++;
       this.themePrograms = new Map();
       this.themeBuild = Promise.resolve();
@@ -886,7 +1221,7 @@
       // cancellable KHR_parallel_shader_compile completion poll.
       const prepared = this.themeBuild.catch(() => {}).then(async () => {
         if (this.disposed || this.lost || generation !== this.generation) return null;
-        const specialize = source => source.replace('uniform float u_ink;',
+        const specialize = source => (this.orbit ? '#define ORBIT\n' : '') + source.replace('uniform float u_ink;',
           `const float u_ink = ${style === 'ink' ? '1.0' : '0.0'};`);
         const theme = {
           scene: this.program(specialize(sceneSource)),
@@ -905,6 +1240,70 @@
       this.themePrograms.set(style, prepared);
       this.themeBuild = prepared;
       return prepared;
+    }
+
+    // The day/night switch draws its beam inside the scene (see beamSource).
+    // Its programs are variants of the minimal theme's, compiled apart from
+    // them on request, so an ordinary frame never pays for the beam.
+    prepareBeam() {
+      if (this.beamBuild) return this.beamBuild;
+      if (!this.initialized || this.disposed || this.lost || this.style === 'ink') return Promise.resolve(false);
+      const generation = this.generation;
+      const orbit = this.orbit ? '#define ORBIT\n' : '';
+      const variant = source => `#define BEAM\n${orbit}${source.replace('uniform float u_ink;', 'const float u_ink = 0.0;')}`;
+      const build = this.themeBuild.catch(() => {}).then(async () => {
+        if (this.disposed || this.lost || generation !== this.generation) return false;
+        const programs = {
+          mask: this.program(orbit + beamSource),
+          scene: this.program(variant(sceneSource)),
+          bloom: this.program(variant(bloomSource)),
+          composite: this.program(variant(compositeSource)),
+        };
+        if (!await this.finishPrograms(Object.values(programs), generation)) return false;
+        programs.target = this.target();
+        this.beamPrograms = programs;
+        return true;
+      }).catch(error => {
+        console.warn('The day/night beam keeps its flat form.', error);
+        return false;
+      });
+      this.beamBuild = build;
+      // Lazy theme builds wait their turn behind this one, as behind each other.
+      this.themeBuild = build.then(() => null);
+      return build;
+    }
+
+    // The beam for the next frames, in Rs: its radius where it crosses the
+    // disk, half length, taper per Rs of height and rounded-end share; where
+    // its shape eases from bent to straight sight; how deep its edge frays;
+    // the page's background in each theme, a flash and a tint over the beam,
+    // as colors from 0 to 1. Null ends it.
+    setBeam(shape) {
+      const number = (value, fallback) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
+      this.beam = shape ? {
+        radius: Math.max(0, number(shape.radius, 0)),
+        length: Math.max(0, number(shape.length, 0)),
+        taper: number(shape.taper, 0),
+        cap: Math.max(0, number(shape.cap, 0)),
+        ball: Math.max(0, number(shape.ball, 0)),
+        fray: Math.max(0, number(shape.fray, 0)),
+        zone: [number(shape.zone?.[0], 5), number(shape.zone?.[1], 8.5)],
+        night: [0, 1, 2].map(i => number(shape.night?.[i], 0)),
+        paper: [0, 1, 2].map(i => number(shape.paper?.[i], 1)),
+        flash: [0, 1, 2, 3].map(i => number(shape.flash?.[i], i < 3 ? 1 : 0)),
+        tint: [0, 1, 2, 3].map(i => number(shape.tint?.[i], 0)),
+      } : null;
+      return Boolean(this.beam && this.beamPrograms && this.style !== 'ink');
+    }
+
+    // The debug page's camera, for a renderer built with { orbit: true }:
+    // inclination from the spin axis, azimuth and screen roll in radians,
+    // and distance in Rs.
+    setOrbit(view) {
+      if (!this.orbit) return;
+      for (const key of ['inclination', 'azimuth', 'roll', 'distance']) {
+        if (Number.isFinite(Number(view?.[key]))) this.orbit[key] = Number(view[key]);
+      }
     }
 
     async activateStyle() {
@@ -1111,28 +1510,60 @@
       if (this.style !== 'ink') this.particleSky.render(time, x * (1 - this.chapter), y * (1 - this.chapter));
       // The page entrance frames another part of the same virtual figure.
       const crop = this.viewCrop();
-      this.use(this.scene, this.sceneTarget);
-      gl.uniform2f(this.scene.uniforms.u_resolution, this.sceneWidth, this.sceneHeight);
-      gl.uniform4fv(this.scene.uniforms.u_crop, crop);
-      gl.uniform2f(this.scene.uniforms.u_pointer, x, y);
-      gl.uniform4fv(this.scene.uniforms.u_quiet, this.quiet);
-      gl.uniform1f(this.scene.uniforms.u_time, time);
-      gl.uniform1f(this.scene.uniforms.u_chapter, this.chapter);
-      gl.uniform1f(this.scene.uniforms.u_day, this.day);
+      // While the day/night beam is up, its mask is drawn first and the
+      // beam's variants of the three passes take each pixel's theme from it.
+      const beam = this.beam && this.beamPrograms && this.style !== 'ink' ? this.beam : null;
+      const orbit = this.orbit && [this.orbit.inclination, this.orbit.azimuth, this.orbit.roll, this.orbit.distance];
+      const scene = beam ? this.beamPrograms.scene : this.scene;
+      const bloom = beam ? this.beamPrograms.bloom : this.bloom;
+      const composite = beam ? this.beamPrograms.composite : this.composite;
+      if (beam) {
+        const { mask, target } = this.beamPrograms;
+        if (target.width !== this.width || target.height !== this.height) {
+          target.width = this.width;
+          target.height = this.height;
+          gl.bindTexture(gl.TEXTURE_2D, target.texture);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, target.width, target.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        }
+        this.use(mask, target);
+        gl.uniform2f(mask.uniforms.u_resolution, this.sceneWidth, this.sceneHeight);
+        gl.uniform4fv(mask.uniforms.u_crop, crop);
+        gl.uniform2f(mask.uniforms.u_pointer, x, y);
+        gl.uniform1f(mask.uniforms.u_chapter, this.chapter);
+        gl.uniform4f(mask.uniforms.u_beam, beam.radius, beam.length, beam.taper, beam.cap);
+        gl.uniform1f(mask.uniforms.u_beamBall, beam.ball);
+        gl.uniform2f(mask.uniforms.u_beamFray, beam.fray, (Number(time) || 0) % 1000);
+        if (orbit) gl.uniform4fv(mask.uniforms.u_orbit, orbit);
+        // One target pixel, per Rs of distance from the camera.
+        const focal = 4.05 * (1 - 0.66 * this.chapter);
+        gl.uniform3f(mask.uniforms.u_beamView, 2 * crop[3] / (this.height * focal), beam.zone[0], beam.zone[1]);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+      this.use(scene, this.sceneTarget);
+      gl.uniform2f(scene.uniforms.u_resolution, this.sceneWidth, this.sceneHeight);
+      gl.uniform4fv(scene.uniforms.u_crop, crop);
+      gl.uniform2f(scene.uniforms.u_pointer, x, y);
+      gl.uniform4fv(scene.uniforms.u_quiet, this.quiet);
+      gl.uniform1f(scene.uniforms.u_time, time);
+      gl.uniform1f(scene.uniforms.u_chapter, this.chapter);
+      if (orbit) gl.uniform4fv(scene.uniforms.u_orbit, orbit);
+      if (!beam) gl.uniform1f(scene.uniforms.u_day, this.day);
       // ANGLE can retain samplers from an unreachable theme branch. Bind all
       // reflected samplers explicitly so none keeps unit 0's previous scene
       // attachment, which would form a feedback loop on the next draw.
-      this.texture(this.scene, 'u_inkAtlas', this.inkTexture, 0);
-      this.texture(this.scene, 'u_inkLight', this.inkLightTexture, 1);
-      this.texture(this.scene, 'u_starSky', this.particleSky?.target.texture || this.inkTexture, 2);
-      if (this.particleSky) gl.uniform1f(this.scene.uniforms.u_starInset, this.particleSky.inset);
+      this.texture(scene, 'u_inkAtlas', this.inkTexture, 0);
+      this.texture(scene, 'u_inkLight', this.inkLightTexture, 1);
+      this.texture(scene, 'u_starSky', this.particleSky?.target.texture || this.inkTexture, 2);
+      if (beam) this.texture(scene, 'u_beamMask', this.beamPrograms.target.texture, 3);
+      if (this.particleSky) gl.uniform1f(scene.uniforms.u_starInset, this.particleSky.inset);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
       // A full daylight frame inks the disk instead of lighting it: no glow.
-      if (this.style !== 'ink' && this.day < 1) {
-        this.use(this.bloom, this.bloomTarget);
-        this.texture(this.bloom, 'u_scene', this.sceneTarget.texture, 0);
-        gl.uniform2f(this.bloom.uniforms.u_texel, 1 / this.width, 1 / this.height);
+      if (this.style !== 'ink' && (this.day < 1 || beam)) {
+        this.use(bloom, this.bloomTarget);
+        this.texture(bloom, 'u_scene', this.sceneTarget.texture, 0);
+        if (beam) this.texture(bloom, 'u_beamMask', this.beamPrograms.target.texture, 1);
+        gl.uniform2f(bloom.uniforms.u_texel, 1 / this.width, 1 / this.height);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
       }
 
@@ -1141,16 +1572,22 @@
         sceneWidth: this.sceneWidth, sceneHeight: this.sceneHeight,
         crop, sceneTexture: this.sceneTarget.texture,
       }) : null;
-      this.use(this.composite, null);
-      this.texture(this.composite, 'u_scene', this.sceneTarget.texture, 0);
-      this.texture(this.composite, 'u_bloom', this.bloomTarget.texture, 1);
-      this.texture(this.composite, 'u_splatter', splatter?.texture || this.inkTexture, 2);
-      gl.uniform1f(this.composite.uniforms.u_hasSplatter, splatter ? 1 : 0);
-      gl.uniform2f(this.composite.uniforms.u_texel, 1 / this.width, 1 / this.height);
-      gl.uniform4fv(this.composite.uniforms.u_crop, crop);
-      gl.uniform1f(this.composite.uniforms.u_chapter, this.chapter);
-      gl.uniform1f(this.composite.uniforms.u_entranceGlow, entranceGlow);
-      gl.uniform1f(this.composite.uniforms.u_day, this.day);
+      this.use(composite, null);
+      this.texture(composite, 'u_scene', this.sceneTarget.texture, 0);
+      this.texture(composite, 'u_bloom', this.bloomTarget.texture, 1);
+      this.texture(composite, 'u_splatter', splatter?.texture || this.inkTexture, 2);
+      gl.uniform1f(composite.uniforms.u_hasSplatter, splatter ? 1 : 0);
+      gl.uniform2f(composite.uniforms.u_texel, 1 / this.width, 1 / this.height);
+      gl.uniform4fv(composite.uniforms.u_crop, crop);
+      gl.uniform1f(composite.uniforms.u_chapter, this.chapter);
+      gl.uniform1f(composite.uniforms.u_entranceGlow, entranceGlow);
+      if (beam) {
+        this.texture(composite, 'u_beamMask', this.beamPrograms.target.texture, 3);
+        gl.uniform3fv(composite.uniforms.u_beamNight, beam.night);
+        gl.uniform3fv(composite.uniforms.u_beamPaper, beam.paper);
+        gl.uniform4fv(composite.uniforms.u_beamFlash, beam.flash);
+        gl.uniform4fv(composite.uniforms.u_beamTint, beam.tint);
+      } else gl.uniform1f(composite.uniforms.u_day, this.day);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       if (this.gpuQuery) this.timerQuery.endQueryEXT(this.timerQuery.TIME_ELAPSED_EXT);
       if (this.webgl2) {

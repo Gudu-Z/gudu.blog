@@ -123,8 +123,8 @@ function documentHead({ title, description, canonical, prefix, noindex = false, 
     <link rel="icon" type="image/svg+xml" href="${prefix}assets/favicon.svg?v=20261018-logo" />
     <link rel="alternate" type="application/rss+xml" title="Gudu 的个人博客" href="${prefix}feed.xml" />
     <script src="${prefix}js/site-theme.js?v=20261030-day-mode"></script>
-    <script src="${prefix}js/theme-jets.js?v=20261101-white-hole" defer></script>
-    <link rel="stylesheet" href="${prefix}css/style.css?v=20261113-polish" />
+    <script src="${prefix}js/theme-jets.js?v=20261118-beam" defer></script>
+    <link rel="stylesheet" href="${prefix}css/style.css?v=20261118-beam" />
     <link rel="stylesheet" href="${prefix}css/blog.css?v=20261113-polish" />`.replace(/[ \t]+$/gm, '');
 }
 

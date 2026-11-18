@@ -58,6 +58,7 @@
   // empty sky it starts on, 0 the hero composition.
   let introAmount = 0;
   let introMoving = false;
+  let beaming = false;
   let contentMoving = false;
   let heldForInteraction = false;
   let busySince = null;
@@ -401,7 +402,8 @@
       ? requestedInterval : 1000 / 30;
     // Retain fractional cadence across 60/75/120/144 Hz displays. A busy GPU
     // cannot consume a due frame; submit its latest camera on the next free tick.
-    if ((!animated || gpuAvailable !== false)
+    // While the day/night beam is up, the switch itself draws each frame.
+    if (!beaming && (!animated || gpuAvailable !== false)
         && (timestamp - lastRender >= frameInterval - 1 || (!animated && settled))) {
       const submitted = draw();
       if (!animated || submitted !== false) {
@@ -507,7 +509,32 @@
       };
     },
     live: () => Boolean(blackHole?.ready && !blackHole.lost),
+    // On the hero the day/night switch can draw its beam inside the live
+    // scene, behind the disk's near side and bent round the hole. beamReady
+    // tells whether that is possible now. beam draws one frame with the given
+    // shape at once and reports whether it was drawn, so the page's own clip
+    // moves only in step with the scene; null ends the beam.
+    beamReady: () => Boolean(pageActive && visible && !document.hidden && !paused && chapterProgress === 0
+      && blackHoleStyle === 'minimal' && blackHole?.ready && !blackHole.lost && blackHole.beamPrograms),
+    // The switch asks for the beam's shaders up front; they compile once the
+    // scene has drawn its first frame, well before anyone can reach the switch.
+    prepareBeam: () => scenePreparation.then(ready => Boolean(ready && pageActive && blackHoleStyle === 'minimal'
+      && blackHole?.prepareBeam?.())),
+    beam(shape) {
+      if (!shape) {
+        if (!beaming) return false;
+        beaming = false;
+        blackHole?.setBeam?.(null);
+        if (pageActive && visible && !document.hidden) draw();
+        start();
+        return true;
+      }
+      if (!pageActive || document.hidden || !blackHole?.ready || blackHole.lost || !blackHole.setBeam?.(shape)) return false;
+      beaming = true;
+      return draw() === true;
+    },
   };
+
 
   window.addEventListener('site:theme', () => {
     blackHole?.setDay?.(isDay() ? 1 : 0);

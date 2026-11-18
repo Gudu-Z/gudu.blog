@@ -158,9 +158,26 @@ async function browser({ timerQuery = false, webgl2 = false, style = 'minimal', 
     linkProgram(program) {
       // ANGLE may expose samplers from a constant-false theme branch. Keep all
       // declared uniforms active so the test models that conservative driver.
+      // Code that the preprocessor drops (an #ifdef whose name is not
+      // defined) never reaches the driver, so it declares nothing.
+      const compiled = source => {
+        const defined = new Set(), open = [];
+        return source.split('\n').filter(line => {
+          const directive = line.trim().match(/^#\s*(ifdef|ifndef|else|endif|define)\b\s*(\w*)/);
+          const active = open.every(Boolean);
+          if (!directive) return active;
+          const [, kind, name] = directive;
+          if (kind === 'define' && active) defined.add(name);
+          else if (kind === 'ifdef') open.push(defined.has(name));
+          else if (kind === 'ifndef') open.push(!defined.has(name));
+          else if (kind === 'else') open.push(!open.pop());
+          else if (kind === 'endif') open.pop();
+          return false;
+        }).join('\n');
+      };
       const uniforms = new Map();
       for (const shader of program.shaders) {
-        for (const match of shader.source.matchAll(/\buniform\s+(\w+)\s+(\w+)\s*;/g)) {
+        for (const match of compiled(shader.source).matchAll(/\buniform\s+(\w+)\s+(\w+)\s*;/g)) {
           uniforms.set(match[2], { type: match[1], name: match[2] });
         }
       }
