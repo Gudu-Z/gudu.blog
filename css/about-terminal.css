@@ -98,115 +98,149 @@
 .home-page .about-section .about-socials a:is(:hover, :focus-visible) .about-link-arrow { transform: translate(2px, -2px); }
 .home-page .about-section .about-socials a:focus-visible { outline: 1px solid light-dark(#21252a8c, #c5cbd18c); outline-offset: 4px; }
 
-/* Personal details read like an archive record, without turning facts into buttons. */
+/* The record reads like an ID card: the photo with its links beside the
+   name, a ruled form of named fields and the self-introduction, with a
+   machine-readable strip across the card's foot. Every field label is a
+   Chinese name over a small code name. */
 .home-page .about-section .about-copy { height: max-content; }
-.home-page .about-section .about-body { flex: 1 0 auto; }
-.home-page .about-section .about-copy h2 {
-  font-size: clamp(24px, calc(27 * var(--about-unit)), 36px);
-  line-height: 1.4;
+.home-page .about-section .about-body {
+  /* The photo grows with the chapter's height, as the original did, but
+     leaves the right column room for the introduction. */
+  --about-avatar-size: clamp(180px, calc(var(--chapter-content-height) * 0.42), 360px);
+  flex: none;
+  grid-template-columns: var(--about-avatar-size) minmax(0, 1fr);
+  grid-template-rows: max-content;
+  align-content: start;
+  align-items: start;
+  gap: calc(28 * var(--about-unit));
+  /* With the strip's auto margin, spare height splits above the card and
+     below the introduction, so the record stays centred on a tall panel. */
+  margin: auto 0 calc(18 * var(--about-unit));
 }
-.home-page .about-section .about-name {
-  margin-top: 5px;
-  font-size: clamp(54px, calc(62 * var(--about-unit)), 84px);
-}
-.home-page .about-section .about-text > .about-pronunciation {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 5px 14px;
-  max-width: none;
-  margin: calc(10 * var(--about-unit)) 0 calc(19 * var(--about-unit));
-  padding-top: 4px;
-  color: light-dark(#333b41, #a8b1b9);
-  font-size: clamp(13px, calc(12 * var(--about-unit)), 16px);
-  line-height: 1.8;
-}
-.home-page .about-section .about-chinese-name {
-  color: var(--chapter-text);
-  font-size: clamp(21px, calc(21 * var(--about-unit)), 28px);
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-}
-.home-page .about-section .about-chinese-name ruby { ruby-position: over; ruby-align: center; }
-.home-page .about-section .about-chinese-name ruby + ruby { margin-left: 7px; }
-.home-page .about-section .about-chinese-name rt {
-  color: light-dark(#2f373e, #acb6bf);
-  font: 500 clamp(10px, calc(10 * var(--about-unit)), 12px)/1.2 var(--chapter-mono);
-  letter-spacing: 0.02em;
-}
-.home-page .about-section .about-dossier {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: calc(13 * var(--about-unit)) 16px;
-  margin: 0;
-}
-.home-page .about-section .about-fact { min-width: 0; }
-.home-page .about-section .about-fact dt {
+.home-page .about-section :is(.about-field-label, .about-fact dt) {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 3px 7px;
+  margin: 0;
   color: light-dark(#323a42, #a8b2bb);
   font-size: var(--about-code-size);
+  font-weight: 400;
   line-height: 1.5;
   letter-spacing: 0.04em;
 }
-.home-page .about-section .about-fact dt > span {
+.home-page .about-section :is(.about-field-label, .about-fact dt) > span:not(.sr-only) {
   color: light-dark(#555e67, #7f8993);
   font: 9px/1.5 var(--chapter-mono);
   letter-spacing: 0.06em;
   white-space: nowrap;
 }
-.home-page .about-section .about-fact dd {
-  margin: 5px 0 0;
-  color: light-dark(#191d22, #d0d6dc);
-  font-size: clamp(14px, calc(13 * var(--about-unit)), 17px);
-  line-height: 1.75;
-  text-wrap: pretty;
+
+/* The name heads the form, like the first line of a card. */
+.home-page .about-section .about-identity {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--about-unit));
+  padding-bottom: calc(12 * var(--about-unit));
 }
-.home-page .about-section .about-fact-wide {
-  grid-column: 1 / -1;
-  padding-top: calc(12 * var(--about-unit));
+.home-page .about-section .about-identity h2 {
+  margin: 0;
+  font-size: inherit;
+  line-height: 1;
+  letter-spacing: 0;
+}
+.home-page .about-section .about-name {
+  display: block;
+  margin: 0;
+  font-size: clamp(50px, calc(64 * var(--about-unit)), 88px);
+  line-height: 0.92;
+}
+
+/* Facts sit in ruled cells, two to a row, the game log across both. */
+.home-page .about-section .about-dossier {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
   border-top: 1px solid var(--chapter-rule);
 }
+.home-page .about-section .about-fact {
+  min-width: 0;
+  padding: calc(10 * var(--about-unit)) 0 calc(11 * var(--about-unit));
+  border-bottom: 1px solid var(--chapter-rule);
+}
+.home-page .about-section .about-fact:nth-child(even):not(.about-fact-wide) {
+  padding-left: calc(18 * var(--about-unit));
+  border-left: 1px solid var(--chapter-rule);
+}
+.home-page .about-section .about-fact-wide { grid-column: 1 / -1; }
+/* The form ends on its last field; the introduction draws the next rule. */
+.home-page .about-section .about-fact:last-child { border-bottom: 0; }
+.home-page .about-section .about-fact dd {
+  margin: 4px 0 0;
+  color: light-dark(#191d22, #d0d6dc);
+  font-size: clamp(14px, calc(14 * var(--about-unit)), 17px);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
 .home-page .about-section .about-games ul {
-  display: grid;
-  gap: 3px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px calc(24 * var(--about-unit));
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.home-page .about-section .about-games li {
-  display: grid;
-  grid-template-columns: 19px minmax(0, 1fr);
-  align-items: baseline;
-  gap: 8px;
-}
+.home-page .about-section .about-games li { display: inline-flex; align-items: baseline; gap: 8px; }
 .home-page .about-section .about-games li > span:first-child {
   color: light-dark(#555e67, #7f8993);
   font: 9px/1.5 var(--chapter-mono);
   letter-spacing: 0.06em;
 }
-.home-page .about-section .about-preference {
-  gap: 10px;
-  max-width: none;
-  margin-top: calc(16 * var(--about-unit));
+
+
+/* The self-introduction closes the right column, under the form. */
+.home-page .about-section .about-bio {
+  position: relative;
+  flex: none;
+  margin-top: calc(4 * var(--about-unit));
   padding-top: calc(13 * var(--about-unit));
+  border-top: 1px solid var(--chapter-rule);
 }
-.home-page .about-section .about-preference p {
+.home-page .about-section .about-bio::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 0;
+  width: 20px;
+  height: 1px;
+  background: var(--chapter-signal);
+}
+.home-page .about-section .about-bio p {
+  margin: calc(6 * var(--about-unit)) 0 0;
+  color: light-dark(#1f2429, #c9cfd5);
+  font-size: clamp(14px, calc(14 * var(--about-unit)), 17px);
+  line-height: 1.85;
+  text-wrap: pretty;
+}
+/* A machine-readable strip closes the card: the name and the site's motto. */
+.home-page .about-section .about-mrz {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 3px 10px;
-  font-size: var(--about-code-size);
-  line-height: 1.8;
-  color: light-dark(#323a42, #a8b2bb);
+  flex: none;
+  margin: auto 0 0;
+  padding-top: calc(12 * var(--about-unit));
+  overflow: hidden;
+  /* The strip takes the card's width and never widens it. */
+  contain: inline-size;
+  color: light-dark(#4c555d80, #89939c80);
+  font: 10px/1.4 var(--chapter-mono);
+  letter-spacing: 0.22em;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
 }
-.home-page .about-section .about-preference strong {
-  color: var(--chapter-text);
-  font-size: clamp(14px, calc(14 * var(--about-unit)), 18px);
-  font-weight: 500;
-}
+.home-page .about-section .about-mrz > span { flex: none; }
+.home-page .about-section .about-mrz > .about-mrz-fill { flex: 1 1 0; min-width: 0; overflow: hidden; }
 
 /* Number, title, description and action follow the same internal columns on every card. */
 .home-page .about-section .connection-heading {
@@ -260,10 +294,15 @@
 @media (max-width: 720px) {
   .home-page .about-section .about-panel-top { flex-wrap: wrap; row-gap: 5px; margin-bottom: 13px; }
   .home-page .about-section .about-calibration { margin-bottom: 25px; }
+  /* Phones stack the card: the photo with its links, then the name and the
+     form; the introduction and the strip follow across the card. */
+  .home-page .about-section .about-body { grid-template-columns: minmax(0, 1fr); gap: 32px; margin-bottom: 26px; }
   .home-page .about-section .about-socials a { min-height: 44px; }
-  .home-page .about-section .about-text > .about-pronunciation { margin-block: 12px 22px; font-size: 14px; }
-  .home-page .about-section .about-dossier { row-gap: 16px; }
-  .home-page .about-section .about-preference { margin-top: 20px; padding-top: 16px; }
+  .home-page .about-section .about-fact { padding-block: 12px 13px; }
+  .home-page .about-section .about-fact:nth-child(even):not(.about-fact-wide) { padding-left: 14px; }
+  .home-page .about-section .about-games ul { flex-direction: column; gap: 3px; }
+  .home-page .about-section .about-bio p { font-size: 15px; }
+  .home-page .about-section .about-mrz { padding-top: 16px; letter-spacing: 0.16em; }
   .home-page .about-section .connection-card { padding-block: 24px; }
   .home-page .about-section .connection-card h3 { font-size: 20px; }
   .home-page .about-section .connection-action { padding-top: 15px; }
@@ -276,14 +315,19 @@
    chapter (chapters.css), but the record's readable text keeps its size, so
    its lines and gaps close up instead, to keep both panels above the ruler. */
 @media (min-width: 1201px) and (max-height: 820px) {
-  .home-page .about-section .about-copy h2 { line-height: 1.2; }
-  .home-page .about-section .about-name { margin-top: 2px; font-size: clamp(46px, calc(62 * var(--about-unit)), 54px); }
-  .home-page .about-section .about-text > .about-pronunciation { margin: 4px 0 8px; padding-top: 2px; line-height: 1.5; }
-  .home-page .about-section .about-dossier { row-gap: 6px; }
-  .home-page .about-section .about-fact-wide { padding-top: 6px; }
+  .home-page .about-section .about-copy { padding: 24px 30px; }
+  /* A smaller photo widens the right column, so the form and the
+     introduction take fewer lines. */
+  .home-page .about-section .about-body { --about-avatar-size: clamp(160px, calc(var(--chapter-content-height) * 0.36), 220px); margin-bottom: 12px; }
+  .home-page .about-section .about-identity { padding-bottom: 8px; }
+  .home-page .about-section .about-name { font-size: clamp(46px, calc(62 * var(--about-unit)), 54px); }
+  .home-page .about-section .about-socials { margin-top: 12px; }
+  .home-page .about-section .about-socials a { min-height: 36px; padding-block: 8px; }
+  .home-page .about-section .about-fact { padding-block: 6px 7px; }
   .home-page .about-section .about-fact dd { margin-top: 2px; font-size: 13px; line-height: 1.5; }
-  .home-page .about-section .about-games ul { gap: 0; }
-  .home-page .about-section .about-preference { margin-top: 8px; padding-top: 7px; }
+  .home-page .about-section .about-bio { padding-top: 9px; }
+  .home-page .about-section .about-bio p { margin-top: 3px; font-size: 13px; line-height: 1.7; }
+  .home-page .about-section .about-mrz { padding-top: 8px; }
   .home-page .about-section .connection-heading { margin-bottom: 10px; }
   .home-page .about-section .connection-card { padding-block: 12px 11px; }
   .home-page .about-section .connection-rule { margin-block: 6px 7px; }
@@ -297,12 +341,12 @@
   .home-page .about-section .about-calibration { margin-bottom: 17px; }
   .home-page .about-section .about-socials { margin-top: 13px; }
   .home-page .about-section .about-socials a { min-height: 44px; padding-block: 10px; }
-  .home-page .about-section .about-copy h2 { font-size: 24px; }
+  .home-page .about-section .about-body { margin-bottom: 14px; }
   .home-page .about-section .about-name { font-size: 54px; }
-  .home-page .about-section .about-text > .about-pronunciation { margin-block: 8px 13px; }
-  .home-page .about-section .about-dossier { row-gap: 10px; }
-  .home-page .about-section .about-fact-wide { padding-top: 9px; }
-  .home-page .about-section .about-preference { margin-top: 13px; padding-top: 10px; }
+  .home-page .about-section .about-fact { padding-block: 8px 9px; }
+  .home-page .about-section .about-bio { padding-top: 10px; }
+  .home-page .about-section .about-bio p { line-height: 1.7; }
+  .home-page .about-section .about-mrz { padding-top: 9px; }
   .home-page .about-section .connection-card { padding-block: 18px; }
   .home-page .about-section .connection-rule { margin-block: 7px 9px; }
   .home-page .about-section .connection-card h3 { margin-bottom: 6px; font-size: 17px; }

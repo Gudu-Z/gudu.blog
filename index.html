@@ -19,8 +19,8 @@
     <script src="./js/black-hole-theme.js?v=20261101-white-hole"></script>
     <link rel="stylesheet" href="./css/style.css?v=20261118-beam" />
     <link rel="stylesheet" href="./css/blog.css?v=20261113-polish" />
-    <link rel="stylesheet" href="./css/chapters.css?v=20261113-polish" />
-    <link rel="stylesheet" href="./css/about-terminal.css?v=20261113-polish" />
+    <link rel="stylesheet" href="./css/chapters.css?v=20261115-dossier" />
+    <link rel="stylesheet" href="./css/about-terminal.css?v=20261115-dossier" />
     <link rel="stylesheet" href="./css/chapter-interactions.css?v=20261101-day-mode" />
   <link rel="stylesheet" href="./css/categories.css?v=20261101-day-mode" />
     <link rel="stylesheet" href="./css/chapters-vertical.css?v=20261113-polish" />
@@ -35,7 +35,7 @@
     <script src="./js/posts-data.js?v=20261026-categories" defer></script>
     <script src="./js/blog.js?v=20261029-ui-polish" defer></script>
     <script src="./js/chapters.js?v=20261109-hud-frame" defer></script>
-    <script src="./js/chapters-vertical.js?v=20261113-polish" defer></script>
+    <script src="./js/chapters-vertical.js?v=20261115-dossier" defer></script>
     <script src="./js/cursor.js?v=20261109-hud-fold" defer></script>
   </head>
   <body class="home-page">
@@ -179,17 +179,24 @@
               </nav>
             </div>
             <div class="about-text">
-              <h2 id="about-title">你好！我是<br /><span class="about-name">Gudu</span></h2>
-              <p class="about-pronunciation"><span>我的名字读作</span><span class="about-chinese-name"><ruby>古<rp>（</rp><rt>gŭ</rt><rp>）</rp></ruby><ruby>渡<rp>（</rp><rt>dù</rt><rp>）</rp></ruby></span></p>
+              <div class="about-identity">
+                <p class="about-field-label about-name-label" aria-hidden="true">姓名 <span>/ NAME</span></p>
+                <h2 id="about-title"><span class="about-name">Gudu</span></h2>
+              </div>
               <dl class="about-dossier">
                 <div class="about-fact"><dt>现居 <span aria-hidden="true">/ LOCATION</span></dt><dd>澳大利亚</dd></div>
                 <div class="about-fact"><dt>身份 <span aria-hidden="true">/ IDENTITY</span></dt><dd>高中生</dd></div>
-                <div class="about-fact about-fact-wide"><dt>爱好 <span aria-hidden="true">/ OFF DUTY</span></dt><dd>看小说、打游戏和打游戏</dd></div>
+                <div class="about-fact"><dt>爱好 <span aria-hidden="true">/ OFF DUTY</span></dt><dd>看小说、打游戏和打游戏</dd></div>
+                <div class="about-fact"><dt>最喜欢的类型 <span aria-hidden="true">/ FAVORITE</span></dt><dd>冒险游戏</dd></div>
                 <div class="about-fact about-fact-wide about-games"><dt>玩的游戏 <span aria-hidden="true">/ GAME LOG</span></dt><dd><ul><li><span aria-hidden="true">01</span><span lang="en">Minecraft</span></li><li><span aria-hidden="true">02</span><span>《刺客信条》系列</span></li><li><span aria-hidden="true">03</span><span>最近几部《塞尔达传说》</span></li></ul></dd></div>
               </dl>
-              <div class="about-signature about-preference"><span class="about-signature-mark" aria-hidden="true">↗</span><p>最喜欢的类型 <strong>冒险游戏</strong></p></div>
+              <div class="about-bio">
+                <h3 class="about-field-label">自我介绍 <span aria-hidden="true">/ BIO</span></h3>
+                <p>你好，我是 Gudu，一个住在澳大利亚的高中生，空闲时喜欢看小说、打游戏。这个博客是我在互联网上的一块自留地，用来记下思考、生活，和那些还没想完的想法。不急着抵达，先把沿途记下来。</p>
+              </div>
             </div>
           </div>
+          <p class="about-mrz" aria-hidden="true"><span>GUDU</span><span class="about-mrz-fill">&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;</span><span>IN&lt;MY&lt;OWN&lt;ORBIT</span></p>
         </div>
         <div class="about-connections">
           <p class="connection-heading" data-depth-owner="connection-journal"><span>继续探索</span></p>

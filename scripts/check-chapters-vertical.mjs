@@ -757,6 +757,51 @@ test('on tall windows the HUD moves in with the panels and their clip follows', 
   assert.deepEqual(failures, []);
 });
 
+test('the About record reads as an ID card and fits its chapter', { skip }, async () => {
+  const card = `(() => {
+    const box = selector => {
+      const element = document.querySelector('#about ' + selector);
+      const b = element.getBoundingClientRect();
+      return { left: b.left, right: b.right, top: b.top, bottom: b.bottom };
+    };
+    return {
+      scrollable: document.querySelector('#about').classList.contains('is-chapter-scrollable'),
+      width: innerWidth,
+      copy: box('.about-copy'), photo: box('.about-avatar'), links: box('.about-socials'), name: box('.about-name'),
+      facts: box('.about-dossier'), bio: box('.about-bio'), strip: box('.about-mrz'),
+      last: document.querySelector('#about .about-copy').lastElementChild.className,
+      fields: [...document.querySelectorAll('#about .about-fact dt')].map(dt => dt.firstChild.textContent.trim()),
+    };
+  })()`;
+  // On wide screens: the photo with its links beside the name, the form and
+  // the introduction, then the strip across the card, all above the ruler
+  // even in a short window.
+  for (const [width, height] of [[1600, 860], [1280, 720]]) {
+    const page = await open('/#about', { width, height, mobile: false });
+    await waitFor(page, "document.documentElement.classList.contains('is-content')");
+    await sleep(400);
+    const view = await evaluate(page, card);
+    assert.equal(view.scrollable, false, `the record fits its chapter at ${width}x${height}`);
+    assert.ok(view.photo.right < view.name.left && view.photo.right < view.facts.left, 'the photo sits beside the name and the form');
+    assert.ok(view.links.top >= view.photo.bottom - 1 && Math.abs(view.links.left - view.photo.left) < 8, 'the links stay under the photo');
+    assert.ok(view.bio.left > view.photo.right && Math.abs(view.bio.left - view.facts.left) < 8 && view.bio.top >= view.facts.bottom - 1, 'the introduction closes the right column, under the form');
+    assert.ok(view.strip.top >= Math.max(view.bio.bottom, view.links.bottom) - 1, 'the strip closes the card');
+    assert.equal(view.last, 'about-mrz');
+    assert.deepEqual(view.fields, ['现居', '身份', '爱好', '最喜欢的类型', '玩的游戏']);
+    await close(page);
+  }
+  // A phone stacks the same card, and the strip never widens it.
+  const phone = await open();
+  await scroll(phone, (await state(phone)).entry);
+  await sleep(400);
+  const view = await evaluate(phone, card);
+  assert.ok(view.copy.left >= 0 && view.copy.right <= view.width, `the card stays inside the screen (${view.copy.left}, ${view.copy.right})`);
+  assert.ok(view.links.top >= view.photo.bottom - 1 && view.name.top >= view.links.bottom - 1, 'the photo and its links come first, then the name');
+  assert.ok(view.bio.top >= view.facts.bottom - 1 && view.strip.top >= view.bio.bottom - 1, 'the introduction follows the form and the strip closes the card');
+  await close(phone);
+  assert.deepEqual(failures, []);
+});
+
 test('resizing hands the page between the strip and the vertical page', { skip }, async () => {
   const page = await open();
   await scroll(page, (await sectionTop(page, 'series')) - 78);

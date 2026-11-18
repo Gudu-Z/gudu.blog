@@ -276,10 +276,6 @@ html.has-chapters .home-page .journal-section > * { flex-shrink: 0; }
 .home-page .about-name { display: inline-block; margin-top: 4px; font: 900 clamp(54px, 5.6vw, 76px)/1.03 "Barlow Condensed", "Arial Narrow", sans-serif; letter-spacing: 0.005em; }
 .home-page .about-name .accent { margin-left: 3px; }
 .home-page .about-text > .about-lead { margin: 27px 0 19px; font-size: 17px; line-height: 1.9; color: light-dark(#1c1e21, #d1d4d8); }
-.home-page .about-text > p:not(.about-lead) { margin: 0 0 28px; color: light-dark(#454d56, #929ba5); font-size: 12px; line-height: 2.2; max-width: 350px; }
-.home-page .about-signature { display: flex; align-items: center; gap: 14px; margin-top: auto; padding-top: 23px; border-top: 1px solid light-dark(#f064462b, #f064462b); }
-.home-page .about-signature-mark { color: var(--chapter-accent); font-size: 16px; }
-.home-page .about-signature p { margin: 0; font-size: 10px; line-height: 1.8; color: light-dark(#393f46, #a4abb3); }
 .home-page .about-connections { display: flex; flex-direction: column; min-width: 0; min-height: var(--chapter-content-height); }
 .home-page .connection-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 0 16px; font-size: 10px; letter-spacing: 0.1em; color: light-dark(#3e4349, #a0a6ad); }
 .home-page .connection-card { display: flex; flex: 1; flex-direction: column; position: relative; padding: 25px 27px 22px; transition: box-shadow 220ms ease, background 220ms ease; }
@@ -490,7 +486,7 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     will-change: opacity;
   }
   html.has-chapters .home-page .chapter-section :where(
-    .about-panel-top, .about-socials, .about-text > p, .about-dossier, .about-signature,
+    .about-panel-top, .about-socials, .about-name-label, .about-dossier, .about-bio, .about-mrz,
     .connection-heading, .connection-footnote, .connection-card-head, .connection-action,
     .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3, p, .text-link),
     .series-empty, .series-reading-link, .journal-heading-part, .category-heading,
@@ -518,11 +514,11 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     transition-property: var(--chapter-reveal-properties, opacity, translate);
   }
   html.has-chapters .home-page .chapter-section :where(
-    .about-panel-top, .connection-heading, .connection-card-head, .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3),
+    .about-panel-top, .about-name-label, .connection-heading, .connection-card-head, .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3),
     .journal-heading-part, .category-heading, .category-index, .archive-year > h3, .archive-group > h3
   ) { --chapter-layer-stage: 0; }
   html.has-chapters .home-page .chapter-section :where(
-    .about-socials, .about-text > p, .about-dossier, .about-signature, .connection-card > p,
+    .about-socials, .about-dossier, .about-bio, .about-mrz, .connection-card > p,
     .connection-action, .connection-footnote, .series-empty, .series-main > .text-link,
     .series-guide-intro, .journal-sidebar .chapter-panel > :is(p:not(.eyebrow), .text-link),
     .search-empty, .archive-empty, .site-footer, .category-description, .category-bottom
@@ -541,7 +537,7 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
 
   /* A focused link or control stays legible even while its chapter is at an edge. */
   html.has-chapters .home-page .chapter-section :where(
-    .about-panel-top, .about-socials, .about-text > p, .about-dossier, .about-signature,
+    .about-panel-top, .about-socials, .about-name-label, .about-dossier, .about-bio, .about-mrz,
     .connection-heading, .connection-footnote, .connection-card-head, .connection-action,
     .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3, p, .text-link),
     .series-empty, .series-reading-link, .journal-heading-part, .category-heading,
@@ -566,7 +562,7 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
      All layers finish before docking; interruption never leaves a queued fade. */
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-section.about-section :where(
     .about-panel-top, .about-calibration, .about-portrait, .about-socials > a,
-    .about-text > h2, .about-pronunciation, .about-fact, .about-preference,
+    .about-name-label, .about-identity > h2, .about-fact, .about-bio, .about-mrz,
     .connection-heading, .connection-footnote, .connection-card-head,
     .connection-rule, .connection-card > h3, .connection-card > p, .connection-action
   ) {
@@ -580,8 +576,8 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     will-change: opacity, translate, scale;
   }
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-section.about-section :where(
-    .about-panel-top, .about-socials, .about-text > h2, .about-pronunciation,
-    .about-dossier, .about-preference, .connection-card-head,
+    .about-panel-top, .about-socials, .about-name-label, .about-identity > h2,
+    .about-dossier, .about-bio, .about-mrz, .connection-card-head,
     .connection-card > h3, .connection-card > p, .connection-action
   ) { transform: none; }
   /* The two layout wrappers stay readable: only their individual rows animate. */
@@ -598,15 +594,23 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
   .home-page .about-section .about-panel-top { --about-arrival-start: 0.32; --about-arrival-duration: 0.24; }
   .home-page .about-section .about-calibration { --about-arrival-start: 0.34; --about-arrival-duration: 0.3; }
   .home-page .about-section .about-portrait { --about-arrival-start: 0.4; --about-arrival-duration: 0.37; }
-  .home-page .about-section .about-text > h2 { --about-arrival-start: 0.45; --about-arrival-duration: 0.32; }
-  .home-page .about-section .about-pronunciation { --about-arrival-start: 0.5; --about-arrival-duration: 0.32; }
+  .home-page .about-section .about-name-label { --about-arrival-start: 0.43; --about-arrival-duration: 0.3; }
+  .home-page .about-section .about-identity > h2 { --about-arrival-start: 0.45; --about-arrival-duration: 0.32; }
   .home-page .about-section .about-fact { --about-arrival-start: 0.55; --about-arrival-duration: 0.29; }
   .home-page .about-section .about-fact:nth-child(2) { --about-arrival-start: 0.58; }
   .home-page .about-section .about-fact:nth-child(3) { --about-arrival-start: 0.61; }
   .home-page .about-section .about-fact:nth-child(4) { --about-arrival-start: 0.64; }
+  .home-page .about-section .about-fact:nth-child(5) { --about-arrival-start: 0.67; }
   .home-page .about-section .about-socials > a { --about-arrival-start: 0.64; --about-arrival-duration: 0.27; }
   .home-page .about-section .about-socials > a:nth-child(2) { --about-arrival-start: 0.68; }
-  .home-page .about-section .about-preference { --about-arrival-start: 0.7; --about-arrival-duration: 0.25; }
+  .home-page .about-section .about-bio { --about-arrival-start: 0.7; --about-arrival-duration: 0.25; }
+  .home-page .about-section .about-mrz { --about-arrival-start: 0.74; --about-arrival-duration: 0.22; }
+  /* The form's own rules come in with its first fields, not before them. */
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-section.about-section .about-text > .about-dossier {
+    --about-arrival-progress: clamp(0, calc((var(--chapter-visual-phase) - var(--about-arrival-start, 0.5)) / var(--about-arrival-duration, 0.28)), 1);
+    border-color: color-mix(in srgb, var(--chapter-rule) calc(var(--about-arrival-progress) * 100%), transparent);
+  }
+  .home-page .about-section .about-text > .about-dossier { --about-arrival-start: 0.53; --about-arrival-duration: 0.26; }
   .home-page .about-section .connection-card { --about-arrival-lane: 0; }
   .home-page .about-section .connection-card:nth-of-type(2) { --about-arrival-lane: 0.035; }
   .home-page .about-section .connection-card:nth-of-type(3) { --about-arrival-lane: 0.07; }
@@ -988,11 +992,8 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   :where(html.has-chapters) .home-page .about-copy h2 { font-size: calc(38 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .about-name { font-size: calc(76 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .about-text > .about-lead { margin: calc(27 * var(--chapter-content-unit)) 0 calc(19 * var(--chapter-content-unit)); font-size: calc(17 * var(--chapter-content-unit)); }
-  :where(html.has-chapters) .home-page .about-text > p:not(.about-lead) { max-width: calc(350 * var(--chapter-content-unit)); margin-bottom: 0; font-size: clamp(13px, calc(12 * var(--chapter-content-unit)), 16px); }
   :where(html.has-chapters) .home-page .about-socials { margin-top: calc(16 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .about-socials a { min-height: calc(44 * var(--chapter-content-unit)); padding-block: calc(12 * var(--chapter-content-unit)); font-size: max(12px, calc(12 * var(--chapter-content-unit))); }
-  :where(html.has-chapters) .home-page .about-signature { max-width: calc(350 * var(--chapter-content-unit)); gap: calc(14 * var(--chapter-content-unit)); margin-top: clamp(24px, calc(var(--chapter-content-height) * 0.04), 40px); padding-top: calc(23 * var(--chapter-content-unit)); }
-  :where(html.has-chapters) .home-page .about-signature p { font-size: max(10px, calc(10 * var(--chapter-content-unit))); }
   :where(html.has-chapters) .home-page .connection-heading { font-size: max(10px, calc(10 * var(--chapter-content-unit))); }
   :where(html.has-chapters) .home-page .connection-card { justify-content: center; padding: calc(25 * var(--chapter-content-unit)) calc(27 * var(--chapter-content-unit)) calc(22 * var(--chapter-content-unit)); }
   :where(html.has-chapters) .home-page .connection-card h3 { margin: calc(15 * var(--chapter-content-unit)) 0 calc(8 * var(--chapter-content-unit)); font-size: calc(19 * var(--chapter-content-unit)); }
@@ -1070,7 +1071,6 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   .home-page .about-body { grid-template-columns: minmax(0, 1fr); gap: 32px; }
   .home-page .about-profile { width: min(100%, 320px); }
   .home-page .about-text > .about-lead { margin-top: 23px; }
-  .home-page .about-signature { margin-top: 27px; padding-top: 20px; }
   .home-page .connection-heading { margin-bottom: 12px; }
   .home-page .connection-card { flex: none; padding: 22px 25px; }
   .home-page .connection-card h3 { margin-top: 13px; font-size: 18px; }
@@ -1135,7 +1135,6 @@ html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chap
   .home-page .about-copy h2 { font-size: 29px; }
   .home-page .about-name { font-size: 60px; }
   .home-page .about-text > .about-lead { margin-top: 19px; margin-bottom: 13px; }
-  .home-page .about-signature { margin-top: 24px; padding-top: 18px; }
   .home-page .connection-card { padding-top: 19px; padding-bottom: 17px; }
   .home-page .connection-card h3 { margin-top: 11px; font-size: 17px; }
   .home-page .connection-action { padding-top: 12px; }

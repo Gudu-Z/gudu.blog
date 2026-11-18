@@ -44,7 +44,7 @@
   // once, long before its lower part is read. The strip's text layers, plus
   // the About portrait.
   const REVEAL_BLOCKS = [
-    '.about-panel-top', '.about-avatar', '.about-socials', '.about-text > p', '.about-dossier', '.about-signature',
+    '.about-panel-top', '.about-avatar', '.about-socials', '.about-name-label', '.about-dossier', '.about-bio', '.about-mrz',
     '.connection-heading', '.connection-footnote', '.connection-card-head', '.connection-action',
     '.chapter-panel h2', '.chapter-panel > :is(.eyebrow, h3, p, .text-link)',
     '.series-empty', '.series-reading-link', '.journal-heading-part', '.category-heading',
