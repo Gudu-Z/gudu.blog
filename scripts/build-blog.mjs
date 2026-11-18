@@ -2,6 +2,7 @@ import { readFile, readdir, mkdir, writeFile, unlink } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseMarkdown } from './markdown.mjs';
+import { createSceneResolver } from './mc-article-assets.mjs';
 import { commentsAssets, readCommentsConfig, renderComments } from './comments.mjs';
 
 const defaultRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -74,7 +75,7 @@ function normalizePost(value, filename, markdown = null) {
     date, readingMinutes: Math.max(1, Math.ceil(chineseCharacters / 350 + words / 200)),
     url: `./posts/${slug}.html`, demo: value.demo === true, featured: value.featured === true,
     draft: value.draft === true, comments: value.comments !== false, sections,
-    ...(markdown ? { bodyHTML: markdown.html, toc: markdown.headings.filter(heading => heading.level <= 3) } : {}),
+    ...(markdown ? { bodyHTML: markdown.html, toc: markdown.headings.filter(heading => heading.level <= 3), hasScenes: markdown.hasScenes } : {}),
   };
 }
 
@@ -125,7 +126,7 @@ function documentHead({ title, description, canonical, prefix, noindex = false, 
     <script src="${prefix}js/site-theme.js?v=20261030-day-mode"></script>
     <script src="${prefix}js/theme-jets.js?v=20261118-beam" defer></script>
     <link rel="stylesheet" href="${prefix}css/style.css?v=20261118-beam" />
-    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261113-polish" />`.replace(/[ \t]+$/gm, '');
+    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261118-article" />`.replace(/[ \t]+$/gm, '');
 }
 
 function renderArticle(post, index, posts, commentsConfig) {
@@ -134,7 +135,21 @@ function renderArticle(post, index, posts, commentsConfig) {
   const older = posts[index + 1];
   const toc = post.toc ?? post.sections.map(section => ({ id: section.id, text: section.title, level: 2 }));
   const body = post.bodyHTML ?? post.sections.map(section => `<section class="article-section" aria-labelledby="${section.id}"><h2 id="${section.id}">${escape(section.title)}</h2>${section.blocks.map(renderBlock).join('\n')}</section>`).join('\n');
-  const postLink = (item, className, label, arrow) => item ? `<a class="${className}" href="./${item.slug}.html"><span>${label} ${arrow}</span><strong>${escape(item.title)}</strong></a>` : `<span class="${className} is-unavailable"><span>${label}</span><strong>已到达这一端</strong></span>`;
+  // Each neighbour is a panel labelled like the home page's fields: a Chinese
+  // name with a small code name, and an arrow on its outer side when it links.
+  const postLink = (item, className, label, code, arrow) => {
+    const mark = item ? `<b aria-hidden="true">${arrow}</b>` : '';
+    const heading = `<span>${className === 'article-prev' ? mark : ''}${label} <i aria-hidden="true">/ ${code}</i>${className === 'article-prev' ? '' : mark}</span>`;
+    return item ? `<a class="${className}" href="./${item.slug}.html">${heading}<strong>${escape(item.title)}</strong></a>` : `<span class="${className} is-unavailable">${heading}<strong>已到达这一端</strong></span>`;
+  };
+  // The header's facts read like the About card's form: a Chinese field name
+  // over a small code name, four to a row under a calibration rule.
+  const facts = [
+    ['分类', 'CATEGORY', `<a class="article-category" href="../index.html?category=${escape(post.categorySlug)}#journal">${escape(post.category)}</a>`],
+    ['发布', 'DATE', `<time datetime="${post.date}">${displayDate(post.date)}</time>`],
+    ['阅读', 'READ TIME', `约 ${post.readingMinutes} 分钟`],
+    ['标签', 'TAGS', post.tags.length ? `<ul class="article-tags" aria-label="文章标签">${post.tags.map(tag => `<li>#${escape(tag)}</li>`).join('')}</ul>` : '<span class="article-facts-empty">—</span>'],
+  ];
   const structuredData = post.demo ? '' : `<script type="application/ld+json">${jsonForHTML({ '@context': 'https://schema.org', '@type': 'BlogPosting', headline: post.title, description: post.excerpt, datePublished: post.date, mainEntityOfPage: postURL(post), inLanguage: 'zh-CN' })}</script>`;
   return `<!doctype html>
 ${generated}
@@ -142,29 +157,30 @@ ${generated}
   <head>
     ${documentHead({ title: `${post.title} · Gudu 的个人博客`, description: post.excerpt, canonical: postURL(post), prefix: '../', noindex: post.demo, article: post })}
 ${structuredData}
-    <script src="../js/article.js" defer></script>
+    <script src="../js/star-sky.js?v=20261113-polish" defer></script>
+    <script src="../js/article.js?v=20261118-article" defer></script>${post.hasScenes ? '\n    <link rel="stylesheet" href="../css/mc-article.css?v=20261118-article" />\n    <script type="module" src="../js/mc-article.mjs"></script>' : ''}
     ${comments.head}
   </head>
   <body class="article-page">
+    <canvas class="article-sky" data-star-sky aria-hidden="true"></canvas>
     <div class="reading-progress" aria-hidden="true" hidden><span data-reading-progress></span></div>
     ${siteHeader('../')}
     <main class="article-shell" id="main-content" tabindex="-1">
       <a class="article-back" href="../index.html#journal"><span aria-hidden="true">←</span> 返回文章列表</a>
       <header class="article-header">
-        <div class="article-meta"><a class="article-category" href="../index.html?category=${escape(post.categorySlug)}#journal">${escape(post.category)}</a><time datetime="${post.date}">${displayDate(post.date)}</time><span>约 ${post.readingMinutes} 分钟阅读</span>${post.demo ? '<span>示例文章</span>' : ''}</div>
         <h1 class="article-title">${escape(post.title)}</h1>
         ${post.deck ? `<p class="article-deck">${escape(post.deck)}</p>` : ''}
-        ${post.tags.length ? `<ul class="article-tags" aria-label="文章标签">${post.tags.map(tag => `<li>#${escape(tag)}</li>`).join('')}</ul>` : ''}
+        <dl class="article-facts">${facts.map(([name, code, value]) => `<div><dt>${name} <span aria-hidden="true">/ ${code}</span></dt><dd>${value}</dd></div>`).join('')}</dl>
         ${post.demo ? '<p class="demo-notice">这是一篇用于预览版式的示例文章，不代表作者的真实经历或正式发布内容。</p>' : ''}
       </header>
       <div class="article-layout">
         <article class="article-body" aria-label="文章正文">
           ${body}
-          <div class="article-end"><span class="article-end-mark" aria-hidden="true"></span><p>本文完。谢谢你的阅读。</p><div class="article-tools"><button class="copy-link" type="button" hidden>复制文章链接 <span aria-hidden="true">↗</span></button><p class="copy-status" role="status" aria-live="polite"></p></div></div>
+          <div class="article-end"><span class="article-end-mark" aria-hidden="true"></span><p>本文完。谢谢你的阅读。<span class="article-end-code" aria-hidden="true">END OF ENTRY</span></p><div class="article-tools"><button class="copy-link" type="button" hidden>复制文章链接 <span aria-hidden="true">↗</span></button><p class="copy-status" role="status" aria-live="polite"></p></div></div>
         </article>
-        ${toc.length ? `<aside class="article-toc" aria-label="文章目录"><p class="toc-label">本文目录</p><nav><ol>${toc.map(heading => `<li${heading.level === 3 ? ' class="toc-subheading"' : ''}><a data-toc-link href="#${escape(heading.id)}">${escape(heading.text)}</a></li>`).join('')}</ol></nav></aside>` : ''}
+        ${toc.length ? `<aside class="article-toc" aria-label="文章目录"><p class="toc-label">本文目录 <span aria-hidden="true">/ CONTENTS</span></p><nav><ol>${toc.map(heading => `<li${heading.level === 3 ? ' class="toc-subheading"' : ''}><a data-toc-link href="#${escape(heading.id)}">${escape(heading.text)}</a></li>`).join('')}</ol></nav></aside>` : ''}
       </div>
-      <nav class="article-pagination" aria-label="其他文章">${postLink(newer, 'article-prev', '上一篇', '←')}${postLink(older, 'article-next', '下一篇', '→')}</nav>
+      <nav class="article-pagination" aria-label="其他文章">${postLink(newer, 'article-prev', '上一篇', 'PREV', '←')}${postLink(older, 'article-next', '下一篇', 'NEXT', '→')}</nav>
       ${comments.body}
     </main>
     ${siteFooter('../')}
@@ -232,12 +248,13 @@ export async function buildBlog({ root = defaultRoot, checkOnly = false } = {}) 
   const commentsConfig = await readCommentsConfig(root);
   const sourceDirectory = resolve(root, 'content/posts');
   const postDirectory = resolve(root, 'posts');
+  const resolveScene = createSceneResolver(root);
   const filenames = (await readdir(sourceDirectory, { withFileTypes: true }))
     .filter(entry => entry.isFile() && /\.(?:json|md|markdown)$/i.test(entry.name)).map(entry => entry.name).sort();
   const sources = await Promise.all(filenames.map(async filename => {
     const source = await readFile(resolve(sourceDirectory, filename), 'utf8');
     if (/\.(?:md|markdown)$/i.test(filename)) {
-      const markdown = parseMarkdown(source, filename);
+      const markdown = parseMarkdown(source, filename, resolveScene);
       return normalizePost(markdown.attributes, filename, markdown);
     }
     try { return normalizePost(JSON.parse(source), filename); }
@@ -251,7 +268,7 @@ export async function buildBlog({ root = defaultRoot, checkOnly = false } = {}) 
   const posts = sources.filter(post => !post.draft).sort((a, b) => b.date.localeCompare(a.date) || a.slug.localeCompare(b.slug));
   // Parsing stays in the build. The homepage receives metadata, never article
   // markup, parser modules or full Markdown sources.
-  const metadata = posts.map(({ sections, draft, bodyHTML, toc, deck, comments, ...post }) => post);
+  const metadata = posts.map(({ sections, draft, bodyHTML, toc, deck, comments, hasScenes, ...post }) => post);
   const artifacts = new Map(await commentsAssets());
   artifacts.set('js/posts-data.js', `// Generated by scripts/build-blog.mjs. Do not edit directly.\nwindow.BLOG_CATEGORIES = ${jsonForHTML(categories)};\nwindow.BLOG_POSTS = ${jsonForHTML(metadata)};\n`);
   for (const [index, post] of posts.entries()) artifacts.set(`posts/${post.slug}.html`, renderArticle(post, index, posts, commentsConfig));

@@ -1,0 +1,310 @@
+/* The figure reads as an instrument, in the home page's HUD language: a
+   label strip (figure number, kind, and the open/close button), outer
+   registration corners, a viewfinder in the 3D view, and the ruler's orange
+   cursor on the scrubber. Tokens such as --rule come from .article-page. */
+.article-body .mc-scene {
+  container: mc-scene / inline-size;
+  counter-increment: figure;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: end;
+  column-gap: 14px;
+  /* Zero inline margins replace the browser's 40px figure indent: the replay spans the column. */
+  margin: 60px 0 52px;
+  min-width: 0;
+  scroll-margin-top: 2rem;
+}
+.mc-scene::before, .mc-scene::after { padding-bottom: 12px; font: 10px/1.4 var(--mono); letter-spacing: 0.16em; }
+.mc-scene::before { content: "FIG." counter(figure, decimal-leading-zero); grid-area: 1 / 1; color: var(--red); font-size: 11px; letter-spacing: 0.1em; }
+.mc-scene::after { content: "红石回放 / REDSTONE REPLAY"; grid-area: 1 / 2; min-width: 0; overflow: hidden; color: var(--code-name); text-overflow: ellipsis; white-space: nowrap; }
+.mc-scene[data-mc-kind="structure"]::after { content: "3D 结构 / STRUCTURE"; }
+.mc-scene > [data-mc-open] { grid-area: 1 / 3; margin-bottom: 8px; }
+.mc-scene > :is([data-mc-view], [data-mc-status], figcaption, noscript, img[data-mc-poster]) { grid-column: 1 / -1; }
+.mc-scene [hidden], .mc-scene [data-mc-view]:empty { display: none !important; }
+.mc-scene [data-mc-view] {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  border: 1px solid var(--rule);
+}
+.mc-scene [data-mc-view]::after { content: ""; position: absolute; inset: -6px; z-index: 3; pointer-events: none; background: var(--registration); }
+.mc-stage {
+  position: relative;
+  min-width: 0;
+  height: clamp(15rem, 68cqi, 29rem);
+  overflow: hidden;
+  /* Matches js/mc-viewer.mjs, which clears the 3D view to the same colour. */
+  background: light-dark(#dee1e6, #10151c);
+}
+/* A viewfinder: four corners and a small label over the 3D view. */
+.mc-stage::before { content: "3D VIEW"; position: absolute; top: 22px; left: 28px; z-index: 3; color: light-dark(rgb(14 20 25 / 46%), rgb(220 228 236 / 46%)); font: 9px/1 var(--mono); letter-spacing: 0.2em; pointer-events: none; }
+.mc-stage::after {
+  --corner: light-dark(rgb(14 20 25 / 38%), rgb(220 228 236 / 38%));
+  content: "";
+  position: absolute;
+  inset: 12px;
+  z-index: 3;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--corner) 0 0) left top / 12px 1px no-repeat,
+    linear-gradient(var(--corner) 0 0) left top / 1px 12px no-repeat,
+    linear-gradient(var(--corner) 0 0) right top / 12px 1px no-repeat,
+    linear-gradient(var(--corner) 0 0) right top / 1px 12px no-repeat,
+    linear-gradient(var(--corner) 0 0) left bottom / 12px 1px no-repeat,
+    linear-gradient(var(--corner) 0 0) left bottom / 1px 12px no-repeat,
+    linear-gradient(var(--corner) 0 0) right bottom / 12px 1px no-repeat,
+    linear-gradient(var(--corner) 0 0) right bottom / 1px 12px no-repeat;
+}
+.mc-stage > .mc-canvas, .mc-stage > .mc-focus {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.mc-stage > .mc-focus { pointer-events: none; }
+.mc-stage > .mc-view-reset {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  z-index: 4;
+  background: light-dark(#dee1e6cc, #10151ccc);
+}
+.article-body .mc-scene img[data-mc-poster] {
+  width: 100%;
+  max-height: 29rem;
+  object-fit: contain;
+  margin: 0;
+  background: var(--panel);
+}
+.article-body .mc-stage > img[data-mc-poster] {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  height: 100%;
+  max-height: none;
+  width: 100%;
+  margin: 0;
+  object-fit: contain;
+  pointer-events: none;
+}
+.mc-scene figcaption, .mc-scene [data-mc-status], .mc-share-status {
+  color: var(--muted);
+  font-size: .8rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+/* The caption follows a short orange lead, like a callout on a drawing. */
+.mc-scene figcaption { position: relative; margin-top: 16px; padding-left: 30px; font-size: 13px; line-height: 1.7; }
+.mc-scene figcaption::before { content: ""; position: absolute; left: 0; top: 0.85em; width: 18px; height: 1px; background: var(--red); }
+.article-body .mc-scene [data-mc-status] { margin: .5rem 0 0; font-family: var(--mono); font-size: 11px; }
+.mc-scene [data-mc-status]:empty, .mc-share-status:empty, .mc-state:empty { display: none; }
+.mc-scene button, .mc-play-settings :is(input, select) {
+  min-width: 0;
+  color: var(--label);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  padding: .35rem .56rem;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  letter-spacing: 0.04em;
+  transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease;
+}
+.mc-scene button:hover:enabled, .mc-play-settings :is(input, select):hover { border-color: var(--rule-strong); color: var(--paper); }
+/* Play is the one orange button. */
+.mc-actions > button:nth-child(2) { border-color: color-mix(in srgb, var(--red) 60%, transparent); color: var(--signal-text); }
+.mc-actions > button:nth-child(2):hover:enabled { border-color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); color: var(--signal-text); }
+.mc-scene > [data-mc-open] { padding: 4px 10px; font-size: 11px; }
+.mc-scene button:focus-visible, .mc-scene :is(input, select):focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 1px;
+}
+.mc-scene button:disabled { opacity: .42; }
+
+.mc-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: .42rem;
+  min-width: 0;
+  padding: .85rem;
+  border-block-start: 1px solid var(--rule);
+  background: light-dark(#e7eaee, #0b0f14);
+  font-size: .85rem;
+  line-height: 1.45;
+}
+.mc-clock, .mc-event-index, .mc-event-pos, .mc-state {
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
+}
+.mc-clock { color: var(--paper); font-size: 12px; line-height: 1.6; letter-spacing: 0.02em; }
+.mc-scrubber { display: grid; min-width: 0; }
+/* The scrubber draws the home ruler's unfilled axis and its orange cursor,
+   a small triangle on a stem. */
+.mc-slider { width: 100%; height: 24px; margin: 0; min-width: 0; -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
+.mc-slider::-webkit-slider-runnable-track { height: 1px; background: var(--rule-strong); }
+.mc-slider::-moz-range-track { height: 1px; background: var(--rule-strong); }
+.mc-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 9px;
+  height: 19px;
+  margin-top: -14px;
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(to bottom left, var(--red) 50%, transparent 50%) left top / 50% 5px no-repeat,
+    linear-gradient(to bottom right, var(--red) 50%, transparent 50%) right top / 50% 5px no-repeat,
+    linear-gradient(var(--red) 0 0) 50% 0 / 1.5px 100% no-repeat;
+}
+.mc-slider::-moz-range-thumb {
+  width: 9px;
+  height: 19px;
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(to bottom left, var(--red) 50%, transparent 50%) left top / 50% 5px no-repeat,
+    linear-gradient(to bottom right, var(--red) 50%, transparent 50%) right top / 50% 5px no-repeat,
+    linear-gradient(var(--red) 0 0) 50% 0 / 1.5px 100% no-repeat;
+}
+.mc-slider:disabled { opacity: .4; cursor: default; }
+.mc-tick-scale {
+  position: relative;
+  min-width: 0;
+  height: 1.1rem;
+  /* Inset by half the 9px cursor, so the end labels sit under its stem. */
+  margin-inline: 4.5px;
+  margin-top: -6px;
+  color: var(--code-name);
+  font: 10px/1.35 Consolas, "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
+}
+/* Without nowrap the last label ("200") had no room and stacked one digit per line. */
+.mc-tick-scale > span { position: absolute; padding-top: .22rem; transform: translateX(-50%); white-space: nowrap; }
+.mc-tick-scale > span::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 50%;
+  height: .2rem;
+  border-inline-start: 1px solid currentColor;
+}
+.mc-tick-scale > span:first-child { transform: none; }
+.mc-tick-scale > span:first-child::before { inset-inline-start: 0; }
+.mc-tick-scale > span:last-child:not(:first-child) { transform: translateX(-100%); }
+.mc-tick-scale > span:last-child:not(:first-child)::before { inset-inline-start: 100%; }
+.mc-actions, .mc-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35rem;
+}
+.mc-actions > button { flex: 1 1 auto; }
+.mc-play-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .35rem;
+  padding-block: .4rem;
+  border-block-start: 1px solid var(--line);
+}
+.mc-play-settings label { display: inline-flex; align-items: center; gap: .35rem; min-width: 0; }
+.mc-play-settings :is(.mc-rate, .mc-mode) { grid-column: 1 / -1; justify-content: space-between; }
+.mc-play-settings :is(input, select) { color: var(--paper); background: var(--panel); }
+.mc-play-settings :is(.mc-speed-input, .mc-granularity) { width: 45%; }
+.mc-play-settings > button { font-size: .75rem; }
+.mc-event-heading { color: var(--muted); font-size: .76rem; }
+
+.mc-event-list {
+  --mc-row-height: 2rem;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 7.25rem;
+  height: 14rem;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) var(--panel);
+  border-block: 1px solid var(--line);
+}
+.mc-event-list:focus-visible { outline: 2px solid var(--red); outline-offset: 1px; }
+.mc-list-track { position: relative; overflow: clip; }
+.mc-list-window { position: absolute; inset: 0 0 auto; }
+.mc-row-measure { position: absolute; width: 1px; height: var(--mc-row-height); visibility: hidden; }
+.mc-event-list button {
+  width: 100%;
+  height: var(--mc-row-height);
+  min-height: 0;
+  border: 0;
+  border-inline-start: 2px solid transparent;
+  border-radius: 0;
+  text-align: start;
+}
+.mc-event-list .mc-tick-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-inline: .4rem;
+  gap: .35rem;
+  color: var(--paper);
+  border-block-start: 1px solid var(--line);
+  background: transparent;
+}
+.mc-tick-label { font-weight: 500; font-variant-numeric: tabular-nums; }
+.mc-tick-count, .mc-event-index, .mc-event-pos { color: var(--muted); font-size: .71rem; }
+.mc-event-list .mc-event-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .35rem;
+  padding: 0 .3rem 0 calc(.3rem + var(--mc-depth, 0) * .45rem);
+}
+.mc-event-list button:hover:enabled { background: var(--line); }
+.mc-event-list [data-current-tick] .mc-tick-label { color: var(--red); }
+.mc-event-list button[aria-current="step"] {
+  color: var(--paper);
+  border-inline-start-color: var(--red);
+  background: color-mix(in srgb, var(--red) 13%, var(--panel));
+}
+.mc-event-label, .mc-event-pos { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-event-pos { max-width: 8em; }
+/* flex-shrink: 0 keeps the details row whole; the desktop column squeezed it
+   to 15px and cut its text off. */
+.mc-inspect {
+  flex-shrink: 0;
+  max-height: 7.25rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-block: .4rem;
+  border-block: 1px solid var(--line);
+}
+.mc-event { color: var(--paper); font-size: .87rem; }
+.mc-state { color: var(--muted); font-size: .76rem; overflow-wrap: anywhere; }
+.mc-scene .mc-parent { margin-top: .3rem; }
+.mc-secondary-actions > button, .mc-scene .mc-parent { font-size: .74rem; }
+
+@container mc-scene (min-width: 35rem) {
+  .mc-scene [data-mc-view]:has(.mc-timeline) {
+    grid-template-columns: minmax(0, 1fr) clamp(14rem, 37%, 20rem);
+    align-items: stretch;
+  }
+  .mc-scene [data-mc-view]:has(.mc-timeline) > .mc-stage { height: auto; min-height: 26rem; }
+  .mc-timeline {
+    height: clamp(29rem, 69cqi, 35rem);
+    padding: .75rem;
+    border-block-start: 0;
+    border-inline-start: 1px solid var(--rule);
+    overflow-y: auto;
+  }
+  .mc-event-list { height: auto; }
+}
+@media (pointer: coarse) {
+  .mc-scene button, .mc-play-settings :is(input, select) { min-height: 44px; }
+  .mc-event-list { --mc-row-height: max(44px, 2rem); }
+  .mc-slider { min-height: 26px; }
+  .mc-slider::-webkit-slider-thumb { width: 13px; height: 25px; margin-top: -18px; }
+  .mc-slider::-moz-range-thumb { width: 13px; height: 25px; }
+  .mc-tick-scale { margin-inline: 6.5px; }
+}

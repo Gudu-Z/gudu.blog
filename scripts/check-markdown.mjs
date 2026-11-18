@@ -151,6 +151,49 @@ await test('Chinese and repeated headings have unique matching TOC anchors, whil
   });
 });
 
+await test('scene fences publish accessible posters and bookmark references only in the article', async () => {
+  await fixture(async ({ root, post, read, metadata }) => {
+    const directory = join(root, 'assets', 'minecraft', 'lamp');
+    await mkdir(directory, { recursive: true });
+    const manifest = { version: 1, schematic: 'lamp.litematic', poster: 'front.png', bookmarks: { side: { poster: 'side.png' } } };
+    for (const name of ['lamp.litematic', 'front.png', 'side.png']) await writeFile(join(directory, name), '');
+    await writeFile(join(directory, 'scene.json'), JSON.stringify(manifest));
+    const fence = fields => ['```mc-scene', 'scene: lamp', fields, '```'].join('\n');
+    await post('lamp.md', frontmatter({ category: 'Minecraft' }, [
+      fence('caption: "灯面 <A>"'), '## mc-lamp', fence('bookmark: side\ncaption: 灯的侧面\nspeed: 2.5'),
+    ].join('\n\n')));
+    await post('other.md', frontmatter());
+    await post('unrecorded.md', frontmatter({ draft: true }, '```mc-scene\nscene: pending\n```'));
+    await buildBlog({ root });
+    const html = await read('posts/lamp.html');
+    assert.match(html, /type="module" src="\.\.\/js\/mc-article\.mjs"/);
+    assert.match(html, /href="\.\.\/css\/mc-article\.css(?:\?v=[^"]+)?"/);
+    assert.match(html, /<h2 id="mc-lamp">/);
+    assert.match(html, /id="mc-lamp-2" data-src="\.\.\/assets\/minecraft\/lamp\/scene\.json" data-bookmark=""/);
+    assert.match(html, /id="mc-lamp-3"[^>]* data-bookmark="side"/);
+    assert.match(html, /data-bookmark="side" data-speed="2\.5"/);
+    assert.match(html, /<img data-mc-poster src="\.\.\/assets\/minecraft\/lamp\/front\.png"/);
+    assert.match(html, /<img data-mc-poster src="\.\.\/assets\/minecraft\/lamp\/side\.png"/);
+    assert.match(html, /<button type="button" data-mc-open hidden>/);
+    assert.match(html, /<figcaption>灯面 &lt;A&gt;<\/figcaption>/);
+    assert.doesNotMatch(await read('posts/other.html'), /mc-article|mc-scene/);
+    assert.doesNotMatch(await read('js/posts-data.js'), /hasScenes|data-mc|scene\.json|scene: lamp|bookmark: side|\.litematic/);
+    assert.match((await metadata()).find(entry => entry.slug === 'lamp').excerpt, /灯面 <A>/);
+    await buildBlog({ root, checkOnly: true });
+    await post('lamp.md', frontmatter({}, fence('speed: 0')));
+    await assert.rejects(buildBlog({ root }), /speed/);
+    await post('lamp.md', frontmatter({}, fence('bookmark: missing')));
+    await assert.rejects(buildBlog({ root }), /lamp\.md.*找不到书签 missing/);
+    await post('lamp.md', frontmatter({}, fence('bookmark: side')));
+    await rm(join(directory, 'side.png'));
+    await assert.rejects(buildBlog({ root }), /lamp\.md.*side\.png/);
+    await writeFile(join(directory, 'scene.json'), JSON.stringify({ ...manifest, schematic: '../outside.litematic' }));
+    await assert.rejects(buildBlog({ root }), /lamp\.md/);
+    await post('lamp.md', frontmatter({}, '```mc-scene\nscene: ../outside\n```'));
+    await assert.rejects(buildBlog({ root }), /lamp\.md.*scene ID|lamp\.md.*场景 ID/);
+  });
+});
+
 await test('heading-free posts, first-paragraph excerpts and explicit summaries work without fabricated sections', async () => {
   await fixture(async ({ root, post, read, metadata }) => {
     await post('plain.md', '\uFEFF' + frontmatter({}, '一个 **简单** 的开头。\n\n不应该进入摘要的第二段。').replaceAll('\n', '\r\n'));

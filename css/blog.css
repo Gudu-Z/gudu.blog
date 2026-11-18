@@ -69,7 +69,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .post-card:last-child { border-bottom: 1px solid var(--line); }
 .post-number { font: 12px "Consolas", monospace; color: light-dark(#687585, #657282); padding-top: 3px; min-width: 23px; }
 .post-card-body { min-width: 0; flex: 1; }
-.post-card-meta, .article-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; color: var(--muted); font-size: 11px; line-height: 1.8; }
+.post-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; color: var(--muted); font-size: 11px; line-height: 1.8; }
 .post-category { color: light-dark(#b5432a, #e7907a); }
 .post-title { font-size: 23px; letter-spacing: -0.025em; line-height: 1.55; font-weight: 500; margin: 14px 0 12px; overflow-wrap: anywhere; }
 .post-title a:hover { color: light-dark(#c0401f, #f69b85); }
@@ -155,74 +155,196 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .header-theme:is([aria-pressed="true"], :hover, :focus-visible) .theme-jet { opacity: 1; }
 .header-theme:hover { color: var(--red); }
 .site-footer > a:last-child:not(:first-child) { font-size: 11px; color: var(--muted); margin-left: auto; }
-.article-shell { width: min(1080px, 85%); margin: 0 auto; padding: 58px 0 80px; }
-.article-back { color: var(--muted); font-size: 12px; display: inline-block; padding-block: 10px; margin-bottom: 40px; }
-.article-back:hover { color: var(--red); }
-.article-header { max-width: 810px; margin-bottom: 52px; }
-.article-title { font-family: inherit; font-size: clamp(29px, 4vw, 48px); letter-spacing: -0.035em; line-height: 1.4; font-weight: 600; margin: 20px 0; overflow-wrap: anywhere; }
-.article-deck { font-size: 16px; color: var(--muted); line-height: 1.9; }
-.article-meta { font-size: 12px; }
-/* Small square separators echo the orange mark without competing with it. */
-.article-meta > * + *::before { content: ""; display: inline-block; width: 3px; height: 3px; margin-right: 14px; vertical-align: middle; background: currentColor; opacity: 0.45; }
-.article-category { color: var(--red); transition: color 180ms; }
-.article-category:hover { color: light-dark(#c0401f, #f69b85); }
-.article-tags { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 20px; padding: 0; list-style: none; color: light-dark(#4d5864, #84909e); font-size: 12px; }
-.demo-notice { margin-top: 20px; line-height: 1.8; padding: 12px; }
-.article-layout { display: grid; grid-template-columns: minmax(0, 730px) 210px; gap: 70px; align-items: start; }
-.article-body { min-width: 0; font-size: 16px; line-height: 2; color: light-dark(#1d232a, #c6ced7); overflow-wrap: anywhere; }
-.article-body h2 { color: var(--paper); font-size: 25px; line-height: 1.6; font-weight: 600; letter-spacing: -0.02em; margin: 48px 0 20px; scroll-margin-top: 40px; }
-.article-section:first-child h2 { margin-top: 0; }
-.article-body > :first-child { margin-top: 0; }
-.article-body h3 { font-size: 20px; color: var(--paper); margin: 32px 0 16px; }
+/* The article page wears the home page's HUD on its frame: the calibration
+   rule (an orange start and small ticks), Chinese field names over small code
+   names, registration corners, mono numbering and the orange square. The
+   text itself stays quiet, about forty characters to a line. */
+.article-page {
+  --mono: "Consolas", "SFMono-Regular", monospace;
+  --rule: light-dark(rgb(24 28 32 / 15%), rgb(210 216 222 / 15%));
+  --rule-strong: light-dark(rgb(25 31 36 / 34%), rgb(205 213 220 / 34%));
+  --hairline: light-dark(rgb(15 20 24 / 6%), rgb(222 228 234 / 6%));
+  --label: light-dark(#323a42, #a8b2bb);
+  --code-name: light-dark(#555e67, #7f8993);
+  --signal-text: light-dark(#c0401f, #f69b85);
+  --surface: light-dark(rgb(228 231 235 / 72%), rgb(13 17 23 / 72%));
+  /* Two short corners, top left and bottom right, as on the home page panels. */
+  --registration:
+    linear-gradient(var(--rule-strong) 0 0) left top / 14px 1px no-repeat,
+    linear-gradient(var(--rule-strong) 0 0) left top / 1px 14px no-repeat,
+    linear-gradient(var(--rule-strong) 0 0) right bottom / 14px 1px no-repeat,
+    linear-gradient(var(--rule-strong) 0 0) right bottom / 1px 14px no-repeat;
+  /* A 1px rule with an orange start and a 5px tick at either end, as in About. */
+  --calibration:
+    linear-gradient(90deg, var(--red) 0 24px, var(--rule) 24px) 0 2px / 100% 1px no-repeat,
+    linear-gradient(var(--red) 0 0) 0 0 / 1px 5px no-repeat,
+    linear-gradient(var(--rule-strong) 0 0) 100% 0 / 1px 5px no-repeat;
+  /* The root paints the page colour, so the opening sky can sit beneath the body. */
+  background: transparent;
+}
+/* The site's still star sky (js/star-sky.js) over the article's opening only;
+   it fades out before the text. By day it shows at 40%, as in the chapters. */
+.article-sky { position: absolute; top: 0; left: 0; z-index: -1; width: 100%; height: min(780px, 100svh); pointer-events: none; -webkit-mask-image: linear-gradient(#000 35%, transparent 92%); mask-image: linear-gradient(#000 35%, transparent 92%); }
+:root[data-theme="light"] .article-sky { opacity: 0.4; }
+.article-shell { --article-width: min(1010px, 85%); width: var(--article-width); margin: 0 auto; padding: 48px 0 80px; }
+.article-back { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 60px; padding-block: 8px; color: var(--muted); font-size: 12px; letter-spacing: 0.06em; transition: color 180ms ease; }
+.article-back > span { color: var(--red); font-family: var(--mono); transition: transform 180ms ease; }
+.article-back:hover { color: var(--paper); }
+.article-back:hover > span { transform: translateX(-3px); }
+.article-header { margin-bottom: 76px; }
+/* The title ends on the chapters' orange square. */
+.article-title { margin: 0 0 44px; font-family: inherit; font-size: clamp(34px, 4.1vw, 56px); line-height: 1.25; letter-spacing: 0.02em; font-weight: 600; overflow-wrap: anywhere; text-wrap: balance; }
+.article-title::after { content: ""; display: inline-block; width: 0.17em; height: 0.17em; margin-left: 0.12em; background: var(--red); }
+.article-deck { max-width: 720px; margin: -20px 0 44px; color: var(--muted); font-size: 17px; line-height: 1.9; }
+/* The facts form a strip of four fields under a calibration rule, with a
+   tick over each field boundary. */
+.article-facts { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; padding-top: 5px; border-bottom: 1px solid var(--rule); }
+.article-facts::before { content: ""; position: absolute; inset: 0 0 auto; height: 5px; pointer-events: none; background: var(--calibration), linear-gradient(var(--rule-strong) 0 0) 25% 0 / 1px 5px no-repeat, linear-gradient(var(--rule-strong) 0 0) 50% 0 / 1px 5px no-repeat, linear-gradient(var(--rule-strong) 0 0) 75% 0 / 1px 5px no-repeat; }
+.article-facts > div { min-width: 0; padding: 14px 20px 16px; }
+.article-facts > div:first-child { padding-left: 0; }
+.article-facts > div + div { border-left: 1px solid var(--rule); }
+.article-facts dt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px; color: var(--label); font-size: 12px; line-height: 1.5; letter-spacing: 0.04em; }
+.article-facts dt > span { color: var(--code-name); font: 9px/1.5 var(--mono); letter-spacing: 0.08em; white-space: nowrap; }
+.article-facts dd { margin: 7px 0 0; color: var(--paper); font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
+.article-facts time { font: 14px/1.6 var(--mono); letter-spacing: 0.04em; }
+.article-facts-empty { color: var(--code-name); }
+.article-category { color: var(--signal-text); transition: color 180ms; }
+.article-category:hover { color: var(--red); }
+.article-tags { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 0; list-style: none; }
+.demo-notice { margin: 24px 0 0; line-height: 1.8; padding: 12px; }
+.article-layout { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
+/* The text keeps a 720px measure (about forty characters). Where the column
+   is wide enough, section numbers hang in a 150px left gutter; a replay
+   figure and the closing strip span the whole column. Body children only set
+   their block margins, so the gutter stays theirs. */
+.article-body { container: article / inline-size; --measure: 720px; counter-reset: section figure; min-width: 0; color: light-dark(#1d232a, #c6ced7); font-size: 17px; line-height: 1.9; letter-spacing: 0.02em; overflow-wrap: anywhere; }
+.article-body > * { max-width: var(--measure); margin-inline-start: var(--gutter, 0px); }
+.article-body > :is(.mc-scene, .article-end) { max-width: none; margin-inline-start: 0; }
+.article-body > :first-child, .article-body > h2:first-child, .article-section:first-child h2 { margin-top: 0; }
+.article-body p { margin-block: 0 1.35em; }
+/* The opening paragraph leads in a little larger. */
+.article-body > p:first-child { color: var(--paper); font-size: 19px; line-height: 1.85; margin-block-end: 1.5em; }
+.article-body h2 { position: relative; counter-increment: section; margin-block: 84px 22px; color: var(--paper); font-size: 26px; font-weight: 600; line-height: 1.5; letter-spacing: 0.02em; scroll-margin-top: 40px; }
+.article-body h2::before { content: counter(section, decimal-leading-zero); display: block; margin-bottom: 6px; color: var(--red); font: 12px/1.5 var(--mono); letter-spacing: 0.1em; }
+.article-body h3 { position: relative; margin-block: 48px 14px; color: var(--paper); font-size: 19px; line-height: 1.6; letter-spacing: 0.02em; }
 .article-body :is(h3, h4, h5, h6) { scroll-margin-top: 40px; }
-.article-body :is(h4, h5, h6) { color: var(--paper); font-size: 17px; margin: 28px 0 14px; }
-.article-body p { margin: 0 0 24px; }
-.article-body ul, .article-body ol { padding-left: 1.5em; margin-block: 20px 28px; }
-.article-body li { padding-left: 5px; margin-bottom: 9px; }
-.article-body li::marker { color: light-dark(#2c3947, #a5b4c6); }
-.article-body a { color: light-dark(#c0401f, #f69b85); text-decoration: underline; text-underline-offset: 4px; }
+.article-body :is(h4, h5, h6) { margin-block: 32px 12px; color: var(--paper); font-size: 17px; }
+@container article (width >= 880px) {
+  .article-body > * { --gutter: 150px; }
+  /* The number hangs at the column's left edge, joined to its title by a leader. */
+  .article-body h2::before { position: absolute; top: calc(0.75em - 9px); left: calc(-1 * var(--gutter)); margin: 0; }
+  .article-body h2::after { content: ""; position: absolute; top: 0.75em; left: calc(34px - var(--gutter)); width: calc(var(--gutter) - 58px); height: 1px; background: linear-gradient(90deg, var(--rule-strong), var(--rule)); }
+  .article-body h3::before { content: ""; position: absolute; top: 0.8em; left: -24px; width: 9px; height: 1px; background: var(--rule-strong); }
+}
+.article-body strong { color: var(--paper); font-weight: 600; }
+.article-body ul, .article-body ol { margin-block: 0 1.6em; padding-left: 1.3em; }
+.article-body ul { list-style: square; }
+.article-body ol { list-style: decimal-leading-zero; padding-left: 2.2em; }
+.article-body li { margin-bottom: 0.5em; padding-left: 0.3em; }
+.article-body li::marker { color: var(--code-name); }
+.article-body ol > li::marker { font-family: var(--mono); font-size: 0.8em; letter-spacing: 0.04em; }
+.article-body li > :is(ul, ol) { margin-block: 0.5em; }
+/* Links keep the text colour over an orange underline. */
+.article-body a { color: var(--paper); text-decoration: underline; text-decoration-thickness: 1px; text-decoration-color: color-mix(in srgb, var(--red) 75%, transparent); text-underline-offset: 5px; transition: color 160ms ease, text-decoration-color 160ms ease; }
+.article-body a:hover { color: var(--signal-text); text-decoration-color: currentColor; }
 .article-body img { display: block; max-width: 100%; height: auto; margin: 24px auto; }
-.article-body hr { border: 0; border-top: 1px solid var(--line); margin: 36px 0; }
-.article-body :not(pre) > code { background: light-dark(#04040408, #ffffff08); padding: .15em .4em; border-radius: 2px; }
-.article-body li > :is(ul, ol) { margin-block: 10px; }
-.markdown-table { max-width: 100%; overflow-x: auto; margin: 28px 0; }
+/* An image on its own keeps its pixels and gains the portrait's two corners. */
+.article-body p:has(> img:only-child) { position: relative; width: fit-content; margin-block: 44px; }
+.article-body p:has(> img:only-child) img { margin: 0; }
+.article-body p:has(> img:only-child)::before, .article-body p:has(> img:only-child)::after { content: ""; position: absolute; width: 14px; height: 14px; border: solid var(--rule-strong); pointer-events: none; }
+.article-body p:has(> img:only-child)::before { top: -6px; left: -6px; border-width: 1px 0 0 1px; }
+.article-body p:has(> img:only-child)::after { right: -6px; bottom: -6px; border-width: 0 1px 1px 0; }
+/* A break is a short ruler: end ticks and an orange centre. */
+.article-body hr { height: 5px; margin-block: 56px; border: 0; background: linear-gradient(var(--rule) 0 0) 0 2px / 100% 1px no-repeat, linear-gradient(var(--rule-strong) 0 0) 0 0 / 1px 5px no-repeat, linear-gradient(var(--red) 0 0) 50% 0 / 1px 5px no-repeat, linear-gradient(var(--rule-strong) 0 0) 100% 0 / 1px 5px no-repeat; }
+.article-body code { font: 0.86em/1.8 var(--mono); }
+.article-body :not(pre) > code { padding: 0.1em 0.42em; border: 1px solid var(--rule); background: light-dark(#04040406, #ffffff06); color: light-dark(#161b20, #d3dae1); font-size: 0.84em; }
+/* Tables keep horizontal rules only, under a calibration rule. */
+.markdown-table { position: relative; max-width: 100%; overflow-x: auto; margin-block: 34px; padding-top: 5px; }
+.markdown-table::before { content: ""; position: absolute; inset: 0 0 auto; height: 5px; pointer-events: none; background: var(--calibration); }
 .markdown-table:focus-visible { outline: 1px solid var(--red); outline-offset: 4px; }
-.markdown-table table { border-collapse: collapse; width: 100%; font-size: 14px; }
-.markdown-table :is(th, td) { border: 1px solid var(--line); padding: 10px 14px; text-align: left; min-width: 90px; }
-.markdown-table th { color: var(--paper); background: light-dark(#04040405, #ffffff05); font-weight: 600; }
-.article-body blockquote { border-left: 2px solid var(--red); padding: 12px 24px; margin: 30px 0; background: light-dark(#f0644606, #f0644606); color: light-dark(#212932, #bdc7d3); }
+.markdown-table table { border-collapse: collapse; width: 100%; font-size: 15px; line-height: 1.7; }
+.markdown-table :is(th, td) { min-width: 0; padding: 11px 28px 11px 0; border-bottom: 1px solid var(--rule); text-align: left; }
+.markdown-table th { color: var(--label); font-size: 12px; font-weight: 400; letter-spacing: 0.06em; }
+.markdown-table td:first-child { color: var(--paper); white-space: nowrap; }
+/* Quotes hang off a hairline whose top is the orange start of a rule. */
+.article-body blockquote { position: relative; margin-block: 36px; margin-inline-end: 0; padding: 2px 0 2px 26px; border-left: 1px solid var(--rule); color: light-dark(#212932, #bdc7d3); }
+.article-body blockquote::before { content: ""; position: absolute; top: 0; left: -1px; width: 1px; height: 26px; background: var(--red); }
 .article-body blockquote p:last-child { margin-bottom: 0; }
-.article-callout { border: 1px solid light-dark(#f064462e, #f064462e); background: light-dark(#f0644606, #f0644606); padding: 20px 24px; margin: 28px 0; font-size: 14px; }
+.article-callout { margin-block: 28px; padding: 20px 24px; border: 1px solid light-dark(#f064462e, #f064462e); background: light-dark(#f0644606, #f0644606); font-size: 15px; }
 .article-callout p:last-child { margin-bottom: 0; }
-.code-block { position: relative; }
-.code-language { position: absolute; right: 12px; top: 5px; font: 9px "Consolas", monospace; color: light-dark(#455465, #8595a8); }
-.article-end { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 45px; padding-top: 28px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+/* Code reads as a terminal panel: two registration corners, a language strip
+   and a copy button that js/article.js adds. */
+.code-block { position: relative; margin-block: 30px 34px; background: var(--registration), light-dark(#e2e6ea, #0d1219); box-shadow: inset 0 0 0 1px var(--hairline); }
+.code-language { display: block; padding: 9px 20px 8px; border-bottom: 1px solid var(--rule); color: var(--code-name); font: 10px/1.5 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; }
+.article-body pre { overflow-x: auto; margin: 0; padding: 18px 20px 20px; border: 0; background: transparent; tab-size: 2; line-height: 1.75; letter-spacing: 0; white-space: pre; }
+.article-body pre code { color: light-dark(#181e23, #cfd6dd); font-size: 13px; line-height: 1.75; }
+.code-block.has-copy:not(:has(> .code-language)) pre { padding-top: 38px; }
+.code-copy { position: absolute; top: 3px; right: 8px; padding: 5px 8px; border: 0; background: none; color: var(--code-name); font-size: 11px; line-height: 1.5; letter-spacing: 0.06em; transition: color 160ms ease; }
+.code-copy:hover { color: var(--paper); }
+.code-copy.is-done { color: var(--signal-text); }
+/* The close mirrors the header strip: the same calibration rule over the end
+   mark and its code name. */
+.article-end { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 96px; padding-top: 28px; color: var(--muted); font-size: 13px; }
+.article-end::before { content: ""; position: absolute; inset: 0 0 auto; height: 5px; pointer-events: none; background: var(--calibration); }
 .article-end p { margin: 0; }
 .article-end-mark { flex: none; width: 6px; height: 6px; background: var(--red); }
-.article-body code { font: 0.86em/1.8 "Consolas", "SFMono-Regular", monospace; }
-.article-body pre { overflow-x: auto; padding: 22px; margin: 28px 0; border: 1px solid var(--line); background: light-dark(#e2e6ea, #0d1219); tab-size: 2; line-height: 1.8; white-space: pre; }
-.article-toc { position: sticky; top: 35px; border-left: 1px solid var(--line); padding-left: 22px; font-size: 12px; }
-.article-toc h2, .article-toc h3, .toc-label { font-size: 11px; color: light-dark(#1b222a, #c6d0db); font-weight: 500; letter-spacing: 0.1em; margin: 0 0 20px; }
-.article-toc ol, .article-toc ul { padding: 0; margin: 0; list-style: none; }
-.article-toc li { margin: 0 0 14px; line-height: 1.7; }
-.article-toc .toc-subheading { padding-left: 12px; font-size: 11px; }
-.article-toc a { color: var(--muted); }
-.article-toc a:hover, .article-toc a.is-active { color: light-dark(#c0401f, #f69b85); }
+.article-end-code { margin-left: 12px; color: var(--code-name); font: 9px/1 var(--mono); letter-spacing: 0.16em; }
 .article-tools { margin-left: auto; text-align: right; }
-.copy-link { background: none; border: 1px solid var(--line); padding: 10px 14px; font-size: 11px; }
-.copy-link:hover { border-color: var(--red); }
+.copy-link { padding: 10px 16px; border: 1px solid var(--rule); background: transparent; color: var(--label); font-size: 12px; letter-spacing: 0.04em; transition: border-color 180ms ease, color 180ms ease; }
+.copy-link > span { margin-left: 6px; color: var(--red); }
+.copy-link:hover { border-color: var(--red); color: var(--paper); }
 .copy-status { display: block; margin-top: 10px; color: var(--muted); font-size: 11px; line-height: 1.8; }
 .copy-status:empty { display: none; }
-.article-pagination { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; border-top: 1px solid var(--line); padding-top: 32px; margin-top: 65px; }
-.article-pagination a { display: flex; flex-direction: column; gap: 10px; font-size: 15px; line-height: 1.7; }
-.article-pagination a:hover { color: light-dark(#c0401f, #f69b85); }
-.article-pagination a span:first-child { color: var(--muted); font-size: 11px; }
-.article-next { text-align: right; grid-column: 2; }
-.article-pagination .is-unavailable { display: flex; flex-direction: column; gap: 10px; color: light-dark(#5f6a79, #707c8b); font-size: 11px; line-height: 1.7; }
-.article-pagination .is-unavailable strong { font-size: 13px; font-weight: 400; }
-.article-pagination a strong { font-weight: 500; }
+/* The neighbours are two panels; an end with no article is a dashed outline. */
+.article-pagination { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 44px; }
+.article-pagination > * { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 14px; min-height: 108px; padding: 20px 24px 22px; background: var(--registration), var(--surface); box-shadow: inset 0 0 0 1px var(--hairline); line-height: 1.7; }
+.article-pagination > * > span:first-child { color: var(--label); font-size: 12px; letter-spacing: 0.04em; }
+.article-pagination b { color: var(--red); font-weight: 400; margin-inline: 0 8px; transition: transform 180ms ease; display: inline-block; }
+.article-next b { margin-inline: 8px 0; }
+.article-pagination i { margin-left: 4px; color: var(--code-name); font: normal 9px/1 var(--mono); letter-spacing: 0.12em; }
+.article-pagination strong { color: var(--paper); font-size: 17px; font-weight: 500; transition: color 180ms ease; }
+.article-pagination a:hover strong { color: var(--signal-text); }
+.article-prev:hover b { transform: translateX(-3px); }
+.article-next:hover b { transform: translateX(3px); }
+.article-next { grid-column: 2; text-align: right; }
+.article-pagination .is-unavailable { background: none; box-shadow: none; outline: 1px dashed var(--rule); outline-offset: -1px; }
+.article-pagination .is-unavailable strong { color: var(--code-name); font-size: 14px; font-weight: 400; }
+/* On the contents rail, js/article.js moves an orange cursor between the
+   stations and keeps a readout of how much has been read. */
+.article-toc { position: sticky; top: 44px; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+.toc-label { display: flex; flex-direction: column; gap: 3px; margin: 0 0 16px; color: var(--label); font-size: 12px; font-weight: 400; letter-spacing: 0.06em; }
+.toc-label > span { color: var(--code-name); font: 9px/1.4 var(--mono); letter-spacing: 0.08em; }
+.article-toc nav { position: relative; padding: 4px 0 6px 20px; }
+.article-toc nav::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 4px; background: linear-gradient(var(--rule-strong) 0 0) left / 1px 100% no-repeat, repeating-linear-gradient(var(--rule) 0 1px, transparent 1px 8px) left top / 4px 100% no-repeat; }
+.article-toc ol { margin: 0; padding: 0; list-style: none; counter-reset: toc; }
+.article-toc li { position: relative; margin: 0 0 18px; line-height: 1.6; }
+.article-toc li:last-child { margin-bottom: 0; }
+.article-toc li::before { content: ""; position: absolute; top: 0.62em; left: -20px; width: 9px; height: 1px; background: var(--rule-strong); }
+.article-toc li:not(.toc-subheading) { counter-increment: toc; }
+.article-toc li:not(.toc-subheading)::before { top: 0.5em; }
+.article-toc li:not(.toc-subheading) > a::before { content: counter(toc, decimal-leading-zero); display: block; margin-bottom: 1px; color: var(--code-name); font: 10px/1.4 var(--mono); letter-spacing: 0.1em; }
+.article-toc .toc-subheading { margin-top: -8px; padding-left: 12px; font-size: 11px; }
+.article-toc .toc-subheading::before { width: 5px; }
+.article-toc a { color: var(--muted); transition: color 160ms ease; }
+.article-toc a:hover, .article-toc a.is-active { color: var(--paper); }
+.article-toc a.is-active::before { color: var(--red); }
+.toc-cursor { position: absolute; top: 0; left: -3px; width: 7px; height: 9px; background: var(--red); clip-path: polygon(0 0, 100% 50%, 0 100%); transform: translateY(calc(var(--toc-y, 0px) - 50%)); pointer-events: none; }
+.toc-readout { display: flex; justify-content: space-between; gap: 12px; margin: 16px 0 0; padding-top: 9px; border-top: 1px solid var(--rule); color: var(--code-name); font: 10px/1.4 var(--mono); letter-spacing: 0.14em; }
+.toc-readout output { color: var(--paper); letter-spacing: 0.06em; }
 .reading-progress { position: fixed; top: 0; left: 0; width: 100%; height: 2px; z-index: 30; pointer-events: none; }
 .reading-progress span { display: block; width: 0; height: 100%; background: var(--red); }
+/* A short calibration as the page opens: the header rule draws in and the
+   fields settle. Reduced motion shows them at once. */
+@media (prefers-reduced-motion: no-preference) {
+  .article-facts::before { animation: article-rule-draw 620ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both; }
+  .article-facts > div { animation: article-field-in 420ms ease both; }
+  .article-facts > div:nth-child(1) { animation-delay: 260ms; }
+  .article-facts > div:nth-child(2) { animation-delay: 320ms; }
+  .article-facts > div:nth-child(3) { animation-delay: 380ms; }
+  .article-facts > div:nth-child(4) { animation-delay: 440ms; }
+}
+@keyframes article-rule-draw { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
+@keyframes article-field-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 /* The lost page floats in the site's own star sky (js/star-sky.js). The body
    leaves its background to the root, which is painted beneath the sky. */
 .not-found-page { background: transparent; }
@@ -238,8 +360,42 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 @media (max-width: 1000px) {
   .journal-layout { grid-template-columns: minmax(0, 1fr) 210px; gap: 36px; }
   .about-section { gap: 60px; }
-  .article-layout { grid-template-columns: minmax(0, 1fr) 170px; gap: 40px; }
-  .article-shell { width: 85%; }
+}
+/* The original body, gutter and contents occupied 730 + 70 + 210px.
+   Keep that span for the article and fit the contents on its right. */
+@media (width > 900px) {
+  .article-shell:has(> .article-layout > .article-toc) {
+    --toc-width: clamp(100px, 11vw, 210px);
+    --toc-gap: clamp(12px, 1.5vw, 32px);
+    --toc-space: calc(var(--toc-width) + var(--toc-gap));
+    --layout-width: calc(var(--article-width) + var(--toc-space));
+    width: min(98%, var(--layout-width));
+    /* Preserve the former left edge while the right gutter can fit the contents. */
+    margin-inline-start: clamp(1%, max(7.5%, calc((100% - 1080px) / 2)), calc(99% - var(--layout-width)));
+  }
+  .article-layout:has(> .article-toc) {
+    grid-template-columns: minmax(0, 1fr) var(--toc-width);
+    column-gap: var(--toc-gap);
+  }
+  .article-shell > :is(.article-header, .article-pagination, .article-comments) {
+    max-width: calc(100% - var(--toc-space, 0px));
+  }
+  /* The contents rail shows the progress, so the top bar steps aside. */
+  .article-page:has(.article-toc) .reading-progress { display: none; }
+}
+@media (max-width: 900px) {
+  .article-layout { row-gap: 28px; }
+  /* The contents fold into one swipeable row so the text starts on the first screen. */
+  .article-toc { grid-row: 1; position: static; display: flex; align-items: baseline; gap: 18px; width: 100%; border-block: 1px solid var(--line); padding: 12px 0; }
+  .article-toc .toc-label { flex: none; margin: 0; }
+  .article-toc .toc-label > span, .article-toc nav::before, .toc-cursor, .toc-readout { display: none; }
+  .article-toc nav { min-width: 0; padding: 0; overflow-x: auto; scrollbar-width: none; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
+  .article-toc nav::-webkit-scrollbar { display: none; }
+  .article-toc ol { display: flex; gap: 20px; padding-right: 24px; white-space: nowrap; }
+  .article-toc li { margin: 0; }
+  .article-toc li::before { display: none; }
+  .article-toc li:not(.toc-subheading) > a::before { content: counter(toc, decimal-leading-zero) " "; display: inline; margin: 0; font-size: 10px; }
+  .article-toc .toc-subheading { margin-top: 0; padding-left: 0; font-size: 12px; }
 }
 @media (max-width: 720px) {
   html { scroll-padding-top: 28px; }
@@ -301,24 +457,29 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
   .archive-item a { gap: 14px; font-size: 12px; }
   .archive-year li a { gap: 14px; font-size: 12px; }
   .archive-category { display: none; }
-  .article-shell { width: 86%; padding-top: 25px; }
-  .article-back { margin-bottom: 25px; }
-  .article-header { margin-bottom: 32px; }
-  .article-title { font-size: 31px; }
-  .article-deck { font-size: 14px; }
-  .article-layout { display: flex; flex-direction: column; gap: 28px; }
-  /* The contents fold into one swipeable row so the text starts on the first screen. */
-  .article-toc { order: -1; position: static; display: flex; align-items: baseline; gap: 18px; width: 100%; border-left: 0; border-block: 1px solid var(--line); padding: 12px 0; }
-  .article-toc .toc-label { flex: none; margin: 0; }
-  .article-toc nav { min-width: 0; overflow-x: auto; scrollbar-width: none; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
-  .article-toc nav::-webkit-scrollbar { display: none; }
-  .article-toc ol { display: flex; gap: 20px; padding-right: 24px; white-space: nowrap; }
-  .article-toc li { margin: 0; }
-  .article-toc .toc-subheading { padding-left: 0; }
-  .article-body { width: 100%; font-size: 15px; }
-  .article-body h2 { font-size: 23px; }
-  .article-body pre { padding: 16px; }
-  .article-pagination { gap: 24px; }
-  .article-pagination a { font-size: 13px; }
+  .article-shell { width: 86%; padding-top: 22px; }
+  .article-back { margin-bottom: 30px; }
+  .article-header { margin-bottom: 44px; }
+  .article-title { margin-bottom: 30px; font-size: 32px; }
+  .article-deck { margin: -12px 0 30px; font-size: 15px; }
+  /* Two fields to a row; the ticks follow the one remaining boundary. */
+  .article-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .article-facts::before { background: var(--calibration), linear-gradient(var(--rule-strong) 0 0) 50% 0 / 1px 5px no-repeat; }
+  .article-facts > div { padding: 12px 14px 13px; }
+  .article-facts > div:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .article-facts > div:nth-child(n + 3) { border-top: 1px solid var(--rule); }
+  .article-body { width: 100%; font-size: 16px; }
+  .article-body > p:first-child { font-size: 17px; }
+  .article-body h2 { margin-block: 60px 18px; font-size: 22px; }
+  .article-body h3 { font-size: 18px; }
+  .article-body pre { padding: 14px 16px 16px; }
+  .article-body pre code { font-size: 12px; }
+  .markdown-table table { font-size: 14px; }
+  .markdown-table :is(th, td) { padding-right: 18px; }
+  .article-end { margin-top: 64px; }
+  .article-end-code { display: none; }
+  .article-pagination { gap: 12px; }
+  .article-pagination > * { min-height: 92px; padding: 16px 16px 18px; }
+  .article-pagination strong { font-size: 15px; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
