@@ -324,7 +324,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   const details = element('div', '', 'mc-state');
   const shareStatus = element('span', '', 'mc-share-status');
   shareStatus.setAttribute('role', 'status');
-  let playing = false, ready = false, frame = 0;
+  let playing = false, ready = false, frame = 0, tallest = 0;
   let speed = getDefaultSpeed(options.ticksPerSecond);
   // The list starts at the phase level; a double-click opens a row's next level.
   let mode = 'phase', cursor = axis.forStep(0);
@@ -530,6 +530,8 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     play.textContent = '播放';
     play.disabled = !hasTime || !ready;
     cancelAnimationFrame(frame);
+    tallest = 0;
+    inspect.style.minHeight = '';
     if (was) options.onPlaying?.(false);
   }
 
@@ -561,6 +563,16 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
       fields.append(field('上级', 'PARENT', parent));
     }
     details.replaceChildren(fields);
+    // While the replay plays, the details keep the height of the tallest event
+    // shown so far, so the card (or, on a narrow page, everything below the
+    // list) does not jump with every event; stopping lets them fit again.
+    if (playing) {
+      const height = inspect.offsetHeight;
+      if (height > tallest) {
+        tallest = height;
+        inspect.style.minHeight = height + 'px';
+      }
+    }
     shareStatus.replaceChildren();
     onStep(step, resetCamera, { tick, gap, playing });
   }

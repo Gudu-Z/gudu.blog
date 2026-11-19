@@ -330,6 +330,9 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
       const nextRow = topIndex + 1 < rows.length ? rows.rowAt(topIndex + 1) : null;
       const push = nextRow && nextRow.step === undefined ? Math.min(0, (topIndex + 1 - firstVisible - 1) * rowHeight) : 0;
       pin.style.transform = push ? 'translateY(' + push + 'px)' : '';
+      // What is pushed above the list is cut away, so the station slides
+      // under the list's top edge instead of over the settings line.
+      pin.style.clipPath = push ? 'inset(' + -push + 'px 0 -2px 0)' : '';
     }
     // The current row is out of view once its middle (where the cursor
     // points) leaves the window; the pill then names its tick.

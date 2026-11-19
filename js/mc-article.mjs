@@ -141,7 +141,7 @@ function mountFigure(figure) {
       }
       const bookmark = scene.bookmarks?.[figure.dataset.bookmark] ?? {};
       const replay = scene.schematic ? null : createReplay(scene);
-      let framePending = false, frameLoading = false, resetPending = false, focus;
+      let framePending = false, frameLoading = false, resetPending = false, playingNow = false, focus;
       // Keep at most one geometry build in flight. The clock may pass several
       // ticks during a build; submit the latest block and piston state when it finishes.
       function submitLatest() {
@@ -169,7 +169,10 @@ function mountFigure(figure) {
           submitLatest();
         }, () => viewer?.getCamera(), {
           ticksPerSecond: figure.hasAttribute('data-speed') ? Number(figure.dataset.speed) : scene.playbackSpeed,
-          onPlaying: value => callout?.setPlaying(value),
+          onPlaying: value => {
+            playingNow = value;
+            callout?.setPlaying(value);
+          },
         });
         callout = mountCallout(stage, playback.details);
         const preferred = requestedStep ?? bookmark.step ?? 0;
@@ -177,11 +180,18 @@ function mountFigure(figure) {
         playback.seek(useRequest ? preferred : bookmark.step ?? 0, false, useRequest ? requestedTick : bookmark.tick);
       }
       status.textContent = '正在载入 3D 预览…';
+      // Every step rebuilds the view, usually within a frame or two and, while
+      // the replay plays, over and over. Announcing each rebuild would make the
+      // line under the view, and the article below it, jump; only a slow update
+      // while the replay stands still is worth a word.
+      let slowUpdate = 0;
+      signal.addEventListener('abort', () => clearTimeout(slowUpdate), { once: true });
       const onStatus = event => {
         if (signal.aborted) return;
         if (['waiting', 'loading', 'inactive', 'loaded', 'error'].includes(event.type)) {
           playback?.setReady(event.type === 'loaded');
         }
+        if (event.type !== 'loading') clearTimeout(slowUpdate);
         if (event.type === 'error') {
           frameLoading = false;
           showFailure(event.message || '3D 预览加载失败。');
@@ -194,7 +204,10 @@ function mountFigure(figure) {
           submitLatest();
         } else if (event.type === 'loading') {
           frameLoading = true;
-          status.textContent = '正在更新 3D 预览…';
+          clearTimeout(slowUpdate);
+          slowUpdate = setTimeout(() => {
+            if (!signal.aborted && frameLoading && !playingNow && !status.textContent) status.textContent = '正在更新 3D 预览…';
+          }, 800);
         } else if (event.type === 'inactive') {
           frameLoading = false;
           playback?.stop();

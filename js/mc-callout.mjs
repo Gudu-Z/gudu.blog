@@ -77,6 +77,9 @@ export function mountCallout(stage, details) {
     const cw = card.offsetWidth, ch = card.offsetHeight;
     const spot = !playing && box ? choose(width, height, cw, ch) : null;
     const left = spot ? spot.left : margin, top = spot ? spot.top : height - ch - margin;
+    // Docked, the card follows its own height at once: easing the move would
+    // leave a taller event's card hanging below the view for a moment.
+    card.classList.toggle('is-docked', !spot);
     card.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
     leader.style.display = spot ? '' : 'none';
     if (spot) {
