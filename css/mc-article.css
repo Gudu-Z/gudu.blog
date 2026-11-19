@@ -13,6 +13,10 @@
   margin: 60px 0 52px;
   min-width: 0;
   scroll-margin-top: 2rem;
+  /* The black glass of what floats over the 3D view: the tree's sheet and the
+     controls, and, denser as it sits on the blocks, the event card. */
+  --mc-glass: light-dark(rgb(255 255 255 / 62%), rgb(0 0 0 / 55%));
+  --mc-glass-dense: light-dark(rgb(255 255 255 / 82%), rgb(0 0 0 / 72%));
 }
 .mc-scene::before, .mc-scene::after { padding-bottom: 12px; font: 10px/1.4 var(--mono); letter-spacing: 0.16em; }
 .mc-scene::before { content: "FIG." counter(figure, decimal-leading-zero); grid-area: 1 / 1; color: var(--red); font-size: 11px; letter-spacing: 0.1em; }
@@ -75,7 +79,9 @@
   z-index: 3;
   width: min(270px, calc(100% - 44px));
   padding: 10px 12px 11px;
-  background: var(--registration), light-dark(rgb(231 234 238 / 90%), rgb(11 15 20 / 90%));
+  background: var(--registration), var(--mc-glass-dense);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   box-shadow: inset 0 0 0 1px var(--rule);
 }
 .mc-callout.is-moving { transition: transform 160ms ease; }
@@ -177,6 +183,11 @@
 .mc-actions > button:nth-child(2) { border-color: color-mix(in srgb, var(--red) 60%, transparent); color: var(--signal-text); }
 .mc-actions > button:nth-child(2):hover:enabled { border-color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); color: var(--signal-text); }
 .mc-scene > [data-mc-open] { padding: 4px 10px; font-size: 11px; }
+/* Line icons (js/mc-timeline.mjs) for the transport, the links and the
+   settings, in the HUD's thin stroke; the triangles are filled. */
+.mc-icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.mc-icon:is([data-icon="play"], [data-icon="prev"], [data-icon="next"]) path:last-child { fill: currentColor; }
+.mc-scene .mc-icon-button { display: inline-grid; place-items: center; padding: 6px 10px; line-height: 0; }
 .mc-scene button:focus-visible, .mc-scene :is(input, select):focus-visible {
   outline: 2px solid var(--red);
   outline-offset: 1px;
@@ -251,7 +262,7 @@
   font-variant-numeric: tabular-nums;
 }
 /* Without nowrap the last label ("200") had no room and stacked one digit per line. */
-.mc-tick-scale > span { position: absolute; padding-top: .22rem; transform: translateX(-50%); white-space: nowrap; }
+.mc-tick-scale > span { position: absolute; left: var(--at, 0%); padding-top: .22rem; transform: translateX(-50%); white-space: nowrap; }
 .mc-tick-scale > span::before {
   content: '';
   position: absolute;
@@ -328,23 +339,10 @@
 }
 .mc-settings-summary::-webkit-details-marker { display: none; }
 .mc-settings-summary:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
-.mc-settings-key { color: var(--code-name); font-size: 11px; }
 .mc-settings-value { color: var(--paper); font: 12px/1.5 Consolas, "SFMono-Regular", monospace; }
-.mc-settings-value + .mc-settings-key::before { content: "·"; margin-right: 8px; color: var(--code-name); }
-.mc-settings-toggle { margin-left: auto; color: var(--label); font-size: 11px; transition: color 160ms ease; }
-.mc-settings-toggle::after {
-  content: "";
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin-left: 7px;
-  border: solid currentColor;
-  border-width: 0 1px 1px 0;
-  transform: translateY(-3px) rotate(45deg);
-  transition: transform 160ms ease;
-}
-.mc-settings[open] .mc-settings-toggle::after { transform: translateY(0) rotate(-135deg); }
-.mc-settings-summary:hover .mc-settings-toggle { color: var(--paper); }
+.mc-settings-dot { color: var(--code-name); }
+.mc-settings-summary > .mc-icon { align-self: center; margin-left: auto; color: var(--label); transition: color 160ms ease; }
+.mc-settings-summary:hover > .mc-icon, .mc-settings[open] .mc-settings-summary > .mc-icon { color: var(--signal-text); }
 
 /* The list sits in a frame that also holds the pill leading back to the
    current row once it has been scrolled out of view. */
@@ -368,7 +366,10 @@
 }
 .mc-scene .mc-list-return:hover { border-color: var(--red); color: var(--signal-text); }
 .mc-list-return[data-edge="top"] { top: calc(var(--mc-row-height) + 6px); }
-/* The pinned station: the game tick of the rows at the top of the list. */
+/* The pinned station: the game tick of the rows at the top of the list. It
+   has no fill: the rows passing under it are masked off the list instead
+   (--mc-pin-cover, set by js/mc-event-list.mjs), so the tree keeps one
+   ground from top to bottom. */
 .mc-list-pin {
   position: absolute;
   top: 1px;
@@ -381,10 +382,7 @@
   height: var(--mc-row-height);
   background:
     linear-gradient(var(--rule-strong) 0 0) calc(var(--mc-list-axis, 39px) - 6px) 50% / 15px 1px no-repeat,
-    var(--mc-ruler-axis),
-    light-dark(rgb(231 234 238 / 94%), rgb(11 15 20 / 94%));
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+    var(--mc-ruler-axis);
   box-shadow: 0 1px 0 var(--rule);
   color: var(--label);
   font-size: 12px;
@@ -398,6 +396,8 @@
   min-height: 0;
   margin: 0;
   padding: 0;
+  -webkit-mask-image: linear-gradient(transparent var(--mc-pin-cover, 0px), #000 var(--mc-pin-cover, 0px));
+  mask-image: linear-gradient(transparent var(--mc-pin-cover, 0px), #000 var(--mc-pin-cover, 0px));
   overflow: auto;
   overflow-anchor: none;
   overscroll-behavior: contain;
@@ -414,7 +414,8 @@
 @supports not selector(::-webkit-scrollbar) {
   :is(.mc-event-list, .mc-inspect, .mc-timeline) { scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent; }
 }
-.mc-event-list:focus-visible { outline: 2px solid var(--red); outline-offset: 1px; }
+/* Inset, as the mask clips anything drawn outside the list. */
+.mc-event-list:focus-visible { outline: 2px solid var(--red); outline-offset: -2px; }
 .mc-list-track { position: relative; overflow: clip; }
 .mc-list-window { position: absolute; inset: 0 0 auto; }
 .mc-row-measure { position: absolute; width: 1px; height: var(--mc-row-height); visibility: hidden; }
@@ -597,12 +598,51 @@
 .mc-scene .mc-parent { margin-top: .3rem; }
 .mc-secondary-actions > button, .mc-scene .mc-parent { font-size: .74rem; }
 
-/* On a wide figure the 3D view takes the whole width and the timeline floats
-   over its right side as a glass sheet (js/mc-viewer.mjs centres the model in
-   the free part, left of it). The viewfinder and the view's buttons stand
-   clear of the sheet, and the list leaves coordinates to the event card. */
+/* The panel holds two blocks (js/mc-timeline.mjs): the controls (clock,
+   transport, settings, links) and the event tree with its scrubber. On a
+   narrow page they stack in the panel, under the 3D view. */
+.mc-controls, .mc-tree { display: flex; flex-direction: column; gap: .42rem; min-width: 0; }
+.mc-tree { flex: 1 1 auto; min-height: 0; }
+/* In the panel the links sit beside the clock, the transport and the
+   settings below them across the width. */
+.mc-timeline > .mc-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: .42rem .6rem; }
+.mc-timeline > .mc-controls > :is(.mc-actions, .mc-settings, .mc-share-status) { grid-column: 1 / -1; }
+.mc-timeline > .mc-controls > .mc-secondary-actions { grid-column: 2; grid-row: 1; }
+
+/* On a wide figure the controls float in the 3D view's lower left
+   (js/mc-article.mjs) as one row on the same black glass as the sheet. */
+.mc-stage > .mc-controls {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 6;
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  background: var(--mc-glass);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.mc-stage > .mc-controls .mc-clock { flex-wrap: nowrap; gap: 0 14px; }
+.mc-stage > .mc-controls .mc-clock-tick { font-size: 20px; }
+.mc-stage > .mc-controls :is(.mc-actions, .mc-secondary-actions) { flex-wrap: nowrap; gap: 4px; }
+.mc-stage > .mc-controls .mc-settings { border: 0; }
+.mc-stage > .mc-controls .mc-settings-summary { flex-wrap: nowrap; gap: 6px; padding: 4px 0; }
+.mc-stage > .mc-controls .mc-settings-summary > .mc-icon { margin-left: 2px; }
+.mc-stage > .mc-controls .mc-play-settings { top: auto; right: auto; bottom: calc(100% + 18px); left: -14px; width: 272px; }
+.mc-stage > .mc-controls .mc-share-status { position: absolute; left: 0; bottom: calc(100% + 8px); white-space: nowrap; }
+
+/* On a wide figure the 3D view takes the whole width and the event tree
+   floats over its right side as a sheet of black glass (js/mc-viewer.mjs
+   centres the model in the free part, left of it). The viewfinder and the
+   view's buttons stand clear of the sheet, and the list leaves coordinates to
+   the event card. The scrubber stands up along the tree's right edge in
+   place of its scrollbar: the recording's first tick at the top, its last at
+   the bottom, the orange cursor pointing in from the list. */
 @container mc-scene (min-width: 35rem) {
-  .mc-scene [data-mc-view]:has(.mc-timeline) { --mc-sheet: 15rem; }
+  .mc-scene [data-mc-view]:has(.mc-timeline) { --mc-sheet: 16rem; }
   .mc-scene [data-mc-view]:has(.mc-timeline) > .mc-stage { height: clamp(29rem, 69cqi, 35rem); }
   .mc-timeline {
     position: absolute;
@@ -611,15 +651,46 @@
     bottom: 16px;
     z-index: 6;
     width: var(--mc-sheet);
-    padding: .7rem;
+    padding: .6rem .5rem .6rem .6rem;
     border: 1px solid var(--rule);
-    background: light-dark(rgb(231 234 238 / 58%), rgb(11 15 20 / 58%));
+    background: var(--mc-glass);
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
-    overflow-y: auto;
+    overflow: hidden;
   }
   .mc-list-frame { height: auto; }
   .mc-timeline .mc-event-pos { display: none; }
+  .mc-tree { position: relative; padding-right: 28px; }
+  .mc-tree .mc-event-list { scrollbar-width: none; }
+  .mc-tree .mc-event-list::-webkit-scrollbar { display: none; }
+  .mc-tree > .mc-scrubber { position: absolute; top: 0; right: 0; bottom: 0; width: 26px; }
+  .mc-tree .mc-slider { position: absolute; top: 0; bottom: 0; left: 0; width: 14px; height: auto; writing-mode: vertical-lr; }
+  .mc-tree .mc-slider::-webkit-slider-runnable-track { width: 1px; height: auto; }
+  .mc-tree .mc-slider::-moz-range-track { width: 1px; height: auto; }
+  .mc-tree .mc-slider::-webkit-slider-thumb {
+    width: 19px;
+    height: 9px;
+    margin: 0 0 0 -16px;
+    background:
+      linear-gradient(to top right, var(--red) 50%, transparent 50%) left top / 5px 50% no-repeat,
+      linear-gradient(to bottom right, var(--red) 50%, transparent 50%) left bottom / 5px 50% no-repeat,
+      linear-gradient(var(--red) 0 0) 0 50% / 100% 1.5px no-repeat;
+  }
+  .mc-tree .mc-slider::-moz-range-thumb {
+    width: 19px;
+    height: 9px;
+    background:
+      linear-gradient(to top right, var(--red) 50%, transparent 50%) left top / 5px 50% no-repeat,
+      linear-gradient(to bottom right, var(--red) 50%, transparent 50%) left bottom / 5px 50% no-repeat,
+      linear-gradient(var(--red) 0 0) 0 50% / 100% 1.5px no-repeat;
+  }
+  .mc-tree .mc-tick-scale { position: absolute; inset: 4.5px 0 4.5px 10px; height: auto; margin: 0; font-size: 9px; }
+  .mc-tree .mc-tick-scale > span { top: var(--at, 0%); left: 0; padding: 0 0 0 5px; transform: translateY(-50%); }
+  .mc-tree .mc-tick-scale > span::before { inset-block-start: 50%; inset-inline-start: 0; width: 3px; height: 0; border-inline-start: 0; border-block-start: 1px solid currentColor; }
+  .mc-tree .mc-tick-scale > span:first-child { transform: none; }
+  .mc-tree .mc-tick-scale > span:first-child::before { inset-block-start: 0; inset-inline-start: 0; }
+  .mc-tree .mc-tick-scale > span:last-child:not(:first-child) { transform: translateY(-100%); }
+  .mc-tree .mc-tick-scale > span:last-child:not(:first-child)::before { inset-block-start: 100%; inset-inline-start: 0; }
   .mc-scene [data-mc-view]:has(.mc-timeline) > .mc-stage::after { right: calc(var(--mc-sheet) + 28px); }
   .mc-scene [data-mc-view]:has(.mc-timeline) > .mc-stage > .mc-view-reset { right: calc(var(--mc-sheet) + 32px); }
 }

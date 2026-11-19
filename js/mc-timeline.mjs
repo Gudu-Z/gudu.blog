@@ -39,6 +39,41 @@ function action(label, callback) {
   return button;
 }
 
+// Small line icons for the transport and the links, in the HUD's thin
+// stroke (the triangles filled, css/mc-article.css).
+const svgNS = 'http://www.w3.org/2000/svg';
+const iconShapes = {
+  prev: ['M5 4.5v11', 'M15 4.5 7.5 10l7.5 5.5z'],
+  play: ['M6.5 4.5 16 10l-9.5 5.5z'],
+  pause: ['M7 4.5v11', 'M13 4.5v11'],
+  next: ['M15 4.5v11', 'M5 4.5 12.5 10 5 15.5z'],
+  bookmark: ['M6 3.5h8v13l-4-3-4 3z'],
+  link: ['M8.6 11.4l2.8-2.8', 'M9.2 6.6l1.3-1.3a3 3 0 0 1 4.2 4.2l-1.3 1.3', 'M10.8 13.4l-1.3 1.3a3 3 0 0 1-4.2-4.2l1.3-1.3'],
+  tune: ['M3.5 6.5h7', 'M14.5 6.5h2', 'M12.5 4.5v4', 'M3.5 13.5h2', 'M9.5 13.5h7', 'M7.5 11.5v4'],
+};
+function icon(name) {
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 20 20');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('mc-icon');
+  svg.dataset.icon = name;
+  for (const shape of iconShapes[name]) {
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('d', shape);
+    svg.append(path);
+  }
+  return svg;
+}
+// A button that shows an icon and gives its name to screen readers and on hover.
+function iconAction(name, label, callback) {
+  const button = action('', callback);
+  button.classList.add('mc-icon-button');
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.append(icon(name));
+  return button;
+}
+
 // A repeated tick number after a recording was appended must retain its own position.
 export function indexTicks(events) {
   const groups = [];
@@ -186,7 +221,8 @@ function createScale(axis) {
   for (let i = 0; i <= intervals; i++) {
     const offset = intervals ? Math.round(i * axis.maxOffset / intervals) : 0;
     const mark = element('span', String(axis.at(offset).tick));
-    mark.style.left = (axis.maxOffset ? offset / axis.maxOffset * 100 : 0) + '%';
+    // Along the scale, across a wide figure's side or down a narrow one's.
+    mark.style.setProperty('--at', (axis.maxOffset ? offset / axis.maxOffset * 100 : 0) + '%');
     scale.append(mark);
   }
   return scale;
@@ -362,6 +398,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   function summarize() {
     summarySpeed.textContent = `${speed} gt/s`;
     summaryMode.textContent = selectMode.selectedOptions[0]?.textContent ?? '';
+    settingsSummary.setAttribute('aria-label', `播放设置：速度 ${speed} gt/s，粒度 ${summaryMode.textContent}`);
   }
   rateInput.addEventListener('input', () => setSpeed(rateInput.valueAsNumber));
   rateInput.addEventListener('change', () => {
@@ -405,8 +442,9 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     element('span', '← → 上一步 / 下一步', 'mc-legend-item'),
     element('span', '双击 / 回车 展开或收起下一级', 'mc-legend-item'));
   settings.append(rateLabel, modeLabel, saveSpeed, resetSpeed, legend, keys);
-  settingsSummary.append(element('span', '速度', 'mc-settings-key'), summarySpeed,
-    element('span', '粒度', 'mc-settings-key'), summaryMode, element('span', '设置', 'mc-settings-toggle'));
+  // The summary reads "20 gt/s · 阶段" beside the settings icon.
+  settingsSummary.title = '播放设置';
+  settingsSummary.append(summarySpeed, element('span', '·', 'mc-settings-dot'), summaryMode, icon('tune'));
   settingsPanel.append(settingsSummary, settings);
   // The card closes on a press outside it or on Escape, which returns focus
   // to its summary.
@@ -422,9 +460,9 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   });
   summarize();
 
-  const prev = action('上一步', () => manual(adjacentCursor(axis, phases, cursor, mode, -1)));
-  const next = action('下一步', () => manual(adjacentCursor(axis, phases, cursor, mode, 1)));
-  const play = action('播放', () => {
+  const prev = iconAction('prev', '上一步（←）', () => manual(adjacentCursor(axis, phases, cursor, mode, -1)));
+  const next = iconAction('next', '下一步（→）', () => manual(adjacentCursor(axis, phases, cursor, mode, 1)));
+  const play = iconAction('play', '播放（空格）', () => {
     if (playing) { stop(); return; }
     if (time >= axis.maxOffset + 1 || (cursor.offset === axis.maxOffset && cursor.step === axis.end && (cursor.step > 0 || axis.maxOffset > 0))) {
       manual(axis.forStep(0));
@@ -432,18 +470,24 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     baseTime = time;
     baseStamp = performance.now();
     playing = true;
-    play.textContent = '暂停';
+    showPlaying(true);
     options.onPlaying?.(true);
     frame = requestAnimationFrame(animate);
   });
+  // The play button turns into pause while the replay runs.
+  function showPlaying(value) {
+    const label = value ? '暂停（空格）' : '播放（空格）';
+    play.replaceChildren(icon(value ? 'pause' : 'play'));
+    play.setAttribute('aria-label', label);
+    play.title = label;
+  }
   play.disabled = true;
   actions.append(prev, play, next);
   // Keyboard: with focus anywhere in the replay, Space plays or pauses and
   // the left and right arrows step. Fields, menus and the slider keep their
   // own keys, and a focused button keeps Space for itself.
-  for (const [button, key, hint] of [[prev, 'ArrowLeft', '上一步（←）'], [play, 'Space', '播放 / 暂停（空格）'], [next, 'ArrowRight', '下一步（→）']]) {
+  for (const [button, key] of [[prev, 'ArrowLeft'], [play, 'Space'], [next, 'ArrowRight']]) {
     button.setAttribute('aria-keyshortcuts', key);
-    button.title = hint;
   }
   figure.addEventListener('keydown', event => {
     if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
@@ -468,7 +512,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   });
   parent.className = 'mc-parent';
   inspect.append(eventText, details, parent);
-  const share = action('复制此刻', async () => {
+  const share = iconAction('link', '复制此刻的链接', async () => {
     const url = new URL(location.href);
     url.hash = figure.id;
     url.searchParams.set('mcstep', String(cursor.step));
@@ -483,7 +527,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
       shareStatus.replaceChildren(link);
     }
   });
-  const articleView = action('回到文章书签', () => seek(bookmark.step ?? 0, true, bookmark.tick));
+  const articleView = iconAction('bookmark', '回到文章书签', () => seek(bookmark.step ?? 0, true, bookmark.tick));
   secondary.append(articleView, share);
   if (figure.closest('[data-mc-author]')) {
     secondary.append(action('复制书签配置', async () => {
@@ -507,7 +551,15 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     summarize();
     manual(cursor);
   });
-  panel.append(clock, scrubber, actions, settingsPanel, list.element, inspect, secondary, shareStatus);
+  // The controls (clock, transport, settings, links) and the event tree with
+  // its scrubber are two blocks: on a wide figure js/mc-article.mjs floats the
+  // controls in the 3D view's lower left, and the panel holds only the tree,
+  // the scrubber standing up along its edge.
+  const controls = element('div', '', 'mc-controls');
+  controls.append(clock, actions, settingsPanel, secondary, shareStatus);
+  const tree = element('div', '', 'mc-tree');
+  tree.append(scrubber, list.element);
+  panel.append(controls, tree, inspect);
   container.append(panel);
 
   function timeAt(stamp) {
@@ -527,7 +579,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   function stop() {
     const was = playing;
     playing = false;
-    play.textContent = '播放';
+    if (was) showPlaying(false);
     play.disabled = !hasTime || !ready;
     cancelAnimationFrame(frame);
     tallest = 0;
@@ -593,6 +645,8 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     seek, stop, setReady, getTick: () => cursor.tick,
     // The current event's details, for js/mc-callout.mjs to set beside its block.
     details: inspect,
+    // The clock, transport, settings and links, which a wide figure floats in its 3D view.
+    controls,
     destroy() { stop(); list.destroy(); settingsWatch.abort(); },
   };
 }

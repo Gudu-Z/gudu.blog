@@ -321,6 +321,7 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
     const topIndex = Math.min(rows.length - 1, Math.floor(firstVisible + 0.001));
     const topRow = topIndex >= 0 ? rows.rowAt(topIndex) : null;
     pin.hidden = !topRow || topRow.step === undefined;
+    let push = 0;
     if (!pin.hidden) {
       const group = groups[topRow.groupIndex];
       pinNumber.textContent = String(topRow.tick);
@@ -328,12 +329,17 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
       pin.toggleAttribute('data-current-tick', topRow.offset === currentOffset);
       // The next station pushes the pinned one up as it arrives.
       const nextRow = topIndex + 1 < rows.length ? rows.rowAt(topIndex + 1) : null;
-      const push = nextRow && nextRow.step === undefined ? Math.min(0, (topIndex + 1 - firstVisible - 1) * rowHeight) : 0;
+      push = nextRow && nextRow.step === undefined ? Math.min(0, (topIndex + 1 - firstVisible - 1) * rowHeight) : 0;
       pin.style.transform = push ? 'translateY(' + push + 'px)' : '';
       // What is pushed above the list is cut away, so the station slides
       // under the list's top edge instead of over the settings line.
       pin.style.clipPath = push ? 'inset(' + -push + 'px 0 -2px 0)' : '';
     }
+    // The rows passing under the pinned station are masked away
+    // (css/mc-article.css), so the station needs no fill of its own and the
+    // tree keeps one ground from top to bottom.
+    const cover = pin.hidden ? 0 : Math.max(0, 1 + rowHeight + push);
+    frameElement.style.setProperty('--mc-pin-cover', cover + 'px');
     // The current row is out of view once its middle (where the cursor
     // points) leaves the window; the pill then names its tick.
     const middle = active + 0.5;

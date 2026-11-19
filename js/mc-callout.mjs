@@ -85,7 +85,7 @@ export function mountCallout(stage, details) {
     return { left: margin, top: margin + 18, right, bottom: stage.clientHeight - margin };
   }
   function controls() {
-    return Array.from(stage.querySelectorAll('.mc-view-reset'), button => ({
+    return Array.from(stage.querySelectorAll('.mc-view-reset, .mc-controls'), button => ({
       left: button.offsetLeft, top: button.offsetTop, right: button.offsetLeft + button.offsetWidth,
       bottom: button.offsetTop + button.offsetHeight,
     }));

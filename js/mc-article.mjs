@@ -60,6 +60,23 @@ function mountViewHint(stage, signal) {
   }
 }
 
+// On a wide figure the replay's controls float in the 3D view's lower left,
+// and the timeline panel keeps only the event tree; a narrow figure keeps
+// them at the top of the panel. The width matches js/mc-callout.mjs and the
+// container query in css/mc-article.css.
+function dockControls(stage, controls, signal) {
+  const home = controls.parentNode, homeNext = controls.nextSibling;
+  const dock = () => {
+    const wide = (stage.parentElement?.clientWidth ?? 0) >= 560;
+    if (wide && controls.parentNode !== stage) stage.append(controls);
+    else if (!wide && controls.parentNode !== home) home.insertBefore(controls, homeNext?.parentNode === home ? homeNext : home.firstChild);
+  };
+  const watch = new ResizeObserver(dock);
+  watch.observe(stage);
+  signal.addEventListener('abort', () => watch.disconnect(), { once: true });
+  dock();
+}
+
 function mountFigure(figure) {
   const toggle = figure.querySelector('[data-mc-open]');
   const view = figure.querySelector('[data-mc-view]');
@@ -175,6 +192,7 @@ function mountFigure(figure) {
           },
         });
         callout = mountCallout(stage, playback.details);
+        dockControls(stage, playback.controls, signal);
         const preferred = requestedStep ?? bookmark.step ?? 0;
         const useRequest = requestedStep != null && preferred <= scene.events.length;
         playback.seek(useRequest ? preferred : bookmark.step ?? 0, false, useRequest ? requestedTick : bookmark.tick);
