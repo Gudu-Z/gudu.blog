@@ -160,7 +160,7 @@ ${structuredData}
     <script src="../js/star-sky.js?v=20261113-polish" defer></script>
     <script src="../js/particle-sky.js?v=20261020-original-stars" defer></script>
     <script src="../js/article-sky.js?v=20261118-sky" defer></script>
-    <script src="../js/article.js?v=20261118-article" defer></script>${post.hasScenes ? '\n    <link rel="stylesheet" href="../css/mc-article.css?v=20261119-flicker" />\n    <script type="module" src="../js/mc-article.mjs"></script>' : ''}
+    <script src="../js/article.js?v=20261118-article" defer></script>${post.hasScenes ? '\n    <link rel="stylesheet" href="../css/mc-article.css?v=20261119-sheet" />\n    <script type="module" src="../js/mc-article.mjs"></script>' : ''}
     ${comments.head}
   </head>
   <body class="article-page">

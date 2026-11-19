@@ -33,8 +33,9 @@
   min-width: 0;
   height: clamp(15rem, 68cqi, 29rem);
   overflow: hidden;
-  /* Matches js/mc-viewer.mjs, which clears the 3D view to the same colour. */
-  background: light-dark(#dee1e6, #10151c);
+  /* Clear, like the canvas of js/mc-viewer.mjs: the article's star sky shows
+     behind the model. */
+  background: transparent;
 }
 /* A viewfinder: four corners and a small label over the 3D view. */
 .mc-stage::before { content: "3D VIEW"; position: absolute; top: 22px; left: 28px; z-index: 3; color: light-dark(rgb(14 20 25 / 46%), rgb(220 228 236 / 46%)); font: 9px/1 var(--mono); letter-spacing: 0.2em; pointer-events: none; }
@@ -63,8 +64,10 @@
   height: 100%;
 }
 .mc-stage > .mc-focus { pointer-events: none; }
-/* The event card (js/mc-callout.mjs) beside the focused block: a small
-   panel with registration corners, joined to the orange box by a leader. */
+/* The event card (js/mc-callout.mjs) held beside its target like a tooltip:
+   a small panel with registration corners, joined to the target by a short
+   leader. It follows a turning view at once and eases only when it jumps to
+   another side or target (.is-moving). */
 .mc-callout {
   position: absolute;
   top: 0;
@@ -74,14 +77,30 @@
   padding: 10px 12px 11px;
   background: var(--registration), light-dark(rgb(231 234 238 / 90%), rgb(11 15 20 / 90%));
   box-shadow: inset 0 0 0 1px var(--rule);
-  transition: transform 160ms ease;
 }
-.mc-callout.is-docked { transition: none; }
+.mc-callout.is-moving { transition: transform 160ms ease; }
 .mc-callout .mc-inspect { max-height: none; overflow: visible; padding: 0; border: 0; }
 .mc-callout-leader { position: absolute; inset: 0; z-index: 3; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .mc-callout-leader polyline { fill: none; stroke: var(--red); stroke-width: 1; }
 .mc-callout-leader circle { fill: var(--red); }
-@media (prefers-reduced-motion: reduce) { .mc-callout { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .mc-callout.is-moving { transition: none; } }
+/* While the replay plays, the event's name runs after the "3D VIEW" label
+   instead of the card, so nothing hops about the view. */
+.mc-stage-readout {
+  position: absolute;
+  top: 19px;
+  left: 84px;
+  right: calc(var(--mc-sheet, 0px) + 112px);
+  z-index: 3;
+  overflow: hidden;
+  color: var(--paper);
+  font: 11px/1.4 var(--ui-sans);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.mc-stage-readout::before { content: ""; display: inline-block; width: 14px; height: 1px; margin: 0 8px 3px 0; background: var(--red); vertical-align: middle; }
 /* The view takes focus for the replay's keys. */
 .mc-stage:focus-visible { outline: 2px solid var(--red); outline-offset: -2px; }
 /* The first-use hint beside the "3D VIEW" label (js/mc-article.mjs). */
@@ -107,7 +126,9 @@
   right: 24px;
   bottom: 24px;
   z-index: 4;
-  background: light-dark(#dee1e6cc, #10151ccc);
+  background: light-dark(rgb(231 234 238 / 72%), rgb(11 15 20 / 72%));
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
 }
 .article-body .mc-scene img[data-mc-poster] {
   width: 100%;
@@ -169,7 +190,9 @@
   min-width: 0;
   padding: .85rem;
   border-block-start: 1px solid var(--rule);
-  background: light-dark(#e7eaee, #0b0f14);
+  /* Clear too; what floats over the list (the pinned tick, the settings card)
+     keeps a glass fill to stay legible. */
+  background: transparent;
   font-size: .85rem;
   line-height: 1.45;
 }
@@ -359,7 +382,9 @@
   background:
     linear-gradient(var(--rule-strong) 0 0) calc(var(--mc-list-axis, 39px) - 6px) 50% / 15px 1px no-repeat,
     var(--mc-ruler-axis),
-    light-dark(#e7eaee, #0b0f14);
+    light-dark(rgb(231 234 238 / 94%), rgb(11 15 20 / 94%));
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   box-shadow: 0 1px 0 var(--rule);
   color: var(--label);
   font-size: 12px;
@@ -572,20 +597,31 @@
 .mc-scene .mc-parent { margin-top: .3rem; }
 .mc-secondary-actions > button, .mc-scene .mc-parent { font-size: .74rem; }
 
+/* On a wide figure the 3D view takes the whole width and the timeline floats
+   over its right side as a glass sheet (js/mc-viewer.mjs centres the model in
+   the free part, left of it). The viewfinder and the view's buttons stand
+   clear of the sheet, and the list leaves coordinates to the event card. */
 @container mc-scene (min-width: 35rem) {
-  .mc-scene [data-mc-view]:has(.mc-timeline) {
-    grid-template-columns: minmax(0, 1fr) clamp(14rem, 37%, 20rem);
-    align-items: stretch;
-  }
-  .mc-scene [data-mc-view]:has(.mc-timeline) > .mc-stage { height: auto; min-height: 26rem; }
+  .mc-scene [data-mc-view]:has(.mc-timeline) { --mc-sheet: 15rem; }
+  .mc-scene [data-mc-view]:has(.mc-timeline) > .mc-stage { height: clamp(29rem, 69cqi, 35rem); }
   .mc-timeline {
-    height: clamp(29rem, 69cqi, 35rem);
-    padding: .75rem;
-    border-block-start: 0;
-    border-inline-start: 1px solid var(--rule);
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    bottom: 16px;
+    z-index: 6;
+    width: var(--mc-sheet);
+    padding: .7rem;
+    border: 1px solid var(--rule);
+    background: light-dark(rgb(231 234 238 / 58%), rgb(11 15 20 / 58%));
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
     overflow-y: auto;
   }
   .mc-list-frame { height: auto; }
+  .mc-timeline .mc-event-pos { display: none; }
+  .mc-scene [data-mc-view]:has(.mc-timeline) > .mc-stage::after { right: calc(var(--mc-sheet) + 28px); }
+  .mc-scene [data-mc-view]:has(.mc-timeline) > .mc-stage > .mc-view-reset { right: calc(var(--mc-sheet) + 32px); }
 }
 @media (pointer: coarse) {
   .mc-scene button, .mc-play-settings :is(input, select) { min-height: 44px; }

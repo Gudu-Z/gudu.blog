@@ -1,18 +1,57 @@
-// The current event's card in the 3D view, standing beside the orange box
-// round its block and joined to it by a leader line. Of the places beside the
-// box and in the view's corners, it takes the one that hides least of the
-// recording, then the nearest. With no block in view, and while the replay
-// plays (the focus then moves faster than a card can follow), it rests in the
-// view's lower-left corner. Narrow figures keep the details in the timeline
-// panel, under the list.
+// The current event's card in the 3D view, held close to its target (the
+// orange box round its block) the way a
+// tooltip is: on the target's right when the card fits there, else its left,
+// below or above, slid along that side to stay in the free part of the view
+// (inside the margins, clear of the floating timeline and the view's buttons)
+// and joined to the target by a short leader. While the view turns, the card
+// keeps its side for as long as it still fits there. With no target in view
+// it waits under the "3D VIEW" label. While the replay plays, the card steps
+// aside and the event's name runs as one line after the label instead.
+// Narrow figures keep the details in the timeline panel, under the list.
 const svgNS = 'http://www.w3.org/2000/svg';
 const wideFrom = 560;
 const margin = 22;
-const gap = 36;
+const gap = 24;
+const sides = ['right', 'left', 'bottom', 'top'];
 
 const clamp = (value, low, high) => Math.max(low, Math.min(Math.max(low, high), value));
 const overlap = (a, b) => b ? Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))
   * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)) : 0;
+
+// A card of cw × ch on one side of the box: `gap` away from it, centred on it
+// across, then slid along that side into `area`. `fits` tells whether it
+// clears the area's edge on that side.
+export function spotBeside(side, box, cw, ch, area) {
+  const cx = (box.left + box.right) / 2, cy = (box.top + box.bottom) / 2;
+  let left, top, fits;
+  if (side === 'right' || side === 'left') {
+    left = side === 'right' ? box.right + gap : box.left - gap - cw;
+    fits = side === 'right' ? left + cw <= area.right : left >= area.left;
+    top = clamp(cy - ch / 2, area.top, area.bottom - ch);
+  } else {
+    top = side === 'bottom' ? box.bottom + gap : box.top - gap - ch;
+    fits = side === 'bottom' ? top + ch <= area.bottom : top >= area.top;
+    left = clamp(cx - cw / 2, area.left, area.right - cw);
+  }
+  return { side, fits, left, top, right: left + cw, bottom: top + ch };
+}
+
+// The first side that fits and leaves the controls clear, trying the side in
+// use (`keep`) first. If none does (a target filling the view), the side with
+// the most room, with the card pushed wholly inside the area.
+export function chooseSpot(box, cw, ch, area, controls = [], keep = null) {
+  const order = keep ? [keep, ...sides.filter(side => side !== keep)] : sides;
+  for (const side of order) {
+    const spot = spotBeside(side, box, cw, ch, area);
+    if (spot.fits && !controls.some(control => overlap(spot, control))) return spot;
+  }
+  const room = { right: area.right - box.right, left: box.left - area.left,
+    bottom: area.bottom - box.bottom, top: box.top - area.top };
+  const side = sides.reduce((best, next) => room[next] > room[best] ? next : best);
+  const spot = spotBeside(side, box, cw, ch, area);
+  const left = clamp(spot.left, area.left, area.right - cw), top = clamp(spot.top, area.top, area.bottom - ch);
+  return { side, fits: false, left, top, right: left + cw, bottom: top + ch };
+}
 
 export function mountCallout(stage, details) {
   const home = details.parentNode, homeNext = details.nextSibling;
@@ -25,35 +64,31 @@ export function mountCallout(stage, details) {
   const dot = document.createElementNS(svgNS, 'circle');
   dot.setAttribute('r', '2.5');
   leader.append(line, dot);
-  let box = null, model = null, playing = false, wide = false;
+  // The event's name after the "3D VIEW" label, while the replay plays.
+  const readout = document.createElement('span');
+  readout.className = 'mc-stage-readout';
+  readout.setAttribute('aria-hidden', 'true');
+  readout.hidden = true;
+  const title = () => details.querySelector('.mc-event')?.textContent ?? '';
+  const watch = new MutationObserver(() => { if (playing) readout.textContent = title(); });
+  watch.observe(details, { childList: true, subtree: true, characterData: true });
+  let box = null, playing = false, wide = false, side = null, lastLeft = 0, lastTop = 0;
 
-  function candidates(width, height, cw, ch) {
-    const cx = (box.left + box.right) / 2, cy = (box.top + box.bottom) / 2;
-    const midTop = clamp(cy - ch / 2, margin, height - ch - margin);
-    const midLeft = clamp(cx - cw / 2, margin, width - cw - margin);
-    return [
-      [box.right + gap, midTop], [box.left - gap - cw, midTop],
-      [midLeft, box.top - gap - ch], [midLeft, box.bottom + gap],
-      // The top corners sit under the view's "3D VIEW" label.
-      [margin, margin + 18], [width - cw - margin, margin + 18],
-      [margin, height - ch - margin], [width - cw - margin, height - ch - margin],
-    ].filter(([left, top]) => left >= margin - 0.5 && top >= margin - 0.5
-      && left + cw <= width - margin + 0.5 && top + ch <= height - margin + 0.5)
-      .map(([left, top]) => ({ left, top, right: left + cw, bottom: top + ch }));
-  }
-
-  function choose(width, height, cw, ch) {
-    const reset = stage.querySelector('.mc-view-reset');
-    const button = reset && !reset.hidden ? { left: reset.offsetLeft, top: reset.offsetTop,
-      right: reset.offsetLeft + reset.offsetWidth, bottom: reset.offsetTop + reset.offsetHeight } : null;
-    const cx = (box.left + box.right) / 2, cy = (box.top + box.bottom) / 2;
-    let best = null, bestScore = Infinity;
-    for (const spot of candidates(width, height, cw, ch)) {
-      const distance = Math.hypot((spot.left + spot.right) / 2 - cx, (spot.top + spot.bottom) / 2 - cy);
-      const score = overlap(spot, box) * 50 + overlap(spot, button) * 50 + overlap(spot, model) * 2 + distance;
-      if (score < bestScore) { best = spot; bestScore = score; }
+  // The free part of the view: inside the margins, under the label, and left
+  // of the timeline where it floats over the view (wide figures).
+  function freeArea() {
+    let right = stage.clientWidth - margin;
+    const panel = stage.parentElement?.querySelector(':scope > .mc-timeline');
+    if (panel && getComputedStyle(panel).position === 'absolute') {
+      right = Math.min(right, panel.getBoundingClientRect().left - stage.getBoundingClientRect().left - margin);
     }
-    return best;
+    return { left: margin, top: margin + 18, right, bottom: stage.clientHeight - margin };
+  }
+  function controls() {
+    return Array.from(stage.querySelectorAll('.mc-view-reset'), button => ({
+      left: button.offsetLeft, top: button.offsetTop, right: button.offsetLeft + button.offsetWidth,
+      bottom: button.offsetTop + button.offsetHeight,
+    }));
   }
 
   // The leader leaves the box from its edge nearest the card, steps out a
@@ -61,26 +96,33 @@ export function mountCallout(stage, details) {
   function leaderPoints(spot) {
     const ccx = (spot.left + spot.right) / 2, ccy = (spot.top + spot.bottom) / 2;
     const bcx = (box.left + box.right) / 2, bcy = (box.top + box.bottom) / 2;
-    const horizontal = Math.abs(ccx - bcx) / (spot.right - spot.left + box.right - box.left)
-      >= Math.abs(ccy - bcy) / (spot.bottom - spot.top + box.bottom - box.top);
+    const horizontal = spot.side === 'right' || spot.side === 'left';
     const anchor = horizontal ? [ccx > bcx ? box.right + 3 : box.left - 3, bcy]
       : [bcx, ccy > bcy ? box.bottom + 3 : box.top - 3];
-    const elbow = horizontal ? [anchor[0] + (ccx > bcx ? 12 : -12), anchor[1]]
-      : [anchor[0], anchor[1] + (ccy > bcy ? 12 : -12)];
+    const elbow = horizontal ? [anchor[0] + (ccx > bcx ? 10 : -10), anchor[1]]
+      : [anchor[0], anchor[1] + (ccy > bcy ? 10 : -10)];
     const reach = [clamp(elbow[0], spot.left, spot.right), clamp(elbow[1], spot.top, spot.bottom)];
     return [anchor, elbow, reach];
   }
 
   function place() {
     if (!wide) return;
-    const width = stage.clientWidth, height = stage.clientHeight;
-    const cw = card.offsetWidth, ch = card.offsetHeight;
-    const spot = !playing && box ? choose(width, height, cw, ch) : null;
-    const left = spot ? spot.left : margin, top = spot ? spot.top : height - ch - margin;
-    // Docked, the card follows its own height at once: easing the move would
-    // leave a taller event's card hanging below the view for a moment.
-    card.classList.toggle('is-docked', !spot);
-    card.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+    card.hidden = playing;
+    readout.hidden = !playing;
+    if (playing) {
+      leader.style.display = 'none';
+      return;
+    }
+    const cw = card.offsetWidth, ch = card.offsetHeight, area = freeArea();
+    const spot = box ? chooseSpot(box, cw, ch, area, controls(), side) : null;
+    side = spot?.side ?? null;
+    const left = Math.round(spot ? spot.left : area.left), top = Math.round(spot ? spot.top : area.top);
+    // Turning the view, the card keeps up with its target at once; a jump to
+    // another side or another target eases, so the eye can follow it.
+    card.classList.toggle('is-moving', Math.hypot(left - lastLeft, top - lastTop) > 48);
+    lastLeft = left;
+    lastTop = top;
+    card.style.transform = `translate(${left}px, ${top}px)`;
     leader.style.display = spot ? '' : 'none';
     if (spot) {
       const points = leaderPoints(spot);
@@ -96,11 +138,12 @@ export function mountCallout(stage, details) {
     wide = next;
     if (wide) {
       card.append(details);
-      stage.append(leader, card);
+      stage.append(leader, card, readout);
     } else {
       home.insertBefore(details, homeNext?.parentNode === home ? homeNext : null);
       card.remove();
       leader.remove();
+      readout.remove();
     }
     place();
   }
@@ -111,22 +154,26 @@ export function mountCallout(stage, details) {
   setMode();
 
   return {
-    // The viewer reports the focus box (and the recording's box) on every
-    // draw, rotation included.
-    place(nextBox, nextModel) {
+    // The viewer reports the target's box on every draw, rotation included.
+    place(nextBox) {
       box = nextBox;
-      model = nextModel ?? null;
       place();
     },
     setPlaying(value) {
       if (playing === value) return;
       playing = value;
+      if (playing) {
+        readout.textContent = title();
+        stage.querySelector('.mc-stage-hint')?.classList.remove('is-shown');
+      }
       place();
     },
     destroy() {
       resize.disconnect();
+      watch.disconnect();
       card.remove();
       leader.remove();
+      readout.remove();
     },
   };
 }

@@ -69,7 +69,9 @@ async function readSchematic(url, signal) {
 // grows in perspective, so a replay sits small in its frame. Without a saved
 // camera, centre the blocks themselves and zoom until they span about seven
 // tenths of the frame.
-function frameBlocks(renderer, blocks) {
+// `free` is the share of the view's width left clear of the floating timeline
+// (see setInset), which the recording should fill like the whole height.
+function frameBlocks(renderer, blocks, free = 1) {
   const { camera, controls } = renderer;
   const point = camera.position.clone();
   function extent() {
@@ -94,12 +96,30 @@ function frameBlocks(renderer, blocks) {
   controls.update();
   box = extent();
   if (!box) return;
-  const half = Math.max(box.maxX - box.minX, box.maxY - box.minY) / 2;
+  const half = Math.max((box.maxX - box.minX) / free, box.maxY - box.minY) / 2;
   camera.zoom = Math.min(3, Math.max(1, 0.7 / half));
   camera.updateProjectionMatrix();
 }
 
-function applyCamera(renderer, bounds, saved, blocks) {
+// On a wide figure the timeline floats over the right of the view, covering
+// `right` pixels. Render the view as the left part of a wider one, so the
+// orbit centre, and with it the default framing, sits in the middle of the
+// free part. The scale stays the same; only the centre moves.
+function setInset(renderer, right) {
+  const { camera, container } = renderer;
+  const width = container.clientWidth || 1, height = container.clientHeight || 1;
+  const full = width + right;
+  if (camera.isOrthographicCamera) {
+    const half = (camera.top - camera.bottom) / 2;
+    camera.left = -half * full / height;
+    camera.right = half * full / height;
+  } else camera.aspect = full / height;
+  if (right > 0) camera.setViewOffset(full, height, right, 0, width, height);
+  else if (camera.view?.enabled) camera.clearViewOffset();
+  else camera.updateProjectionMatrix();
+}
+
+function applyCamera(renderer, bounds, saved, blocks, inset = 0) {
   renderer.setProjectionMode(saved?.projection ?? 'perspective');
   renderer.fitToBounds(bounds);
   const camera = renderer.camera;
@@ -114,9 +134,10 @@ function applyCamera(renderer, bounds, saved, blocks) {
     camera.right = camera.top * aspect;
     camera.left = -camera.right;
   }
+  setInset(renderer, inset);
   camera.zoom = saved?.zoom ?? 1;
   camera.updateProjectionMatrix();
-  if (!saved && blocks?.length) frameBlocks(renderer, blocks);
+  if (!saved && blocks?.length) frameBlocks(renderer, blocks, 1 - inset / Math.max(1, renderer.container.clientWidth));
   renderer.controls.update();
   renderer.requestRender();
 }
@@ -137,7 +158,7 @@ async function staticDetails(renderer, data, assets, signal) {
 }
 
 export async function createSceneViewer(container, scene, { sceneURL, name = 'çº¢çŸ³ç»“æž„', camera: bookmarkCamera,
-  focus: initialFocus, theme = 'auto', onStatus, onFocusBox, signal: parentSignal } = {}) {
+  focus: initialFocus, theme = 'auto', onStatus, onFocusBox, inset, signal: parentSignal } = {}) {
   const lifecycle = new AbortController(), { signal } = lifecycle;
   parentSignal?.throwIfAborted();
   parentSignal?.addEventListener('abort', destroy, { once: true });
@@ -171,14 +192,15 @@ export async function createSceneViewer(container, scene, { sceneURL, name = 'çº
   }
 
   function redraw() { outline?.draw(completed ? focus : null); }
-  function setTheme(value) {
-    if (!renderer) return;
-    const dark = value === 'auto' ? matchMedia('(prefers-color-scheme: dark)').matches : value === 'dark';
-    // The stage of css/mc-article.css: close to the page, so the blocks stand out.
-    renderer.setBackgroundColor(dark ? '#10151c' : '#dee1e6');
+  // The view is clear in either theme: the article's star sky shows behind
+  // the model, as on the stage of css/mc-article.css.
+  function setTheme() {
+    renderer?.setBackgroundColor('transparent');
   }
+  // The pixels the host covers on the right of the view (its floating timeline).
+  const coveredRight = () => Math.max(0, Math.min((container.clientWidth || 1) / 2, inset?.() ?? 0));
   function resetView() {
-    if (renderer && bounds) applyCamera(renderer, bounds, bookmarkCamera, framing);
+    if (renderer && bounds) applyCamera(renderer, bounds, bookmarkCamera, framing, coveredRight());
   }
   function reportError(error) {
     revision = undefined;
@@ -208,7 +230,7 @@ export async function createSceneViewer(container, scene, { sceneURL, name = 'çº
       await renderer.render(data, assets, undefined, undefined, false, { signal });
       if (scene.schematic) await staticDetails(renderer, data, assets, signal);
       signal.throwIfAborted();
-      if (!completed || camera) applyCamera(renderer, bounds, camera ?? bookmarkCamera, framing);
+      if (!completed || camera) applyCamera(renderer, bounds, camera ?? bookmarkCamera, framing, coveredRight());
       completed = true;
     } finally {
       finish();
@@ -231,6 +253,13 @@ export async function createSceneViewer(container, scene, { sceneURL, name = 'çº
     signal.throwIfAborted();
 
     renderer = new Renderer(container, { orbitOnly: true, alpha: true, pixelRatio: 1.5 });
+    // Whatever resizes the view (the engine on a window resize, the observer
+    // below), the floating timeline's inset is put back straight after.
+    const engineResize = renderer._resize.bind(renderer);
+    renderer._resize = () => {
+      engineResize();
+      setInset(renderer, coveredRight());
+    };
     const canvas = renderer.renderer.domElement;
     canvas.classList.add('mc-canvas');
     canvas.setAttribute('role', 'img');
@@ -273,7 +302,7 @@ export async function createSceneViewer(container, scene, { sceneURL, name = 'çº
       if (signal.aborted || scene.schematic) return false;
       focus = options.focus;
       if (completed && options.revision !== undefined && revision === options.revision) {
-        if (options.camera) applyCamera(renderer, bounds, options.camera);
+        if (options.camera) applyCamera(renderer, bounds, options.camera, undefined, coveredRight());
         redraw();
         return false;
       }

@@ -221,6 +221,12 @@ function mountFigure(figure) {
         name: figure.querySelector('figcaption')?.textContent || '红石结构',
         theme: document.documentElement.dataset.theme || 'dark', onStatus,
         onFocusBox: (box, model) => callout?.place(box, model),
+        // On a wide figure the timeline floats over the right of the view.
+        inset: () => {
+          const panel = view.querySelector(':scope > .mc-timeline');
+          if (!panel || getComputedStyle(panel).position !== 'absolute') return 0;
+          return stage.getBoundingClientRect().right - panel.getBoundingClientRect().left;
+        },
       });
       if (signal.aborted) { instance.destroy(); return; }
       viewer = instance;
