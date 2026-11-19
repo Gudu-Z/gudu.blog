@@ -48,6 +48,23 @@ export function indexEventRows(groups, offsets, phaseSteps, eventCount, mode, or
   return { length, rowAt, selectedRow };
 }
 
+// A small mark at the end of each event's tick on the ruler: a block change,
+// an update, a scheduled tick, a block event, a piston, a game event or an
+// entity. Phases mark the structure already and take none.
+export function eventKind(event) {
+  const { type, detail = '' } = event;
+  if (type === 'setBlock' || event.after !== undefined) return 'set';
+  if (type === 'update') return 'update';
+  if (type === 'addScheduleTick' || /^Execute(Block|Fluid)Tick$/.test(detail)) return 'tick';
+  if (type === 'addBlockEvent' || detail === 'ExecuteBlockEvent') return 'event';
+  if (/^(pistonStructure|movingPiston|movingPistonTick)$/.test(type)
+    || (type === 'blockEntityTick' && /piston/.test(detail))) return 'piston';
+  if (/GameEvent$/.test(type)) return 'game';
+  if (/^entity/.test(type)) return 'entity';
+  if (type === 'phase' || type === 'levelTick') return 'phase';
+  return 'other';
+}
+
 function span(className, text) {
   const node = document.createElement('span');
   node.className = className;
@@ -63,6 +80,10 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
   element.setAttribute('aria-label', '回放时间轴列表');
   element.tabIndex = 0;
   element.hidden = maxOffset < 0;
+  // The list is a vertical ruler (css/mc-article.css). Its axis stands just
+  // right of the widest tick number.
+  let digits = Math.max(String(origin).length, String(origin + maxOffset).length);
+  for (const group of groups) digits = Math.max(digits, String(group.tick).length);
   const id = 'mc-list-' + ++nextListId;
   const track = document.createElement('div');
   track.className = 'mc-list-track';
@@ -75,6 +96,26 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
   measure.setAttribute('aria-hidden', 'true');
   track.append(measure, windowRows);
   element.append(track);
+  // When the reader scrolls the current row out of view, a pill at that edge
+  // leads back to it. It sits outside the listbox, in a frame around it.
+  const frameElement = document.createElement('div');
+  frameElement.className = 'mc-list-frame';
+  frameElement.hidden = element.hidden;
+  frameElement.style.setProperty('--mc-list-axis', Math.max(2, digits) * 7 + 18 + 'px');
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'mc-list-return';
+  back.hidden = true;
+  // While a tick's events fill the top of the list, its station stays pinned
+  // there, so the reader always knows which game tick the rows belong to.
+  const pin = document.createElement('div');
+  pin.className = 'mc-list-pin';
+  pin.setAttribute('aria-hidden', 'true');
+  pin.hidden = true;
+  const pinNumber = span('mc-tick-number', '');
+  const pinCount = span('mc-tick-count', '');
+  pin.append(pinNumber, pinCount);
+  frameElement.append(element, pin, back);
 
   let mode, rows, active = -1, currentOffset = 0, lastStep, requested = -1;
   let rowHeight = 32, height = 0, rangeStart = -1, rangeEnd = -1, frame = 0;
@@ -92,15 +133,18 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
     if (row.step === undefined) {
       node.className = 'mc-tick-row';
       node.dataset.offset = String(row.offset);
-      node.append(span('mc-tick-label', '第 ' + row.tick + ' 刻'), span('mc-tick-count', row.count + ' 个事件'));
+      // A game tick is a numbered station; an empty one keeps only its number.
+      node.append(span('mc-tick-number', String(row.tick)), span('mc-tick-count', row.count ? row.count + ' 个事件' : ''));
+      node.setAttribute('aria-label', '第 ' + row.tick + ' 刻，' + row.count + ' 个事件');
     } else {
       const event = scene.events[row.step - 1];
       node.className = 'mc-event-row';
       node.dataset.step = String(row.step);
+      node.dataset.kind = eventKind(event);
       node.style.setProperty('--mc-depth', String(Math.min(4, depths[row.step - 1])));
       const text = label(event);
       const coords = event.pos ? position(event.pos) : '';
-      node.append(span('mc-event-index', String(row.ordinal)), span('mc-event-label', text));
+      node.append(span('mc-event-index', String(row.ordinal).padStart(2, '0')), span('mc-event-label', text));
       if (coords) node.append(span('mc-event-pos', coords));
       const parent = event.parent === undefined ? '' : '，上级第 ' + (event.parent + 1) + ' 步';
       node.setAttribute('aria-label', '第 ' + row.tick + ' 刻，第 ' + row.step + ' 步，' + text
@@ -145,6 +189,28 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
     }
     if (active >= start && active < end) element.setAttribute('aria-activedescendant', id + '-' + active);
     else element.removeAttribute('aria-activedescendant');
+    const topIndex = Math.min(rows.length - 1, Math.floor(firstVisible + 0.001));
+    const topRow = topIndex >= 0 ? rows.rowAt(topIndex) : null;
+    pin.hidden = !topRow || topRow.step === undefined;
+    if (!pin.hidden) {
+      const group = groups[topRow.groupIndex];
+      pinNumber.textContent = String(topRow.tick);
+      pinCount.textContent = (group.last - group.first + 1) + ' 个事件';
+      pin.toggleAttribute('data-current-tick', topRow.offset === currentOffset);
+      // The next station pushes the pinned one up as it arrives.
+      const nextRow = topIndex + 1 < rows.length ? rows.rowAt(topIndex + 1) : null;
+      const push = nextRow && nextRow.step === undefined ? Math.min(0, (topIndex + 1 - firstVisible - 1) * rowHeight) : 0;
+      pin.style.transform = push ? 'translateY(' + push + 'px)' : '';
+    }
+    // The current row is out of view once its middle (where the cursor
+    // points) leaves the window; the pill then names its tick.
+    const middle = active + 0.5;
+    const away = active < 0 || !viewport ? 0 : middle < firstVisible ? -1 : middle > firstVisible + viewport / rowHeight ? 1 : 0;
+    back.hidden = !away;
+    if (away) {
+      back.dataset.edge = away < 0 ? 'top' : 'bottom';
+      back.textContent = (away < 0 ? '↑' : '↓') + ' 当前 · 第 ' + rows.rowAt(active).tick + ' 刻';
+    }
   }
 
   function size() {
@@ -213,12 +279,21 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
   element.addEventListener('scroll', () => {
     if (!frame) frame = requestAnimationFrame(() => { frame = 0; draw(); });
   }, {passive: true});
+  // The details under the list grow and shrink with each event, changing the
+  // list's height after sync() placed the current row; bring it back in view.
+  let viewportHeight = 0;
   const resize = new ResizeObserver(() => {
     size();
-    if (rangeStart < 0 || !element.scrollTop) reveal(active);
+    if (rangeStart < 0 || !element.scrollTop || element.clientHeight !== viewportHeight) reveal(active);
+    viewportHeight = element.clientHeight;
     draw();
   });
   resize.observe(element);
   resize.observe(measure);
-  return {element, sync, destroy() { resize.disconnect(); cancelAnimationFrame(frame); }};
+  back.addEventListener('click', () => {
+    reveal(active);
+    draw();
+    element.focus({preventScroll: true});
+  });
+  return {element: frameElement, sync, destroy() { resize.disconnect(); cancelAnimationFrame(frame); }};
 }

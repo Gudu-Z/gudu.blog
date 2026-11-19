@@ -63,6 +63,44 @@
   height: 100%;
 }
 .mc-stage > .mc-focus { pointer-events: none; }
+/* The event card (js/mc-callout.mjs) beside the focused block: a small
+   panel with registration corners, joined to the orange box by a leader. */
+.mc-callout {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  width: min(270px, calc(100% - 44px));
+  padding: 10px 12px 11px;
+  background: var(--registration), light-dark(rgb(231 234 238 / 90%), rgb(11 15 20 / 90%));
+  box-shadow: inset 0 0 0 1px var(--rule);
+  transition: transform 160ms ease;
+}
+.mc-callout .mc-inspect { max-height: none; overflow: visible; padding: 0; border: 0; }
+.mc-callout-leader { position: absolute; inset: 0; z-index: 3; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.mc-callout-leader polyline { fill: none; stroke: var(--red); stroke-width: 1; }
+.mc-callout-leader circle { fill: var(--red); }
+@media (prefers-reduced-motion: reduce) { .mc-callout { transition: none; } }
+/* The view takes focus for the replay's keys. */
+.mc-stage:focus-visible { outline: 2px solid var(--red); outline-offset: -2px; }
+/* The first-use hint beside the "3D VIEW" label (js/mc-article.mjs). */
+.mc-stage-hint {
+  position: absolute;
+  top: 19px;
+  left: 84px;
+  z-index: 3;
+  color: var(--label);
+  font: 11px/1.4 var(--ui-sans);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 260ms ease, transform 260ms ease;
+  pointer-events: none;
+}
+.mc-stage-hint::before { content: ""; display: inline-block; width: 14px; height: 1px; margin: 0 8px 3px 0; background: var(--red); vertical-align: middle; }
+.mc-stage-hint.is-shown { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .mc-stage-hint { transition: none; transform: none; } }
 .mc-stage > .mc-view-reset {
   position: absolute;
   right: 24px;
@@ -138,7 +176,16 @@
   font-family: Consolas, "SFMono-Regular", monospace;
   font-variant-numeric: tabular-nums;
 }
-.mc-clock { color: var(--paper); font-size: 12px; line-height: 1.6; letter-spacing: 0.02em; }
+/* The clock reads like an instrument: the game tick large, its step and any
+   note small beside it, each under a "中文 / CODE" label. */
+.mc-clock { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px 18px; color: var(--paper); }
+.mc-clock-field { display: grid; gap: 1px; }
+.mc-clock-label { color: var(--label); font: 11px/1.4 var(--ui-sans); letter-spacing: 0.04em; }
+.mc-clock-label > span { color: var(--code-name); font: 9px/1.4 Consolas, "SFMono-Regular", monospace; letter-spacing: 0.08em; }
+.mc-clock-tick { color: var(--paper); font: 600 26px/1 Consolas, "SFMono-Regular", monospace; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
+.mc-clock-step { color: var(--label); font: 12px/1.4 Consolas, "SFMono-Regular", monospace; font-variant-numeric: tabular-nums; padding-bottom: 2px; }
+.mc-clock-note { margin-bottom: 2px; padding: 1px 6px; border: 1px solid var(--rule); color: var(--code-name); font: 11px/1.4 var(--ui-sans); }
+.mc-clock-note:empty { display: none; }
 .mc-scrubber { display: grid; min-width: 0; }
 /* The scrubber draws the home ruler's unfilled axis and its orange cursor,
    a small triangle on a stem. */
@@ -200,81 +247,261 @@
   gap: .35rem;
 }
 .mc-actions > button { flex: 1 1 auto; }
+/* The settings open as a card over the list, in the event card's look:
+   speed and level side by side under "中文 / CODE" names, the two default
+   buttons below. */
 .mc-play-settings {
+  position: absolute;
+  top: calc(100% - 4px);
+  right: 0;
+  z-index: 5;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: .35rem;
-  padding-block: .4rem;
-  border-block-start: 1px solid var(--line);
+  gap: 10px 12px;
+  width: min(272px, 100%);
+  padding: 12px 12px 13px;
+  background: var(--registration), light-dark(rgb(231 234 238 / 96%), rgb(11 15 20 / 96%));
+  box-shadow: inset 0 0 0 1px var(--rule), 0 10px 26px light-dark(rgb(0 0 0 / 9%), rgb(0 0 0 / 34%));
 }
-.mc-play-settings label { display: inline-flex; align-items: center; gap: .35rem; min-width: 0; }
-.mc-play-settings :is(.mc-rate, .mc-mode) { grid-column: 1 / -1; justify-content: space-between; }
-.mc-play-settings :is(input, select) { color: var(--paper); background: var(--panel); }
-.mc-play-settings :is(.mc-speed-input, .mc-granularity) { width: 45%; }
+.mc-play-settings label { display: grid; align-content: start; gap: 4px; min-width: 0; }
+.mc-field-name { color: var(--label); font: 11px/1.5 var(--ui-sans); letter-spacing: 0.04em; }
+.mc-field-name > span { color: var(--code-name); font: 9px/1.5 Consolas, "SFMono-Regular", monospace; letter-spacing: 0.08em; }
+.mc-input-unit { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mc-unit { flex: none; color: var(--code-name); font: 11px/1 Consolas, "SFMono-Regular", monospace; }
+.mc-play-settings :is(input, select) { width: 100%; min-width: 0; color: var(--paper); background: var(--panel); }
 .mc-play-settings > button { font-size: .75rem; }
+/* The card's legend of marks and its keys. */
+.mc-legend {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule);
+  color: var(--label);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.mc-legend + .mc-legend { padding-top: 0; border-top: 0; }
+.mc-legend > .mc-field-name { flex-basis: 100%; }
+.mc-legend-item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .mc-event-heading { color: var(--muted); font-size: .76rem; }
+/* The playback settings fold behind one summary row: speed and level at a
+   glance, the full controls a click away. */
+.mc-settings { position: relative; min-width: 0; border-block-start: 1px solid var(--line); }
+.mc-settings-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 8px 2px;
+  color: var(--label);
+  font-size: 12px;
+  line-height: 1.5;
+  list-style: none;
+  cursor: pointer;
+}
+.mc-settings-summary::-webkit-details-marker { display: none; }
+.mc-settings-summary:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+.mc-settings-key { color: var(--code-name); font-size: 11px; }
+.mc-settings-value { color: var(--paper); font: 12px/1.5 Consolas, "SFMono-Regular", monospace; }
+.mc-settings-value + .mc-settings-key::before { content: "·"; margin-right: 8px; color: var(--code-name); }
+.mc-settings-toggle { margin-left: auto; color: var(--label); font-size: 11px; transition: color 160ms ease; }
+.mc-settings-toggle::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 7px;
+  border: solid currentColor;
+  border-width: 0 1px 1px 0;
+  transform: translateY(-3px) rotate(45deg);
+  transition: transform 160ms ease;
+}
+.mc-settings[open] .mc-settings-toggle::after { transform: translateY(0) rotate(-135deg); }
+.mc-settings-summary:hover .mc-settings-toggle { color: var(--paper); }
 
-.mc-event-list {
+/* The list sits in a frame that also holds the pill leading back to the
+   current row once it has been scrolled out of view. */
+.mc-list-frame {
   --mc-row-height: 2rem;
+  --mc-ruler-axis: linear-gradient(var(--rule-strong) 0 0) var(--mc-list-axis, 39px) 0 / 1px 100% no-repeat;
+  position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 7.25rem; height: 14rem; }
+.mc-scene .mc-list-return {
+  position: absolute;
+  left: 50%;
+  z-index: 2;
+  padding: 3px 10px;
+  border-color: color-mix(in srgb, var(--red) 70%, transparent);
+  background: light-dark(#e7eaeeee, #0b0f14ee);
+  color: var(--signal-text);
+  font: 11px/1.4 Consolas, "SFMono-Regular", monospace;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+.mc-scene .mc-list-return:hover { border-color: var(--red); color: var(--signal-text); }
+.mc-list-return[data-edge="top"] { top: calc(var(--mc-row-height) + 6px); }
+/* The pinned station: the game tick of the rows at the top of the list. */
+.mc-list-pin {
+  position: absolute;
+  top: 1px;
+  left: 0;
+  right: 6px;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: var(--mc-list-axis, 39px) minmax(0, 1fr);
+  align-items: center;
+  height: var(--mc-row-height);
+  background:
+    linear-gradient(var(--rule-strong) 0 0) calc(var(--mc-list-axis, 39px) - 6px) 50% / 15px 1px no-repeat,
+    var(--mc-ruler-axis),
+    light-dark(#e7eaee, #0b0f14);
+  box-shadow: 0 1px 0 var(--rule);
+  color: var(--label);
+  font-size: 12px;
+  pointer-events: none;
+}
+.mc-list-pin[data-current-tick] .mc-tick-number { color: var(--signal-text); }
+.mc-list-return[data-edge="bottom"] { bottom: 8px; }
+.mc-event-list {
   position: relative;
   flex: 1 1 auto;
-  min-height: 7.25rem;
-  height: 14rem;
+  min-height: 0;
   margin: 0;
   padding: 0;
   overflow: auto;
   overflow-anchor: none;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--muted) var(--panel);
   border-block: 1px solid var(--line);
+}
+/* Hairline scrollbars: a 2px thumb with no track and no arrows. Browsers
+   without these pseudo-elements get their own thin bar. */
+:is(.mc-event-list, .mc-inspect, .mc-timeline)::-webkit-scrollbar { width: 6px; height: 6px; }
+:is(.mc-event-list, .mc-inspect, .mc-timeline)::-webkit-scrollbar-track,
+:is(.mc-event-list, .mc-inspect, .mc-timeline)::-webkit-scrollbar-corner { background: transparent; }
+:is(.mc-event-list, .mc-inspect, .mc-timeline)::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+:is(.mc-event-list, .mc-inspect, .mc-timeline)::-webkit-scrollbar-thumb { border: 2px solid transparent; background: var(--rule-strong) padding-box; }
+:is(.mc-event-list, .mc-inspect, .mc-timeline):hover::-webkit-scrollbar-thumb { background-color: var(--code-name); }
+@supports not selector(::-webkit-scrollbar) {
+  :is(.mc-event-list, .mc-inspect, .mc-timeline) { scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent; }
 }
 .mc-event-list:focus-visible { outline: 2px solid var(--red); outline-offset: 1px; }
 .mc-list-track { position: relative; overflow: clip; }
 .mc-list-window { position: absolute; inset: 0 0 auto; }
 .mc-row-measure { position: absolute; width: 1px; height: var(--mc-row-height); visibility: hidden; }
+/* The list reads as a vertical ruler. Every row draws its own stretch of the
+   axis, which stands just right of the widest tick number (--mc-list-axis,
+   set by js/mc-event-list.mjs), so the ruler scrolls with the list. A game
+   tick is a numbered station with a long mark across the axis; an empty tick
+   keeps only its number and a shorter mark. Events are short marks off the
+   axis, reaching further for deeper events. The orange cursor points at the
+   current row. */
 .mc-event-list button {
+  position: relative;
   width: 100%;
   height: var(--mc-row-height);
   min-height: 0;
   border: 0;
-  border-inline-start: 2px solid transparent;
   border-radius: 0;
   text-align: start;
 }
 .mc-event-list .mc-tick-row {
-  display: flex;
-  justify-content: space-between;
+  --mc-row-tick: var(--rule-strong);
+  --mc-row-tick-from: 6px;
+  --mc-row-tick-length: 15px;
+  display: grid;
+  grid-template-columns: var(--mc-list-axis, 39px) minmax(0, 1fr);
   align-items: center;
-  padding-inline: .4rem;
-  gap: .35rem;
-  color: var(--paper);
-  border-block-start: 1px solid var(--line);
-  background: transparent;
+  padding: 0;
+  color: var(--label);
+  background:
+    linear-gradient(var(--mc-row-tick) 0 0) calc(var(--mc-list-axis, 39px) - var(--mc-row-tick-from)) 50% / var(--mc-row-tick-length) 1px no-repeat,
+    var(--mc-ruler-axis);
 }
-.mc-tick-label { font-weight: 500; font-variant-numeric: tabular-nums; }
-.mc-tick-count, .mc-event-index, .mc-event-pos { color: var(--muted); font-size: .71rem; }
+.mc-event-list .mc-tick-row:has(.mc-tick-count:empty) { --mc-row-tick: var(--rule); --mc-row-tick-from: 4px; --mc-row-tick-length: 5px; }
+.mc-tick-number {
+  justify-self: end;
+  padding-right: 11px;
+  color: var(--label);
+  font: 11px/1 Consolas, "SFMono-Regular", monospace;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.mc-tick-row:has(.mc-tick-count:empty) .mc-tick-number { color: var(--code-name); }
+.mc-tick-count { padding-left: 18px; }
+.mc-tick-count, .mc-event-index, .mc-event-pos { color: var(--code-name); font-size: .71rem; }
 .mc-event-list .mc-event-row {
+  --mc-row-tick: var(--rule);
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: .35rem;
-  padding: 0 .3rem 0 calc(.3rem + var(--mc-depth, 0) * .45rem);
+  gap: .5rem;
+  padding: 0 .45rem 0 calc(var(--mc-list-axis, 39px) + 14px + var(--mc-depth, 0) * 10px);
+  background:
+    linear-gradient(var(--mc-row-tick) 0 0) calc(var(--mc-list-axis, 39px) + 1px) 50% / calc(5px + var(--mc-depth, 0) * 10px) 1px no-repeat,
+    var(--mc-ruler-axis);
 }
-.mc-event-list button:hover:enabled { background: var(--line); }
-.mc-event-list [data-current-tick] .mc-tick-label { color: var(--red); }
+.mc-event-list button:hover:enabled { background-color: var(--line); }
+.mc-event-list [data-current-tick] .mc-tick-number { color: var(--signal-text); }
 .mc-event-list button[aria-current="step"] {
+  --mc-row-tick: var(--red);
   color: var(--paper);
-  border-inline-start-color: var(--red);
-  background: color-mix(in srgb, var(--red) 13%, var(--panel));
+  background-color: color-mix(in srgb, var(--red) 7%, transparent);
+}
+.mc-event-list button[aria-current="step"]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: calc(var(--mc-list-axis, 39px) - 9px);
+  width: 7px;
+  height: 10px;
+  margin-top: -5px;
+  background: var(--red);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
 }
 .mc-event-label, .mc-event-pos { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A small mark ends each event's tick: a block change ■, an update ◇, a
+   scheduled tick ○, a block event □, a piston ▶, a game event + and an
+   entity ●. Phases already mark the structure and take none. The settings
+   legend draws the same shapes. */
+.mc-event-row::after, .mc-glyph {
+  --mc-glyph: var(--code-name);
+  box-sizing: border-box;
+  width: 6px;
+  height: 6px;
+}
+.mc-event-row::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: calc(var(--mc-list-axis, 39px) + 3px + var(--mc-depth, 0) * 10px);
+  margin-top: -3px;
+  pointer-events: none;
+}
+.mc-glyph { display: inline-block; flex: none; }
+.mc-event-list button[aria-current="step"]::after { --mc-glyph: var(--red); }
+.mc-event-row[data-kind="set"]::after, .mc-glyph[data-kind="set"],
+.mc-event-row[data-kind="entity"]::after, .mc-glyph[data-kind="entity"],
+.mc-event-row[data-kind="other"]::after { background: var(--mc-glyph); }
+.mc-event-row[data-kind="entity"]::after, .mc-glyph[data-kind="entity"] { border-radius: 50%; }
+.mc-event-row[data-kind="other"]::after { transform: scale(0.4); }
+.mc-event-row[data-kind="update"]::after, .mc-glyph[data-kind="update"] { border: 1px solid var(--mc-glyph); transform: rotate(45deg) scale(0.85); }
+.mc-event-row[data-kind="tick"]::after, .mc-glyph[data-kind="tick"] { border: 1px solid var(--mc-glyph); border-radius: 50%; }
+.mc-event-row[data-kind="event"]::after, .mc-glyph[data-kind="event"] { border: 1px solid var(--mc-glyph); }
+.mc-event-row[data-kind="piston"]::after, .mc-glyph[data-kind="piston"] { background: var(--mc-glyph); clip-path: polygon(0 0, 100% 50%, 0 100%); }
+.mc-event-row[data-kind="game"]::after, .mc-glyph[data-kind="game"] {
+  background:
+    linear-gradient(var(--mc-glyph) 0 0) 50% 50% / 100% 1px no-repeat,
+    linear-gradient(var(--mc-glyph) 0 0) 50% 50% / 1px 100% no-repeat;
+}
+.mc-event-row[data-kind="phase"]::after { content: none; }
 .mc-event-pos { max-width: 8em; }
 /* flex-shrink: 0 keeps the details row whole; the desktop column squeezed it
    to 15px and cut its text off. */
 .mc-inspect {
   flex-shrink: 0;
-  max-height: 7.25rem;
+  max-height: 10rem;
   overflow: auto;
   overscroll-behavior: contain;
   padding-block: .4rem;
@@ -282,6 +509,22 @@
 }
 .mc-event { color: var(--paper); font-size: .87rem; }
 .mc-state { color: var(--muted); font-size: .76rem; overflow-wrap: anywhere; }
+/* The current event's facts as named fields, in the article header's
+   "中文 / CODE" style. A change lists only what changed; the new value is
+   orange. */
+.mc-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 14px; margin: 4px 0 0; }
+.mc-scene .mc-field .mc-parent { margin: 0; padding: 0; border: 0; background: none; color: var(--signal-text); font: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--red) 60%, transparent); text-underline-offset: 3px; }
+.mc-scene .mc-field .mc-parent:hover { color: var(--red); }
+.mc-fields:empty { display: none; }
+.mc-field { min-width: 0; }
+.mc-field-wide { grid-column: 1 / -1; }
+.mc-field dt { color: var(--label); font: 11px/1.5 var(--ui-sans); letter-spacing: 0.04em; }
+.mc-field dt > span { color: var(--code-name); font: 9px/1.5 Consolas, "SFMono-Regular", monospace; letter-spacing: 0.08em; }
+.mc-field dd { margin: 1px 0 0; color: var(--paper); font: 12px/1.6 Consolas, "SFMono-Regular", monospace; overflow-wrap: anywhere; }
+.mc-prop, .mc-change { display: inline-block; margin-right: 10px; white-space: nowrap; }
+.mc-prop { color: var(--label); }
+.mc-prop-key { color: var(--code-name); }
+.mc-change-to { color: var(--signal-text); font-weight: 600; }
 .mc-scene .mc-parent { margin-top: .3rem; }
 .mc-secondary-actions > button, .mc-scene .mc-parent { font-size: .74rem; }
 
@@ -298,11 +541,11 @@
     border-inline-start: 1px solid var(--rule);
     overflow-y: auto;
   }
-  .mc-event-list { height: auto; }
+  .mc-list-frame { height: auto; }
 }
 @media (pointer: coarse) {
   .mc-scene button, .mc-play-settings :is(input, select) { min-height: 44px; }
-  .mc-event-list { --mc-row-height: max(44px, 2rem); }
+  .mc-list-frame { --mc-row-height: max(44px, 2rem); }
   .mc-slider { min-height: 26px; }
   .mc-slider::-webkit-slider-thumb { width: 13px; height: 25px; margin-top: -18px; }
   .mc-slider::-moz-range-thumb { width: 13px; height: 25px; }

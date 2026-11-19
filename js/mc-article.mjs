@@ -1,5 +1,6 @@
 import { createReplay, validateScene } from './mc-replay.mjs';
 import { mountTimeline } from './mc-timeline.mjs';
+import { mountCallout } from './mc-callout.mjs';
 
 // Each illustration keeps its own cursor and camera, even when it cites a shared recording.
 const scenes = new Map();
@@ -16,6 +17,49 @@ function sharedTick() {
   return value !== null && /^-?\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : undefined;
 }
 
+// The first times a pointer comes over a 3D view, a hint fades in beside its
+// label; once the reader has dragged or zoomed a view, it never shows again.
+// Touch screens show it once when the view comes into sight.
+const hintKey = 'gudu-mc-hint';
+function mountViewHint(stage, signal) {
+  let seen = false;
+  try { seen = localStorage.getItem(hintKey) === '1'; } catch {}
+  if (seen) return;
+  const touch = matchMedia('(pointer: coarse)').matches;
+  const hint = document.createElement('span');
+  hint.className = 'mc-stage-hint';
+  hint.setAttribute('aria-hidden', 'true');
+  hint.textContent = touch ? '拖动旋转 · 双指缩放' : '拖动旋转 · 滚轮缩放';
+  stage.append(hint);
+  let timer = 0;
+  const show = () => {
+    if (seen) return;
+    hint.classList.add('is-shown');
+    clearTimeout(timer);
+    timer = setTimeout(() => hint.classList.remove('is-shown'), 4000);
+  };
+  const done = () => {
+    if (seen) return;
+    seen = true;
+    clearTimeout(timer);
+    hint.classList.remove('is-shown');
+    try { localStorage.setItem(hintKey, '1'); } catch {}
+  };
+  signal.addEventListener('abort', () => clearTimeout(timer), { once: true });
+  stage.addEventListener('pointerenter', event => { if (event.pointerType === 'mouse') show(); }, { signal });
+  stage.addEventListener('pointerdown', event => { if (event.target.closest?.('.mc-canvas')) done(); }, { signal });
+  stage.addEventListener('wheel', done, { signal, passive: true });
+  if (touch && 'IntersectionObserver' in window) {
+    const sight = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      sight.disconnect();
+      show();
+    }, { threshold: 0.6 });
+    sight.observe(stage);
+    signal.addEventListener('abort', () => sight.disconnect(), { once: true });
+  }
+}
+
 function mountFigure(figure) {
   const toggle = figure.querySelector('[data-mc-open]');
   const view = figure.querySelector('[data-mc-view]');
@@ -25,8 +69,17 @@ function mountFigure(figure) {
   const reopenLabel = toggle.textContent;
   const stage = document.createElement('div');
   stage.className = 'mc-stage';
+  // The view takes focus (by Tab, or a press on the model), so the replay's
+  // keys work after looking around.
+  stage.tabIndex = 0;
+  stage.setAttribute('role', 'group');
+  stage.setAttribute('aria-label', '3D 视图');
+  stage.setAttribute('aria-keyshortcuts', 'Space ArrowLeft ArrowRight');
+  stage.addEventListener('pointerdown', event => {
+    if (event.target.closest?.('.mc-canvas')) stage.focus({ preventScroll: true });
+  });
   const linkedStep = sharedStep(figure.id);
-  let session, observer, viewer, playback, resumeStep, resumeTick;
+  let session, observer, viewer, playback, callout, resumeStep, resumeTick;
   let failed = false;
 
   function release() {
@@ -37,7 +90,8 @@ function mountFigure(figure) {
       playback.destroy();
     }
     viewer?.destroy();
-    session = playback = viewer = null;
+    callout?.destroy();
+    session = playback = viewer = callout = null;
   }
 
   function showStage() {
@@ -115,7 +169,9 @@ function mountFigure(figure) {
           submitLatest();
         }, () => viewer?.getCamera(), {
           ticksPerSecond: figure.hasAttribute('data-speed') ? Number(figure.dataset.speed) : scene.playbackSpeed,
+          onPlaying: value => callout?.setPlaying(value),
         });
+        callout = mountCallout(stage, playback.details);
         const preferred = requestedStep ?? bookmark.step ?? 0;
         const useRequest = requestedStep != null && preferred <= scene.events.length;
         playback.seek(useRequest ? preferred : bookmark.step ?? 0, false, useRequest ? requestedTick : bookmark.tick);
@@ -151,9 +207,11 @@ function mountFigure(figure) {
         sceneURL, camera: bookmark.camera, focus: bookmark.focus, signal,
         name: figure.querySelector('figcaption')?.textContent || '红石结构',
         theme: document.documentElement.dataset.theme || 'dark', onStatus,
+        onFocusBox: (box, model) => callout?.place(box, model),
       });
       if (signal.aborted) { instance.destroy(); return; }
       viewer = instance;
+      mountViewHint(stage, signal);
       window.addEventListener('site:theme', event => viewer?.setTheme(event.detail.theme), { signal });
       submitLatest();
       document.addEventListener('visibilitychange', () => {

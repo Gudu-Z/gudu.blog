@@ -5,7 +5,10 @@ import { readPalette, replayBounds, renderData } from './mc-render-data.mjs';
 const svgNS = 'http://www.w3.org/2000/svg';
 const edges = [[0,1],[0,2],[0,4],[1,3],[1,5],[2,3],[2,6],[3,7],[4,5],[4,6],[5,7],[6,7]];
 
-function createOutline(container, renderer) {
+// The orange box round the focused block. Each draw also reports the box's
+// rectangle in the stage (or null when there is none in view), so the event
+// card (js/mc-callout.mjs) can stand beside it.
+function createOutline(container, renderer, onBox, getBounds) {
   const svg = document.createElementNS(svgNS, 'svg');
   svg.classList.add('mc-focus');
   svg.setAttribute('aria-hidden', 'true');
@@ -19,8 +22,22 @@ function createOutline(container, renderer) {
   }
   container.append(svg);
   const vertex = renderer.camera.position.clone();
+  // The whole recording's box on screen, which the event card tries to keep clear of.
+  function modelBox() {
+    const bounds = getBounds?.();
+    if (!bounds) return null;
+    const width = container.clientWidth, height = container.clientHeight;
+    const box = { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity };
+    for (let i = 0; i < 8; i++) {
+      vertex.set(i & 1 ? bounds.maxX + 1 : bounds.minX, i & 2 ? bounds.maxY + 1 : bounds.minY, i & 4 ? bounds.maxZ + 1 : bounds.minZ).project(renderer.camera);
+      const x = (vertex.x + 1) * width / 2, y = (1 - vertex.y) * height / 2;
+      box.left = Math.min(box.left, x); box.right = Math.max(box.right, x);
+      box.top = Math.min(box.top, y); box.bottom = Math.max(box.bottom, y);
+    }
+    return box;
+  }
   function draw(pos) {
-    let path = '';
+    let path = '', box = null;
     if (pos) {
       const width = container.clientWidth, height = container.clientHeight, camera = renderer.camera;
       camera.updateMatrixWorld();
@@ -29,8 +46,15 @@ function createOutline(container, renderer) {
         return vertex.z < -1 || vertex.z > 1 ? null : [(vertex.x + 1) * width / 2, (1 - vertex.y) * height / 2];
       });
       path = edges.filter(([a,b]) => points[a] && points[b]).map(([a,b]) => 'M' + points[a] + 'L' + points[b]).join('');
+      const seen = points.filter(Boolean);
+      if (seen.length) {
+        box = { left: Math.min(...seen.map(p => p[0])), right: Math.max(...seen.map(p => p[0])),
+          top: Math.min(...seen.map(p => p[1])), bottom: Math.max(...seen.map(p => p[1])) };
+        if (box.right < 0 || box.bottom < 0 || box.left > width || box.top > height) box = null;
+      }
     }
     for (const node of svg.children) node.setAttribute('d', path);
+    onBox?.(box, box && modelBox());
   }
   return { draw, remove: () => svg.remove() };
 }
@@ -41,7 +65,41 @@ async function readSchematic(url, signal) {
   return parseLitematica(await response.arrayBuffer(), undefined, { signal, renderOnly: true });
 }
 
-function applyCamera(renderer, bounds, saved) {
+// The fit below holds the box's whole bounding sphere, and its nearest corner
+// grows in perspective, so a replay sits small in its frame. Without a saved
+// camera, centre the blocks themselves and zoom until they span about seven
+// tenths of the frame.
+function frameBlocks(renderer, blocks) {
+  const { camera, controls } = renderer;
+  const point = camera.position.clone();
+  function extent() {
+    camera.updateMatrixWorld();
+    const box = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+    for (const block of blocks) {
+      for (let i = 0; i < 8; i++) {
+        point.set(block[0] + (i & 1), block[1] + ((i >> 1) & 1), block[2] + ((i >> 2) & 1)).project(camera);
+        if (point.z < -1 || point.z > 1) continue;
+        box.minX = Math.min(box.minX, point.x); box.maxX = Math.max(box.maxX, point.x);
+        box.minY = Math.min(box.minY, point.y); box.maxY = Math.max(box.maxY, point.y);
+      }
+    }
+    return Number.isFinite(box.minX) ? box : null;
+  }
+  let box = extent();
+  if (!box) return;
+  const depth = point.copy(controls.target).project(camera).z;
+  const centre = point.set((box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2, depth).unproject(camera).sub(controls.target);
+  camera.position.add(centre);
+  controls.target.add(centre);
+  controls.update();
+  box = extent();
+  if (!box) return;
+  const half = Math.max(box.maxX - box.minX, box.maxY - box.minY) / 2;
+  camera.zoom = Math.min(3, Math.max(1, 0.7 / half));
+  camera.updateProjectionMatrix();
+}
+
+function applyCamera(renderer, bounds, saved, blocks) {
   renderer.setProjectionMode(saved?.projection ?? 'perspective');
   renderer.fitToBounds(bounds);
   const camera = renderer.camera;
@@ -58,6 +116,7 @@ function applyCamera(renderer, bounds, saved) {
   }
   camera.zoom = saved?.zoom ?? 1;
   camera.updateProjectionMatrix();
+  if (!saved && blocks?.length) frameBlocks(renderer, blocks);
   renderer.controls.update();
   renderer.requestRender();
 }
@@ -78,13 +137,15 @@ async function staticDetails(renderer, data, assets, signal) {
 }
 
 export async function createSceneViewer(container, scene, { sceneURL, name = 'çº¢çŸ³ç»“æž„', camera: bookmarkCamera,
-  focus: initialFocus, theme = 'auto', onStatus, signal: parentSignal } = {}) {
+  focus: initialFocus, theme = 'auto', onStatus, onFocusBox, signal: parentSignal } = {}) {
   const lifecycle = new AbortController(), { signal } = lifecycle;
   parentSignal?.throwIfAborted();
   parentSignal?.addEventListener('abort', destroy, { once: true });
   const assets = new AssetProvider(), resolver = new BlockModelResolver(assets);
   let renderer, outline, resize, visibility, resetButton, bounds, palette;
   let completed = false, busy = false, active = true, readyFrame = 0, revision, focus = initialFocus;
+  // The recording's first blocks frame the default view (a schematic keeps the plain fit).
+  const framing = scene.schematic ? null : scene.blocks;
 
   function destroy() {
     if (signal.aborted) return;
@@ -117,7 +178,7 @@ export async function createSceneViewer(container, scene, { sceneURL, name = 'çº
     renderer.setBackgroundColor(dark ? '#10151c' : '#dee1e6');
   }
   function resetView() {
-    if (renderer && bounds) applyCamera(renderer, bounds, bookmarkCamera);
+    if (renderer && bounds) applyCamera(renderer, bounds, bookmarkCamera, framing);
   }
   function reportError(error) {
     revision = undefined;
@@ -147,7 +208,7 @@ export async function createSceneViewer(container, scene, { sceneURL, name = 'çº
       await renderer.render(data, assets, undefined, undefined, false, { signal });
       if (scene.schematic) await staticDetails(renderer, data, assets, signal);
       signal.throwIfAborted();
-      if (!completed || camera) applyCamera(renderer, bounds, camera ?? bookmarkCamera);
+      if (!completed || camera) applyCamera(renderer, bounds, camera ?? bookmarkCamera, framing);
       completed = true;
     } finally {
       finish();
@@ -178,7 +239,7 @@ export async function createSceneViewer(container, scene, { sceneURL, name = 'çº
     renderer.setWireframesVisible(false);
     renderer.setDimensionsVisible(false);
     setTheme(theme);
-    outline = createOutline(container, renderer);
+    outline = createOutline(container, renderer, onFocusBox, () => bounds);
     renderer.controls.addEventListener('change', redraw);
     resize = new ResizeObserver(() => {
       if (!signal.aborted && container.clientWidth && container.clientHeight) { renderer._resize(); redraw(); }

@@ -194,6 +194,86 @@ function createScale(axis) {
 
 function sameCursor(a, b) { return a.step === b.step && a.offset === b.offset; }
 
+// A palette entry such as minecraft:redstone_wire[east=side,power=15] as its
+// short name (the vanilla namespace dropped) and its properties.
+export function parseBlockState(state) {
+  const match = /^([^[]+)(?:\[(.*)\])?$/.exec(state ?? '');
+  const id = (match?.[1] ?? '').replace(/^minecraft:/, '');
+  const properties = new Map();
+  for (const pair of match?.[2] ? match[2].split(',') : []) {
+    const [key, value = ''] = pair.split('=');
+    if (key) properties.set(key, value);
+  }
+  return { id, properties };
+}
+
+// The properties a block change touched, in the order the states list them.
+export function changedProperties(before, after) {
+  const keys = [...new Set([...before.properties.keys(), ...after.properties.keys()])];
+  return keys.filter(key => before.properties.get(key) !== after.properties.get(key))
+    .map(key => ({ key, from: before.properties.get(key) ?? '', to: after.properties.get(key) ?? '' }));
+}
+
+function field(name, code, value, wide = false) {
+  const item = element('div', '', wide ? 'mc-field mc-field-wide' : 'mc-field');
+  const term = element('dt', name + ' ');
+  const codeName = element('span', '/ ' + code);
+  codeName.setAttribute('aria-hidden', 'true');
+  term.append(codeName);
+  const data = element('dd');
+  data.append(value);
+  item.append(term, data);
+  return item;
+}
+
+function properties(map) {
+  const list = document.createDocumentFragment();
+  for (const [key, value] of map) {
+    const pair = element('span', '', 'mc-prop');
+    pair.append(element('span', key, 'mc-prop-key'), ' ' + value);
+    list.append(pair, ' ');
+  }
+  return list;
+}
+
+// The current event as named fields, in the article header's "中文 / CODE"
+// style. A block change lists only what it changed, the new value in orange.
+function eventFields(scene, replay, event) {
+  const list = element('dl', '', 'mc-fields');
+  if (!event?.pos) {
+    if (event?.piston) list.append(field('进度', 'PROGRESS', `${Math.round(event.piston.progress * 100)}%`));
+    return list;
+  }
+  list.append(field('坐标', 'POS', worldPosition(scene, event.pos)));
+  if (event.after !== undefined) {
+    const after = parseBlockState(scene.palette[event.after]);
+    const before = event.before !== undefined ? parseBlockState(scene.palette[event.before]) : null;
+    if (!before || before.id !== after.id) {
+      const swap = document.createDocumentFragment();
+      if (before) swap.append(before.id + ' → ');
+      swap.append(element('b', after.id, 'mc-change-to'));
+      list.append(field('方块', 'BLOCK', swap));
+      if (after.properties.size) list.append(field('状态', 'STATE', properties(after.properties), true));
+    } else {
+      list.append(field('方块', 'BLOCK', after.id));
+      const changes = document.createDocumentFragment();
+      for (const { key, from, to } of changedProperties(before, after)) {
+        const change = element('span', '', 'mc-change');
+        change.append(element('span', key, 'mc-prop-key'), ` ${from} → `, element('b', to, 'mc-change-to'));
+        changes.append(change, ' ');
+      }
+      list.append(field('变化', 'CHANGE', changes.childNodes.length ? changes : '状态没有变化'));
+    }
+  } else {
+    const index = replay.blocks.get(event.pos.join(','));
+    const state = parseBlockState(index === undefined ? 'minecraft:air' : scene.palette[index]);
+    list.append(field('方块', 'BLOCK', state.id));
+    if (state.properties.size) list.append(field('状态', 'STATE', properties(state.properties), true));
+  }
+  if (event.piston) list.append(field('进度', 'PROGRESS', `${Math.round(event.piston.progress * 100)}%`));
+  return list;
+}
+
 export function mountTimeline(container, figure, scene, replay, bookmark, onStep, getCamera, options = {}) {
   const { groups, depths } = indexTicks(scene.events);
   const axis = createTickAxis(groups, scene.tickRange);
@@ -201,7 +281,25 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   const hasTime = groups.length > 0 || Boolean(scene.tickRange);
   const panel = element('aside', '', 'mc-timeline');
   panel.setAttribute('aria-label', '回放时间轴');
+  // The clock reads like an instrument: the game tick large, the step and any
+  // note (start of the recording, a tick without events) small beside it.
   const clock = element('output', '', 'mc-clock');
+  const clockTick = element('b', '', 'mc-clock-tick');
+  const clockStep = element('span', '', 'mc-clock-step');
+  const clockNote = element('span', '', 'mc-clock-note');
+  const tickLabel = element('span', '游戏刻 ', 'mc-clock-label');
+  const tickCode = element('span', '/ GAME TICK');
+  tickCode.setAttribute('aria-hidden', 'true');
+  tickLabel.append(tickCode);
+  const tickField = element('span', '', 'mc-clock-field');
+  tickField.append(tickLabel, clockTick);
+  const stepLabel = element('span', '步 ', 'mc-clock-label');
+  const stepCode = element('span', '/ STEP');
+  stepCode.setAttribute('aria-hidden', 'true');
+  stepLabel.append(stepCode);
+  const stepField = element('span', '', 'mc-clock-field');
+  stepField.append(stepLabel, clockStep);
+  clock.append(tickField, stepField, clockNote);
   const slider = element('input', '', 'mc-slider');
   slider.type = 'range';
   slider.min = String(axis.origin);
@@ -212,6 +310,12 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   const scrubber = element('div', '', 'mc-scrubber');
   scrubber.append(slider, createScale(axis));
   const actions = element('div', '', 'mc-actions');
+  // Playback settings fold behind a one-line summary of speed and level, so
+  // the event list keeps the column's height.
+  const settingsPanel = element('details', '', 'mc-settings');
+  const settingsSummary = element('summary', '', 'mc-settings-summary');
+  const summarySpeed = element('span', '', 'mc-settings-value');
+  const summaryMode = element('span', '', 'mc-settings-value');
   const settings = element('div', '', 'mc-play-settings');
   const secondary = element('div', '', 'mc-secondary-actions');
   const inspect = element('section', '', 'mc-inspect');
@@ -225,13 +329,24 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   let mode = 'event', cursor = axis.forStep(0);
   let time = 0, baseTime = 0, baseStamp = 0;
 
-  const rateLabel = element('label', '播放速度 (gt/s)', 'mc-rate');
+  // The settings open as a card over the list, styled like the event card,
+  // its controls under "中文 / CODE" field names.
+  const fieldName = (name, code) => {
+    const label = element('span', name + ' ', 'mc-field-name');
+    const codeName = element('span', '/ ' + code);
+    codeName.setAttribute('aria-hidden', 'true');
+    label.append(codeName);
+    return label;
+  };
+  const rateLabel = element('label', '', 'mc-rate');
   const rateInput = element('input', '', 'mc-speed-input');
   rateInput.type = 'number';
   rateInput.step = 'any';
   rateInput.min = '0';
   rateInput.value = String(speed);
-  rateLabel.append(rateInput);
+  const rateControl = element('span', '', 'mc-input-unit');
+  rateControl.append(rateInput, element('span', 'gt/s', 'mc-unit'));
+  rateLabel.append(fieldName('速度', 'SPEED'), rateControl);
   function setSpeed(value) {
     if (!validSpeed(value)) return false;
     if (playing) {
@@ -240,7 +355,12 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
       baseStamp = now;
     }
     speed = value;
+    summarize();
     return true;
+  }
+  function summarize() {
+    summarySpeed.textContent = `${speed} gt/s`;
+    summaryMode.textContent = selectMode.selectedOptions[0]?.textContent ?? '';
   }
   rateInput.addEventListener('input', () => setSpeed(rateInput.valueAsNumber));
   rateInput.addEventListener('change', () => {
@@ -257,7 +377,8 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     shareStatus.textContent = cleared ? `已恢复默认速度 ${speed} gt/s。` : '浏览器无法清除默认速度。';
   });
   resetSpeed.className = 'mc-speed-reset';
-  const modeLabel = element('label', '显示粒度', 'mc-mode');
+  const modeLabel = element('label', '', 'mc-mode');
+  modeLabel.append(fieldName('粒度', 'LEVEL'));
   const selectMode = element('select', '', 'mc-granularity');
   for (const [value, name] of [['tick', '游戏刻'], ['phase', '阶段'], ['event', '事件']]) {
     const option = element('option', name);
@@ -266,7 +387,38 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   }
   selectMode.value = mode;
   modeLabel.append(selectMode);
-  settings.append(rateLabel, saveSpeed, resetSpeed, modeLabel);
+  // The card also explains the list's marks and the keyboard.
+  const legend = element('div', '', 'mc-legend');
+  legend.append(fieldName('记号', 'MARKS'));
+  for (const [kind, name] of [['set', '方块变化'], ['update', '更新'], ['tick', '计划刻'], ['event', '方块事件'],
+    ['piston', '活塞'], ['game', '游戏事件'], ['entity', '实体']]) {
+    const item = element('span', '', 'mc-legend-item');
+    const glyph = element('i', '', 'mc-glyph');
+    glyph.dataset.kind = kind;
+    glyph.setAttribute('aria-hidden', 'true');
+    item.append(glyph, name);
+    legend.append(item);
+  }
+  const keys = element('div', '', 'mc-legend');
+  keys.append(fieldName('快捷键', 'KEYS'), element('span', '空格 播放 / 暂停', 'mc-legend-item'),
+    element('span', '← → 上一步 / 下一步', 'mc-legend-item'));
+  settings.append(rateLabel, modeLabel, saveSpeed, resetSpeed, legend, keys);
+  settingsSummary.append(element('span', '速度', 'mc-settings-key'), summarySpeed,
+    element('span', '粒度', 'mc-settings-key'), summaryMode, element('span', '设置', 'mc-settings-toggle'));
+  settingsPanel.append(settingsSummary, settings);
+  // The card closes on a press outside it or on Escape, which returns focus
+  // to its summary.
+  const settingsWatch = new AbortController();
+  document.addEventListener('pointerdown', event => {
+    if (settingsPanel.open && !settingsPanel.contains(event.target)) settingsPanel.open = false;
+  }, { signal: settingsWatch.signal });
+  settingsPanel.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || !settingsPanel.open) return;
+    event.preventDefault();
+    settingsPanel.open = false;
+    settingsSummary.focus();
+  });
+  summarize();
 
   const prev = action('上一步', () => manual(adjacentCursor(axis, phases, cursor, mode, -1)));
   const next = action('下一步', () => manual(adjacentCursor(axis, phases, cursor, mode, 1)));
@@ -279,10 +431,30 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     baseStamp = performance.now();
     playing = true;
     play.textContent = '暂停';
+    options.onPlaying?.(true);
     frame = requestAnimationFrame(animate);
   });
   play.disabled = true;
   actions.append(prev, play, next);
+  // Keyboard: with focus anywhere in the replay, Space plays or pauses and
+  // the left and right arrows step. Fields, menus and the slider keep their
+  // own keys, and a focused button keeps Space for itself.
+  for (const [button, key, hint] of [[prev, 'ArrowLeft', '上一步（←）'], [play, 'Space', '播放 / 暂停（空格）'], [next, 'ArrowRight', '下一步（→）']]) {
+    button.setAttribute('aria-keyshortcuts', key);
+    button.title = hint;
+  }
+  figure.addEventListener('keydown', event => {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || target.closest('input, select, textarea, [contenteditable="true"], details[open] .mc-play-settings')) return;
+    const press = button => {
+      event.preventDefault();
+      if (!button.disabled) button.click();
+    };
+    if (event.key === ' ' && !target.closest('button, summary, a')) press(play);
+    else if (event.key === 'ArrowLeft') press(prev);
+    else if (event.key === 'ArrowRight') press(next);
+  }, { signal: settingsWatch.signal });
 
   const list = mountEventList(scene, step => manual(axis.forStep(step)), {
     label: eventLabel, position: pos => worldPosition(scene, pos), groups, depths,
@@ -330,9 +502,10 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   slider.addEventListener('input', () => manual(axis.at(Number(slider.value) - axis.origin)));
   selectMode.addEventListener('change', () => {
     mode = selectMode.value;
+    summarize();
     manual(cursor);
   });
-  panel.append(clock, scrubber, actions, settings, list.element, inspect, secondary, shareStatus);
+  panel.append(clock, scrubber, actions, settingsPanel, list.element, inspect, secondary, shareStatus);
   container.append(panel);
 
   function timeAt(stamp) {
@@ -350,10 +523,12 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   }
 
   function stop() {
+    const was = playing;
     playing = false;
     play.textContent = '播放';
     play.disabled = !hasTime || !ready;
     cancelAnimationFrame(frame);
+    if (was) options.onPlaying?.(false);
   }
 
   function present(nextCursor, resetCamera = false) {
@@ -364,30 +539,26 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     const event = group && step >= group.first ? replay.event : null;
     const gap = groupIndex < 0;
     slider.value = String(axis.origin + offset);
-    const note = !step && offset === 0 ? ' · 录制起点' : gap ? ' · 无事件' : '';
-    clock.textContent = `游戏刻 ${tick}${note} · 第 ${step} / ${axis.end} 步`;
-    slider.setAttribute('aria-valuetext', clock.textContent);
+    const note = !step && offset === 0 ? '录制起点' : gap ? '无事件' : '';
+    clockTick.textContent = String(tick).padStart(3, '0');
+    clockStep.textContent = `${step} / ${axis.end}`;
+    clockNote.textContent = note;
+    slider.setAttribute('aria-valuetext', `游戏刻 ${tick}${note ? ' · ' + note : ''} · 第 ${step} / ${axis.end} 步`);
     prev.disabled = sameCursor(cursor, adjacentCursor(axis, phases, cursor, mode, -1));
     next.disabled = sameCursor(cursor, adjacentCursor(axis, phases, cursor, mode, 1));
     list.sync(step, { ...cursor, mode });
     const label = event ? eventLabel(event) : step === 0 && offset === 0 ? '初始结构' : '本刻没有记录事件';
     const detail = event?.detail;
     eventText.textContent = detail && !Object.hasOwn(subtypes, detail) && detail !== label ? `${label} · ${detail}` : label;
-    const notes = [];
-    if (event?.pos) {
-      notes.push(`坐标 (${worldPosition(scene, event.pos)})`);
-      if (event.after !== undefined) {
-        const before = event.before !== undefined ? `${scene.palette[event.before]} → ` : '';
-        notes.push(before + scene.palette[event.after]);
-      } else {
-        const index = replay.blocks.get(event.pos.join(','));
-        notes.push(index === undefined ? 'minecraft:air' : scene.palette[index]);
-      }
-    }
-    if (event?.piston) notes.push(`移动进度 ${Math.round(event.piston.progress * 100)}%`);
-    details.textContent = notes.join(' · ');
+    const fields = eventFields(scene, replay, event);
     parent.hidden = event?.parent === undefined;
-    if (!parent.hidden) parent.textContent = `上级事件 #${event.parent + 1}`;
+    if (!parent.hidden) {
+      // The parent link is one more field, so it costs the list no row.
+      parent.textContent = `#${event.parent + 1}`;
+      parent.setAttribute('aria-label', `跳到上级事件 #${event.parent + 1}`);
+      fields.append(field('上级', 'PARENT', parent));
+    }
+    details.replaceChildren(fields);
     shareStatus.replaceChildren();
     onStep(step, resetCamera, { tick, gap, playing });
   }
@@ -406,6 +577,8 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   }
   return {
     seek, stop, setReady, getTick: () => cursor.tick,
-    destroy() { stop(); list.destroy(); },
+    // The current event's details, for js/mc-callout.mjs to set beside its block.
+    details: inspect,
+    destroy() { stop(); list.destroy(); settingsWatch.abort(); },
   };
 }
