@@ -1,5 +1,6 @@
-// One logical row per game tick plus the events visible at the chosen level.
-// Store only each recorded group's first row. Even long gaps need no row array.
+// One logical row per game tick plus the events whose rows are open: `shown`
+// lists those steps in order, or is null for every event. Store only each
+// recorded group's first row. Even long gaps need no row array.
 function upperBound(length, read, value) {
   let low = 0, high = length;
   while (low < high) {
@@ -10,13 +11,9 @@ function upperBound(length, read, value) {
   return low;
 }
 
-export function indexEventRows(groups, offsets, phaseSteps, eventCount, mode, origin, maxOffset) {
-  const before = groups.map(group => {
-    if (mode === 'tick') return 0;
-    if (mode === 'event') return group.first - 1;
-    return upperBound(phaseSteps.length, i => phaseSteps[i], group.first - 1);
-  });
-  const totalEvents = mode === 'tick' ? 0 : mode === 'phase' ? phaseSteps.length : eventCount;
+export function indexEventRows(groups, offsets, shown, eventCount, mode, origin, maxOffset) {
+  const before = groups.map(group => shown ? upperBound(shown.length, i => shown[i], group.first - 1) : group.first - 1);
+  const totalEvents = shown ? shown.length : eventCount;
   const headers = groups.map((_, i) => offsets[i] + before[i]);
   function countIn(i) { return (before[i + 1] ?? totalEvents) - before[i]; }
   const length = maxOffset + 1 + totalEvents;
@@ -32,20 +29,43 @@ export function indexEventRows(groups, offsets, phaseSteps, eventCount, mode, or
       return { offset: offsets[i] + ahead, tick: group.tick + ahead,
         count: ahead ? 0 : group.last - group.first + 1, groupIndex: ahead ? -1 : i };
     }
-    const step = mode === 'phase' ? phaseSteps[before[i] + relative - 1] : group.first + relative - 1;
-    return { offset: offsets[i], tick: group.tick, groupIndex: i, step, ordinal: relative };
+    const step = shown ? shown[before[i] + relative - 1] : group.first + relative - 1;
+    // A row is numbered by its place in the tick, so opening or closing rows
+    // above it never renumbers it.
+    return { offset: offsets[i], tick: group.tick, groupIndex: i, step, ordinal: step - group.first + 1 };
   }
-  function selectedRow(step, offset) {
+  // The row of a step, or of its nearest open ancestor while it is folded away.
+  function rowOf(step, offset) {
     if (!length) return -1;
     const i = upperBound(offsets.length, j => offsets[j], offset) - 1;
     if (i < 0) return offset;
     if (offset > offsets[i]) return headers[i] + countIn(i) + offset - offsets[i];
-    if (!step || mode === 'tick') return headers[i];
-    const ordinal = mode === 'event' ? step - groups[i].first + 1
-      : upperBound(phaseSteps.length, j => phaseSteps[j], step) - before[i];
+    if (!step) return headers[i];
+    const ordinal = shown ? upperBound(shown.length, j => shown[j], step) - before[i] : step - groups[i].first + 1;
     return headers[i] + Math.max(0, Math.min(countIn(i), ordinal));
   }
-  return { length, rowAt, selectedRow };
+  // At the tick level the cursor stays on its tick's station.
+  function selectedRow(step, offset) { return rowOf(mode === 'tick' ? 0 : step, offset); }
+  return { length, rowAt, rowOf, selectedRow };
+}
+
+// Which steps have a row: an event shows while its tick and every ancestor
+// are open. `open(key)` answers for a tick (key -1 - its group's index) or an
+// event (its step). Children follow their parent within a tick, so a closed
+// row hides everything deeper until the next row at its depth or above.
+export function visibleSteps(groups, depths, open) {
+  const shown = [];
+  for (const [g, group] of groups.entries()) {
+    if (!open(-1 - g)) continue;
+    let closedAt = Infinity;
+    for (let step = group.first; step <= group.last; step++) {
+      const depth = depths[step - 1];
+      if (depth > closedAt) continue;
+      closedAt = open(step) ? Infinity : depth;
+      shown.push(step);
+    }
+  }
+  return shown;
 }
 
 // A small mark at the end of each event's tick on the ruler: a block change,
@@ -65,10 +85,70 @@ export function eventKind(event) {
   return 'other';
 }
 
+// Inside each game tick the shown rows form a tree: a row hangs off the
+// nearest shown row above it that is shallower, or off the axis when there is
+// none, so a level that hides some events hands their children up. For every
+// shown step this records its depth in that tree (nesting deeper than `cap`
+// shares the last column), whether a later sibling follows it (flag 1) or its
+// first child comes next (flag 2), and which ancestors' lines pass through its
+// row on their way to a later child (bit j for the line in column j).
+export function branchShapes(groups, depths, shown = null, cap = 8) {
+  const depth = new Uint8Array(depths.length);
+  const pass = new Uint16Array(depths.length);
+  const flags = new Uint8Array(depths.length);
+  const open = new Uint8Array(cap + 2);
+  let k = 0;
+  for (const group of groups) {
+    const order = [], level = [], stack = [];
+    if (shown) {
+      while (k < shown.length && shown[k] < group.first) k++;
+      for (; k < shown.length && shown[k] <= group.last; k++) order.push(shown[k]);
+    } else {
+      for (let step = group.first; step <= group.last; step++) order.push(step);
+    }
+    for (const step of order) {
+      const real = depths[step - 1];
+      while (stack.length && stack.at(-1) >= real) stack.pop();
+      level.push(Math.min(cap, stack.length));
+      stack.push(real);
+    }
+    // A later sibling is the next row at the same depth before any shallower one.
+    open.fill(0);
+    for (let i = order.length - 1; i >= 0; i--) {
+      const d = level[i];
+      if (open[d]) flags[order[i] - 1] |= 1;
+      open.fill(0, d + 1);
+      open[d] = 1;
+    }
+    // An ancestor's line carries on through a row while the ancestor below it
+    // on the way to that row still has a later sibling.
+    open.fill(0);
+    for (let i = 0; i < order.length; i++) {
+      const index = order[i] - 1, d = level[i];
+      depth[index] = d;
+      for (let j = 0; j + 1 < d; j++) if (open[j + 1]) pass[index] |= 1 << j;
+      if (level[i + 1] > d) flags[index] |= 2;
+      open[d] = flags[index] & 1;
+    }
+  }
+  return { depth, pass, flags };
+}
+
 function span(className, text) {
   const node = document.createElement('span');
   node.className = className;
   node.textContent = text;
+  return node;
+}
+
+// One stretch of a branch line in a row (css/mc-article.css, .mc-branch): it
+// passes through, ends at this row's tick (└), or drops from under its mark
+// towards its children.
+function branch(column, part) {
+  const node = document.createElement('i');
+  node.className = 'mc-branch';
+  node.dataset.part = part;
+  node.style.setProperty('--mc-column', String(column));
   return node;
 }
 
@@ -117,9 +197,34 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
   pin.append(pinNumber, pinCount);
   frameElement.append(element, pin, back);
 
-  let mode, rows, active = -1, currentOffset = 0, lastStep, requested = -1;
+  let mode, rows, shapes, active = -1, currentOffset = 0, lastStep, requested = -1;
   let rowHeight = 32, height = 0, rangeStart = -1, rangeEnd = -1, frame = 0;
   let anchorTop = null, anchorFirst = 0;
+  // Each level is a starting point for what is open: every event at 事件; at
+  // 阶段 the ticks and the events that hold the phase rows (a tick's 维度刻);
+  // nothing at 游戏刻. A double-click flips one row's next level against that,
+  // until the level changes.
+  const holdsPhase = new Set();
+  for (const step of phaseSteps) {
+    for (let parent = scene.events[step - 1].parent, d = depths[step - 1]; d > 0; d--, parent = scene.events[parent].parent) {
+      holdsPhase.add(parent + 1);
+    }
+  }
+  const childCount = new Uint32Array(scene.events.length + 1);
+  scene.events.forEach((event, i) => { if (depths[i]) childCount[event.parent + 1]++; });
+  const overrides = new Map();
+  function isOpen(key) {
+    if (overrides.has(key)) return overrides.get(key);
+    return mode === 'event' || (mode === 'phase' && (key < 0 || holdsPhase.has(key)));
+  }
+  function rebuild() {
+    const shown = visibleSteps(groups, depths, isOpen);
+    rows = indexEventRows(groups, offsets, shown, scene.events.length, mode, origin, maxOffset);
+    shapes = branchShapes(groups, depths, shown);
+    rangeStart = -1;
+    size();
+  }
+
   function rowNode(index) {
     const row = rows.rowAt(index);
     const node = document.createElement('button');
@@ -135,20 +240,44 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
       node.dataset.offset = String(row.offset);
       // A game tick is a numbered station; an empty one keeps only its number.
       node.append(span('mc-tick-number', String(row.tick)), span('mc-tick-count', row.count ? row.count + ' 个事件' : ''));
-      node.setAttribute('aria-label', '第 ' + row.tick + ' 刻，' + row.count + ' 个事件');
+      let state = '';
+      if (row.groupIndex >= 0) {
+        const open = isOpen(-1 - row.groupIndex);
+        node.title = open ? '双击收起这一刻' : '双击展开这一刻';
+        state = open ? '，已展开' : '，已收起';
+      }
+      node.setAttribute('aria-label', '第 ' + row.tick + ' 刻，' + row.count + ' 个事件' + state);
     } else {
       const event = scene.events[row.step - 1];
       node.className = 'mc-event-row';
       node.dataset.step = String(row.step);
       node.dataset.kind = eventKind(event);
-      node.style.setProperty('--mc-depth', String(Math.min(4, depths[row.step - 1])));
+      // The row's place in its tick's tree and its stretch of the branch lines.
+      const at = row.step - 1, depth = shapes.depth[at], flags = shapes.flags[at];
+      node.style.setProperty('--mc-depth', String(depth));
+      for (let column = 0; column + 1 < depth; column++) {
+        if (shapes.pass[at] & 1 << column) node.append(branch(column, 'pass'));
+      }
+      if (depth) node.append(branch(depth - 1, flags & 1 ? 'pass' : 'end'));
+      if (flags & 2) node.append(branch(depth, 'drop'));
       const text = label(event);
       const coords = event.pos ? position(event.pos) : '';
-      node.append(span('mc-event-index', String(row.ordinal).padStart(2, '0')), span('mc-event-label', text));
+      // A folded row counts its hidden children after its name.
+      const name = span('mc-event-name', '');
+      name.append(span('mc-event-label', text));
+      const children = childCount[row.step];
+      let state = '';
+      if (children) {
+        const open = isOpen(row.step);
+        node.title = open ? '双击收起下一级' : '双击展开下一级（' + children + ' 个）';
+        if (!open) name.append(span('mc-event-more', '+' + children));
+        state = '，' + children + ' 个下级，' + (open ? '已展开' : '已收起');
+      }
+      node.append(span('mc-event-index', String(row.ordinal).padStart(2, '0')), name);
       if (coords) node.append(span('mc-event-pos', coords));
       const parent = event.parent === undefined ? '' : '，上级第 ' + (event.parent + 1) + ' 步';
       node.setAttribute('aria-label', '第 ' + row.tick + ' 刻，第 ' + row.step + ' 步，' + text
-        + (coords ? '，坐标 ' + coords : '') + parent);
+        + (coords ? '，坐标 ' + coords : '') + parent + state);
     }
     return node;
   }
@@ -238,9 +367,8 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
     const changed = mode !== nextMode;
     if (changed) {
       mode = nextMode;
-      rows = indexEventRows(groups, offsets, phaseSteps, scene.events.length, mode, origin, maxOffset);
-      rangeStart = -1;
-      size();
+      overrides.clear();
+      rebuild();
     }
     let index = rows.selectedRow(step, offset);
     if (requested >= 0) index = requested;
@@ -261,14 +389,42 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
       else selectStep(row.step);
     } finally { requested = -1; }
   }
+  // A double-click (or Enter) opens or closes a row's next level: a tick's
+  // outermost events, or an event's children. The current row stays marked,
+  // on its nearest open ancestor while it is folded away.
+  function toggle(index) {
+    if (!rows || index < 0 || index >= rows.length) return;
+    const row = rows.rowAt(index);
+    const key = row.step !== undefined ? row.step : row.groupIndex >= 0 ? -1 - row.groupIndex : 0;
+    if (!key || (key > 0 && !childCount[key])) return;
+    const current = active >= 0 ? rows.rowAt(active) : null;
+    overrides.set(key, !isOpen(key));
+    rebuild();
+    if (current) active = rows.rowOf(current.step ?? 0, current.offset);
+    draw();
+  }
+
+  // The first click selects a row and the double-click opens or closes that
+  // same row, even if the first click scrolled it a little under the pointer.
+  let pressed = -1;
   element.addEventListener('click', event => {
+    if (event.detail > 1) return;
     const node = event.target.closest('button[data-index]');
+    pressed = node ? Number(node.dataset.index) : -1;
     if (!node) return;
     element.focus({preventScroll: true});
-    activate(Number(node.dataset.index));
+    activate(pressed);
+  });
+  element.addEventListener('dblclick', event => {
+    if (pressed >= 0 && event.target.closest('button[data-index]')) toggle(pressed);
   });
   element.addEventListener('keydown', event => {
     if (!rows?.length || event.altKey || event.metaKey || event.ctrlKey) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      toggle(active);
+      return;
+    }
     const page = Math.max(1, Math.floor(element.clientHeight / rowHeight));
     const jumps = { ArrowUp: active - 1, ArrowDown: active + 1, PageUp: active - page,
       PageDown: active + page, Home: 0, End: rows.length - 1 };

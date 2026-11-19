@@ -326,7 +326,8 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   shareStatus.setAttribute('role', 'status');
   let playing = false, ready = false, frame = 0;
   let speed = getDefaultSpeed(options.ticksPerSecond);
-  let mode = 'event', cursor = axis.forStep(0);
+  // The list starts at the phase level; a double-click opens a row's next level.
+  let mode = 'phase', cursor = axis.forStep(0);
   let time = 0, baseTime = 0, baseStamp = 0;
 
   // The settings open as a card over the list, styled like the event card,
@@ -401,7 +402,8 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   }
   const keys = element('div', '', 'mc-legend');
   keys.append(fieldName('快捷键', 'KEYS'), element('span', '空格 播放 / 暂停', 'mc-legend-item'),
-    element('span', '← → 上一步 / 下一步', 'mc-legend-item'));
+    element('span', '← → 上一步 / 下一步', 'mc-legend-item'),
+    element('span', '双击 / 回车 展开或收起下一级', 'mc-legend-item'));
   settings.append(rateLabel, modeLabel, saveSpeed, resetSpeed, legend, keys);
   settingsSummary.append(element('span', '速度', 'mc-settings-key'), summarySpeed,
     element('span', '粒度', 'mc-settings-key'), summaryMode, element('span', '设置', 'mc-settings-toggle'));

@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createReplay, validateScene } from '../js/mc-replay.mjs';
 import { readPalette, replayBounds, renderData } from '../js/mc-render-data.mjs';
 import { adjacentCursor, createTickAxis, indexTicks, phaseStops, playbackCursor } from '../js/mc-timeline.mjs';
-import { indexEventRows } from '../js/mc-event-list.mjs';
+import { branchShapes, indexEventRows, visibleSteps } from '../js/mc-event-list.mjs';
 import { getDefaultSpeed, saveDefaultSpeed } from '../js/mc-playback-settings.mjs';
 import { exportScene } from './mc-export.mjs';
 import { readStateRegistry } from './mc-export-registry.mjs';
@@ -170,9 +170,10 @@ await test('export keeps leading and trailing empty recorded ticks and accepts l
   assert.deepEqual(appended.events.map(event => event.tick), [10, 20, 1]);
 });
 
-await test('the continuous event list maps every tick, visible phase and microstep without paging', () => {
+await test('the continuous event list maps every tick, open row and microstep without paging', () => {
   const groups = [{ tick: 2, first: 1, last: 3 }, { tick: 4, first: 4, last: 4 }];
-  const rows = mode => indexEventRows(groups, [2, 4], [1, 3, 4], 4, mode, 0, 5);
+  const shownAt = { tick: [], phase: [1, 3, 4], event: null };
+  const rows = (mode, shown = shownAt[mode]) => indexEventRows(groups, [2, 4], shown, 4, mode, 0, 5);
   const labels = model => Array.from({ length: model.length }, (_, i) => {
     const row = model.rowAt(i);
     return row.step === undefined ? 't' + row.tick : 's' + row.step;
@@ -183,9 +184,62 @@ await test('the continuous event list maps every tick, visible phase and microst
   assert.equal(rows('phase').selectedRow(2, 2), 3);
   assert.equal(rows('event').selectedRow(2, 2), 4);
   assert.equal(rows('event').selectedRow(3, 3), 6);
-  const longGap = indexEventRows([], [], [], 0, 'event', 0, 1_000_000);
+  // A row is numbered by its place in the tick, whatever is folded above it.
+  assert.deepEqual([3, 4].map(i => rows('phase').rowAt(i).ordinal), [1, 3]);
+  // A tick opened at the tick level shows its rows; the cursor stays on its station.
+  assert.deepEqual(labels(rows('tick', [1])), ['t0', 't1', 't2', 's1', 't3', 't4', 't5']);
+  assert.equal(rows('tick', [1]).selectedRow(1, 2), 2);
+  assert.equal(rows('tick', [1]).rowOf(1, 2), 3);
+  const longGap = indexEventRows([], [], null, 0, 'event', 0, 1_000_000);
   assert.equal(longGap.length, 1_000_001);
   assert.equal(longGap.rowAt(999_999).tick, 999_999);
+});
+
+await test('each level opens the tree to its own depth and a double-click flips one row', () => {
+  // Tick 1 nests s1 > (s2 > s3, s4); tick 2 holds s5.
+  const groups = [{ tick: 1, first: 1, last: 4 }, { tick: 2, first: 5, last: 5 }];
+  const depths = [0, 1, 2, 1, 0];
+  const flipped = (defaults, flips) => key => key in flips ? flips[key] : defaults(key);
+  assert.deepEqual(visibleSteps(groups, depths, () => true), [1, 2, 3, 4, 5]);
+  assert.deepEqual(visibleSteps(groups, depths, () => false), []);
+  // The phase level opens the ticks and s1, which holds the phases s2 and s4.
+  const phase = key => key < 0 || key === 1;
+  assert.deepEqual(visibleSteps(groups, depths, phase), [1, 2, 4, 5]);
+  assert.deepEqual(visibleSteps(groups, depths, flipped(phase, { 2: true })), [1, 2, 3, 4, 5]);
+  // Closing s1 hides its whole branch, even rows opened below it.
+  assert.deepEqual(visibleSteps(groups, depths, flipped(phase, { 1: false, 2: true })), [1, 5]);
+  // Closing a tick hides all its rows.
+  assert.deepEqual(visibleSteps(groups, depths, flipped(() => true, { [-1]: false })), [5]);
+});
+
+await test('the event list draws each tick as a tree of branches from parent to children', () => {
+  // Tick 1 nests s1 > s2 > (s3, s4 > s5) and s1 > s6; tick 2 nests s7 > s8.
+  const depths = [0, 1, 2, 2, 3, 1, 0, 1];
+  const groups = [{ tick: 1, first: 1, last: 6 }, { tick: 2, first: 7, last: 8 }];
+  const shape = (tree, step) => ({
+    depth: tree.depth[step - 1], pass: tree.pass[step - 1],
+    next: Boolean(tree.flags[step - 1] & 1), child: Boolean(tree.flags[step - 1] & 2),
+  });
+  const tree = branchShapes(groups, depths);
+  assert.deepEqual(shape(tree, 1), { depth: 0, pass: 0, next: false, child: true });
+  assert.deepEqual(shape(tree, 2), { depth: 1, pass: 0, next: true, child: true });
+  assert.deepEqual(shape(tree, 3), { depth: 2, pass: 0b1, next: true, child: false });
+  assert.deepEqual(shape(tree, 4), { depth: 2, pass: 0b1, next: false, child: true });
+  // s2's line still runs on to s6 past s5; s4's line ends at s5.
+  assert.deepEqual(shape(tree, 5), { depth: 3, pass: 0b1, next: false, child: false });
+  assert.deepEqual(shape(tree, 6), { depth: 1, pass: 0, next: false, child: false });
+  // A branch never crosses into the next tick.
+  assert.deepEqual(shape(tree, 7), { depth: 0, pass: 0, next: false, child: true });
+  assert.deepEqual(shape(tree, 8), { depth: 1, pass: 0, next: false, child: false });
+  // A level that hides rows hands their children to the nearest shown ancestor.
+  const phases = branchShapes(groups, depths, [1, 3, 6, 8]);
+  assert.deepEqual([1, 3, 6, 8].map(step => phases.depth[step - 1]), [0, 1, 1, 0]);
+  assert.deepEqual(shape(phases, 3), { depth: 1, pass: 0, next: true, child: false });
+  assert.deepEqual(shape(phases, 1), { depth: 0, pass: 0, next: false, child: true });
+  // Nesting deeper than the cap shares the last column as siblings.
+  const deep = branchShapes([{ tick: 0, first: 1, last: 4 }], [0, 1, 2, 3], null, 2);
+  assert.deepEqual(Array.from(deep.depth), [0, 1, 2, 2]);
+  assert.deepEqual(shape(deep, 3), { depth: 2, pass: 0, next: true, child: false });
 });
 
 await test('tick-time playback preserves blank frames and the real duration independently of event density', () => {

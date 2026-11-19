@@ -327,6 +327,8 @@
 .mc-list-frame {
   --mc-row-height: 2rem;
   --mc-ruler-axis: linear-gradient(var(--rule-strong) 0 0) var(--mc-list-axis, 39px) 0 / 1px 100% no-repeat;
+  /* Each level of an event tree stands one column further right. */
+  --mc-branch-step: 10px;
   position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 7.25rem; height: 14rem; }
 .mc-scene .mc-list-return {
   position: absolute;
@@ -394,9 +396,10 @@
    axis, which stands just right of the widest tick number (--mc-list-axis,
    set by js/mc-event-list.mjs), so the ruler scrolls with the list. A game
    tick is a numbered station with a long mark across the axis; an empty tick
-   keeps only its number and a shorter mark. Events are short marks off the
-   axis, reaching further for deeper events. The orange cursor points at the
-   current row. */
+   keeps only its number and a shorter mark. Inside a tick the events branch
+   like a tree (.mc-branch below): the outermost leave the axis, and the
+   others leave their parent's line. The orange cursor points at the current
+   row. */
 .mc-event-list button {
   position: relative;
   width: 100%;
@@ -405,6 +408,11 @@
   border: 0;
   border-radius: 0;
   text-align: start;
+  /* A double-click opens a row's next level; it should neither select text
+     nor zoom a phone. */
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
 }
 .mc-event-list .mc-tick-row {
   --mc-row-tick: var(--rule-strong);
@@ -433,15 +441,39 @@
 .mc-tick-count, .mc-event-index, .mc-event-pos { color: var(--code-name); font-size: .71rem; }
 .mc-event-list .mc-event-row {
   --mc-row-tick: var(--rule);
+  /* The axis and the tree's columns stand one step apart, and an event's
+     mark is centred on the column of its depth. Its tick leaves the axis at
+     depth 0, else its parent's line, and stops at the edge of its mark (past
+     the corner when there is no mark). */
+  --mc-tick-from: max(1px, var(--mc-depth, 0) * var(--mc-branch-step));
+  --mc-tick-end: -3px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: .5rem;
-  padding: 0 .45rem 0 calc(var(--mc-list-axis, 39px) + 14px + var(--mc-depth, 0) * 10px);
+  padding: 0 .45rem 0 calc(var(--mc-list-axis, 39px) + 8px + (var(--mc-depth, 0) + 1) * var(--mc-branch-step));
   background:
-    linear-gradient(var(--mc-row-tick) 0 0) calc(var(--mc-list-axis, 39px) + 1px) 50% / calc(5px + var(--mc-depth, 0) * 10px) 1px no-repeat,
+    linear-gradient(var(--mc-row-tick) 0 0) calc(var(--mc-list-axis, 39px) + var(--mc-tick-from)) calc(50% - .5px) / calc((var(--mc-depth, 0) + 1) * var(--mc-branch-step) + var(--mc-tick-end) - var(--mc-tick-from)) 1px no-repeat,
     var(--mc-ruler-axis);
 }
+.mc-event-list .mc-event-row[data-kind="phase"] { --mc-tick-end: 1px; }
+.mc-event-list .mc-event-row[data-kind="other"] { --mc-tick-end: -1px; }
+/* The tree's lines (js/mc-event-list.mjs, branchShapes). A parent's line
+   drops from under its mark, each child's tick leaves it (├), and it ends at
+   the last child (└). Every row draws only its own stretch, so the tree
+   scrolls with the list. */
+.mc-branch {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--mc-list-axis, 39px) + (var(--mc-column, 0) + 1) * var(--mc-branch-step));
+  width: 1px;
+  background: var(--rule);
+  pointer-events: none;
+}
+.mc-branch[data-part="end"] { bottom: 50%; }
+.mc-branch[data-part="drop"] { top: calc(50% + 3px); }
+.mc-event-row[data-kind="phase"] > .mc-branch[data-part="drop"] { top: calc(50% - 1px); }
 .mc-event-list button:hover:enabled { background-color: var(--line); }
 .mc-event-list [data-current-tick] .mc-tick-number { color: var(--signal-text); }
 .mc-event-list button[aria-current="step"] {
@@ -461,6 +493,17 @@
   clip-path: polygon(0 0, 100% 50%, 0 100%);
 }
 .mc-event-label, .mc-event-pos { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A folded row counts its hidden children after its name ("+4"). */
+.mc-event-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mc-event-name > .mc-event-label { min-width: 0; }
+.mc-event-more {
+  flex: none;
+  padding: 1px 4px;
+  border: 1px solid var(--rule);
+  color: var(--code-name);
+  font: 10px/1.2 Consolas, "SFMono-Regular", monospace;
+  letter-spacing: .02em;
+}
 /* A small mark ends each event's tick: a block change ■, an update ◇, a
    scheduled tick ○, a block event □, a piston ▶, a game event + and an
    entity ●. Phases already mark the structure and take none. The settings
@@ -475,7 +518,7 @@
   content: "";
   position: absolute;
   top: 50%;
-  left: calc(var(--mc-list-axis, 39px) + 3px + var(--mc-depth, 0) * 10px);
+  left: calc(var(--mc-list-axis, 39px) - 3px + (var(--mc-depth, 0) + 1) * var(--mc-branch-step, 10px));
   margin-top: -3px;
   pointer-events: none;
 }
