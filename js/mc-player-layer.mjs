@@ -105,11 +105,13 @@ export async function createPlayerLayer(scene, renderer, assets, signal) {
 }
 
 
-// Estimate visibility along short rays through the sparse block map. Keep the
-// original diagonal when it already shows the players. Otherwise try eight
-// azimuths at the same elevation and orbit radius, favoring the nearer side.
-export function playerViewAngle(renderer, { players, blocks: initialBlocks, geometryBounds: bounds, palette }) {
-  if (!players.length || !initialBlocks.length) return 0;
+// How well cameras at `eyes` ([x, y, z] each) would see the recorded players,
+// estimated along short rays through the sparse block map: for each eye, the
+// share of sample points left in view (`visible`, 0 to 1) and a `score` that
+// also favours nearer views, `reference` being a typical camera distance. Null
+// when there is nothing to judge: no players, or no block near them.
+export function playerVisibility({ players, blocks: initialBlocks, geometryBounds: bounds, palette }, eyes, reference) {
+  if (!players?.length || !initialBlocks?.length) return null;
   const targets = players.slice(0, 4);
   // Only the original cells within reach of our short rays can obscure the
   // starting shot. A deep link and a normal opening must choose the same view.
@@ -119,14 +121,11 @@ export function playerViewAngle(renderer, { players, blocks: initialBlocks, geom
       blocks.set(x - bounds.minX + bounds.width * (z - bounds.minZ + (y - bounds.minY) * bounds.depth), state);
     }
   }
-  if (!blocks.size) return 0;
+  if (!blocks.size) return null;
   const samples = [];
   for (const { pos: [x,y,z] } of targets) {
     samples.push([x,y+1.68,z], [x,y+1.49,z], [x-.14,y+1.14,z], [x+.14,y+1.14,z], [x,y+.74,z], [x,y+.28,z]);
   }
-  const eye = renderer.camera.position, target = renderer.controls.target;
-  const orbitX = eye.x - target.x, orbitZ = eye.z - target.z;
-  const orbitRadius = Math.hypot(orbitX, eye.y - target.y, orbitZ);
   const opacity = palette.map(({ name, baked }) => {
     if (/glass|ice$|water$/.test(name)) return 0.2;
     if (/redstone_wire$|torch$|lever$/.test(name)) return 0.05;
@@ -149,20 +148,15 @@ export function playerViewAngle(renderer, { players, blocks: initialBlocks, geom
     }
     return visible;
   }
-  let bestAngle = 0, bestScore = -Infinity;
-  for (const turn of [0, 2, -2, 4, 1, -1, 3, -3]) {
-    const angle = turn * Math.PI / 4, c = Math.cos(angle), s = Math.sin(angle);
-    const cx = target.x + orbitX*c + orbitZ*s, cz = target.z + orbitZ*c - orbitX*s;
+  return eyes.map(([cx, cy, cz]) => {
     let visible = 0, score = 0;
     for (const sample of samples) {
-      const dx = cx - sample[0], dy = eye.y - sample[1], dz = cz - sample[2];
+      const dx = cx - sample[0], dy = cy - sample[1], dz = cz - sample[2];
       const distance = Math.max(.01, Math.hypot(dx, dy, dz));
       const value = visibility(sample, dx/distance, dy/distance, dz/distance, distance);
       visible += value;
-      score += value * orbitRadius / distance;
+      score += value * reference / distance;
     }
-    if (turn === 0 && visible >= .85 * samples.length) return 0;
-    if (score > bestScore + .001) { bestAngle = angle; bestScore = score; }
-  }
-  return bestAngle;
+    return { visible: visible / samples.length, score };
+  });
 }

@@ -5,7 +5,7 @@ import { mountAxisGizmo } from './mc-axes.mjs';
 import { createMarkerLayer, markerCells } from './mc-markers.mjs';
 
 import { createReplayHitboxes, replayEntityBounds } from './mc-entity-hitboxes.mjs';
-import { createPlayerLayer, playerViewAngle } from './mc-player-layer.mjs';
+import { createPlayerLayer, playerVisibility } from './mc-player-layer.mjs';
 import { createReplayEntityLayer } from './mc-entity-layer.mjs';
 
 const svgNS = 'http://www.w3.org/2000/svg';
@@ -408,6 +408,70 @@ function setInset(renderer, right) {
   else camera.updateProjectionMatrix();
 }
 
+// The default view faces the structure's long side: that side shows the most
+// area and the short side runs away from the reader into the view. It looks
+// from 25° off the side's normal, turned toward the long axis's positive end,
+// at the engine's own 26° elevation. Of the two long sides it takes the one
+// from which the recorded players show, else the south side (for a build
+// longer north–south, the east side).
+const BROADSIDE_TURN = 25 * Math.PI / 180;
+const DEFAULT_ELEVATION = Math.atan2(.55, Math.hypot(.8, .8));
+const isAir = entry => /(^|:)(cave_|void_)?air$/.test(entry?.name ?? '');
+
+// A structure's horizontal size, [east–west, north–south], from the blocks it
+// starts with (air left out), else from its bounds.
+function blockFootprint(blocks, palette, bounds) {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const [x, , z, state] of blocks) {
+    if (isAir(palette[state])) continue;
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+    minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+  }
+  return Number.isFinite(minX) ? [maxX - minX + 1, maxZ - minZ + 1] : [bounds.width, bounds.depth];
+}
+
+// A schematic's: a large one is kept in paged regions, which give its extent;
+// a small one's occupied cells are keyed x + width·(z + depth·y) in its bounds.
+function structureFootprint({ blocks, bounds, palette }) {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  if (blocks.isPagedBlockStore) {
+    for (const region of blocks.regions) {
+      minX = Math.min(minX, region.minX); maxX = Math.max(maxX, region.maxX);
+      minZ = Math.min(minZ, region.minZ); maxZ = Math.max(maxZ, region.maxZ);
+    }
+  } else {
+    for (const [key, state] of blocks) {
+      if (isAir(palette[state])) continue;
+      const x = key % bounds.width, z = Math.floor(key / bounds.width) % bounds.depth;
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+      minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+    }
+  }
+  return Number.isFinite(minX) ? [maxX - minX + 1, maxZ - minZ + 1] : [bounds.width, bounds.depth];
+}
+
+// The default view as an azimuth (0 looks from the south, +Z; π/2 from the
+// east, +X) and an elevation, for the camera that fitToBounds just placed.
+function defaultView(renderer, framing) {
+  const [width, depth] = framing.footprint ?? blockFootprint(framing.blocks ?? [], framing.palette ?? [], framing.bounds);
+  const sides = width >= depth
+    ? [BROADSIDE_TURN, Math.PI - BROADSIDE_TURN]
+    : [Math.PI / 2 - BROADSIDE_TURN, BROADSIDE_TURN - Math.PI / 2];
+  const view = { azimuth: sides[0], elevation: DEFAULT_ELEVATION };
+  if (framing.players?.length) {
+    const target = renderer.controls.target, distance = renderer.camera.position.distanceTo(target);
+    const eyes = sides.map(azimuth => [
+      target.x + distance * Math.cos(view.elevation) * Math.sin(azimuth),
+      target.y + distance * Math.sin(view.elevation),
+      target.z + distance * Math.cos(view.elevation) * Math.cos(azimuth),
+    ]);
+    const [first, second] = playerVisibility(framing, eyes, distance) ?? [];
+    // The far side only when the near one hides the players and it shows them better.
+    if (first && first.visible < .85 && second.score > first.score + .001) view.azimuth = sides[1];
+  }
+  return view;
+}
+
 function applyCamera(renderer, bounds, saved, framing, inset = 0) {
   renderer.setProjectionMode(saved?.projection ?? 'perspective');
   renderer.fitToBounds(framing?.bounds ?? bounds);
@@ -427,13 +491,14 @@ function applyCamera(renderer, bounds, saved, framing, inset = 0) {
   camera.zoom = saved?.zoom ?? 1;
   camera.updateProjectionMatrix();
   if (!saved && framing) {
-    if (framing.azimuth === undefined) framing.azimuth = playerViewAngle(renderer, framing);
-    if (framing.azimuth) {
-      const target = renderer.controls.target;
-      camera.position.sub(target).applyAxisAngle(camera.up, framing.azimuth).add(target);
-      renderer.controls.update();
-    }
-    frameBlocks(renderer, framing, 1 - inset / Math.max(1, renderer.container.clientWidth));
+    // Chosen once per framing, so a reset or a resize keeps the same side.
+    framing.view ??= defaultView(renderer, framing);
+    const target = renderer.controls.target;
+    camera.position.setFromSphericalCoords(camera.position.distanceTo(target),
+      Math.PI / 2 - framing.view.elevation, framing.view.azimuth).add(target);
+    renderer.controls.update();
+    // A schematic keeps the engine's whole-bounds fit.
+    if (framing.blocks) frameBlocks(renderer, framing, 1 - inset / Math.max(1, renderer.container.clientWidth));
   }
   renderer.controls.update();
   renderer.requestRender();
@@ -621,7 +686,9 @@ export async function createSceneViewer(container, scene, { sceneURL, name = '�
       engineResize();
       setInset(renderer, coveredRight());
     };
-    if (!structure) {
+    // A schematic's framing only turns the default view to its long side.
+    if (structure) framing = { bounds, footprint: structureFootprint(structure) };
+    else {
       framing = replayFraming(scene, bounds, palette, onlyActors);
       playerLayer = await createPlayerLayer(scene, renderer, assets, signal);
       if (scene.entities?.length || scene.events.some(e => e.entity)) entityLayer = createReplayEntityLayer(renderer, assets, signal);
