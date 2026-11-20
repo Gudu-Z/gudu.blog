@@ -228,8 +228,10 @@ function createScale(axis) {
   for (let i = 0; i <= intervals; i++) {
     const offset = intervals ? Math.round(i * axis.maxOffset / intervals) : 0;
     const mark = element('span', String(axis.at(offset).tick));
-    // Along the scale, across a wide figure's side or down a narrow one's.
-    mark.style.setProperty('--at', (axis.maxOffset ? offset / axis.maxOffset * 100 : 0) + '%');
+    // Along the scale, across a wide figure's side or down a narrow one's. A
+    // mark stands where its tick begins; the scale runs on to the end of the
+    // last tick (see the slider).
+    mark.style.setProperty('--at', offset / (axis.maxOffset + 1) * 100 + '%');
     scale.append(mark);
   }
   return scale;
@@ -387,12 +389,16 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   const tickField = element('span', '', 'mc-clock-field');
   tickField.append(tickLabel, tickValue);
   clock.append(tickField);
+  // Each game tick spans one unit of the scrubber, from its mark to the next,
+  // and its events (or phases) share that span in order. So the cursor stops
+  // between two ticks' marks as the replay works through a tick, and the
+  // last tick's span runs to the end of the scrubber.
   const slider = element('input', '', 'mc-slider');
   slider.type = 'range';
   slider.min = String(axis.origin);
-  slider.max = String(axis.origin + axis.maxOffset);
-  slider.step = '1';
-  slider.disabled = !axis.maxOffset;
+  slider.max = String(axis.origin + axis.maxOffset + 1);
+  slider.step = 'any';
+  slider.disabled = !axis.maxOffset && !axis.end;
   slider.setAttribute('aria-label', '游戏刻');
   const scrubber = element('div', '', 'mc-scrubber');
   scrubber.append(slider, createScale(axis));
@@ -625,7 +631,9 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
       }
     }));
   }
-  slider.addEventListener('input', () => manual(axis.at(Number(slider.value) - axis.origin)));
+  // A drag stops wherever it is let go: inside a tick, on the event or phase
+  // whose share of the tick is there (the inverse of timeFor below).
+  slider.addEventListener('input', () => manual(playbackCursor(axis, phases, Number(slider.value) - axis.origin, mode)));
   selectMode.addEventListener('change', () => {
     mode = selectMode.value;
     summarize();
@@ -682,7 +690,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     const group = groups[groupIndex];
     const event = group && step >= group.first ? replay.event : null;
     const gap = groupIndex < 0;
-    slider.value = String(axis.origin + offset);
+    slider.value = String(axis.origin + timeFor(cursor, axis, phases, mode));
     const note = !step && offset === 0 ? '录制起点' : gap ? '无事件' : '';
     clockTick.textContent = String(tick).padStart(3, '0');
     clockNote.textContent = note;

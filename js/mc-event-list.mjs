@@ -206,6 +206,9 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
   let mode, rows, shapes, active = -1, currentOffset = 0, lastStep, requested = -1;
   let rowHeight = 32, height = 0, rangeStart = -1, rangeEnd = -1, frame = 0;
   let anchorTop = null, anchorFirst = 0;
+  // The glide toward the current row (see scrollToFirst below).
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  let glide = 0, glideAt = 0, glideTo = 0, glideFirst = 0, glideTime = 0;
   // Each level is a starting point for what is open: every event at 事件; at
   // 阶段 the ticks and the events that hold the phase rows (a tick's 维度刻);
   // nothing at 游戏刻. A double-click flips one row's next level against that,
@@ -350,7 +353,8 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
     // points) leaves the window; the pill then names its tick.
     const middle = active + 0.5;
     const away = active < 0 || !viewport ? 0 : middle < firstVisible ? -1 : middle > firstVisible + viewport / rowHeight ? 1 : 0;
-    back.hidden = !away;
+    // Not while the list glides toward the current row anyway.
+    back.hidden = !away || Boolean(glide);
     if (away) {
       back.dataset.edge = away < 0 ? 'top' : 'bottom';
       back.textContent = (away < 0 ? '↑' : '↓') + ' 当前 · 第 ' + rows.rowAt(active).tick + ' 刻';
@@ -363,20 +367,81 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
     track.style.height = height + 'px';
   }
 
-  function reveal(index) {
+  // Keep a row in view. With `centre`, the current row holds the middle of
+  // the window as the replay moves on: from the top of the list it walks
+  // down to the middle, stays there while the list scrolls under it, and
+  // walks on to the bottom once the list can scroll no further. A row the
+  // reader picks in the list itself is only kept in view, so it does not run
+  // off from under the pointer.
+  function reveal(index, centre = false) {
     const {viewport, firstVisible, logicalMax, physicalMax} = geometry();
     if (!viewport || !logicalMax || index < 0) return;
+    const rowsInView = viewport / rowHeight;
     let first = firstVisible;
-    if (index < first) first = index;
-    else if (index + 1 > first + viewport / rowHeight) first = index + 1 - viewport / rowHeight;
-    if (first !== firstVisible) {
-      element.scrollTop = first / logicalMax * physicalMax;
-      // A browser may round scrollTop. Keep subpixel targets exact until the
-      // next physical scroll, particularly for very large empty tick ranges.
-      anchorTop = element.scrollTop;
-      anchorFirst = first;
+    if (centre) first = Math.max(0, Math.min(logicalMax, index + .5 - rowsInView / 2));
+    else if (index < first) first = index;
+    else if (index + 1 > first + rowsInView) first = index + 1 - rowsInView;
+    if (first !== (glide ? glideFirst : firstVisible)) scrollToFirst(first, logicalMax, physicalMax);
+  }
+
+  // The list glides to each new position instead of jumping, and keeps
+  // gliding toward the next one as the replay moves on, so playback scrolls
+  // it in one continuous motion. The reader's own wheel, touch or scrollbar
+  // stops it; with reduced motion it jumps as before.
+  function settle(top, first) {
+    element.scrollTop = top;
+    // A browser may round scrollTop. Keep subpixel targets exact until the
+    // next physical scroll, particularly for very large empty tick ranges.
+    anchorTop = element.scrollTop;
+    anchorFirst = first;
+  }
+  function stopGlide() {
+    if (glide) cancelAnimationFrame(glide);
+    glide = 0;
+  }
+  // An exponential approach: about a quarter of the way in each 16ms frame,
+  // 95% within a fifth of a second, turning smoothly toward a target that
+  // moves on before it is reached. It never trails by more than about a
+  // third of the window, so a fast replay cannot carry the current row out
+  // of sight: a long leap closes that much at once and glides the rest.
+  function glideStep(now) {
+    const elapsed = Math.min(64, now - glideTime);
+    glideTime = now;
+    const limit = element.clientHeight * .35;
+    if (Math.abs(glideTo - glideAt) > limit) glideAt = glideTo - Math.sign(glideTo - glideAt) * limit;
+    glideAt += (glideTo - glideAt) * (1 - Math.exp(-elapsed / 60));
+    if (Math.abs(glideTo - glideAt) < .5) {
+      glide = 0;
+      settle(glideTo, glideFirst);
+    } else {
+      element.scrollTop = glideAt;
+      glide = requestAnimationFrame(glideStep);
+    }
+    draw();
+  }
+  function scrollToFirst(first, logicalMax, physicalMax) {
+    const top = first / logicalMax * physicalMax;
+    glideFirst = first;
+    if (reduceMotion.matches) {
+      stopGlide();
+      settle(top, first);
+      return;
+    }
+    glideTo = top;
+    if (!glide) {
+      glideAt = element.scrollTop;
+      glideTime = performance.now();
+      glide = requestAnimationFrame(glideStep);
+    }
+    // Close a long leap's excess now, before the list is drawn for the new
+    // current row, rather than a frame later.
+    const limit = element.clientHeight * .35;
+    if (Math.abs(glideTo - glideAt) > limit) {
+      glideAt = glideTo - Math.sign(glideTo - glideAt) * limit;
+      element.scrollTop = glideAt;
     }
   }
+  for (const type of ['wheel', 'touchstart', 'pointerdown']) element.addEventListener(type, stopGlide, {passive: true});
 
   function sync(step, {offset = 0, mode: nextMode = 'event'} = {}) {
     const changed = mode !== nextMode;
@@ -389,7 +454,9 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
     if (requested >= 0) index = requested;
     else if (!changed && step === lastStep && offset === currentOffset) index = active;
     lastStep = step;
-    if (changed || active !== index) reveal(index);
+    // `requested` marks a row picked in the list; anything else (playback,
+    // the step buttons, the scrubber, a new level) centres the current row.
+    if (changed || active !== index) reveal(index, requested < 0);
     active = index;
     currentOffset = offset;
     draw();
@@ -462,7 +529,7 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
   resize.observe(element);
   resize.observe(measure);
   back.addEventListener('click', () => {
-    reveal(active);
+    reveal(active, true);
     draw();
     element.focus({preventScroll: true});
   });
