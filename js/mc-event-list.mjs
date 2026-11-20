@@ -160,10 +160,9 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
   element.setAttribute('aria-label', '回放时间轴列表');
   element.tabIndex = 0;
   element.hidden = maxOffset < 0;
-  // The list is a vertical ruler (css/mc-article.css). Its axis stands just
-  // right of the widest tick number.
-  let digits = Math.max(String(origin).length, String(origin + maxOffset).length);
-  for (const group of groups) digits = Math.max(digits, String(group.tick).length);
+  // The list is a tree on a vertical axis (css/mc-article.css): the axis runs
+  // down its left edge, the events branch off it, and each game tick's number
+  // stands at the right end of its station.
   const id = 'mc-list-' + ++nextListId;
   const track = document.createElement('div');
   track.className = 'mc-list-track';
@@ -181,7 +180,6 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
   const frameElement = document.createElement('div');
   frameElement.className = 'mc-list-frame';
   frameElement.hidden = element.hidden;
-  frameElement.style.setProperty('--mc-list-axis', Math.max(2, digits) * 7 + 18 + 'px');
   const back = document.createElement('button');
   back.type = 'button';
   back.className = 'mc-list-return';

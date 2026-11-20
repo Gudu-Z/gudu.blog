@@ -348,6 +348,8 @@
    current row once it has been scrolled out of view. */
 .mc-list-frame {
   --mc-row-height: 2rem;
+  /* The axis runs near the left edge, just clear of the current row's cursor. */
+  --mc-list-axis: 14px;
   --mc-ruler-axis: linear-gradient(var(--rule-strong) 0 0) var(--mc-list-axis, 39px) 0 / 1px 100% no-repeat;
   /* Each level of an event tree stands one column further right. */
   --mc-branch-step: 10px;
@@ -377,7 +379,7 @@
   right: 6px;
   z-index: 1;
   display: grid;
-  grid-template-columns: var(--mc-list-axis, 39px) minmax(0, 1fr);
+  grid-template-columns: var(--mc-list-axis, 39px) minmax(0, 1fr) auto;
   align-items: center;
   height: var(--mc-row-height);
   background:
@@ -419,11 +421,12 @@
 .mc-list-track { position: relative; overflow: clip; }
 .mc-list-window { position: absolute; inset: 0 0 auto; }
 .mc-row-measure { position: absolute; width: 1px; height: var(--mc-row-height); visibility: hidden; }
-/* The list reads as a vertical ruler. Every row draws its own stretch of the
-   axis, which stands just right of the widest tick number (--mc-list-axis,
-   set by js/mc-event-list.mjs), so the ruler scrolls with the list. A game
-   tick is a numbered station with a long mark across the axis; an empty tick
-   keeps only its number and a shorter mark. Inside a tick the events branch
+/* The list reads as a tree on a vertical axis. Every row draws its own
+   stretch of the axis, which runs near the list's left edge (--mc-list-axis),
+   so the axis scrolls with the list. A game tick is a station with a long
+   mark across the axis, its event count beside it and its number at the
+   row's right end; an empty tick keeps only its number and a shorter mark.
+   The events branch straight off the axis. Inside a tick the events branch
    like a tree (.mc-branch below): the outermost leave the axis, and the
    others leave their parent's line. The orange cursor points at the current
    row. */
@@ -446,7 +449,7 @@
   --mc-row-tick-from: 6px;
   --mc-row-tick-length: 15px;
   display: grid;
-  grid-template-columns: var(--mc-list-axis, 39px) minmax(0, 1fr);
+  grid-template-columns: var(--mc-list-axis, 39px) minmax(0, 1fr) auto;
   align-items: center;
   padding: 0;
   color: var(--label);
@@ -455,16 +458,19 @@
     var(--mc-ruler-axis);
 }
 .mc-event-list .mc-tick-row:has(.mc-tick-count:empty) { --mc-row-tick: var(--rule); --mc-row-tick-from: 4px; --mc-row-tick-length: 5px; }
+/* A station's number stands at the right end of its row, its count by the axis. */
 .mc-tick-number {
+  grid-column: 3;
+  grid-row: 1;
   justify-self: end;
-  padding-right: 11px;
+  padding-right: .45rem;
   color: var(--label);
   font: 11px/1 Consolas, "SFMono-Regular", monospace;
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
 }
 .mc-tick-row:has(.mc-tick-count:empty) .mc-tick-number { color: var(--code-name); }
-.mc-tick-count { padding-left: 18px; }
+.mc-tick-count { grid-column: 2; grid-row: 1; padding-left: 18px; }
 .mc-tick-count, .mc-event-index, .mc-event-pos { color: var(--code-name); font-size: .71rem; }
 .mc-event-list .mc-event-row {
   --mc-row-tick: var(--rule);
@@ -635,12 +641,13 @@
 .mc-stage > .mc-controls .mc-share-status { position: absolute; left: 0; bottom: calc(100% + 8px); white-space: nowrap; }
 
 /* On a wide figure the 3D view takes the whole width and the event tree
-   floats over its right side as a sheet of black glass (js/mc-viewer.mjs
+   stands over its right side on no ground of its own (js/mc-viewer.mjs
    centres the model in the free part, left of it). The viewfinder and the
-   view's buttons stand clear of the sheet, and the list leaves coordinates to
-   the event card. The scrubber stands up along the tree's right edge in
-   place of its scrollbar: the recording's first tick at the top, its last at
-   the bottom, the orange cursor pointing in from the list. */
+   view's buttons stand clear of it, and the list leaves coordinates to the
+   event card. The scrubber stands up along the tree's left edge in place of
+   its scrollbar, mirrored: its labels outside, the recording's first tick at
+   the top and its last at the bottom, the orange cursor pointing at it from
+   the tree. */
 @container mc-scene (min-width: 35rem) {
   .mc-scene [data-mc-view]:has(.mc-timeline) { --mc-sheet: 16rem; }
   .mc-scene [data-mc-view]:has(.mc-timeline) > .mc-stage { height: clamp(29rem, 69cqi, 35rem); }
@@ -651,46 +658,42 @@
     bottom: 16px;
     z-index: 6;
     width: var(--mc-sheet);
-    padding: .6rem .5rem .6rem .6rem;
-    border: 1px solid var(--rule);
-    background: var(--mc-glass);
-    -webkit-backdrop-filter: blur(10px);
-    backdrop-filter: blur(10px);
-    overflow: hidden;
+    padding: 0;
+    border: 0;
   }
   .mc-list-frame { height: auto; }
   .mc-timeline .mc-event-pos { display: none; }
-  .mc-tree { position: relative; padding-right: 28px; }
+  .mc-tree { position: relative; padding-left: 36px; }
   .mc-tree .mc-event-list { scrollbar-width: none; }
   .mc-tree .mc-event-list::-webkit-scrollbar { display: none; }
-  .mc-tree > .mc-scrubber { position: absolute; top: 0; right: 0; bottom: 0; width: 26px; }
-  .mc-tree .mc-slider { position: absolute; top: 0; bottom: 0; left: 0; width: 14px; height: auto; writing-mode: vertical-lr; }
+  .mc-tree > .mc-scrubber { position: absolute; top: 0; bottom: 0; left: 0; width: 32px; }
+  .mc-tree .mc-slider { position: absolute; top: 0; right: 0; bottom: 0; width: 14px; height: auto; writing-mode: vertical-lr; }
   .mc-tree .mc-slider::-webkit-slider-runnable-track { width: 1px; height: auto; }
   .mc-tree .mc-slider::-moz-range-track { width: 1px; height: auto; }
   .mc-tree .mc-slider::-webkit-slider-thumb {
-    width: 19px;
+    width: 15px;
     height: 9px;
-    margin: 0 0 0 -16px;
+    margin: 0 0 0 -3px;
     background:
-      linear-gradient(to top right, var(--red) 50%, transparent 50%) left top / 5px 50% no-repeat,
-      linear-gradient(to bottom right, var(--red) 50%, transparent 50%) left bottom / 5px 50% no-repeat,
+      linear-gradient(to top left, var(--red) 50%, transparent 50%) right top / 5px 50% no-repeat,
+      linear-gradient(to bottom left, var(--red) 50%, transparent 50%) right bottom / 5px 50% no-repeat,
       linear-gradient(var(--red) 0 0) 0 50% / 100% 1.5px no-repeat;
   }
   .mc-tree .mc-slider::-moz-range-thumb {
-    width: 19px;
+    width: 15px;
     height: 9px;
     background:
-      linear-gradient(to top right, var(--red) 50%, transparent 50%) left top / 5px 50% no-repeat,
-      linear-gradient(to bottom right, var(--red) 50%, transparent 50%) left bottom / 5px 50% no-repeat,
+      linear-gradient(to top left, var(--red) 50%, transparent 50%) right top / 5px 50% no-repeat,
+      linear-gradient(to bottom left, var(--red) 50%, transparent 50%) right bottom / 5px 50% no-repeat,
       linear-gradient(var(--red) 0 0) 0 50% / 100% 1.5px no-repeat;
   }
-  .mc-tree .mc-tick-scale { position: absolute; inset: 4.5px 0 4.5px 10px; height: auto; margin: 0; font-size: 9px; }
-  .mc-tree .mc-tick-scale > span { top: var(--at, 0%); left: 0; padding: 0 0 0 5px; transform: translateY(-50%); }
-  .mc-tree .mc-tick-scale > span::before { inset-block-start: 50%; inset-inline-start: 0; width: 3px; height: 0; border-inline-start: 0; border-block-start: 1px solid currentColor; }
+  .mc-tree .mc-tick-scale { position: absolute; inset: 4.5px 11px 4.5px 0; height: auto; margin: 0; font-size: 9px; }
+  .mc-tree .mc-tick-scale > span { top: var(--at, 0%); right: 0; left: auto; padding: 0 5px 0 0; transform: translateY(-50%); }
+  .mc-tree .mc-tick-scale > span::before { inset-block-start: 50%; inset-inline-start: auto; right: 0; width: 3px; height: 0; border-inline-start: 0; border-block-start: 1px solid currentColor; }
   .mc-tree .mc-tick-scale > span:first-child { transform: none; }
-  .mc-tree .mc-tick-scale > span:first-child::before { inset-block-start: 0; inset-inline-start: 0; }
+  .mc-tree .mc-tick-scale > span:first-child::before { inset-block-start: 0; inset-inline-start: auto; }
   .mc-tree .mc-tick-scale > span:last-child:not(:first-child) { transform: translateY(-100%); }
-  .mc-tree .mc-tick-scale > span:last-child:not(:first-child)::before { inset-block-start: 100%; inset-inline-start: 0; }
+  .mc-tree .mc-tick-scale > span:last-child:not(:first-child)::before { inset-block-start: 100%; inset-inline-start: auto; }
   .mc-scene [data-mc-view]:has(.mc-timeline) > .mc-stage::after { right: calc(var(--mc-sheet) + 28px); }
   .mc-scene [data-mc-view]:has(.mc-timeline) > .mc-stage > .mc-view-reset { right: calc(var(--mc-sheet) + 32px); }
 }
