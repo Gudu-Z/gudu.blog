@@ -214,6 +214,8 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
   // The current row's cursor, in rows, and its glide (see centreOnCursor).
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   let cursorAt = -1, cursorGoal = -1, following = true, playing = false, glide = 0, glideTime = 0;
+  // Where the replay last reported itself between two stops (see follow).
+  let progress = null;
   // Each level is a starting point for what is open: every event at 事件; at
   // 阶段 the ticks and the events that hold the phase rows (a tick's 维度刻);
   // nothing at 游戏刻. A double-click flips one row's next level against that,
@@ -361,7 +363,8 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
     // Not while the cursor glides toward it anyway.
     back.hidden = !away || Boolean(glide);
     cursorMark.hidden = cursorAt < 0 || active < 0;
-    if (!cursorMark.hidden) cursorMark.style.transform = 'translateY(' + (element.scrollTop + (cursorAt - .5 - firstVisible) * rowHeight) + 'px)';    if (away) {
+    if (!cursorMark.hidden) cursorMark.style.transform = 'translateY(' + (element.scrollTop + (cursorAt - .5 - firstVisible) * rowHeight) + 'px)';
+    if (away) {
       back.dataset.edge = away < 0 ? 'top' : 'bottom';
       back.textContent = (away < 0 ? '↑' : '↓') + ' 当前 · 第 ' + rows.rowAt(active).tick + ' 刻';
     }
@@ -400,6 +403,9 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
   // end, and nowhere does it jump back and forth as rows come and go.
   // - Playing, the replay moves it every frame (follow), from the current
   //   stop's row toward the next stop's at the replay's own pace.
+  // - A pause moves nothing here: the replay plays its step out and halts on
+  //   the next stop (js/mc-timeline.mjs), the cursor coming with it onto that
+  //   row. Settling it here onto the current row would run the rows back.
   // - A step, the scrubber or a new level glide it to the new row.
   // - A row picked in the list takes it at once, and the list stays put.
   // The reader's own wheel, touch or scrollbar stops the following.
@@ -455,9 +461,13 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
     if (requested >= 0) index = requested;
     else if (!changed && step === lastStep && offset === currentOffset) index = active;
     lastStep = step;
-    const moved = changed || active !== index;
+    // Unless the replay plays, every move lands on a stop, so a cursor that a
+    // pause left between two rows comes onto the row as well.
+    if (!playing) progress = null;
+    const moved = changed || active !== index || (!playing && cursorGoal !== index + .5);
     active = index;
-    currentOffset = offset;    if (moved && requested >= 0) {
+    currentOffset = offset;
+    if (moved && requested >= 0) {
       following = false;
       moveCursor(index + .5, false);
       reveal(index);
@@ -474,23 +484,27 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
   // next stop, and how far it has come between them.
   function follow(step, offset, nextStep, nextOffset, fraction) {
     if (!rows) return;
-    const from = rows.selectedRow(step, offset), to = rows.selectedRow(nextStep, nextOffset);
-    if (from < 0) return;
+    progress = {step, offset, nextStep, nextOffset, fraction};
+    const at = progressRow();
+    if (at < 0) return;
     stopGlide();
     following = true;
-    // With reduced motion the cursor keeps to the current row, stop by stop.
-    const between = reduceMotion.matches || to < 0 ? 0 : Math.max(0, Math.min(1, fraction));    cursorAt = cursorGoal = from + .5 + (to - from) * between;
+    cursorAt = cursorGoal = at;
     centreOnCursor();
     draw();
   }
+  // The cursor's place in the rows now shown for the replay's last report.
+  function progressRow() {
+    const {step, offset, nextStep, nextOffset, fraction} = progress;
+    const from = rows.selectedRow(step, offset), to = rows.selectedRow(nextStep, nextOffset);
+    if (from < 0) return -1;
+    // With reduced motion the cursor keeps to the current row, stop by stop.
+    const between = reduceMotion.matches || to < 0 ? 0 : Math.max(0, Math.min(1, fraction));
+    return from + .5 + (to - from) * between;
+  }
+  // A pause moves nothing (see centreOnCursor).
   function setPlaying(value) {
     playing = value;
-    // Stopped between two rows, the cursor settles on the current one.
-    if (!value && active >= 0) {
-      moveCursor(active + .5, following);
-      if (following) centreOnCursor();
-      draw();
-    }
   }
 
   function activate(index) {
@@ -514,8 +528,13 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
     overrides.set(key, !isOpen(key));
     rebuild();
     if (current) active = rows.rowOf(current.step ?? 0, current.offset);
-    // The rows are renumbered; the cursor stays on the current row.
-    if (active >= 0) moveCursor(active + .5, false);
+    // The rows are renumbered; the cursor stays on the current row, or as far
+    // past it toward the next stop's row as a pause left it.
+    const at = progress && rows.selectedRow(progress.step, progress.offset) === active ? progressRow() : -1;
+    if (at >= 0) {
+      stopGlide();
+      cursorAt = cursorGoal = at;
+    } else if (active >= 0) moveCursor(active + .5, false);
     draw();
   }
 
@@ -566,7 +585,7 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
   resize.observe(measure);
   back.addEventListener('click', () => {
     following = true;
-    moveCursor(active + .5, false);
+    if (!progress) moveCursor(active + .5, false);
     centreOnCursor();
     draw();
     element.focus({preventScroll: true});

@@ -421,6 +421,8 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   let { rate: speed, unit: speedUnit } = getDefaultPlayback(options.authorSpeed, options.speedUnit);
   let mode = normalizeGranularity(figure.dataset.granularity) ?? 'phase', cursor = axis.forStep(0);
   let time = 0, baseTime = 0, baseStamp = 0;
+  // A pause playing the current step out to the next stop (see pause).
+  let settle = null;
 
   // The settings open as a card over the list, styled like the event card,
   // its controls under "中文 / CODE" field names.
@@ -453,14 +455,16 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   function setSpeed(rate, unit = speedUnit) {
     if (!validSpeed(fromClockRate(rate, unit))) return false;
     const changedClock = speedClock(unit) !== speedClock(speedUnit);
-    if (playing && !changedClock && rate !== speed) {
+    if (playing && !settle && !changedClock && rate !== speed) {
       const now = performance.now();
       baseTime = timeAt(now);
       baseStamp = now;
     }
+    // A new clock times the stops anew; the replay keeps its place between two.
+    const share = changedClock ? shareAhead(adjacentCursor(axis, phases, cursor, mode, 1), speedClock(speedUnit)) : 0;
     speed = rate;
     speedUnit = unit;
-    if (changedClock) rebasePlayback();
+    if (changedClock) rebasePlayback(share);
     summarize();
     return true;
   }
@@ -548,7 +552,15 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   const prev = iconAction('prev', '上一步（←）', () => manual(adjacentCursor(axis, phases, cursor, mode, -1)));
   const next = iconAction('next', '下一步（→）', () => manual(adjacentCursor(axis, phases, cursor, mode, 1)));
   const play = iconAction('play', '播放（空格）', () => {
-    if (playing) { stop(); return; }
+    if (settle) {
+      // Pressed again before the step is played out: play on from here.
+      settle = null;
+      baseTime = time;
+      baseStamp = performance.now();
+      showPlaying(true);
+      return;
+    }
+    if (playing) { pause(); return; }
     const done = cursor.step === axis.end && (speedClock(speedUnit) !== 'tick' || cursor.offset === axis.maxOffset);
     if (time >= duration() || (done && (cursor.step > 0 || axis.maxOffset > 0))) {
       manual(axis.forStep(0));
@@ -655,8 +667,10 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     return Math.min(duration(), baseTime + (Math.max(0, stamp - baseStamp) / 1000) * speed);
   }
 
-  function rebasePlayback() {
-    time = baseTime = timeFor(cursor, axis, phases, mode, speedClock(speedUnit));
+  function rebasePlayback(share = 0) {
+    const clock = speedClock(speedUnit), from = timeFor(cursor, axis, phases, mode, clock);
+    const to = timeFor(adjacentCursor(axis, phases, cursor, mode, 1), axis, phases, mode, clock);
+    time = baseTime = from + (to - from) * share;
     baseStamp = performance.now();
     if (!duration() && playing) stop();
     setReady(ready);
@@ -664,26 +678,57 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
 
   function animate(stamp) {
     if (!playing) return;
-    time = timeAt(stamp);
     const clock = speedClock(speedUnit);
-    const due = playbackCursor(axis, phases, time, mode, clock);
+    let landed = false;
+    if (settle) {
+      // Timed in the clock of the moment, so a new speed unit keeps its place.
+      const s = Math.max(0, Math.min(1, (stamp - settle.start) / settle.duration));
+      const from = timeFor(settle.cursor, axis, phases, mode, clock), to = timeFor(settle.ahead, axis, phases, mode, clock);
+      landed = s >= 1;
+      time = landed ? to : from + (to - from) * (settle.share + (1 - settle.share) * s * (2 - s));
+    } else time = timeAt(stamp);
+    const due = landed ? settle.ahead : playbackCursor(axis, phases, time, mode, clock);
     // Starting mid-phase at a bookmark must never rewind to the phase entry.
-    if (due.step > cursor.step || (clock === 'tick' && due.step === cursor.step && !sameCursor(cursor, due))) present(due);
+    if (landed ? !sameCursor(cursor, due) : (due.step > cursor.step || (clock === 'tick' && due.step === cursor.step && !sameCursor(cursor, due)))) present(due);
     // Between two stops the tree's cursor and the scrubber move on at the
     // replay's own pace, so neither waits at a stop and then jumps.
     const ahead = adjacentCursor(axis, phases, cursor, mode, 1);
-    const from = timeFor(cursor, axis, phases, mode, clock), to = timeFor(ahead, axis, phases, mode, clock);
-    const fraction = to > from ? Math.max(0, Math.min(1, (time - from) / (to - from))) : 0;
+    const fraction = shareAhead(ahead, clock);
     list.follow(cursor.step, cursor.offset, ahead.step, ahead.offset, fraction);
     const at = timeFor(cursor, axis, phases, mode);
     slider.value = String(axis.origin + at + (timeFor(ahead, axis, phases, mode) - at) * fraction);
-    if (time >= duration()) stop();
+    if (landed || time >= duration()) stop();
     else if (playing) frame = requestAnimationFrame(animate);
+  }
+
+  // A pause plays the current step out: the replay goes on to the next stop
+  // and halts on it, so the tree's cursor and the scrubber come to rest on
+  // that stop's row, never between two rows and never running back to the
+  // last one. It sets off at the replay's own pace and brakes evenly, taking
+  // at most 0.3 s, so a slow replay still stops promptly; with reduced motion
+  // the replay stops where it is, the tree's cursor already on its row.
+  function pause() {
+    const clock = speedClock(speedUnit), ahead = adjacentCursor(axis, phases, cursor, mode, 1);
+    const share = shareAhead(ahead, clock);
+    if (share <= 0 || share >= 1 || sameCursor(cursor, ahead) || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      stop();
+      return;
+    }
+    const left = (timeFor(ahead, axis, phases, mode, clock) - time) / speed;
+    settle = { cursor, ahead, share, start: performance.now(), duration: Math.min(300, 2000 * left) };
+    showPlaying(false);
+  }
+
+  // How far the replay's time has come from the current stop toward the next, 0 to 1.
+  function shareAhead(ahead, clock) {
+    const from = timeFor(cursor, axis, phases, mode, clock), to = timeFor(ahead, axis, phases, mode, clock);
+    return to > from ? Math.max(0, Math.min(1, (time - from) / (to - from))) : 0;
   }
 
   function stop() {
     const was = playing;
     playing = false;
+    settle = null;
     if (was) showPlaying(false);
     play.disabled = !duration() || !ready;
     cancelAnimationFrame(frame);
