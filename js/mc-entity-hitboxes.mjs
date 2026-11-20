@@ -3,7 +3,14 @@ import { Group, createEntityHitboxLines, getEntityHitbox } from './vendor/mc-eng
 const sameVector = (a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 
 function localBounds(state, type) {
-  const bounds = getEntityHitbox({ id: type, pos: state.pos, rotation: [state.yaw ?? 0, state.pitch ?? 0], nbt: state.nbt });
+  const entity = { id: type, pos: state.pos, rotation: [state.yaw ?? 0, state.pitch ?? 0] };
+  let bounds;
+  try {
+    bounds = getEntityHitbox({ ...entity, nbt: state.nbt });
+  } catch {
+    // A malformed pose or attribute in an older scene can still use the type's dimensions.
+    bounds = getEntityHitbox(entity);
+  }
   if (type !== 'minecraft:player' || !bounds) return bounds;
   const pose = String(state.nbt?.Pose ?? state.nbt?.pose ?? '').toLowerCase().replace(/^minecraft:/, '');
   // Java 1.21.10 Avatar.POSES. Standing and sleeping already use the correct

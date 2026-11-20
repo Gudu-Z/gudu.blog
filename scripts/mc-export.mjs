@@ -95,6 +95,7 @@ export function exportScene(profile, record, registry, minecraftVersion, selecte
   const frames = array(profile.frames, 'profile.dat: frames');
   const actors = actorTracks(areas, frames, local);
   diagnostics.omittedEntities = actors.omittedEntities;
+  diagnostics.playerAccounts = actors.playerAccounts;
   const actorInArea = pos => boxes.some(box => pos.every((n, i) => n >= box.min[i] && n <= box.max[i] + 1));
   const events = [];
   function visit(tag, tick, parent, inheritedDimension) {
@@ -176,7 +177,7 @@ async function main() {
   ]);
   const diagnostics = {};
   const scene = exportScene(profile, record, registry, values.minecraft, values.dimension, diagnostics);
-  await attachPlayerSkins(scene, source, values['skin-cache']);
+  await attachPlayerSkins(scene, source, values['skin-cache'], { accounts: diagnostics.playerAccounts });
   validateScene(scene);
   const output = resolve(destination);
   await mkdir(dirname(output), { recursive: true });

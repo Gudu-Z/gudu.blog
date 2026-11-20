@@ -24,24 +24,28 @@ const bundle = await rolldown({
   plugins: [{
     name: 'minecraft-rendering-core',
     resolveId(specifier) {
+      if (specifier === '@blog/special-entities') return join(root, 'scripts', 'mc-special-entities.mjs');
       if (specifier === 'jszip') return requireUpstream.resolve('jszip/dist/jszip.min.js');
       if (specifier === 'three') return join(dirname(requireUpstream.resolve('three')), 'three.module.js');
       if (specifier.startsWith('@lwv/')) return join(source, specifier.slice(5));
     },
     transform(code, id) {
       if (resolve(id) === join(source, 'entities.js')) {
-        // A dropped item or projectile can have a physics box without an implemented mesh.
+        // Extend the same entry used by schematics, replay actors and passengers.
         // Keep the upstream registration, vehicle transforms and passenger traversal.
         const buildBody = 'await buildSingleEntityMesh(entity, assets, data)';
         if (code.split(buildBody).length !== 2) throw new Error('请核对查看器的 buildEntityMesh 实体入口。');
-        return "import { getEntityHitbox } from './entityHitboxes.js'\n" +
-          code.replace(buildBody, buildBody + ' ?? hitboxAnchor(entity)') +
+        return "import { supplementalEntity } from '@blog/special-entities'\nexport { quadsToMesh };\nimport { getEntityHitbox } from './entityHitboxes.js'\n" +
+          code.replace(buildBody, 'await supplementalEntity(entity, assets, data) ?? ' + buildBody + ' ?? hitboxAnchor(entity)') +
           `\nfunction hitboxAnchor(entity) {
   if (!getEntityHitbox(entity)) return null
   const anchor = new THREE.Group()
   anchor.position.fromArray(entity.pos)
   return anchor
 }\n`;
+      }
+      if (resolve(id) === join(source, 'renderNbt.js')) {
+        return code + '\nfor (const key of "item BlockState block_state transformation billboard text background text_opacity line_width alignment item_display facing Fuse fuse ShowBottom show_bottom Value value dangerous Potion Color FireworksItem Radius radius profile Motive".split(" ")) entityFields.add(key);\n';
       }
       // Reuse the same nearest-filtered PNG decoder and animation logic for our local archive.
       if (resolve(id) === join(source, 'entityHitboxes.js')) return code + '\nexport { makeOverlay };\n';
@@ -88,6 +92,7 @@ const notices = [
   'Minecraft article renderer',
   'Rendering core: Gudu-Z/LitematicWebViewer — https://github.com/Gudu-Z/LitematicWebViewer',
   'Upstream revision: ' + revision,
+  'Special entity geometry, painting descriptors and textures extracted from Minecraft Java 1.21.10 (Mojang Studios / Microsoft), via scripts/MinecraftEntityModels.java.',
   'Blog adaptation: the renderer consumes local article data, models and textures.',
   'Vanilla Minecraft assets from the upstream public/assets/minecraft directory are by Mojang Studios / Microsoft.',
   'zlib portions of pako: https://zlib.net/zlib_license.html — Jean-loup Gailly and Mark Adler.',

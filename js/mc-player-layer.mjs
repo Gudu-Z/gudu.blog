@@ -40,7 +40,13 @@ export async function createPlayerLayer(scene, renderer, assets, signal) {
   // seeks and spawn/despawn then update the scene synchronously on the same frame.
   const textures = new Map();
   await Promise.all([
-    ...Array.from(hashes, async hash => textures.set(hash, await assets.getRecordedSkin(hash, scene.skins[hash]))),
+    ...Array.from(hashes, async hash => {
+      try {
+        textures.set(hash, await assets.getRecordedSkin(hash, scene.skins[hash]));
+      } catch (error) {
+        if (!signal.aborted) console.warn('玩家皮肤无法解码，将使用默认皮肤。', error);
+      }
+    }),
     ...Array.from(defaults, async model => textures.set(model, await assets.getTexture(
       model === 'slim' ? 'entity/player/slim/alex' : 'entity/player/wide/steve'))),
   ]);

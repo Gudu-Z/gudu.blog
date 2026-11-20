@@ -217,13 +217,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .article-tags { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 0; list-style: none; }
 .demo-notice { margin: 24px 0 0; line-height: 1.8; padding: 12px; }
 .article-layout { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
-/* The text keeps a 720px measure (about forty characters). Where the column
-   is wide enough, section numbers hang in a 150px left gutter; a replay
-   figure and the closing strip span the whole column. Body children only set
-   their block margins, so the gutter stays theirs. */
-.article-body { container: article / inline-size; --measure: 720px; counter-reset: section figure; min-width: 0; color: light-dark(#1d232a, #c6ced7); font-size: 17px; line-height: 1.9; letter-spacing: 0.02em; overflow-wrap: anywhere; }
-.article-body > * { max-width: var(--measure); margin-inline-start: var(--gutter, 0px); }
-.article-body > :is(.mc-scene, .article-end) { max-width: none; margin-inline-start: 0; }
+.article-body { counter-reset: section figure; min-width: 0; color: light-dark(#1d232a, #c6ced7); font-size: 17px; line-height: 1.9; letter-spacing: 0.02em; overflow-wrap: anywhere; }
+.article-body > * { margin-inline: 0; }
 .article-body > :first-child, .article-body > h2:first-child, .article-section:first-child h2 { margin-top: 0; }
 .article-body p { margin-block: 0 1.35em; }
 /* The opening paragraph leads in a little larger. */
@@ -233,13 +228,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .article-body h3 { position: relative; margin-block: 48px 14px; color: var(--paper); font-size: 19px; line-height: 1.6; letter-spacing: 0.02em; }
 .article-body :is(h3, h4, h5, h6) { scroll-margin-top: 40px; }
 .article-body :is(h4, h5, h6) { margin-block: 32px 12px; color: var(--paper); font-size: 17px; }
-@container article (width >= 880px) {
-  .article-body > * { --gutter: 150px; }
-  /* The number hangs at the column's left edge, joined to its title by a leader. */
-  .article-body h2::before { position: absolute; top: calc(0.75em - 9px); left: calc(-1 * var(--gutter)); margin: 0; }
-  .article-body h2::after { content: ""; position: absolute; top: 0.75em; left: calc(34px - var(--gutter)); width: calc(var(--gutter) - 58px); height: 1px; background: linear-gradient(90deg, var(--rule-strong), var(--rule)); }
-  .article-body h3::before { content: ""; position: absolute; top: 0.8em; left: -24px; width: 9px; height: 1px; background: var(--rule-strong); }
-}
 .article-body strong { color: var(--paper); font-weight: 600; }
 .article-body ul, .article-body ol { margin-block: 0 1.6em; padding-left: 1.3em; }
 .article-body ul { list-style: square; }

@@ -188,6 +188,26 @@ export function eventTarget(replay, event) {
   return { actorId };
 }
 
+// What caused an event, as something the view can draw: the nearest ancestor
+// whose target lies elsewhere, another block or an actor. An update logged
+// twice where it lands (sent, then handled) points back past that pair to
+// the block that sent it. Phases have no target, so the walk stops at one.
+export function eventSource(scene, replay, event) {
+  const key = target => target.block ? 'block:' + target.block.join(',') : target.actorId ? 'actor:' + target.actorId : null;
+  const own = event && key(eventTarget(replay, event));
+  if (!own) return null;
+  for (let index = event.parent, hops = 0; index !== undefined && hops < 64; hops++) {
+    const ancestor = scene.events[index];
+    if (!ancestor) return null;
+    const target = eventTarget(replay, ancestor);
+    const name = key(target);
+    if (!name) return null;
+    if (name !== own) return { ...target, event: ancestor };
+    index = ancestor.parent;
+  }
+  return null;
+}
+
 export function createReplay(scene) {
   const air = scene.palette.indexOf('minecraft:air');
   const base = cellMap(scene.blocks);

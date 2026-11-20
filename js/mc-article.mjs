@@ -1,5 +1,7 @@
-import { createReplay, eventTarget, validateScene } from './mc-replay.mjs';
+import { createReplay, eventSource, eventTarget, validateScene } from './mc-replay.mjs';
+import { DEFAULT_SPEED, fromClockRate, normalizeSpeedUnit, speedClock } from './mc-playback-settings.mjs';
 import { mountTimeline } from './mc-timeline.mjs';
+import { eventKind, eventPending } from './mc-event-list.mjs';
 import { mountCallout } from './mc-callout.mjs';
 
 // Each illustration keeps its own cursor and camera, even when it cites a shared recording.
@@ -159,7 +161,7 @@ function mountFigure(figure) {
       const bookmark = scene.bookmarks?.[figure.dataset.bookmark] ?? {};
       const replay = scene.schematic ? null : createReplay(scene);
       let framePending = false, frameLoading = false, resetPending = false, playingNow = false;
-      let focus, focusActor, parentTarget;
+      let focus, focusActor, mark, source;
       // Keep at most one geometry build in flight. The clock may pass several
       // ticks during a build; submit the latest block and piston state when it finishes.
       function submitLatest() {
@@ -169,32 +171,46 @@ function mountFigure(figure) {
         resetPending = false;
         if (reset && !bookmark.camera) viewer.resetView();
         viewer.render(replay.blocks, {
-          revision: replay.revision, focus, focusActor, pistons: replay.pistons,
-          parentFocus: parentTarget?.block, parentActor: parentTarget?.actorId,
+          revision: replay.revision, focus, focusActor, mark, pistons: replay.pistons,
+          sourceFocus: source?.block, sourceActor: source?.actorId, sourceKind: source && eventKind(source.event),
           entities: replay.entities, entityRevision: replay.entityRevision,
           players: replay.players, playerRevision: replay.playerRevision,
           camera: reset ? bookmark.camera : undefined,
         });
       }
       if (replay) {
+        let speedUnit = normalizeSpeedUnit(figure.dataset.speedUnit) ?? 'gt/s';
+        // A unit on its own changes how the scene's GT/s is displayed. Counted
+        // clocks have no fixed conversion from GT/s and default to one stop/s.
+        const fallbackRate = speedClock(speedUnit) === 'tick' ? scene.playbackSpeed ?? DEFAULT_SPEED : 1;
+        if (!figure.hasAttribute('data-speed') && fromClockRate(fallbackRate, speedUnit) === undefined) speedUnit = 'gt/s';
+        const authorSpeed = figure.hasAttribute('data-speed') ? Number(figure.dataset.speed) : fromClockRate(fallbackRate, speedUnit);
         playback = mountTimeline(view, figure, scene, replay, bookmark, (step, resetCamera, position) => {
           resumeStep = step;
           resumeTick = position.tick;
           const event = position.gap ? null : replay.event;
           const target = eventTarget(replay, event);
-          parentTarget = event?.parent === undefined ? null : eventTarget(replay, scene.events[event.parent]);
           const atBookmark = step === (bookmark.step ?? 0) && (bookmark.tick === undefined
             ? !position.gap || (step === 0 && position.tick === scene.tickRange?.[0])
             : position.tick === bookmark.tick);
           focus = (atBookmark ? bookmark.focus : undefined) ?? target.block;
           focusActor = focus ? undefined : target.actorId;
+          // How the view marks the event: its kind's colour and form, and the
+          // block or actor that caused it. A bookmark's own focus has neither.
+          const ownFocus = focus === target.block;
+          mark = event && ownFocus ? { kind: eventKind(event), pending: eventPending(event), piston: event.piston ?? null,
+            failed: event.type === 'setBlock' && event.after === undefined } : null;
+          source = mark ? eventSource(scene, replay, event) : null;
+          stage.dataset.kind = mark?.kind ?? '';
           framePending = true;
           resetPending ||= resetCamera;
           submitLatest();
         }, () => viewer?.getCamera(), {
-          ticksPerSecond: figure.hasAttribute('data-speed') ? Number(figure.dataset.speed) : scene.playbackSpeed,
+          speedUnit,
+          authorSpeed,
           onPlaying: value => {
             playingNow = value;
+            viewer?.setPlaying(value);
             callout?.setPlaying(value);
           },
         });
@@ -255,6 +271,7 @@ function mountFigure(figure) {
       });
       if (signal.aborted) { instance.destroy(); return; }
       viewer = instance;
+      viewer.setPlaying(playingNow);
       mountViewHint(stage, signal);
       // A recording with entities offers their hitboxes as a switch in the
       // settings card; F3+B in the view flips it too.

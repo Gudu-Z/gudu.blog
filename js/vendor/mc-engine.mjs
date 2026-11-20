@@ -1,4 +1,4 @@
-/*! Blog Minecraft renderer, based on Gudu-Z/LitematicWebViewer 7bc86862b3a175adfc56b7196e0a84b3796a810f. Rebuild with scripts/mc-vendor-renderer.mjs. Notices: assets/mc-renderer/NOTICES.txt */
+/*! Blog Minecraft renderer, based on Gudu-Z/LitematicWebViewer 07e067ba6ad3c792985ae88749d15785926e15c8. Rebuild with scripts/mc-vendor-renderer.mjs. Notices: assets/mc-renderer/NOTICES.txt */
 //#region \0rolldown/runtime.js
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -18490,6 +18490,170 @@ var BoxGeometry = class BoxGeometry extends BufferGeometry {
 	*/
 	static fromJSON(data) {
 		return new BoxGeometry(data.width, data.height, data.depth, data.widthSegments, data.heightSegments, data.depthSegments);
+	}
+};
+/**
+* A geometry class for representing a cylinder.
+*
+* ```js
+* const geometry = new THREE.CylinderGeometry( 5, 5, 20, 32 );
+* const material = new THREE.MeshBasicMaterial( { color: 0xffff00 } );
+* const cylinder = new THREE.Mesh( geometry, material );
+* scene.add( cylinder );
+* ```
+*
+* @augments BufferGeometry
+* @demo scenes/geometry-browser.html#CylinderGeometry
+*/
+var CylinderGeometry = class CylinderGeometry extends BufferGeometry {
+	/**
+	* Constructs a new cylinder geometry.
+	*
+	* @param {number} [radiusTop=1] - Radius of the cylinder at the top.
+	* @param {number} [radiusBottom=1] - Radius of the cylinder at the bottom.
+	* @param {number} [height=1] - Height of the cylinder.
+	* @param {number} [radialSegments=32] - Number of segmented faces around the circumference of the cylinder.
+	* @param {number} [heightSegments=1] - Number of rows of faces along the height of the cylinder.
+	* @param {boolean} [openEnded=false] - Whether the base of the cylinder is open or capped.
+	* @param {number} [thetaStart=0] - Start angle for first segment, in radians.
+	* @param {number} [thetaLength=Math.PI*2] - The central angle, often called theta, of the circular sector, in radians.
+	* The default value results in a complete cylinder.
+	*/
+	constructor(radiusTop = 1, radiusBottom = 1, height = 1, radialSegments = 32, heightSegments = 1, openEnded = false, thetaStart = 0, thetaLength = Math.PI * 2) {
+		super();
+		this.type = "CylinderGeometry";
+		/**
+		* Holds the constructor parameters that have been
+		* used to generate the geometry. Any modification
+		* after instantiation does not change the geometry.
+		*
+		* @type {Object}
+		*/
+		this.parameters = {
+			radiusTop,
+			radiusBottom,
+			height,
+			radialSegments,
+			heightSegments,
+			openEnded,
+			thetaStart,
+			thetaLength
+		};
+		const scope = this;
+		radialSegments = Math.floor(radialSegments);
+		heightSegments = Math.floor(heightSegments);
+		const indices = [];
+		const vertices = [];
+		const normals = [];
+		const uvs = [];
+		let index = 0;
+		const indexArray = [];
+		const halfHeight = height / 2;
+		let groupStart = 0;
+		generateTorso();
+		if (openEnded === false) {
+			if (radiusTop > 0) generateCap(true);
+			if (radiusBottom > 0) generateCap(false);
+		}
+		this.setIndex(indices);
+		this.setAttribute("position", new Float32BufferAttribute(vertices, 3));
+		this.setAttribute("normal", new Float32BufferAttribute(normals, 3));
+		this.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+		function generateTorso() {
+			const normal = new Vector3();
+			const vertex = new Vector3();
+			let groupCount = 0;
+			const slope = (radiusBottom - radiusTop) / height;
+			for (let y = 0; y <= heightSegments; y++) {
+				const indexRow = [];
+				const v = y / heightSegments;
+				const radius = v * (radiusBottom - radiusTop) + radiusTop;
+				for (let x = 0; x <= radialSegments; x++) {
+					const u = x / radialSegments;
+					const theta = u * thetaLength + thetaStart;
+					const sinTheta = Math.sin(theta);
+					const cosTheta = Math.cos(theta);
+					vertex.x = radius * sinTheta;
+					vertex.y = -v * height + halfHeight;
+					vertex.z = radius * cosTheta;
+					vertices.push(vertex.x, vertex.y, vertex.z);
+					normal.set(sinTheta, slope, cosTheta).normalize();
+					normals.push(normal.x, normal.y, normal.z);
+					uvs.push(u, 1 - v);
+					indexRow.push(index++);
+				}
+				indexArray.push(indexRow);
+			}
+			for (let x = 0; x < radialSegments; x++) for (let y = 0; y < heightSegments; y++) {
+				const a = indexArray[y][x];
+				const b = indexArray[y + 1][x];
+				const c = indexArray[y + 1][x + 1];
+				const d = indexArray[y][x + 1];
+				if (radiusTop > 0 || y !== 0) {
+					indices.push(a, b, d);
+					groupCount += 3;
+				}
+				if (radiusBottom > 0 || y !== heightSegments - 1) {
+					indices.push(b, c, d);
+					groupCount += 3;
+				}
+			}
+			scope.addGroup(groupStart, groupCount, 0);
+			groupStart += groupCount;
+		}
+		function generateCap(top) {
+			const centerIndexStart = index;
+			const uv = new Vector2();
+			const vertex = new Vector3();
+			let groupCount = 0;
+			const radius = top === true ? radiusTop : radiusBottom;
+			const sign = top === true ? 1 : -1;
+			for (let x = 1; x <= radialSegments; x++) {
+				vertices.push(0, halfHeight * sign, 0);
+				normals.push(0, sign, 0);
+				uvs.push(.5, .5);
+				index++;
+			}
+			const centerIndexEnd = index;
+			for (let x = 0; x <= radialSegments; x++) {
+				const theta = x / radialSegments * thetaLength + thetaStart;
+				const cosTheta = Math.cos(theta);
+				const sinTheta = Math.sin(theta);
+				vertex.x = radius * sinTheta;
+				vertex.y = halfHeight * sign;
+				vertex.z = radius * cosTheta;
+				vertices.push(vertex.x, vertex.y, vertex.z);
+				normals.push(0, sign, 0);
+				uv.x = cosTheta * .5 + .5;
+				uv.y = sinTheta * .5 * sign + .5;
+				uvs.push(uv.x, uv.y);
+				index++;
+			}
+			for (let x = 0; x < radialSegments; x++) {
+				const c = centerIndexStart + x;
+				const i = centerIndexEnd + x;
+				if (top === true) indices.push(i, i + 1, c);
+				else indices.push(i + 1, i, c);
+				groupCount += 3;
+			}
+			scope.addGroup(groupStart, groupCount, top === true ? 1 : 2);
+			groupStart += groupCount;
+		}
+	}
+	copy(source) {
+		super.copy(source);
+		this.parameters = Object.assign({}, source.parameters);
+		return this;
+	}
+	/**
+	* Factory method for creating an instance of this class from the given
+	* JSON object.
+	*
+	* @param {Object} data - A JSON object representing the serialized geometry.
+	* @return {CylinderGeometry} A new instance.
+	*/
+	static fromJSON(data) {
+		return new CylinderGeometry(data.radiusTop, data.radiusBottom, data.height, data.radialSegments, data.heightSegments, data.openEnded, data.thetaStart, data.thetaLength);
 	}
 };
 /**
@@ -50054,1615 +50218,2783 @@ function setEntityHitboxesVisible(root, enabled) {
 }
 
 //#endregion
-//#region src/entityModel.js
-function cuboidFaces(c, texW, texH) {
-	const { u, v, x, y, z, dx, dy, dz, mirror } = c;
-	const [rx, ry, rz] = c.dil || [
+//#region src/entityMinecart.js
+const EXITS = {
+	north_south: [[
 		0,
+		0,
+		-1
+	], [
+		0,
+		0,
+		1
+	]],
+	east_west: [[
+		-1,
 		0,
 		0
-	];
-	let x0 = x - rx, y0 = y - ry, z0 = z - rz;
-	let x1 = x + dx + rx, y1 = y + dy + ry, z1 = z + dz + rz;
-	if (mirror) {
-		const t = x0;
-		x0 = x1;
-		x1 = t;
-	}
-	const V = {
-		v0: [
-			x0,
-			y0,
-			z0
-		],
-		v1: [
-			x1,
-			y0,
-			z0
-		],
-		v2: [
-			x1,
-			y1,
-			z0
-		],
-		v3: [
-			x0,
-			y1,
-			z0
-		],
-		v4: [
-			x0,
-			y0,
-			z1
-		],
-		v5: [
-			x1,
-			y0,
-			z1
-		],
-		v6: [
-			x1,
-			y1,
-			z1
-		],
-		v7: [
-			x0,
-			y1,
-			z1
-		]
-	};
-	const uN = u + dz, uE = u + dz + dx, uE2 = u + dz + dx + dx;
-	const uS = u + dz + dx + dz, uS2 = u + dz + dx + dz + dx;
-	const vT = v, vM = v + dz, vB = v + dz + dy;
-	const flatX = x0 === x1, flatY = y0 === y1, flatZ = z0 === z1;
-	const FACES = [
-		[
-			[
-				"v5",
-				"v4",
-				"v0",
-				"v1"
-			],
-			[
-				uN,
-				vT,
-				uE,
-				vM
-			],
-			[
-				0,
-				-1,
-				0
-			],
-			flatX || flatY || flatZ
-		],
-		[
-			[
-				"v2",
-				"v3",
-				"v7",
-				"v6"
-			],
-			[
-				uE,
-				vM,
-				uE2,
-				vT
-			],
-			[
-				0,
-				1,
-				0
-			],
-			flatX || flatZ
-		],
-		[
-			[
-				"v0",
-				"v4",
-				"v7",
-				"v3"
-			],
-			[
-				u,
-				vM,
-				uN,
-				vB
-			],
-			[
-				-1,
-				0,
-				0
-			],
-			flatX || flatY || flatZ
-		],
-		[
-			[
-				"v1",
-				"v0",
-				"v3",
-				"v2"
-			],
-			[
-				uN,
-				vM,
-				uE,
-				vB
-			],
-			[
-				0,
-				0,
-				-1
-			],
-			flatX || flatY || flatZ
-		],
-		[
-			[
-				"v5",
-				"v1",
-				"v2",
-				"v6"
-			],
-			[
-				uE,
-				vM,
-				uS,
-				vB
-			],
-			[
-				1,
-				0,
-				0
-			],
-			flatY || flatZ
-		],
-		[
-			[
-				"v4",
-				"v5",
-				"v6",
-				"v7"
-			],
-			[
-				uS,
-				vM,
-				uS2,
-				vB
-			],
-			[
-				0,
-				0,
-				1
-			],
-			flatX || flatY
-		]
-	];
-	if (flatY) FACES[1][1] = [
-		uN,
-		vM,
-		uE,
-		vT
-	];
-	if (flatZ) FACES[5][1] = [
-		uE,
-		vM,
-		uN,
-		vB
-	];
-	if (flatX) FACES[4][1] = [
-		uN,
-		vM,
-		u,
-		vB
-	];
-	const out = [];
-	for (const [idx, [u1, v1, u2, v2], dir, skip] of FACES) {
-		if (skip) continue;
-		const nuv = (uu, vv) => [uu / texW, vv / texH];
-		let pairs = [
-			[V[idx[0]], nuv(u2, v1)],
-			[V[idx[1]], nuv(u1, v1)],
-			[V[idx[2]], nuv(u1, v2)],
-			[V[idx[3]], nuv(u2, v2)]
-		];
-		let d = dir;
-		if (mirror && d[0] !== 0) d = [
-			-d[0],
-			d[1],
-			d[2]
-		];
-		if (mirror) pairs.reverse();
-		out.push({
-			verts: pairs.map((p) => p[0]),
-			uvs: pairs.map((p) => p[1]),
-			dir: d
-		});
-	}
-	return out;
-}
-function partRotation(rot) {
-	const [pitch, yaw, roll] = rot;
-	const cx = Math.cos(pitch), sx = Math.sin(pitch);
-	const cy = Math.cos(yaw), sy = Math.sin(yaw);
-	const cr = Math.cos(roll), sr = Math.sin(roll);
-	return ([x, y, z]) => {
-		const y1 = y * cx - z * sx, z1 = y * sx + z * cx;
-		const x2 = x * cy + z1 * sy, z2 = -x * sy + z1 * cy;
-		return [
-			x2 * cr - y1 * sr,
-			x2 * sr + y1 * cr,
-			z2
-		];
-	};
-}
-const add3 = (a, b) => [
-	a[0] + b[0],
-	a[1] + b[1],
-	a[2] + b[2]
-];
-function compileModel(model, includeParts = false) {
-	const { w, h, parts } = model;
-	const quads = [];
-	const walk = (node, toModel, toDir) => {
-		for (const name of Object.keys(node)) {
-			const p = node[name];
-			const rotate = partRotation(p.rot || [
-				0,
-				0,
-				0
-			]);
-			const pivot = p.pivot || [
-				0,
-				0,
-				0
-			];
-			const childToModel = (pt) => toModel(add3(pivot, rotate(pt)));
-			const childToDir = (d) => toDir(rotate(d));
-			for (const c of p.cuboids || []) for (const face of cuboidFaces(c, w, h)) {
-				const verts = face.verts.map(childToModel).map(([mx, my, mz]) => [
-					mx / 16,
-					(24 - my) / 16,
-					-mz / 16
-				]);
-				const nd = childToDir(face.dir);
-				const quad = {
-					verts,
-					uvs: face.uvs,
-					normal: [
-						nd[0],
-						-nd[1],
-						-nd[2]
-					]
-				};
-				if (includeParts) quad.part = p;
-				quads.push(quad);
-			}
-			walk(p.children || {}, childToModel, childToDir);
-		}
-	};
-	walk(parts, (p) => p, (d) => d);
-	return quads;
-}
-function quadsToEntityMesh(quads, mat) {
-	return new Mesh(quadsToEntityGeometry(quads), mat);
-}
-function quadsToEntityGeometry(quads) {
-	const n = quads.length;
-	const positions = new Float32Array(n * 12);
-	const uvs = new Float32Array(n * 8);
-	const normals = new Float32Array(n * 12);
-	const indices = new Uint32Array(n * 6);
-	for (let i = 0; i < n; i++) {
-		const q = quads[i];
-		for (let k = 0; k < 4; k++) {
-			positions[i * 12 + k * 3] = q.verts[k][0];
-			positions[i * 12 + k * 3 + 1] = q.verts[k][1];
-			positions[i * 12 + k * 3 + 2] = q.verts[k][2];
-			uvs[i * 8 + k * 2] = q.uvs[k][0];
-			uvs[i * 8 + k * 2 + 1] = q.uvs[k][1];
-			normals[i * 12 + k * 3] = q.normal[0];
-			normals[i * 12 + k * 3 + 1] = q.normal[1];
-			normals[i * 12 + k * 3 + 2] = q.normal[2];
-		}
-		const b = i * 4;
-		indices[i * 6] = b;
-		indices[i * 6 + 1] = b + 1;
-		indices[i * 6 + 2] = b + 2;
-		indices[i * 6 + 3] = b;
-		indices[i * 6 + 4] = b + 2;
-		indices[i * 6 + 5] = b + 3;
-	}
-	const geo = new BufferGeometry();
-	geo.setAttribute("position", new BufferAttribute(positions, 3));
-	geo.setAttribute("uv", new BufferAttribute(uvs, 2));
-	geo.setAttribute("normal", new BufferAttribute(normals, 3));
-	geo.setIndex(new BufferAttribute(indices, 1));
-	return geo;
-}
-const modelTemplates = /* @__PURE__ */ new Map();
-const MAX_MODEL_TEMPLATES = 128;
-const MAX_MODEL_BYTES = 8388608;
-let modelBytes = 0;
-function modelTemplate(model) {
-	const key = JSON.stringify([
-		model.w,
-		model.h,
-		model.parts
-	]);
-	let template = modelTemplates.get(key);
-	if (template) {
-		modelTemplates.delete(key);
-		modelTemplates.set(key, template);
-		return template;
-	}
-	const quads = compileModel(model, true);
-	const geometry = quadsToEntityGeometry(quads);
-	const indices = /* @__PURE__ */ new Map();
-	let boneIndex = 1;
-	const walk = (nodes) => {
-		for (const node of Object.values(nodes)) {
-			indices.set(node, boneIndex++);
-			walk(node.children || {});
-		}
-	};
-	walk(model.parts);
-	const skinIndices = new Uint16Array(quads.length * 16);
-	const skinWeights = new Float32Array(quads.length * 16);
-	for (let i = 0; i < quads.length; i++) for (let k = 0; k < 4; k++) {
-		skinIndices[i * 16 + k * 4] = indices.get(quads[i].part);
-		skinWeights[i * 16 + k * 4] = 1;
-	}
-	const bytes = key.length * 2 + geometry.index.array.byteLength + skinIndices.byteLength + skinWeights.byteLength + Object.values(geometry.attributes).reduce((sum, attribute) => sum + attribute.array.byteLength, 0);
-	template = {
-		geometry,
-		skinIndices,
-		skinWeights,
-		sphere: null,
-		bytes
-	};
-	if (bytes <= MAX_MODEL_BYTES) {
-		modelTemplates.set(key, template);
-		modelBytes += bytes;
-		while (modelTemplates.size > MAX_MODEL_TEMPLATES || modelBytes > MAX_MODEL_BYTES) {
-			const oldest = modelTemplates.keys().next().value;
-			modelBytes -= modelTemplates.get(oldest).bytes;
-			modelTemplates.delete(oldest);
-		}
-	}
-	return template;
-}
-function createEntityModelMesh(model, material) {
-	return new Mesh(modelTemplate(model).geometry.clone(), material);
-}
-var EntitySkeleton = class extends Skeleton {
-	constructor(bones) {
-		super(bones);
-		const indices = new Map(bones.map((bone, index) => [bone, index]));
-		this.parentIndices = bones.map((bone) => indices.get(bone.parent) ?? -1);
-		this.modelMatrices = bones.map(() => new Matrix4());
-		this.offsetMatrix = new Matrix4();
-	}
-	update() {
-		for (let i = 0; i < this.bones.length; i++) {
-			const matrix = this.modelMatrices[i].copy(this.bones[i].matrix);
-			const parent = this.parentIndices[i];
-			if (parent >= 0) matrix.premultiply(this.modelMatrices[parent]);
-			this.offsetMatrix.multiplyMatrices(matrix, this.boneInverses[i]).toArray(this.boneMatrices, i * 16);
-		}
-		if (this.boneTexture) this.boneTexture.needsUpdate = true;
-	}
+	], [
+		1,
+		0,
+		0
+	]],
+	ascending_east: [[
+		-1,
+		-1,
+		0
+	], [
+		1,
+		0,
+		0
+	]],
+	ascending_west: [[
+		-1,
+		0,
+		0
+	], [
+		1,
+		-1,
+		0
+	]],
+	ascending_north: [[
+		0,
+		0,
+		-1
+	], [
+		0,
+		-1,
+		1
+	]],
+	ascending_south: [[
+		0,
+		-1,
+		-1
+	], [
+		0,
+		0,
+		1
+	]],
+	south_east: [[
+		0,
+		0,
+		1
+	], [
+		1,
+		0,
+		0
+	]],
+	south_west: [[
+		0,
+		0,
+		1
+	], [
+		-1,
+		0,
+		0
+	]],
+	north_west: [[
+		0,
+		0,
+		-1
+	], [
+		-1,
+		0,
+		0
+	]],
+	north_east: [[
+		0,
+		0,
+		-1
+	], [
+		1,
+		0,
+		0
+	]]
 };
-var EntitySkinnedMesh = class extends SkinnedMesh {
-	applyBoneTransform(index, target) {
-		const boneIndex = this.geometry.attributes.skinIndex.getX(index);
-		target.applyMatrix4(this.skeleton.boneInverses[boneIndex]);
-		for (let bone = this.skeleton.bones[boneIndex]; bone && bone !== this; bone = bone.parent) target.applyMatrix4(bone.matrix);
-		return target;
-	}
-};
-function createEntityRig(model, material) {
-	const template = modelTemplate(model);
-	const geometry = template.geometry.clone();
-	const root = new Bone();
-	root.position.y = 24 / 16;
-	root.scale.set(1 / 16, -1 / 16, -1 / 16);
-	const bones = [root];
-	const parts = {};
-	const walk = (nodes, parent) => {
-		for (const [name, node] of Object.entries(nodes)) {
-			const bone = new Bone();
-			bone.name = name;
-			bone.position.fromArray(node.pivot || [
-				0,
-				0,
-				0
-			]);
-			bone.rotation.set(...node.rot || [
-				0,
-				0,
-				0
-			], "ZYX");
-			bone.userData.restPosition = bone.position.clone();
-			bone.userData.restRotation = bone.rotation.clone();
-			bones.push(bone);
-			parts[name] = bone;
-			parent.add(bone);
-			walk(node.children || {}, bone);
-		}
-	};
-	walk(model.parts, root);
-	geometry.setAttribute("skinIndex", new Uint16BufferAttribute(template.skinIndices, 4));
-	geometry.setAttribute("skinWeight", new Float32BufferAttribute(template.skinWeights, 4));
-	const mesh = new EntitySkinnedMesh(geometry, material);
-	mesh.bindMode = DetachedBindMode;
-	mesh.add(root);
-	mesh.bind(new EntitySkeleton(bones));
-	if (!template.sphere) {
-		mesh.computeBoundingSphere();
-		mesh.boundingSphere.radius += 1.5;
-		template.sphere = mesh.boundingSphere.clone();
-	} else mesh.boundingSphere = template.sphere.clone();
-	mesh.userData.parts = parts;
-	mesh.userData.resetPose = () => {
-		for (let i = 1; i < bones.length; i++) {
-			const bone = bones[i];
-			bone.position.copy(bone.userData.restPosition);
-			bone.rotation.copy(bone.userData.restRotation);
-			bone.scale.setScalar(1);
-		}
-	};
-	geometry.addEventListener("dispose", () => mesh.skeleton.dispose());
-	return mesh;
+const RAILS = /* @__PURE__ */ new Set([
+	"rail",
+	"powered_rail",
+	"detector_rail",
+	"activator_rail"
+]);
+const DEG$4 = Math.PI / 180;
+function railAt(data, x, y, z) {
+	if (!data?.blocks || !data.palette || !data.bounds) return null;
+	const b = data.bounds, dx = x - b.minX, dy = y - b.minY, dz = z - b.minZ;
+	if (dx < 0 || dx >= b.width || dy < 0 || dy >= b.height || dz < 0 || dz >= b.depth) return null;
+	const entry = data.palette[data.blocks.get(dx + dz * b.width + dy * b.width * b.depth)];
+	if (!RAILS.has((entry?.name || "").replace(/^minecraft:/, ""))) return null;
+	const exits = EXITS[entry.properties?.shape];
+	return Array.isArray(exits) ? {
+		x,
+		y,
+		z,
+		exits
+	} : null;
 }
-function sortTransparentFaces(mesh) {
-	const faces = Array.from({ length: mesh.geometry.index.count / 6 }, (_, index) => ({
-		index,
-		distance: 0
-	}));
-	const cameraPosition = new Vector3();
-	const center = new Vector3();
-	const opposite = new Vector3();
-	return (camera) => {
-		cameraPosition.setFromMatrixPosition(camera.matrixWorld);
-		for (const face of faces) {
-			mesh.getVertexPosition(face.index * 4, center);
-			mesh.getVertexPosition(face.index * 4 + 2, opposite);
-			center.add(opposite).multiplyScalar(.5).applyMatrix4(mesh.matrixWorld);
-			face.distance = center.distanceToSquared(cameraPosition);
+function railBelow(data, x, y, z) {
+	x = Math.floor(x);
+	y = Math.floor(y);
+	z = Math.floor(z);
+	return railAt(data, x, y - 1, z) || railAt(data, x, y, z);
+}
+function positionOnRail(data, x, y, z) {
+	const rail = railBelow(data, x, y, z);
+	if (!rail) return null;
+	const [a, b] = rail.exits;
+	const startX = rail.x + .5 + a[0] * .5, startY = rail.y + .0625 + a[1] * .5, startZ = rail.z + .5 + a[2] * .5;
+	const dx = (b[0] - a[0]) * .5, dy = b[1] - a[1], dz = (b[2] - a[2]) * .5;
+	const t = dx === 0 ? z - rail.z : dz === 0 ? x - rail.x : ((x - startX) * dx + (z - startZ) * dz) * 2;
+	return [
+		startX + dx * t,
+		startY + dy * t + (dy < 0 ? 1 : dy > 0 ? .5 : 0),
+		startZ + dz * t
+	];
+}
+function positionAlongRail(data, x, y, z, distance) {
+	const rail = railBelow(data, x, y, z);
+	if (!rail) return null;
+	const [a, b] = rail.exits, dx = b[0] - a[0], dz = b[2] - a[2], length = Math.hypot(dx, dz);
+	y = rail.y + (a[1] !== b[1] ? 1 : 0);
+	x += dx / length * distance;
+	z += dz / length * distance;
+	for (const exit of [a, b]) if (exit[1] !== 0 && Math.floor(x) - rail.x === exit[0] && Math.floor(z) - rail.z === exit[2]) {
+		y += exit[1];
+		break;
+	}
+	return positionOnRail(data, x, y, z);
+}
+function minecartRenderPose(entity, data) {
+	const [x, y, z] = entity.pos;
+	let yaw = Number(entity.rotation?.[0]) || 0, pitch = Number(entity.rotation?.[1]) || 0;
+	const offset = [
+		0,
+		.375,
+		0
+	], center = positionOnRail(data, x, y, z);
+	if (center) {
+		const distance = Math.fround(.3);
+		const front = positionAlongRail(data, x, y, z, distance) || center;
+		const back = positionAlongRail(data, x, y, z, -distance) || center;
+		offset[0] = center[0] - x;
+		offset[1] += (front[1] + back[1]) / 2 - y;
+		offset[2] = center[2] - z;
+		const dx = back[0] - front[0], dy = back[1] - front[1], dz = back[2] - front[2];
+		const length = Math.hypot(dx, dy, dz);
+		if (length !== 0) {
+			yaw = Math.fround(Math.atan2(dz, dx) / DEG$4);
+			pitch = Math.fround(Math.atan(dy / length) * 73);
 		}
-		faces.sort((a, b) => b.distance - a.distance || a.index - b.index);
-		const indices = mesh.geometry.index;
-		for (let i = 0; i < faces.length; i++) {
-			const b = faces[i].index * 4, offset = i * 6;
-			indices.array[offset] = b;
-			indices.array[offset + 1] = b + 1;
-			indices.array[offset + 2] = b + 2;
-			indices.array[offset + 3] = b;
-			indices.array[offset + 4] = b + 2;
-			indices.array[offset + 5] = b + 3;
-		}
-		indices.needsUpdate = true;
+	}
+	return {
+		offset,
+		yaw: Math.fround(180 - yaw) * DEG$4,
+		pitch: -pitch * DEG$4
 	};
 }
 
 //#endregion
-//#region node_modules/three/examples/jsm/controls/OrbitControls.js
-/**
-* Fires when the camera has been transformed by the controls.
-*
-* @event OrbitControls#change
-* @type {Object}
-*/
-const _changeEvent = { type: "change" };
-/**
-* Fires when an interaction was initiated.
-*
-* @event OrbitControls#start
-* @type {Object}
-*/
-const _startEvent = { type: "start" };
-/**
-* Fires when an interaction has finished.
-*
-* @event OrbitControls#end
-* @type {Object}
-*/
-const _endEvent = { type: "end" };
-const _ray = new Ray();
-const _plane = new Plane();
-const _TILT_LIMIT = Math.cos(70 * MathUtils.DEG2RAD);
-const _v = new Vector3();
-const _twoPI = 2 * Math.PI;
-const _STATE = {
-	NONE: -1,
-	ROTATE: 0,
-	DOLLY: 1,
-	PAN: 2,
-	TOUCH_ROTATE: 3,
-	TOUCH_PAN: 4,
-	TOUCH_DOLLY_PAN: 5,
-	TOUCH_DOLLY_ROTATE: 6
-};
-const _EPS = 1e-6;
-/**
-* Orbit controls allow the camera to orbit around a target.
-*
-* OrbitControls performs orbiting, dollying (zooming), and panning. Unlike {@link TrackballControls},
-* it maintains the "up" direction `object.up` (+Y by default).
-*
-* - Orbit: Left mouse / touch: one-finger move.
-* - Zoom: Middle mouse, or mousewheel / touch: two-finger spread or squish.
-* - Pan: Right mouse, or left mouse + ctrl/meta/shiftKey, or arrow keys / touch: two-finger move.
-*
-* ```js
-* const controls = new OrbitControls( camera, renderer.domElement );
-*
-* // controls.update() must be called after any manual changes to the camera's transform
-* camera.position.set( 0, 20, 100 );
-* controls.update();
-*
-* function animate() {
-*
-* 	// required if controls.enableDamping or controls.autoRotate are set to true
-* 	controls.update();
-*
-* 	renderer.render( scene, camera );
-*
-* }
-* ```
-*
-* @augments Controls
-* @three_import import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-*/
-var OrbitControls = class extends Controls {
-	/**
-	* Constructs a new controls instance.
-	*
-	* @param {Object3D} object - The object that is managed by the controls.
-	* @param {?HTMLElement} domElement - The HTML element used for event listeners.
-	*/
-	constructor(object, domElement = null) {
-		super(object, domElement);
-		this.state = _STATE.NONE;
-		/**
-		* The focus point of the controls, the `object` orbits around this.
-		* It can be updated manually at any point to change the focus of the controls.
-		*
-		* @type {Vector3}
-		*/
-		this.target = new Vector3();
-		/**
-		* The focus point of the `minTargetRadius` and `maxTargetRadius` limits.
-		* It can be updated manually at any point to change the center of interest
-		* for the `target`.
-		*
-		* @type {Vector3}
-		*/
-		this.cursor = new Vector3();
-		/**
-		* How far you can dolly in (perspective camera only).
-		*
-		* @type {number}
-		* @default 0
-		*/
-		this.minDistance = 0;
-		/**
-		* How far you can dolly out (perspective camera only).
-		*
-		* @type {number}
-		* @default Infinity
-		*/
-		this.maxDistance = Infinity;
-		/**
-		* How far you can zoom in (orthographic camera only).
-		*
-		* @type {number}
-		* @default 0
-		*/
-		this.minZoom = 0;
-		/**
-		* How far you can zoom out (orthographic camera only).
-		*
-		* @type {number}
-		* @default Infinity
-		*/
-		this.maxZoom = Infinity;
-		/**
-		* How close you can get the target to the 3D `cursor`.
-		*
-		* @type {number}
-		* @default 0
-		*/
-		this.minTargetRadius = 0;
-		/**
-		* How far you can move the target from the 3D `cursor`.
-		*
-		* @type {number}
-		* @default Infinity
-		*/
-		this.maxTargetRadius = Infinity;
-		/**
-		* How far you can orbit vertically, lower limit. Range is `[0, Math.PI]` radians.
-		*
-		* @type {number}
-		* @default 0
-		*/
-		this.minPolarAngle = 0;
-		/**
-		* How far you can orbit vertically, upper limit. Range is `[0, Math.PI]` radians.
-		*
-		* @type {number}
-		* @default Math.PI
-		*/
-		this.maxPolarAngle = Math.PI;
-		/**
-		* How far you can orbit horizontally, lower limit. If set, the interval `[ min, max ]`
-		* must be a sub-interval of `[ - 2 PI, 2 PI ]`, with `( max - min < 2 PI )`.
-		*
-		* @type {number}
-		* @default -Infinity
-		*/
-		this.minAzimuthAngle = -Infinity;
-		/**
-		* How far you can orbit horizontally, upper limit. If set, the interval `[ min, max ]`
-		* must be a sub-interval of `[ - 2 PI, 2 PI ]`, with `( max - min < 2 PI )`.
-		*
-		* @type {number}
-		* @default -Infinity
-		*/
-		this.maxAzimuthAngle = Infinity;
-		/**
-		* Set to `true` to enable damping (inertia), which can be used to give a sense of weight
-		* to the controls. Note that if this is enabled, you must call `update()` in your animation
-		* loop.
-		*
-		* @type {boolean}
-		* @default false
-		*/
-		this.enableDamping = false;
-		/**
-		* The damping inertia used if `enableDamping` is set to `true`.
-		*
-		* Note that for this to work, you must call `update()` in your animation loop.
-		*
-		* @type {number}
-		* @default 0.05
-		*/
-		this.dampingFactor = .05;
-		/**
-		* Enable or disable zooming (dollying) of the camera.
-		*
-		* @type {boolean}
-		* @default true
-		*/
-		this.enableZoom = true;
-		/**
-		* Speed of zooming / dollying.
-		*
-		* @type {number}
-		* @default 1
-		*/
-		this.zoomSpeed = 1;
-		/**
-		* Enable or disable horizontal and vertical rotation of the camera.
-		*
-		* Note that it is possible to disable a single axis by setting the min and max of the
-		* `minPolarAngle` or `minAzimuthAngle` to the same value, which will cause the vertical
-		* or horizontal rotation to be fixed at that value.
-		*
-		* @type {boolean}
-		* @default true
-		*/
-		this.enableRotate = true;
-		/**
-		* Speed of rotation.
-		*
-		* @type {number}
-		* @default 1
-		*/
-		this.rotateSpeed = 1;
-		/**
-		* How fast to rotate the camera when the keyboard is used.
-		*
-		* @type {number}
-		* @default 1
-		*/
-		this.keyRotateSpeed = 1;
-		/**
-		* Enable or disable camera panning.
-		*
-		* @type {boolean}
-		* @default true
-		*/
-		this.enablePan = true;
-		/**
-		* Speed of panning.
-		*
-		* @type {number}
-		* @default 1
-		*/
-		this.panSpeed = 1;
-		/**
-		* Defines how the camera's position is translated when panning. If `true`, the camera pans
-		* in screen space. Otherwise, the camera pans in the plane orthogonal to the camera's up
-		* direction.
-		*
-		* @type {boolean}
-		* @default true
-		*/
-		this.screenSpacePanning = true;
-		/**
-		* How fast to pan the camera when the keyboard is used in
-		* pixels per keypress.
-		*
-		* @type {number}
-		* @default 7
-		*/
-		this.keyPanSpeed = 7;
-		/**
-		* Setting this property to `true` allows to zoom to the cursor's position.
-		*
-		* @type {boolean}
-		* @default false
-		*/
-		this.zoomToCursor = false;
-		/**
-		* Set to true to automatically rotate around the target
-		*
-		* Note that if this is enabled, you must call `update()` in your animation loop.
-		* If you want the auto-rotate speed to be independent of the frame rate (the refresh
-		* rate of the display), you must pass the time `deltaTime`, in seconds, to `update()`.
-		*
-		* @type {boolean}
-		* @default false
-		*/
-		this.autoRotate = false;
-		/**
-		* How fast to rotate around the target if `autoRotate` is `true`. The default  equates to 30 seconds
-		* per orbit at 60fps.
-		*
-		* Note that if `autoRotate` is enabled, you must call `update()` in your animation loop.
-		*
-		* @type {number}
-		* @default 2
-		*/
-		this.autoRotateSpeed = 2;
-		/**
-		* This object contains references to the keycodes for controlling camera panning.
-		*
-		* ```js
-		* controls.keys = {
-		* 	LEFT: 'ArrowLeft', //left arrow
-		* 	UP: 'ArrowUp', // up arrow
-		* 	RIGHT: 'ArrowRight', // right arrow
-		* 	BOTTOM: 'ArrowDown' // down arrow
-		* }
-		* ```
-		* @type {Object}
-		*/
-		this.keys = {
-			LEFT: "ArrowLeft",
-			UP: "ArrowUp",
-			RIGHT: "ArrowRight",
-			BOTTOM: "ArrowDown"
-		};
-		/**
-		* This object contains references to the mouse actions used by the controls.
-		*
-		* ```js
-		* controls.mouseButtons = {
-		* 	LEFT: THREE.MOUSE.ROTATE,
-		* 	MIDDLE: THREE.MOUSE.DOLLY,
-		* 	RIGHT: THREE.MOUSE.PAN
-		* }
-		* ```
-		* @type {Object}
-		*/
-		this.mouseButtons = {
-			LEFT: MOUSE.ROTATE,
-			MIDDLE: MOUSE.DOLLY,
-			RIGHT: MOUSE.PAN
-		};
-		/**
-		* This object contains references to the touch actions used by the controls.
-		*
-		* ```js
-		* controls.mouseButtons = {
-		* 	ONE: THREE.TOUCH.ROTATE,
-		* 	TWO: THREE.TOUCH.DOLLY_PAN
-		* }
-		* ```
-		* @type {Object}
-		*/
-		this.touches = {
-			ONE: TOUCH.ROTATE,
-			TWO: TOUCH.DOLLY_PAN
-		};
-		/**
-		* Used internally by `saveState()` and `reset()`.
-		*
-		* @type {Vector3}
-		*/
-		this.target0 = this.target.clone();
-		/**
-		* Used internally by `saveState()` and `reset()`.
-		*
-		* @type {Vector3}
-		*/
-		this.position0 = this.object.position.clone();
-		/**
-		* Used internally by `saveState()` and `reset()`.
-		*
-		* @type {number}
-		*/
-		this.zoom0 = this.object.zoom;
-		this._cursorStyle = "auto";
-		this._domElementKeyEvents = null;
-		this._lastPosition = new Vector3();
-		this._lastQuaternion = new Quaternion();
-		this._lastTargetPosition = new Vector3();
-		this._quat = new Quaternion().setFromUnitVectors(object.up, new Vector3(0, 1, 0));
-		this._quatInverse = this._quat.clone().invert();
-		this._spherical = new Spherical();
-		this._sphericalDelta = new Spherical();
-		this._scale = 1;
-		this._panOffset = new Vector3();
-		this._rotateStart = new Vector2();
-		this._rotateEnd = new Vector2();
-		this._rotateDelta = new Vector2();
-		this._panStart = new Vector2();
-		this._panEnd = new Vector2();
-		this._panDelta = new Vector2();
-		this._dollyStart = new Vector2();
-		this._dollyEnd = new Vector2();
-		this._dollyDelta = new Vector2();
-		this._dollyDirection = new Vector3();
-		this._mouse = new Vector2();
-		this._performCursorZoom = false;
-		this._pointers = [];
-		this._pointerPositions = {};
-		this._controlActive = false;
-		this._onPointerMove = onPointerMove.bind(this);
-		this._onPointerDown = onPointerDown.bind(this);
-		this._onPointerUp = onPointerUp.bind(this);
-		this._onContextMenu = onContextMenu.bind(this);
-		this._onMouseWheel = onMouseWheel.bind(this);
-		this._onKeyDown = onKeyDown.bind(this);
-		this._onTouchStart = onTouchStart.bind(this);
-		this._onTouchMove = onTouchMove.bind(this);
-		this._onMouseDown = onMouseDown.bind(this);
-		this._onMouseMove = onMouseMove.bind(this);
-		this._interceptControlDown = interceptControlDown.bind(this);
-		this._interceptControlUp = interceptControlUp.bind(this);
-		if (this.domElement !== null) this.connect(this.domElement);
-		this.update();
-	}
-	/**
-	* Defines the visual representation of the cursor.
-	*
-	* @type {('auto'|'grab')}
-	* @default 'auto'
-	*/
-	set cursorStyle(type) {
-		this._cursorStyle = type;
-		if (type === "grab") this.domElement.style.cursor = "grab";
-		else this.domElement.style.cursor = "auto";
-	}
-	get cursorStyle() {
-		return this._cursorStyle;
-	}
-	connect(element) {
-		super.connect(element);
-		this.domElement.addEventListener("pointerdown", this._onPointerDown);
-		this.domElement.addEventListener("pointercancel", this._onPointerUp);
-		this.domElement.addEventListener("contextmenu", this._onContextMenu);
-		this.domElement.addEventListener("wheel", this._onMouseWheel, { passive: false });
-		this.domElement.getRootNode().addEventListener("keydown", this._interceptControlDown, {
-			passive: true,
-			capture: true
-		});
-		this.domElement.style.touchAction = "none";
-	}
-	disconnect() {
-		this.state = _STATE.NONE;
-		this.domElement.removeEventListener("pointerdown", this._onPointerDown);
-		this.domElement.ownerDocument.removeEventListener("pointermove", this._onPointerMove);
-		this.domElement.ownerDocument.removeEventListener("pointerup", this._onPointerUp);
-		this.domElement.removeEventListener("pointercancel", this._onPointerUp);
-		this.domElement.removeEventListener("wheel", this._onMouseWheel);
-		this.domElement.removeEventListener("contextmenu", this._onContextMenu);
-		this.stopListenToKeyEvents();
-		const document = this.domElement.getRootNode();
-		document.removeEventListener("keydown", this._interceptControlDown, { capture: true });
-		document.removeEventListener("keyup", this._interceptControlUp, { capture: true });
-		this._controlActive = false;
-		this._pointers.length = 0;
-		this._pointerPositions = {};
-		this.domElement.style.touchAction = "";
-		this.domElement.style.cursor = "auto";
-	}
-	dispose() {
-		this.disconnect();
-	}
-	/**
-	* Get the current vertical rotation, in radians.
-	*
-	* @return {number} The current vertical rotation, in radians.
-	*/
-	getPolarAngle() {
-		return this._spherical.phi;
-	}
-	/**
-	* Get the current horizontal rotation, in radians.
-	*
-	* @return {number} The current horizontal rotation, in radians.
-	*/
-	getAzimuthalAngle() {
-		return this._spherical.theta;
-	}
-	/**
-	* Returns the distance from the camera to the target.
-	*
-	* @return {number} The distance from the camera to the target.
-	*/
-	getDistance() {
-		return this.object.position.distanceTo(this.target);
-	}
-	/**
-	* Adds key event listeners to the given DOM element.
-	* `window` is a recommended argument for using this method.
-	*
-	* @param {HTMLElement} domElement - The DOM element
-	*/
-	listenToKeyEvents(domElement) {
-		domElement.addEventListener("keydown", this._onKeyDown);
-		this._domElementKeyEvents = domElement;
-	}
-	/**
-	* Removes the key event listener previously defined with `listenToKeyEvents()`.
-	*/
-	stopListenToKeyEvents() {
-		if (this._domElementKeyEvents !== null) {
-			this._domElementKeyEvents.removeEventListener("keydown", this._onKeyDown);
-			this._domElementKeyEvents = null;
-		}
-	}
-	/**
-	* Save the current state of the controls. This can later be recovered with `reset()`.
-	*/
-	saveState() {
-		this.target0.copy(this.target);
-		this.position0.copy(this.object.position);
-		this.zoom0 = this.object.zoom;
-	}
-	/**
-	* Reset the controls to their state from either the last time the `saveState()`
-	* was called, or the initial state.
-	*/
-	reset() {
-		this.target.copy(this.target0);
-		this.object.position.copy(this.position0);
-		this.object.zoom = this.zoom0;
-		this.object.updateProjectionMatrix();
-		this.dispatchEvent(_changeEvent);
-		this.update();
-		this.state = _STATE.NONE;
-	}
-	/**
-	* Programmatically pan the camera.
-	*
-	* @param {number} deltaX - The horizontal pan amount in pixels.
-	* @param {number} deltaY - The vertical pan amount in pixels.
-	*/
-	pan(deltaX, deltaY) {
-		this._pan(deltaX, deltaY);
-		this.update();
-	}
-	/**
-	* Programmatically dolly in (zoom in for perspective camera).
-	*
-	* @param {number} dollyScale - The dolly scale factor.
-	*/
-	dollyIn(dollyScale) {
-		this._dollyIn(dollyScale);
-		this.update();
-	}
-	/**
-	* Programmatically dolly out (zoom out for perspective camera).
-	*
-	* @param {number} dollyScale - The dolly scale factor.
-	*/
-	dollyOut(dollyScale) {
-		this._dollyOut(dollyScale);
-		this.update();
-	}
-	/**
-	* Programmatically rotate the camera left (around the vertical axis).
-	*
-	* @param {number} angle - The rotation angle in radians.
-	*/
-	rotateLeft(angle) {
-		this._rotateLeft(angle);
-		this.update();
-	}
-	/**
-	* Programmatically rotate the camera up (around the horizontal axis).
-	*
-	* @param {number} angle - The rotation angle in radians.
-	*/
-	rotateUp(angle) {
-		this._rotateUp(angle);
-		this.update();
-	}
-	update(deltaTime = null) {
-		const position = this.object.position;
-		_v.copy(position).sub(this.target);
-		_v.applyQuaternion(this._quat);
-		this._spherical.setFromVector3(_v);
-		if (this.autoRotate && this.state === _STATE.NONE) this._rotateLeft(this._getAutoRotationAngle(deltaTime));
-		if (this.enableDamping) {
-			this._spherical.theta += this._sphericalDelta.theta * this.dampingFactor;
-			this._spherical.phi += this._sphericalDelta.phi * this.dampingFactor;
-		} else {
-			this._spherical.theta += this._sphericalDelta.theta;
-			this._spherical.phi += this._sphericalDelta.phi;
-		}
-		let min = this.minAzimuthAngle;
-		let max = this.maxAzimuthAngle;
-		if (isFinite(min) && isFinite(max)) {
-			if (min < -Math.PI) min += _twoPI;
-			else if (min > Math.PI) min -= _twoPI;
-			if (max < -Math.PI) max += _twoPI;
-			else if (max > Math.PI) max -= _twoPI;
-			if (min <= max) this._spherical.theta = Math.max(min, Math.min(max, this._spherical.theta));
-			else this._spherical.theta = this._spherical.theta > (min + max) / 2 ? Math.max(min, this._spherical.theta) : Math.min(max, this._spherical.theta);
-		}
-		this._spherical.phi = Math.max(this.minPolarAngle, Math.min(this.maxPolarAngle, this._spherical.phi));
-		this._spherical.makeSafe();
-		if (this.enableDamping === true) this.target.addScaledVector(this._panOffset, this.dampingFactor);
-		else this.target.add(this._panOffset);
-		this.target.sub(this.cursor);
-		this.target.clampLength(this.minTargetRadius, this.maxTargetRadius);
-		this.target.add(this.cursor);
-		let zoomChanged = false;
-		if (this.zoomToCursor && this._performCursorZoom || this.object.isOrthographicCamera) this._spherical.radius = this._clampDistance(this._spherical.radius);
-		else {
-			const prevRadius = this._spherical.radius;
-			this._spherical.radius = this._clampDistance(this._spherical.radius * this._scale);
-			zoomChanged = prevRadius != this._spherical.radius;
-		}
-		_v.setFromSpherical(this._spherical);
-		_v.applyQuaternion(this._quatInverse);
-		position.copy(this.target).add(_v);
-		this.object.lookAt(this.target);
-		if (this.enableDamping === true) {
-			this._sphericalDelta.theta *= 1 - this.dampingFactor;
-			this._sphericalDelta.phi *= 1 - this.dampingFactor;
-			this._panOffset.multiplyScalar(1 - this.dampingFactor);
-		} else {
-			this._sphericalDelta.set(0, 0, 0);
-			this._panOffset.set(0, 0, 0);
-		}
-		if (this.zoomToCursor && this._performCursorZoom) {
-			let newRadius = null;
-			if (this.object.isPerspectiveCamera) {
-				const prevRadius = _v.length();
-				newRadius = this._clampDistance(prevRadius * this._scale);
-				const radiusDelta = prevRadius - newRadius;
-				this.object.position.addScaledVector(this._dollyDirection, radiusDelta);
-				this.object.updateMatrixWorld();
-				zoomChanged = !!radiusDelta;
-			} else if (this.object.isOrthographicCamera) {
-				const mouseBefore = new Vector3(this._mouse.x, this._mouse.y, 0);
-				mouseBefore.unproject(this.object);
-				const prevZoom = this.object.zoom;
-				this.object.zoom = Math.max(this.minZoom, Math.min(this.maxZoom, this.object.zoom / this._scale));
-				this.object.updateProjectionMatrix();
-				zoomChanged = prevZoom !== this.object.zoom;
-				const mouseAfter = new Vector3(this._mouse.x, this._mouse.y, 0);
-				mouseAfter.unproject(this.object);
-				this.object.position.sub(mouseAfter).add(mouseBefore);
-				this.object.updateMatrixWorld();
-				newRadius = _v.length();
-			} else {
-				console.warn("WARNING: OrbitControls.js encountered an unknown camera type - zoom to cursor disabled.");
-				this.zoomToCursor = false;
-			}
-			if (newRadius !== null) {
-				if (this.screenSpacePanning) this.target.set(0, 0, -1).transformDirection(this.object.matrix).multiplyScalar(newRadius).add(this.object.position);
-				else {
-					_ray.origin.copy(this.object.position);
-					_ray.direction.set(0, 0, -1).transformDirection(this.object.matrix);
-					if (Math.abs(this.object.up.dot(_ray.direction)) < _TILT_LIMIT) this.object.lookAt(this.target);
-					else {
-						_plane.setFromNormalAndCoplanarPoint(this.object.up, this.target);
-						_ray.intersectPlane(_plane, this.target);
-					}
+//#region ../Gudu.blog/gudu.blog/scripts/mc-special-models-1.21.10.json
+var mc_special_models_1_21_10_default = {
+	entityIds: [
+		"acacia_boat",
+		"acacia_chest_boat",
+		"allay",
+		"area_effect_cloud",
+		"armadillo",
+		"armor_stand",
+		"arrow",
+		"axolotl",
+		"bamboo_chest_raft",
+		"bamboo_raft",
+		"bat",
+		"bee",
+		"birch_boat",
+		"birch_chest_boat",
+		"blaze",
+		"block_display",
+		"bogged",
+		"breeze",
+		"breeze_wind_charge",
+		"camel",
+		"cat",
+		"cave_spider",
+		"cherry_boat",
+		"cherry_chest_boat",
+		"chest_minecart",
+		"chicken",
+		"cod",
+		"command_block_minecart",
+		"copper_golem",
+		"cow",
+		"creaking",
+		"creeper",
+		"dark_oak_boat",
+		"dark_oak_chest_boat",
+		"dolphin",
+		"donkey",
+		"dragon_fireball",
+		"drowned",
+		"egg",
+		"elder_guardian",
+		"end_crystal",
+		"ender_dragon",
+		"ender_pearl",
+		"enderman",
+		"endermite",
+		"evoker",
+		"evoker_fangs",
+		"experience_bottle",
+		"experience_orb",
+		"eye_of_ender",
+		"falling_block",
+		"fireball",
+		"firework_rocket",
+		"fishing_bobber",
+		"fox",
+		"frog",
+		"furnace_minecart",
+		"ghast",
+		"giant",
+		"glow_item_frame",
+		"glow_squid",
+		"goat",
+		"guardian",
+		"happy_ghast",
+		"hoglin",
+		"hopper_minecart",
+		"horse",
+		"husk",
+		"illusioner",
+		"interaction",
+		"iron_golem",
+		"item",
+		"item_display",
+		"item_frame",
+		"jungle_boat",
+		"jungle_chest_boat",
+		"leash_knot",
+		"lightning_bolt",
+		"lingering_potion",
+		"llama",
+		"llama_spit",
+		"magma_cube",
+		"mangrove_boat",
+		"mangrove_chest_boat",
+		"mannequin",
+		"marker",
+		"minecart",
+		"mooshroom",
+		"mule",
+		"oak_boat",
+		"oak_chest_boat",
+		"ocelot",
+		"ominous_item_spawner",
+		"painting",
+		"pale_oak_boat",
+		"pale_oak_chest_boat",
+		"panda",
+		"parrot",
+		"phantom",
+		"pig",
+		"piglin",
+		"piglin_brute",
+		"pillager",
+		"player",
+		"polar_bear",
+		"pufferfish",
+		"rabbit",
+		"ravager",
+		"salmon",
+		"sheep",
+		"shulker",
+		"shulker_bullet",
+		"silverfish",
+		"skeleton",
+		"skeleton_horse",
+		"slime",
+		"small_fireball",
+		"sniffer",
+		"snow_golem",
+		"snowball",
+		"spawner_minecart",
+		"spectral_arrow",
+		"spider",
+		"splash_potion",
+		"spruce_boat",
+		"spruce_chest_boat",
+		"squid",
+		"stray",
+		"strider",
+		"tadpole",
+		"text_display",
+		"tnt",
+		"tnt_minecart",
+		"trader_llama",
+		"trident",
+		"tropical_fish",
+		"turtle",
+		"vex",
+		"villager",
+		"vindicator",
+		"wandering_trader",
+		"warden",
+		"wind_charge",
+		"witch",
+		"wither",
+		"wither_skeleton",
+		"wither_skull",
+		"wolf",
+		"zoglin",
+		"zombie",
+		"zombie_horse",
+		"zombie_villager",
+		"zombified_piglin"
+	],
+	models: {
+		"Arrow": {
+			"w": 32,
+			"h": 32,
+			"parts": {
+				"back": {
+					"pivot": [
+						-11,
+						0,
+						0
+					],
+					"rot": [
+						.7853982,
+						0,
+						0
+					],
+					"scale": [
+						.8,
+						.8,
+						.8
+					],
+					"cuboids": [{
+						"u": 0,
+						"v": 0,
+						"x": 0,
+						"y": -2.5,
+						"z": -2.5,
+						"dx": 0,
+						"dy": 5,
+						"dz": 5,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": {}
+				},
+				"cross_1": {
+					"pivot": [
+						0,
+						0,
+						0
+					],
+					"rot": [
+						.7853982,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 0,
+						"v": 0,
+						"x": -12,
+						"y": -2,
+						"z": 0,
+						"dx": 16,
+						"dy": 4,
+						"dz": 0,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": {}
+				},
+				"cross_2": {
+					"pivot": [
+						0,
+						0,
+						0
+					],
+					"rot": [
+						2.3561945,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 0,
+						"v": 0,
+						"x": -12,
+						"y": -2,
+						"z": 0,
+						"dx": 16,
+						"dy": 4,
+						"dz": 0,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": {}
 				}
 			}
-		} else if (this.object.isOrthographicCamera) {
-			const prevZoom = this.object.zoom;
-			this.object.zoom = Math.max(this.minZoom, Math.min(this.maxZoom, this.object.zoom / this._scale));
-			if (prevZoom !== this.object.zoom) {
-				this.object.updateProjectionMatrix();
-				zoomChanged = true;
+		},
+		"EndCrystal": {
+			"w": 64,
+			"h": 32,
+			"parts": {
+				"base": {
+					"pivot": [
+						0,
+						0,
+						0
+					],
+					"rot": [
+						0,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 0,
+						"v": 16,
+						"x": -6,
+						"y": 0,
+						"z": -6,
+						"dx": 12,
+						"dy": 4,
+						"dz": 12,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": {}
+				},
+				"outer_glass": {
+					"pivot": [
+						0,
+						24,
+						0
+					],
+					"rot": [
+						0,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 0,
+						"v": 0,
+						"x": -4,
+						"y": -4,
+						"z": -4,
+						"dx": 8,
+						"dy": 8,
+						"dz": 8,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": { "inner_glass": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							.875,
+							.875,
+							.875
+						],
+						"cuboids": [{
+							"u": 0,
+							"v": 0,
+							"x": -4,
+							"y": -4,
+							"z": -4,
+							"dx": 8,
+							"dy": 8,
+							"dz": 8,
+							"dil": [
+								0,
+								0,
+								0
+							],
+							"mirror": false
+						}],
+						"children": { "cube": {
+							"pivot": [
+								0,
+								0,
+								0
+							],
+							"rot": [
+								0,
+								0,
+								0
+							],
+							"scale": [
+								.765625,
+								.765625,
+								.765625
+							],
+							"cuboids": [{
+								"u": 32,
+								"v": 0,
+								"x": -4,
+								"y": -4,
+								"z": -4,
+								"dx": 8,
+								"dy": 8,
+								"dz": 8,
+								"dil": [
+									0,
+									0,
+									0
+								],
+								"mirror": false
+							}],
+							"children": {}
+						} }
+					} }
+				}
 			}
+		},
+		"EvokerFangs": {
+			"w": 64,
+			"h": 32,
+			"parts": { "base": {
+				"pivot": [
+					-5,
+					24,
+					-5
+				],
+				"rot": [
+					0,
+					0,
+					0
+				],
+				"scale": [
+					1,
+					1,
+					1
+				],
+				"cuboids": [{
+					"u": 0,
+					"v": 0,
+					"x": 0,
+					"y": 0,
+					"z": 0,
+					"dx": 10,
+					"dy": 12,
+					"dz": 10,
+					"dil": [
+						0,
+						0,
+						0
+					],
+					"mirror": false
+				}],
+				"children": {
+					"lower_jaw": {
+						"pivot": [
+							3.5,
+							0,
+							9
+						],
+						"rot": [
+							0,
+							3.1415927,
+							4.2411504
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 40,
+							"v": 0,
+							"x": 0,
+							"y": 0,
+							"z": 0,
+							"dx": 4,
+							"dy": 14,
+							"dz": 8,
+							"dil": [
+								0,
+								0,
+								0
+							],
+							"mirror": false
+						}],
+						"children": {}
+					},
+					"upper_jaw": {
+						"pivot": [
+							6.5,
+							0,
+							1
+						],
+						"rot": [
+							0,
+							0,
+							2.042035
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 40,
+							"v": 0,
+							"x": 0,
+							"y": 0,
+							"z": 0,
+							"dx": 4,
+							"dy": 14,
+							"dz": 8,
+							"dil": [
+								0,
+								0,
+								0
+							],
+							"mirror": false
+						}],
+						"children": {}
+					}
+				}
+			} }
+		},
+		"LeashKnot": {
+			"w": 32,
+			"h": 32,
+			"parts": { "knot": {
+				"pivot": [
+					0,
+					0,
+					0
+				],
+				"rot": [
+					0,
+					0,
+					0
+				],
+				"scale": [
+					1,
+					1,
+					1
+				],
+				"cuboids": [{
+					"u": 0,
+					"v": 0,
+					"x": -3,
+					"y": -8,
+					"z": -3,
+					"dx": 6,
+					"dy": 8,
+					"dz": 6,
+					"dil": [
+						0,
+						0,
+						0
+					],
+					"mirror": false
+				}],
+				"children": {}
+			} }
+		},
+		"LlamaSpit": {
+			"w": 64,
+			"h": 32,
+			"parts": { "main": {
+				"pivot": [
+					0,
+					0,
+					0
+				],
+				"rot": [
+					0,
+					0,
+					0
+				],
+				"scale": [
+					1,
+					1,
+					1
+				],
+				"cuboids": [
+					{
+						"u": 0,
+						"v": 0,
+						"x": -4,
+						"y": 0,
+						"z": 0,
+						"dx": 2,
+						"dy": 2,
+						"dz": 2,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					},
+					{
+						"u": 0,
+						"v": 0,
+						"x": 0,
+						"y": -4,
+						"z": 0,
+						"dx": 2,
+						"dy": 2,
+						"dz": 2,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					},
+					{
+						"u": 0,
+						"v": 0,
+						"x": 0,
+						"y": 0,
+						"z": -4,
+						"dx": 2,
+						"dy": 2,
+						"dz": 2,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					},
+					{
+						"u": 0,
+						"v": 0,
+						"x": 0,
+						"y": 0,
+						"z": 0,
+						"dx": 2,
+						"dy": 2,
+						"dz": 2,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					},
+					{
+						"u": 0,
+						"v": 0,
+						"x": 2,
+						"y": 0,
+						"z": 0,
+						"dx": 2,
+						"dy": 2,
+						"dz": 2,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					},
+					{
+						"u": 0,
+						"v": 0,
+						"x": 0,
+						"y": 2,
+						"z": 0,
+						"dx": 2,
+						"dy": 2,
+						"dz": 2,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					},
+					{
+						"u": 0,
+						"v": 0,
+						"x": 0,
+						"y": 0,
+						"z": 2,
+						"dx": 2,
+						"dy": 2,
+						"dz": 2,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}
+				],
+				"children": {}
+			} }
+		},
+		"Player": {
+			"w": 64,
+			"h": 64,
+			"parts": {
+				"body": {
+					"pivot": [
+						0,
+						0,
+						0
+					],
+					"rot": [
+						0,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 16,
+						"v": 16,
+						"x": -4,
+						"y": 0,
+						"z": -2,
+						"dx": 8,
+						"dy": 12,
+						"dz": 4,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": { "jacket": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 16,
+							"v": 32,
+							"x": -4,
+							"y": 0,
+							"z": -2,
+							"dx": 8,
+							"dy": 12,
+							"dz": 4,
+							"dil": [
+								.25,
+								.25,
+								.25
+							],
+							"mirror": false
+						}],
+						"children": {}
+					} }
+				},
+				"head": {
+					"pivot": [
+						0,
+						0,
+						0
+					],
+					"rot": [
+						0,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 0,
+						"v": 0,
+						"x": -4,
+						"y": -8,
+						"z": -4,
+						"dx": 8,
+						"dy": 8,
+						"dz": 8,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": { "hat": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 32,
+							"v": 0,
+							"x": -4,
+							"y": -8,
+							"z": -4,
+							"dx": 8,
+							"dy": 8,
+							"dz": 8,
+							"dil": [
+								.5,
+								.5,
+								.5
+							],
+							"mirror": false
+						}],
+						"children": {}
+					} }
+				},
+				"left_arm": {
+					"pivot": [
+						5,
+						2,
+						0
+					],
+					"rot": [
+						0,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 32,
+						"v": 48,
+						"x": -1,
+						"y": -2,
+						"z": -2,
+						"dx": 4,
+						"dy": 12,
+						"dz": 4,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": { "left_sleeve": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 48,
+							"v": 48,
+							"x": -1,
+							"y": -2,
+							"z": -2,
+							"dx": 4,
+							"dy": 12,
+							"dz": 4,
+							"dil": [
+								.25,
+								.25,
+								.25
+							],
+							"mirror": false
+						}],
+						"children": {}
+					} }
+				},
+				"left_leg": {
+					"pivot": [
+						1.9,
+						12,
+						0
+					],
+					"rot": [
+						0,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 16,
+						"v": 48,
+						"x": -2,
+						"y": 0,
+						"z": -2,
+						"dx": 4,
+						"dy": 12,
+						"dz": 4,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": { "left_pants": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 0,
+							"v": 48,
+							"x": -2,
+							"y": 0,
+							"z": -2,
+							"dx": 4,
+							"dy": 12,
+							"dz": 4,
+							"dil": [
+								.25,
+								.25,
+								.25
+							],
+							"mirror": false
+						}],
+						"children": {}
+					} }
+				},
+				"right_arm": {
+					"pivot": [
+						-5,
+						2,
+						0
+					],
+					"rot": [
+						0,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 40,
+						"v": 16,
+						"x": -3,
+						"y": -2,
+						"z": -2,
+						"dx": 4,
+						"dy": 12,
+						"dz": 4,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": { "right_sleeve": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 40,
+							"v": 32,
+							"x": -3,
+							"y": -2,
+							"z": -2,
+							"dx": 4,
+							"dy": 12,
+							"dz": 4,
+							"dil": [
+								.25,
+								.25,
+								.25
+							],
+							"mirror": false
+						}],
+						"children": {}
+					} }
+				},
+				"right_leg": {
+					"pivot": [
+						-1.9,
+						12,
+						0
+					],
+					"rot": [
+						0,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 0,
+						"v": 16,
+						"x": -2,
+						"y": 0,
+						"z": -2,
+						"dx": 4,
+						"dy": 12,
+						"dz": 4,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": { "right_pants": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 0,
+							"v": 32,
+							"x": -2,
+							"y": 0,
+							"z": -2,
+							"dx": 4,
+							"dy": 12,
+							"dz": 4,
+							"dil": [
+								.25,
+								.25,
+								.25
+							],
+							"mirror": false
+						}],
+						"children": {}
+					} }
+				}
+			}
+		},
+		"PlayerSlim": {
+			"w": 64,
+			"h": 64,
+			"parts": {
+				"body": {
+					"pivot": [
+						0,
+						0,
+						0
+					],
+					"rot": [
+						0,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 16,
+						"v": 16,
+						"x": -4,
+						"y": 0,
+						"z": -2,
+						"dx": 8,
+						"dy": 12,
+						"dz": 4,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": { "jacket": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 16,
+							"v": 32,
+							"x": -4,
+							"y": 0,
+							"z": -2,
+							"dx": 8,
+							"dy": 12,
+							"dz": 4,
+							"dil": [
+								.25,
+								.25,
+								.25
+							],
+							"mirror": false
+						}],
+						"children": {}
+					} }
+				},
+				"head": {
+					"pivot": [
+						0,
+						0,
+						0
+					],
+					"rot": [
+						0,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 0,
+						"v": 0,
+						"x": -4,
+						"y": -8,
+						"z": -4,
+						"dx": 8,
+						"dy": 8,
+						"dz": 8,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": { "hat": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 32,
+							"v": 0,
+							"x": -4,
+							"y": -8,
+							"z": -4,
+							"dx": 8,
+							"dy": 8,
+							"dz": 8,
+							"dil": [
+								.5,
+								.5,
+								.5
+							],
+							"mirror": false
+						}],
+						"children": {}
+					} }
+				},
+				"left_arm": {
+					"pivot": [
+						5,
+						2,
+						0
+					],
+					"rot": [
+						0,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 32,
+						"v": 48,
+						"x": -1,
+						"y": -2,
+						"z": -2,
+						"dx": 3,
+						"dy": 12,
+						"dz": 4,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": { "left_sleeve": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 48,
+							"v": 48,
+							"x": -1,
+							"y": -2,
+							"z": -2,
+							"dx": 3,
+							"dy": 12,
+							"dz": 4,
+							"dil": [
+								.25,
+								.25,
+								.25
+							],
+							"mirror": false
+						}],
+						"children": {}
+					} }
+				},
+				"left_leg": {
+					"pivot": [
+						1.9,
+						12,
+						0
+					],
+					"rot": [
+						0,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 16,
+						"v": 48,
+						"x": -2,
+						"y": 0,
+						"z": -2,
+						"dx": 4,
+						"dy": 12,
+						"dz": 4,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": { "left_pants": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 0,
+							"v": 48,
+							"x": -2,
+							"y": 0,
+							"z": -2,
+							"dx": 4,
+							"dy": 12,
+							"dz": 4,
+							"dil": [
+								.25,
+								.25,
+								.25
+							],
+							"mirror": false
+						}],
+						"children": {}
+					} }
+				},
+				"right_arm": {
+					"pivot": [
+						-5,
+						2,
+						0
+					],
+					"rot": [
+						0,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 40,
+						"v": 16,
+						"x": -2,
+						"y": -2,
+						"z": -2,
+						"dx": 3,
+						"dy": 12,
+						"dz": 4,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": { "right_sleeve": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 40,
+							"v": 32,
+							"x": -2,
+							"y": -2,
+							"z": -2,
+							"dx": 3,
+							"dy": 12,
+							"dz": 4,
+							"dil": [
+								.25,
+								.25,
+								.25
+							],
+							"mirror": false
+						}],
+						"children": {}
+					} }
+				},
+				"right_leg": {
+					"pivot": [
+						-1.9,
+						12,
+						0
+					],
+					"rot": [
+						0,
+						0,
+						0
+					],
+					"scale": [
+						1,
+						1,
+						1
+					],
+					"cuboids": [{
+						"u": 0,
+						"v": 16,
+						"x": -2,
+						"y": 0,
+						"z": -2,
+						"dx": 4,
+						"dy": 12,
+						"dz": 4,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}],
+					"children": { "right_pants": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 0,
+							"v": 32,
+							"x": -2,
+							"y": 0,
+							"z": -2,
+							"dx": 4,
+							"dy": 12,
+							"dz": 4,
+							"dil": [
+								.25,
+								.25,
+								.25
+							],
+							"mirror": false
+						}],
+						"children": {}
+					} }
+				}
+			}
+		},
+		"ShulkerBullet": {
+			"w": 64,
+			"h": 32,
+			"parts": { "main": {
+				"pivot": [
+					0,
+					0,
+					0
+				],
+				"rot": [
+					0,
+					0,
+					0
+				],
+				"scale": [
+					1,
+					1,
+					1
+				],
+				"cuboids": [
+					{
+						"u": 0,
+						"v": 0,
+						"x": -4,
+						"y": -4,
+						"z": -1,
+						"dx": 8,
+						"dy": 8,
+						"dz": 2,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					},
+					{
+						"u": 0,
+						"v": 10,
+						"x": -1,
+						"y": -4,
+						"z": -4,
+						"dx": 2,
+						"dy": 8,
+						"dz": 8,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					},
+					{
+						"u": 20,
+						"v": 0,
+						"x": -4,
+						"y": -1,
+						"z": -4,
+						"dx": 8,
+						"dy": 2,
+						"dz": 8,
+						"dil": [
+							0,
+							0,
+							0
+						],
+						"mirror": false
+					}
+				],
+				"children": {}
+			} }
+		},
+		"Trident": {
+			"w": 32,
+			"h": 32,
+			"parts": { "pole": {
+				"pivot": [
+					0,
+					0,
+					0
+				],
+				"rot": [
+					0,
+					0,
+					0
+				],
+				"scale": [
+					1,
+					1,
+					1
+				],
+				"cuboids": [{
+					"u": 0,
+					"v": 6,
+					"x": -.5,
+					"y": 2,
+					"z": -.5,
+					"dx": 1,
+					"dy": 25,
+					"dz": 1,
+					"dil": [
+						0,
+						0,
+						0
+					],
+					"mirror": false
+				}],
+				"children": {
+					"base": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 4,
+							"v": 0,
+							"x": -1.5,
+							"y": 0,
+							"z": -.5,
+							"dx": 3,
+							"dy": 2,
+							"dz": 1,
+							"dil": [
+								0,
+								0,
+								0
+							],
+							"mirror": false
+						}],
+						"children": {}
+					},
+					"left_spike": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 4,
+							"v": 3,
+							"x": -2.5,
+							"y": -3,
+							"z": -.5,
+							"dx": 1,
+							"dy": 4,
+							"dz": 1,
+							"dil": [
+								0,
+								0,
+								0
+							],
+							"mirror": false
+						}],
+						"children": {}
+					},
+					"middle_spike": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 0,
+							"v": 0,
+							"x": -.5,
+							"y": -4,
+							"z": -.5,
+							"dx": 1,
+							"dy": 4,
+							"dz": 1,
+							"dil": [
+								0,
+								0,
+								0
+							],
+							"mirror": false
+						}],
+						"children": {}
+					},
+					"right_spike": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 4,
+							"v": 3,
+							"x": 1.5,
+							"y": -3,
+							"z": -.5,
+							"dx": 1,
+							"dy": 4,
+							"dz": 1,
+							"dil": [
+								0,
+								0,
+								0
+							],
+							"mirror": true
+						}],
+						"children": {}
+					}
+				}
+			} }
+		},
+		"WindCharge": {
+			"w": 64,
+			"h": 32,
+			"parts": { "bone": {
+				"pivot": [
+					0,
+					0,
+					0
+				],
+				"rot": [
+					0,
+					0,
+					0
+				],
+				"scale": [
+					1,
+					1,
+					1
+				],
+				"cuboids": [],
+				"children": {
+					"wind": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							-.7854,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 15,
+							"v": 20,
+							"x": -4,
+							"y": -1,
+							"z": -4,
+							"dx": 8,
+							"dy": 2,
+							"dz": 8,
+							"dil": [
+								0,
+								0,
+								0
+							],
+							"mirror": false
+						}, {
+							"u": 0,
+							"v": 9,
+							"x": -3,
+							"y": -2,
+							"z": -3,
+							"dx": 6,
+							"dy": 4,
+							"dz": 6,
+							"dil": [
+								0,
+								0,
+								0
+							],
+							"mirror": false
+						}],
+						"children": {}
+					},
+					"wind_charge": {
+						"pivot": [
+							0,
+							0,
+							0
+						],
+						"rot": [
+							0,
+							0,
+							0
+						],
+						"scale": [
+							1,
+							1,
+							1
+						],
+						"cuboids": [{
+							"u": 0,
+							"v": 0,
+							"x": -2,
+							"y": -2,
+							"z": -2,
+							"dx": 4,
+							"dy": 4,
+							"dz": 4,
+							"dil": [
+								0,
+								0,
+								0
+							],
+							"mirror": false
+						}],
+						"children": {}
+					}
+				}
+			} }
+		},
+		"WitherSkull": {
+			"w": 64,
+			"h": 64,
+			"parts": { "head": {
+				"pivot": [
+					0,
+					0,
+					0
+				],
+				"rot": [
+					0,
+					0,
+					0
+				],
+				"scale": [
+					1,
+					1,
+					1
+				],
+				"cuboids": [{
+					"u": 0,
+					"v": 35,
+					"x": -4,
+					"y": -8,
+					"z": -4,
+					"dx": 8,
+					"dy": 8,
+					"dz": 8,
+					"dil": [
+						0,
+						0,
+						0
+					],
+					"mirror": false
+				}],
+				"children": {}
+			} }
 		}
-		this._scale = 1;
-		this._performCursorZoom = false;
-		if (zoomChanged || this._lastPosition.distanceToSquared(this.object.position) > _EPS || 8 * (1 - this._lastQuaternion.dot(this.object.quaternion)) > _EPS || this._lastTargetPosition.distanceToSquared(this.target) > _EPS) {
-			this.dispatchEvent(_changeEvent);
-			this._lastPosition.copy(this.object.position);
-			this._lastQuaternion.copy(this.object.quaternion);
-			this._lastTargetPosition.copy(this.target);
-			return true;
-		}
-		return false;
-	}
-	_getAutoRotationAngle(deltaTime) {
-		if (deltaTime !== null) return _twoPI / 60 * this.autoRotateSpeed * deltaTime;
-		else return _twoPI / 60 / 60 * this.autoRotateSpeed;
-	}
-	_getZoomScale(delta) {
-		const normalizedDelta = Math.abs(delta * .01);
-		return Math.pow(.95, this.zoomSpeed * normalizedDelta);
-	}
-	_rotateLeft(angle) {
-		this._sphericalDelta.theta -= angle;
-	}
-	_rotateUp(angle) {
-		this._sphericalDelta.phi -= angle;
-	}
-	_panLeft(distance, objectMatrix) {
-		_v.setFromMatrixColumn(objectMatrix, 0);
-		_v.multiplyScalar(-distance);
-		this._panOffset.add(_v);
-	}
-	_panUp(distance, objectMatrix) {
-		if (this.screenSpacePanning === true) _v.setFromMatrixColumn(objectMatrix, 1);
-		else {
-			_v.setFromMatrixColumn(objectMatrix, 0);
-			_v.crossVectors(this.object.up, _v);
-		}
-		_v.multiplyScalar(distance);
-		this._panOffset.add(_v);
-	}
-	_pan(deltaX, deltaY) {
-		const element = this.domElement;
-		if (this.object.isPerspectiveCamera) {
-			const position = this.object.position;
-			_v.copy(position).sub(this.target);
-			let targetDistance = _v.length();
-			targetDistance *= Math.tan(this.object.fov / 2 * Math.PI / 180);
-			this._panLeft(2 * deltaX * targetDistance / element.clientHeight, this.object.matrix);
-			this._panUp(2 * deltaY * targetDistance / element.clientHeight, this.object.matrix);
-		} else if (this.object.isOrthographicCamera) {
-			this._panLeft(deltaX * (this.object.right - this.object.left) / this.object.zoom / element.clientWidth, this.object.matrix);
-			this._panUp(deltaY * (this.object.top - this.object.bottom) / this.object.zoom / element.clientHeight, this.object.matrix);
-		} else {
-			console.warn("WARNING: OrbitControls.js encountered an unknown camera type - pan disabled.");
-			this.enablePan = false;
-		}
-	}
-	_dollyOut(dollyScale) {
-		if (this.object.isPerspectiveCamera || this.object.isOrthographicCamera) this._scale /= dollyScale;
-		else {
-			console.warn("WARNING: OrbitControls.js encountered an unknown camera type - dolly/zoom disabled.");
-			this.enableZoom = false;
-		}
-	}
-	_dollyIn(dollyScale) {
-		if (this.object.isPerspectiveCamera || this.object.isOrthographicCamera) this._scale *= dollyScale;
-		else {
-			console.warn("WARNING: OrbitControls.js encountered an unknown camera type - dolly/zoom disabled.");
-			this.enableZoom = false;
-		}
-	}
-	_updateZoomParameters(x, y) {
-		if (!this.zoomToCursor) return;
-		this._performCursorZoom = true;
-		const rect = this.domElement.getBoundingClientRect();
-		const dx = x - rect.left;
-		const dy = y - rect.top;
-		const w = rect.width;
-		const h = rect.height;
-		this._mouse.x = dx / w * 2 - 1;
-		this._mouse.y = -(dy / h) * 2 + 1;
-		this._dollyDirection.set(this._mouse.x, this._mouse.y, 1).unproject(this.object).sub(this.object.position).normalize();
-	}
-	_clampDistance(dist) {
-		return Math.max(this.minDistance, Math.min(this.maxDistance, dist));
-	}
-	_handleMouseDownRotate(event) {
-		this._rotateStart.set(event.clientX, event.clientY);
-	}
-	_handleMouseDownDolly(event) {
-		this._updateZoomParameters(event.clientX, event.clientX);
-		this._dollyStart.set(event.clientX, event.clientY);
-	}
-	_handleMouseDownPan(event) {
-		this._panStart.set(event.clientX, event.clientY);
-	}
-	_handleMouseMoveRotate(event) {
-		this._rotateEnd.set(event.clientX, event.clientY);
-		this._rotateDelta.subVectors(this._rotateEnd, this._rotateStart).multiplyScalar(this.rotateSpeed);
-		const element = this.domElement;
-		this._rotateLeft(_twoPI * this._rotateDelta.x / element.clientHeight);
-		this._rotateUp(_twoPI * this._rotateDelta.y / element.clientHeight);
-		this._rotateStart.copy(this._rotateEnd);
-		this.update();
-	}
-	_handleMouseMoveDolly(event) {
-		this._dollyEnd.set(event.clientX, event.clientY);
-		this._dollyDelta.subVectors(this._dollyEnd, this._dollyStart);
-		if (this._dollyDelta.y > 0) this._dollyOut(this._getZoomScale(this._dollyDelta.y));
-		else if (this._dollyDelta.y < 0) this._dollyIn(this._getZoomScale(this._dollyDelta.y));
-		this._dollyStart.copy(this._dollyEnd);
-		this.update();
-	}
-	_handleMouseMovePan(event) {
-		this._panEnd.set(event.clientX, event.clientY);
-		this._panDelta.subVectors(this._panEnd, this._panStart).multiplyScalar(this.panSpeed);
-		this._pan(this._panDelta.x, this._panDelta.y);
-		this._panStart.copy(this._panEnd);
-		this.update();
-	}
-	_handleMouseWheel(event) {
-		this._updateZoomParameters(event.clientX, event.clientY);
-		if (event.deltaY < 0) this._dollyIn(this._getZoomScale(event.deltaY));
-		else if (event.deltaY > 0) this._dollyOut(this._getZoomScale(event.deltaY));
-		this.update();
-	}
-	_handleKeyDown(event) {
-		let needsUpdate = false;
-		switch (event.code) {
-			case this.keys.UP:
-				if (event.ctrlKey || event.metaKey || event.shiftKey) {
-					if (this.enableRotate) this._rotateUp(_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
-				} else if (this.enablePan) this._pan(0, this.keyPanSpeed);
-				needsUpdate = true;
-				break;
-			case this.keys.BOTTOM:
-				if (event.ctrlKey || event.metaKey || event.shiftKey) {
-					if (this.enableRotate) this._rotateUp(-_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
-				} else if (this.enablePan) this._pan(0, -this.keyPanSpeed);
-				needsUpdate = true;
-				break;
-			case this.keys.LEFT:
-				if (event.ctrlKey || event.metaKey || event.shiftKey) {
-					if (this.enableRotate) this._rotateLeft(_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
-				} else if (this.enablePan) this._pan(this.keyPanSpeed, 0);
-				needsUpdate = true;
-				break;
-			case this.keys.RIGHT:
-				if (event.ctrlKey || event.metaKey || event.shiftKey) {
-					if (this.enableRotate) this._rotateLeft(-_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
-				} else if (this.enablePan) this._pan(-this.keyPanSpeed, 0);
-				needsUpdate = true;
-		}
-		if (needsUpdate) {
-			event.preventDefault();
-			this.update();
-		}
-	}
-	_handleTouchStartRotate(event) {
-		if (this._pointers.length === 1) this._rotateStart.set(event.pageX, event.pageY);
-		else {
-			const position = this._getSecondPointerPosition(event);
-			const x = .5 * (event.pageX + position.x);
-			const y = .5 * (event.pageY + position.y);
-			this._rotateStart.set(x, y);
-		}
-	}
-	_handleTouchStartPan(event) {
-		if (this._pointers.length === 1) this._panStart.set(event.pageX, event.pageY);
-		else {
-			const position = this._getSecondPointerPosition(event);
-			const x = .5 * (event.pageX + position.x);
-			const y = .5 * (event.pageY + position.y);
-			this._panStart.set(x, y);
-		}
-	}
-	_handleTouchStartDolly(event) {
-		const position = this._getSecondPointerPosition(event);
-		const dx = event.pageX - position.x;
-		const dy = event.pageY - position.y;
-		const distance = Math.sqrt(dx * dx + dy * dy);
-		this._dollyStart.set(0, distance);
-	}
-	_handleTouchStartDollyPan(event) {
-		if (this.enableZoom) this._handleTouchStartDolly(event);
-		if (this.enablePan) this._handleTouchStartPan(event);
-	}
-	_handleTouchStartDollyRotate(event) {
-		if (this.enableZoom) this._handleTouchStartDolly(event);
-		if (this.enableRotate) this._handleTouchStartRotate(event);
-	}
-	_handleTouchMoveRotate(event) {
-		if (this._pointers.length == 1) this._rotateEnd.set(event.pageX, event.pageY);
-		else {
-			const position = this._getSecondPointerPosition(event);
-			const x = .5 * (event.pageX + position.x);
-			const y = .5 * (event.pageY + position.y);
-			this._rotateEnd.set(x, y);
-		}
-		this._rotateDelta.subVectors(this._rotateEnd, this._rotateStart).multiplyScalar(this.rotateSpeed);
-		const element = this.domElement;
-		this._rotateLeft(_twoPI * this._rotateDelta.x / element.clientHeight);
-		this._rotateUp(_twoPI * this._rotateDelta.y / element.clientHeight);
-		this._rotateStart.copy(this._rotateEnd);
-	}
-	_handleTouchMovePan(event) {
-		if (this._pointers.length === 1) this._panEnd.set(event.pageX, event.pageY);
-		else {
-			const position = this._getSecondPointerPosition(event);
-			const x = .5 * (event.pageX + position.x);
-			const y = .5 * (event.pageY + position.y);
-			this._panEnd.set(x, y);
-		}
-		this._panDelta.subVectors(this._panEnd, this._panStart).multiplyScalar(this.panSpeed);
-		this._pan(this._panDelta.x, this._panDelta.y);
-		this._panStart.copy(this._panEnd);
-	}
-	_handleTouchMoveDolly(event) {
-		const position = this._getSecondPointerPosition(event);
-		const dx = event.pageX - position.x;
-		const dy = event.pageY - position.y;
-		const distance = Math.sqrt(dx * dx + dy * dy);
-		this._dollyEnd.set(0, distance);
-		this._dollyDelta.set(0, Math.pow(this._dollyEnd.y / this._dollyStart.y, this.zoomSpeed));
-		this._dollyOut(this._dollyDelta.y);
-		this._dollyStart.copy(this._dollyEnd);
-		const centerX = (event.pageX + position.x) * .5;
-		const centerY = (event.pageY + position.y) * .5;
-		this._updateZoomParameters(centerX, centerY);
-	}
-	_handleTouchMoveDollyPan(event) {
-		if (this.enableZoom) this._handleTouchMoveDolly(event);
-		if (this.enablePan) this._handleTouchMovePan(event);
-	}
-	_handleTouchMoveDollyRotate(event) {
-		if (this.enableZoom) this._handleTouchMoveDolly(event);
-		if (this.enableRotate) this._handleTouchMoveRotate(event);
-	}
-	_addPointer(event) {
-		this._pointers.push(event.pointerId);
-	}
-	_removePointer(event) {
-		delete this._pointerPositions[event.pointerId];
-		for (let i = 0; i < this._pointers.length; i++) if (this._pointers[i] == event.pointerId) {
-			this._pointers.splice(i, 1);
-			return;
-		}
-	}
-	_isTrackingPointer(event) {
-		for (let i = 0; i < this._pointers.length; i++) if (this._pointers[i] == event.pointerId) return true;
-		return false;
-	}
-	_trackPointer(event) {
-		let position = this._pointerPositions[event.pointerId];
-		if (position === void 0) {
-			position = new Vector2();
-			this._pointerPositions[event.pointerId] = position;
-		}
-		position.set(event.pageX, event.pageY);
-	}
-	_getSecondPointerPosition(event) {
-		const pointerId = event.pointerId === this._pointers[0] ? this._pointers[1] : this._pointers[0];
-		return this._pointerPositions[pointerId];
-	}
-	_customWheelEvent(event) {
-		const mode = event.deltaMode;
-		const newEvent = {
-			clientX: event.clientX,
-			clientY: event.clientY,
-			deltaY: event.deltaY
-		};
-		switch (mode) {
-			case 1:
-				newEvent.deltaY *= 16;
-				break;
-			case 2: newEvent.deltaY *= 100;
-		}
-		if (event.ctrlKey && !this._controlActive) newEvent.deltaY *= 10;
-		return newEvent;
+	},
+	paintings: {
+		"alban": [
+			"minecraft:alban",
+			1,
+			1
+		],
+		"aztec": [
+			"minecraft:aztec",
+			1,
+			1
+		],
+		"aztec2": [
+			"minecraft:aztec2",
+			1,
+			1
+		],
+		"backyard": [
+			"minecraft:backyard",
+			3,
+			4
+		],
+		"baroque": [
+			"minecraft:baroque",
+			2,
+			2
+		],
+		"bomb": [
+			"minecraft:bomb",
+			1,
+			1
+		],
+		"bouquet": [
+			"minecraft:bouquet",
+			3,
+			3
+		],
+		"burning_skull": [
+			"minecraft:burning_skull",
+			4,
+			4
+		],
+		"bust": [
+			"minecraft:bust",
+			2,
+			2
+		],
+		"cavebird": [
+			"minecraft:cavebird",
+			3,
+			3
+		],
+		"changing": [
+			"minecraft:changing",
+			4,
+			2
+		],
+		"cotan": [
+			"minecraft:cotan",
+			3,
+			3
+		],
+		"courbet": [
+			"minecraft:courbet",
+			2,
+			1
+		],
+		"creebet": [
+			"minecraft:creebet",
+			2,
+			1
+		],
+		"dennis": [
+			"minecraft:dennis",
+			3,
+			3
+		],
+		"donkey_kong": [
+			"minecraft:donkey_kong",
+			4,
+			3
+		],
+		"earth": [
+			"minecraft:earth",
+			2,
+			2
+		],
+		"endboss": [
+			"minecraft:endboss",
+			3,
+			3
+		],
+		"fern": [
+			"minecraft:fern",
+			3,
+			3
+		],
+		"fighters": [
+			"minecraft:fighters",
+			4,
+			2
+		],
+		"finding": [
+			"minecraft:finding",
+			4,
+			2
+		],
+		"fire": [
+			"minecraft:fire",
+			2,
+			2
+		],
+		"graham": [
+			"minecraft:graham",
+			1,
+			2
+		],
+		"humble": [
+			"minecraft:humble",
+			2,
+			2
+		],
+		"kebab": [
+			"minecraft:kebab",
+			1,
+			1
+		],
+		"lowmist": [
+			"minecraft:lowmist",
+			4,
+			2
+		],
+		"match": [
+			"minecraft:match",
+			2,
+			2
+		],
+		"meditative": [
+			"minecraft:meditative",
+			1,
+			1
+		],
+		"orb": [
+			"minecraft:orb",
+			4,
+			4
+		],
+		"owlemons": [
+			"minecraft:owlemons",
+			3,
+			3
+		],
+		"passage": [
+			"minecraft:passage",
+			4,
+			2
+		],
+		"pigscene": [
+			"minecraft:pigscene",
+			4,
+			4
+		],
+		"plant": [
+			"minecraft:plant",
+			1,
+			1
+		],
+		"pointer": [
+			"minecraft:pointer",
+			4,
+			4
+		],
+		"pond": [
+			"minecraft:pond",
+			3,
+			4
+		],
+		"pool": [
+			"minecraft:pool",
+			2,
+			1
+		],
+		"prairie_ride": [
+			"minecraft:prairie_ride",
+			1,
+			2
+		],
+		"sea": [
+			"minecraft:sea",
+			2,
+			1
+		],
+		"skeleton": [
+			"minecraft:skeleton",
+			4,
+			3
+		],
+		"skull_and_roses": [
+			"minecraft:skull_and_roses",
+			2,
+			2
+		],
+		"stage": [
+			"minecraft:stage",
+			2,
+			2
+		],
+		"sunflowers": [
+			"minecraft:sunflowers",
+			3,
+			3
+		],
+		"sunset": [
+			"minecraft:sunset",
+			2,
+			1
+		],
+		"tides": [
+			"minecraft:tides",
+			3,
+			3
+		],
+		"unpacked": [
+			"minecraft:unpacked",
+			4,
+			4
+		],
+		"void": [
+			"minecraft:void",
+			2,
+			2
+		],
+		"wanderer": [
+			"minecraft:wanderer",
+			1,
+			2
+		],
+		"wasteland": [
+			"minecraft:wasteland",
+			1,
+			1
+		],
+		"water": [
+			"minecraft:water",
+			2,
+			2
+		],
+		"wind": [
+			"minecraft:wind",
+			2,
+			2
+		],
+		"wither": [
+			"minecraft:wither",
+			2,
+			2
+		]
 	}
 };
-function onPointerDown(event) {
-	if (this.enabled === false) return;
-	if (this._pointers.length === 0) {
-		this.domElement.setPointerCapture(event.pointerId);
-		this.domElement.ownerDocument.addEventListener("pointermove", this._onPointerMove);
-		this.domElement.ownerDocument.addEventListener("pointerup", this._onPointerUp);
-	}
-	if (this._isTrackingPointer(event)) return;
-	this._addPointer(event);
-	if (event.pointerType === "touch") this._onTouchStart(event);
-	else this._onMouseDown(event);
-	if (this._cursorStyle === "grab") this.domElement.style.cursor = "grabbing";
-}
-function onPointerMove(event) {
-	if (this.enabled === false) return;
-	if (event.pointerType === "touch") this._onTouchMove(event);
-	else this._onMouseMove(event);
-}
-function onPointerUp(event) {
-	this._removePointer(event);
-	switch (this._pointers.length) {
-		case 0:
-			this.domElement.releasePointerCapture(event.pointerId);
-			this.domElement.ownerDocument.removeEventListener("pointermove", this._onPointerMove);
-			this.domElement.ownerDocument.removeEventListener("pointerup", this._onPointerUp);
-			this.dispatchEvent(_endEvent);
-			this.state = _STATE.NONE;
-			if (this._cursorStyle === "grab") this.domElement.style.cursor = "grab";
-			break;
-		case 1:
-			const pointerId = this._pointers[0];
-			const position = this._pointerPositions[pointerId];
-			this._onTouchStart({
-				pointerId,
-				pageX: position.x,
-				pageY: position.y
+
+//#endregion
+//#region src/modelBaker.js
+const FACE_CORNERS = {
+	up: [
+		[
+			0,
+			1,
+			1,
+			0,
+			1
+		],
+		[
+			1,
+			1,
+			1,
+			1,
+			1
+		],
+		[
+			0,
+			1,
+			0,
+			0,
+			0
+		],
+		[
+			1,
+			1,
+			0,
+			1,
+			0
+		]
+	],
+	down: [
+		[
+			1,
+			0,
+			1,
+			0,
+			1
+		],
+		[
+			0,
+			0,
+			1,
+			1,
+			1
+		],
+		[
+			1,
+			0,
+			0,
+			0,
+			0
+		],
+		[
+			0,
+			0,
+			0,
+			1,
+			0
+		]
+	],
+	east: [
+		[
+			1,
+			1,
+			1,
+			0,
+			0
+		],
+		[
+			1,
+			0,
+			1,
+			0,
+			1
+		],
+		[
+			1,
+			1,
+			0,
+			1,
+			0
+		],
+		[
+			1,
+			0,
+			0,
+			1,
+			1
+		]
+	],
+	west: [
+		[
+			0,
+			1,
+			0,
+			0,
+			0
+		],
+		[
+			0,
+			0,
+			0,
+			0,
+			1
+		],
+		[
+			0,
+			1,
+			1,
+			1,
+			0
+		],
+		[
+			0,
+			0,
+			1,
+			1,
+			1
+		]
+	],
+	north: [
+		[
+			1,
+			0,
+			0,
+			0,
+			1
+		],
+		[
+			0,
+			0,
+			0,
+			1,
+			1
+		],
+		[
+			1,
+			1,
+			0,
+			0,
+			0
+		],
+		[
+			0,
+			1,
+			0,
+			1,
+			0
+		]
+	],
+	south: [
+		[
+			0,
+			0,
+			1,
+			0,
+			1
+		],
+		[
+			1,
+			0,
+			1,
+			1,
+			1
+		],
+		[
+			0,
+			1,
+			1,
+			0,
+			0
+		],
+		[
+			1,
+			1,
+			1,
+			1,
+			0
+		]
+	]
+};
+const FACE_DIRS = {
+	up: [
+		0,
+		1,
+		0
+	],
+	down: [
+		0,
+		-1,
+		0
+	],
+	north: [
+		0,
+		0,
+		-1
+	],
+	south: [
+		0,
+		0,
+		1
+	],
+	east: [
+		1,
+		0,
+		0
+	],
+	west: [
+		-1,
+		0,
+		0
+	]
+};
+function bakeModel(model, variant, texSize = 16) {
+	const elements = model.elements;
+	const textures = model.textures || {};
+	const variantX = variant?.x || 0;
+	const variantY = variant?.y || 0;
+	const texU = Array.isArray(texSize) ? texSize[0] : texSize;
+	const texV = Array.isArray(texSize) ? texSize[1] : texSize;
+	const quads = [];
+	const fullCube = isFullCube(elements);
+	if (!elements) return {
+		quads,
+		fullCube
+	};
+	for (const element of elements) {
+		const from = element.from;
+		const to = element.to;
+		if (!element.faces) continue;
+		const rotateElement = element.rotation ? elementTransform(element.rotation) : null;
+		for (const dir of Object.keys(element.faces)) {
+			const face = element.faces[dir];
+			const corners = FACE_CORNERS[dir];
+			if (!corners) continue;
+			const texKey = resolveTexture(face.texture, textures);
+			if (!texKey) continue;
+			if (texKey.endsWith("redstone_dust_overlay")) continue;
+			const uv = face.uv || autoUV(dir, from, to);
+			const rot = (face.rotation || 0) * Math.PI / 180;
+			const cos = Math.cos(rot);
+			const sin = Math.sin(rot);
+			const verts = [];
+			const uvs = [];
+			for (const c of corners) {
+				let v = [
+					c[0] ? to[0] : from[0],
+					c[1] ? to[1] : from[1],
+					c[2] ? to[2] : from[2]
+				];
+				if (rotateElement) v = rotateElement(v);
+				verts.push(v);
+				const bu = c[3];
+				const bv = c[4];
+				const baseu = (bu - .5) * cos + (bv - .5) * sin + .5;
+				let basev = -(bu - .5) * sin + (bv - .5) * cos + .5;
+				if (dir === "down") basev = 1 - basev;
+				uvs.push([(uv[0] + baseu * (uv[2] - uv[0])) / texU, (uv[1] + basev * (uv[3] - uv[1])) / texV]);
+			}
+			let finalVerts = verts;
+			if (variantX || variantY) finalVerts = applyVariantRotation(verts, variantX, variantY);
+			let cullface = null;
+			if (face.cullface && FACE_DIRS[face.cullface]) cullface = variantX || variantY ? rotateDir(FACE_DIRS[face.cullface], variantX, variantY) : FACE_DIRS[face.cullface];
+			quads.push({
+				texKey,
+				tintIndex: Number.isInteger(face.tintindex) ? face.tintindex : -1,
+				cullface,
+				shade: element.shade !== false,
+				normal: computeNormal(finalVerts),
+				verts: finalVerts.map((v) => [
+					v[0] / 16,
+					v[1] / 16,
+					v[2] / 16
+				]),
+				uvs
 			});
+		}
+	}
+	return {
+		quads,
+		fullCube
+	};
+}
+function isFullCube(elements) {
+	if (!elements || elements.length !== 1) return false;
+	const el = elements[0];
+	if (el.rotation) return false;
+	return el.from[0] === 0 && el.from[1] === 0 && el.from[2] === 0 && el.to[0] === 16 && el.to[1] === 16 && el.to[2] === 16 && el.faces && Object.keys(el.faces).length === 6;
+}
+function resolveTexture(ref, textures) {
+	let v = ref;
+	let guard = 0;
+	while (guard++ < 16) if (typeof v === "string" && v.startsWith("#")) v = textures[v.slice(1)];
+	else if (typeof v === "string" && textures && Object.prototype.hasOwnProperty.call(textures, v)) v = textures[v];
+	else if (v && typeof v === "object" && typeof v.sprite === "string") v = v.sprite;
+	else break;
+	if (typeof v !== "string" || v.startsWith("#")) return null;
+	let s = v;
+	if (s.includes(":")) s = s.split(":").slice(-1)[0];
+	s = s.replace(/^textures\//, "");
+	return s;
+}
+function autoUV(dir, from, to) {
+	switch (dir) {
+		case "down":
+		case "up": return [
+			from[0],
+			from[2],
+			to[0],
+			to[2]
+		];
+		case "north":
+		case "south": return [
+			from[0],
+			16 - to[1],
+			to[0],
+			16 - from[1]
+		];
+		case "west":
+		case "east": return [
+			from[2],
+			16 - to[1],
+			to[2],
+			16 - from[1]
+		];
+		default: return [
+			0,
+			0,
+			16,
+			16
+		];
 	}
 }
-function onMouseDown(event) {
-	let mouseAction;
-	switch (event.button) {
-		case 0:
-			mouseAction = this.mouseButtons.LEFT;
-			break;
-		case 1:
-			mouseAction = this.mouseButtons.MIDDLE;
-			break;
-		case 2:
-			mouseAction = this.mouseButtons.RIGHT;
-			break;
-		default: mouseAction = -1;
+function elementTransform(rotation) {
+	const axes = [
+		"x",
+		"y",
+		"z"
+	], origin = rotation.origin || [
+		8,
+		8,
+		8
+	];
+	const angles = axes.map((axis) => Number(rotation.axis ? rotation.axis === axis ? rotation.angle : 0 : rotation[axis]) || 0);
+	const columns = axes.map((_, index) => {
+		let vector = axes.map((_, i) => i === index ? 1 : 0);
+		for (let i = 0; i < 3; i++) if (angles[i]) vector = rotateAround(vector, axes[i], angles[i], [
+			0,
+			0,
+			0
+		]);
+		if (rotation.rescale) {
+			const divisor = Math.max(...vector.map(Math.abs));
+			vector = vector.map((value) => value / divisor);
+		}
+		return vector;
+	});
+	return (vertex) => {
+		const point = vertex.map((value, i) => value - origin[i]);
+		return origin.map((value, i) => value + columns.reduce((sum, column, j) => sum + column[i] * point[j], 0));
+	};
+}
+function rotateAround([x, y, z], axis, angleDeg, origin) {
+	const a = angleDeg * Math.PI / 180;
+	const c = Math.cos(a);
+	const s = Math.sin(a);
+	const px = x - origin[0];
+	const py = y - origin[1];
+	const pz = z - origin[2];
+	let rx, ry, rz;
+	if (axis === "x") {
+		rx = px;
+		ry = py * c - pz * s;
+		rz = py * s + pz * c;
+	} else if (axis === "y") {
+		rx = px * c + pz * s;
+		ry = py;
+		rz = -px * s + pz * c;
+	} else {
+		rx = px * c - py * s;
+		ry = px * s + py * c;
+		rz = pz;
 	}
-	switch (mouseAction) {
-		case MOUSE.DOLLY:
-			if (this.enableZoom === false) return;
-			this._handleMouseDownDolly(event);
-			this.state = _STATE.DOLLY;
-			break;
-		case MOUSE.ROTATE:
-			if (event.ctrlKey || event.metaKey || event.shiftKey) {
-				if (this.enablePan === false) return;
-				this._handleMouseDownPan(event);
-				this.state = _STATE.PAN;
-			} else {
-				if (this.enableRotate === false) return;
-				this._handleMouseDownRotate(event);
-				this.state = _STATE.ROTATE;
-			}
-			break;
-		case MOUSE.PAN:
-			if (event.ctrlKey || event.metaKey || event.shiftKey) {
-				if (this.enableRotate === false) return;
-				this._handleMouseDownRotate(event);
-				this.state = _STATE.ROTATE;
-			} else {
-				if (this.enablePan === false) return;
-				this._handleMouseDownPan(event);
-				this.state = _STATE.PAN;
-			}
-			break;
-		default: this.state = _STATE.NONE;
-	}
-	if (this.state !== _STATE.NONE) this.dispatchEvent(_startEvent);
+	return [
+		rx + origin[0],
+		ry + origin[1],
+		rz + origin[2]
+	];
 }
-function onMouseMove(event) {
-	switch (this.state) {
-		case _STATE.ROTATE:
-			if (this.enableRotate === false) return;
-			this._handleMouseMoveRotate(event);
-			break;
-		case _STATE.DOLLY:
-			if (this.enableZoom === false) return;
-			this._handleMouseMoveDolly(event);
-			break;
-		case _STATE.PAN:
-			if (this.enablePan === false) return;
-			this._handleMouseMovePan(event);
-	}
+function rotateDir(dir, x, y) {
+	let d = dir;
+	if (x) d = rotateAround(d, "x", -x, [
+		0,
+		0,
+		0
+	]);
+	if (y) d = rotateAround(d, "y", -y, [
+		0,
+		0,
+		0
+	]);
+	return d.map((v) => Math.round(v));
 }
-function onMouseWheel(event) {
-	if (this.enabled === false || this.enableZoom === false || this.state !== _STATE.NONE) return;
-	event.preventDefault();
-	this.dispatchEvent(_startEvent);
-	this._handleMouseWheel(this._customWheelEvent(event));
-	this.dispatchEvent(_endEvent);
+function applyVariantRotation(verts, x, y) {
+	const center = [
+		8,
+		8,
+		8
+	];
+	return verts.map((v) => {
+		let p = v;
+		if (x) p = rotateAround(p, "x", -x, center);
+		if (y) p = rotateAround(p, "y", -y, center);
+		return p;
+	});
 }
-function onKeyDown(event) {
-	if (this.enabled === false) return;
-	this._handleKeyDown(event);
-}
-function onTouchStart(event) {
-	this._trackPointer(event);
-	switch (this._pointers.length) {
-		case 1:
-			switch (this.touches.ONE) {
-				case TOUCH.ROTATE:
-					if (this.enableRotate === false) return;
-					this._handleTouchStartRotate(event);
-					this.state = _STATE.TOUCH_ROTATE;
-					break;
-				case TOUCH.PAN:
-					if (this.enablePan === false) return;
-					this._handleTouchStartPan(event);
-					this.state = _STATE.TOUCH_PAN;
-					break;
-				default: this.state = _STATE.NONE;
-			}
-			break;
-		case 2:
-			switch (this.touches.TWO) {
-				case TOUCH.DOLLY_PAN:
-					if (this.enableZoom === false && this.enablePan === false) return;
-					this._handleTouchStartDollyPan(event);
-					this.state = _STATE.TOUCH_DOLLY_PAN;
-					break;
-				case TOUCH.DOLLY_ROTATE:
-					if (this.enableZoom === false && this.enableRotate === false) return;
-					this._handleTouchStartDollyRotate(event);
-					this.state = _STATE.TOUCH_DOLLY_ROTATE;
-					break;
-				default: this.state = _STATE.NONE;
-			}
-			break;
-		default: this.state = _STATE.NONE;
-	}
-	if (this.state !== _STATE.NONE) this.dispatchEvent(_startEvent);
-}
-function onTouchMove(event) {
-	this._trackPointer(event);
-	switch (this.state) {
-		case _STATE.TOUCH_ROTATE:
-			if (this.enableRotate === false) return;
-			this._handleTouchMoveRotate(event);
-			this.update();
-			break;
-		case _STATE.TOUCH_PAN:
-			if (this.enablePan === false) return;
-			this._handleTouchMovePan(event);
-			this.update();
-			break;
-		case _STATE.TOUCH_DOLLY_PAN:
-			if (this.enableZoom === false && this.enablePan === false) return;
-			this._handleTouchMoveDollyPan(event);
-			this.update();
-			break;
-		case _STATE.TOUCH_DOLLY_ROTATE:
-			if (this.enableZoom === false && this.enableRotate === false) return;
-			this._handleTouchMoveDollyRotate(event);
-			this.update();
-			break;
-		default: this.state = _STATE.NONE;
-	}
-}
-function onContextMenu(event) {
-	if (this.enabled === false) return;
-	event.preventDefault();
-}
-function interceptControlDown(event) {
-	if (event.key === "Control") {
-		this._controlActive = true;
-		this.domElement.getRootNode().addEventListener("keyup", this._interceptControlUp, {
-			passive: true,
-			capture: true
-		});
-	}
-}
-function interceptControlUp(event) {
-	if (event.key === "Control") {
-		this._controlActive = false;
-		this.domElement.getRootNode().removeEventListener("keyup", this._interceptControlUp, {
-			passive: true,
-			capture: true
-		});
-	}
+function computeNormal(verts) {
+	const e1 = [
+		verts[1][0] - verts[0][0],
+		verts[1][1] - verts[0][1],
+		verts[1][2] - verts[0][2]
+	];
+	const e2 = [
+		verts[2][0] - verts[0][0],
+		verts[2][1] - verts[0][1],
+		verts[2][2] - verts[0][2]
+	];
+	const n = [
+		e1[1] * e2[2] - e1[2] * e2[1],
+		e1[2] * e2[0] - e1[0] * e2[2],
+		e1[0] * e2[1] - e1[1] * e2[0]
+	];
+	const len = Math.sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+	if (len < 1e-9) return [
+		0,
+		1,
+		0
+	];
+	return [
+		n[0] / len,
+		n[1] / len,
+		n[2] / len
+	];
 }
 
 //#endregion
@@ -54143,801 +55475,6 @@ async function buildFaceGroupsInternal(palette, blocks, bounds, onProgress, filt
 }
 
 //#endregion
-//#region src/entityMinecart.js
-const EXITS = {
-	north_south: [[
-		0,
-		0,
-		-1
-	], [
-		0,
-		0,
-		1
-	]],
-	east_west: [[
-		-1,
-		0,
-		0
-	], [
-		1,
-		0,
-		0
-	]],
-	ascending_east: [[
-		-1,
-		-1,
-		0
-	], [
-		1,
-		0,
-		0
-	]],
-	ascending_west: [[
-		-1,
-		0,
-		0
-	], [
-		1,
-		-1,
-		0
-	]],
-	ascending_north: [[
-		0,
-		0,
-		-1
-	], [
-		0,
-		-1,
-		1
-	]],
-	ascending_south: [[
-		0,
-		-1,
-		-1
-	], [
-		0,
-		0,
-		1
-	]],
-	south_east: [[
-		0,
-		0,
-		1
-	], [
-		1,
-		0,
-		0
-	]],
-	south_west: [[
-		0,
-		0,
-		1
-	], [
-		-1,
-		0,
-		0
-	]],
-	north_west: [[
-		0,
-		0,
-		-1
-	], [
-		-1,
-		0,
-		0
-	]],
-	north_east: [[
-		0,
-		0,
-		-1
-	], [
-		1,
-		0,
-		0
-	]]
-};
-const RAILS = /* @__PURE__ */ new Set([
-	"rail",
-	"powered_rail",
-	"detector_rail",
-	"activator_rail"
-]);
-const DEG$4 = Math.PI / 180;
-function railAt(data, x, y, z) {
-	if (!data?.blocks || !data.palette || !data.bounds) return null;
-	const b = data.bounds, dx = x - b.minX, dy = y - b.minY, dz = z - b.minZ;
-	if (dx < 0 || dx >= b.width || dy < 0 || dy >= b.height || dz < 0 || dz >= b.depth) return null;
-	const entry = data.palette[data.blocks.get(dx + dz * b.width + dy * b.width * b.depth)];
-	if (!RAILS.has((entry?.name || "").replace(/^minecraft:/, ""))) return null;
-	const exits = EXITS[entry.properties?.shape];
-	return Array.isArray(exits) ? {
-		x,
-		y,
-		z,
-		exits
-	} : null;
-}
-function railBelow(data, x, y, z) {
-	x = Math.floor(x);
-	y = Math.floor(y);
-	z = Math.floor(z);
-	return railAt(data, x, y - 1, z) || railAt(data, x, y, z);
-}
-function positionOnRail(data, x, y, z) {
-	const rail = railBelow(data, x, y, z);
-	if (!rail) return null;
-	const [a, b] = rail.exits;
-	const startX = rail.x + .5 + a[0] * .5, startY = rail.y + .0625 + a[1] * .5, startZ = rail.z + .5 + a[2] * .5;
-	const dx = (b[0] - a[0]) * .5, dy = b[1] - a[1], dz = (b[2] - a[2]) * .5;
-	const t = dx === 0 ? z - rail.z : dz === 0 ? x - rail.x : ((x - startX) * dx + (z - startZ) * dz) * 2;
-	return [
-		startX + dx * t,
-		startY + dy * t + (dy < 0 ? 1 : dy > 0 ? .5 : 0),
-		startZ + dz * t
-	];
-}
-function positionAlongRail(data, x, y, z, distance) {
-	const rail = railBelow(data, x, y, z);
-	if (!rail) return null;
-	const [a, b] = rail.exits, dx = b[0] - a[0], dz = b[2] - a[2], length = Math.hypot(dx, dz);
-	y = rail.y + (a[1] !== b[1] ? 1 : 0);
-	x += dx / length * distance;
-	z += dz / length * distance;
-	for (const exit of [a, b]) if (exit[1] !== 0 && Math.floor(x) - rail.x === exit[0] && Math.floor(z) - rail.z === exit[2]) {
-		y += exit[1];
-		break;
-	}
-	return positionOnRail(data, x, y, z);
-}
-function minecartRenderPose(entity, data) {
-	const [x, y, z] = entity.pos;
-	let yaw = Number(entity.rotation?.[0]) || 0, pitch = Number(entity.rotation?.[1]) || 0;
-	const offset = [
-		0,
-		.375,
-		0
-	], center = positionOnRail(data, x, y, z);
-	if (center) {
-		const distance = Math.fround(.3);
-		const front = positionAlongRail(data, x, y, z, distance) || center;
-		const back = positionAlongRail(data, x, y, z, -distance) || center;
-		offset[0] = center[0] - x;
-		offset[1] += (front[1] + back[1]) / 2 - y;
-		offset[2] = center[2] - z;
-		const dx = back[0] - front[0], dy = back[1] - front[1], dz = back[2] - front[2];
-		const length = Math.hypot(dx, dy, dz);
-		if (length !== 0) {
-			yaw = Math.fround(Math.atan2(dz, dx) / DEG$4);
-			pitch = Math.fround(Math.atan(dy / length) * 73);
-		}
-	}
-	return {
-		offset,
-		yaw: Math.fround(180 - yaw) * DEG$4,
-		pitch: -pitch * DEG$4
-	};
-}
-
-//#endregion
-//#region src/entityPlacement.js
-const DEG$3 = Math.PI / 180;
-const f = Math.fround;
-const flip = new Vector3(-1, -1, 1);
-const axes = {
-	x: new Vector3(1, 0, 0),
-	y: new Vector3(0, 1, 0),
-	z: new Vector3(0, 0, 1)
-};
-const toVanilla = new Matrix4().makeScale(1, -1, -1).multiply(new Matrix4().makeTranslation(0, -1.5, 0));
-const attachments = [
-	[
-		0,
-		0,
-		0
-	],
-	[
-		Math.PI,
-		0,
-		0
-	],
-	[
-		Math.PI / 2,
-		0,
-		0
-	],
-	[
-		Math.PI / 2,
-		0,
-		Math.PI
-	],
-	[
-		Math.PI / 2,
-		0,
-		-Math.PI / 2
-	],
-	[
-		Math.PI / 2,
-		0,
-		Math.PI / 2
-	]
-].map((angles) => new Quaternion().setFromEuler(new Euler(...angles, "XYZ")));
-const bedDirections = {
-	south: [
-		0,
-		0,
-		1,
-		90
-	],
-	west: [
-		-1,
-		0,
-		0,
-		0
-	],
-	north: [
-		0,
-		0,
-		-1,
-		270
-	],
-	east: [
-		1,
-		0,
-		0,
-		180
-	]
-};
-function sleepingDirection(state, data) {
-	if (!data?.bounds || !data.blocks) return null;
-	const b = data.bounds, [x, y, z] = state.pos.map(Math.floor);
-	if (x < b.minX || x >= b.minX + b.width || y < b.minY || y >= b.minY + b.height || z < b.minZ || z >= b.minZ + b.depth) return null;
-	const block = data.palette[data.blocks.get(x - b.minX + (z - b.minZ) * b.width + (y - b.minY) * b.width * b.depth)];
-	return block?.name?.endsWith("_bed") ? bedDirections[block.properties?.facing] || null : null;
-}
-function createMobPlacement(group, id, state, appearance, data) {
-	const n = state.nbt || {}, baseScale = id === "ender_dragon" ? 1 : entityScale(n);
-	const yaw = Number(state.rotation?.[0]) || 0, pitch = Number(state.rotation?.[1]) || 0;
-	const scale = appearance.scale ?? 1, modelScale = appearance.modelScale ?? scale;
-	group.scale.setScalar(scale * baseScale);
-	group.rotation.y = -yaw * DEG$3 - (id === "ender_dragon" ? Math.PI : 0);
-	if (id === "ender_dragon") return (mesh) => mesh.position.set(0, f(1.501) - 1.5, -1);
-	const inverseGroup = new Matrix4().compose(new Vector3(), group.quaternion, group.scale).invert();
-	const matrix = new Matrix4(), temporary = new Matrix4(), quaternion = new Quaternion();
-	const position = new Vector3(), rotation = new Quaternion(), meshScale = new Vector3();
-	const translate = (x, y, z) => matrix.multiply(temporary.makeTranslation(x, y, z));
-	const rotate = (axis, degrees) => matrix.multiply(temporary.makeRotationAxis(axes[axis], degrees * DEG$3));
-	const scaleVector = new Vector3();
-	const uniformScale = (value) => matrix.scale(scaleVector.setScalar(value));
-	const sleeping = String(n.Pose ?? n.pose).replace(/^minecraft:/, "").toLowerCase() === "sleeping" || n.sleeping_pos != null || n.SleepingX != null;
-	const bed = sleeping ? sleepingDirection(state, data) : null;
-	const standing = sleeping ? getEntityHitbox({
-		...state,
-		nbt: {
-			...n,
-			Pose: "standing",
-			pose: "standing",
-			sleeping_pos: void 0,
-			SleepingX: void 0
-		}
-	}) : null;
-	const height = getEntityHitbox(state)?.max[1] || 0;
-	const flipDegrees = [
-		"spider",
-		"cave_spider",
-		"silverfish",
-		"endermite"
-	].includes(id) ? 180 : 90;
-	const fish = [
-		"cod",
-		"salmon",
-		"tropical_fish"
-	].includes(id);
-	const dynamic = fish || id === "pufferfish";
-	let lastAge;
-	return (mesh, age = 0) => {
-		if (lastAge === void 0 || dynamic && age !== lastAge) {
-			lastAge = age;
-			matrix.identity();
-			if (bed) translate(-bed[0] * (standing.eyeHeight - .1), 0, -bed[2] * (standing.eyeHeight - .1));
-			uniformScale(baseScale);
-			if (id === "squid" || id === "glow_squid") {
-				translate(0, isBaby(n) ? .25 : .5, 0);
-				rotate("y", 180 - yaw);
-				translate(0, isBaby(n) ? f(-.6) : f(-1.2), 0);
-			} else {
-				if (id === "pufferfish") translate(0, Math.cos(age * .05) * .08, 0);
-				if (!sleeping || id === "armor_stand") rotate("y", (id === "shulker" ? 0 : 180) - yaw);
-				if (id !== "armor_stand") {
-					if (Number(n.DeathTime) > 0) rotate("z", Math.min(1, Math.sqrt(Math.max(0, (Number(n.DeathTime) - 1) / 20 * 1.6))) * flipDegrees);
-					else if (sleeping) {
-						rotate("y", bed?.[3] ?? yaw);
-						rotate("z", flipDegrees);
-						rotate("y", 270);
-					} else if (state.upsideDown) {
-						translate(0, (height + .1) / baseScale, 0);
-						rotate("z", 180);
-					}
-				}
-				if (id === "phantom") rotate("x", pitch);
-				if (id === "shulker") {
-					translate(0, .5, 0);
-					quaternion.copy(attachments[Number(n.AttachFace)] || attachments[0]);
-					matrix.multiply(temporary.makeRotationFromQuaternion(quaternion));
-					translate(0, -.5, 0);
-				}
-				if (fish) {
-					const drySalmon = id === "salmon" && !state.touchingWater;
-					rotate("y", 4.3 * (drySalmon ? 1.3 : 1) * Math.sin(age * .6 * (drySalmon ? 1.7 : 1)));
-					if (!state.touchingWater) {
-						translate(id === "cod" ? .1 : .2, .1, id === "cod" ? -.1 : 0);
-						rotate("z", 90);
-					}
-				}
-			}
-			matrix.scale(flip);
-			uniformScale(scale / modelScale);
-			if (id === "slime" || id === "sulfur_cube") translate(0, f(.001) * f(.999) / scale, 0);
-			if (id === "phantom") translate(0, 1.3125, .1875);
-			translate(0, id === "sulfur_cube" ? -1.5 : -f(1.501), 0);
-			translate(0, 1.5 * (1 - modelScale), 0);
-			uniformScale(modelScale);
-			matrix.multiply(toVanilla).premultiply(inverseGroup).decompose(position, rotation, meshScale);
-		}
-		mesh.position.copy(position);
-		mesh.quaternion.copy(rotation);
-		mesh.scale.copy(meshScale);
-	};
-}
-
-//#endregion
-//#region src/modelBaker.js
-const FACE_CORNERS = {
-	up: [
-		[
-			0,
-			1,
-			1,
-			0,
-			1
-		],
-		[
-			1,
-			1,
-			1,
-			1,
-			1
-		],
-		[
-			0,
-			1,
-			0,
-			0,
-			0
-		],
-		[
-			1,
-			1,
-			0,
-			1,
-			0
-		]
-	],
-	down: [
-		[
-			1,
-			0,
-			1,
-			0,
-			1
-		],
-		[
-			0,
-			0,
-			1,
-			1,
-			1
-		],
-		[
-			1,
-			0,
-			0,
-			0,
-			0
-		],
-		[
-			0,
-			0,
-			0,
-			1,
-			0
-		]
-	],
-	east: [
-		[
-			1,
-			1,
-			1,
-			0,
-			0
-		],
-		[
-			1,
-			0,
-			1,
-			0,
-			1
-		],
-		[
-			1,
-			1,
-			0,
-			1,
-			0
-		],
-		[
-			1,
-			0,
-			0,
-			1,
-			1
-		]
-	],
-	west: [
-		[
-			0,
-			1,
-			0,
-			0,
-			0
-		],
-		[
-			0,
-			0,
-			0,
-			0,
-			1
-		],
-		[
-			0,
-			1,
-			1,
-			1,
-			0
-		],
-		[
-			0,
-			0,
-			1,
-			1,
-			1
-		]
-	],
-	north: [
-		[
-			1,
-			0,
-			0,
-			0,
-			1
-		],
-		[
-			0,
-			0,
-			0,
-			1,
-			1
-		],
-		[
-			1,
-			1,
-			0,
-			0,
-			0
-		],
-		[
-			0,
-			1,
-			0,
-			1,
-			0
-		]
-	],
-	south: [
-		[
-			0,
-			0,
-			1,
-			0,
-			1
-		],
-		[
-			1,
-			0,
-			1,
-			1,
-			1
-		],
-		[
-			0,
-			1,
-			1,
-			0,
-			0
-		],
-		[
-			1,
-			1,
-			1,
-			1,
-			0
-		]
-	]
-};
-const FACE_DIRS = {
-	up: [
-		0,
-		1,
-		0
-	],
-	down: [
-		0,
-		-1,
-		0
-	],
-	north: [
-		0,
-		0,
-		-1
-	],
-	south: [
-		0,
-		0,
-		1
-	],
-	east: [
-		1,
-		0,
-		0
-	],
-	west: [
-		-1,
-		0,
-		0
-	]
-};
-function bakeModel(model, variant, texSize = 16) {
-	const elements = model.elements;
-	const textures = model.textures || {};
-	const variantX = variant?.x || 0;
-	const variantY = variant?.y || 0;
-	const texU = Array.isArray(texSize) ? texSize[0] : texSize;
-	const texV = Array.isArray(texSize) ? texSize[1] : texSize;
-	const quads = [];
-	const fullCube = isFullCube(elements);
-	if (!elements) return {
-		quads,
-		fullCube
-	};
-	for (const element of elements) {
-		const from = element.from;
-		const to = element.to;
-		if (!element.faces) continue;
-		const rotateElement = element.rotation ? elementTransform(element.rotation) : null;
-		for (const dir of Object.keys(element.faces)) {
-			const face = element.faces[dir];
-			const corners = FACE_CORNERS[dir];
-			if (!corners) continue;
-			const texKey = resolveTexture(face.texture, textures);
-			if (!texKey) continue;
-			if (texKey.endsWith("redstone_dust_overlay")) continue;
-			const uv = face.uv || autoUV(dir, from, to);
-			const rot = (face.rotation || 0) * Math.PI / 180;
-			const cos = Math.cos(rot);
-			const sin = Math.sin(rot);
-			const verts = [];
-			const uvs = [];
-			for (const c of corners) {
-				let v = [
-					c[0] ? to[0] : from[0],
-					c[1] ? to[1] : from[1],
-					c[2] ? to[2] : from[2]
-				];
-				if (rotateElement) v = rotateElement(v);
-				verts.push(v);
-				const bu = c[3];
-				const bv = c[4];
-				const baseu = (bu - .5) * cos + (bv - .5) * sin + .5;
-				let basev = -(bu - .5) * sin + (bv - .5) * cos + .5;
-				if (dir === "down") basev = 1 - basev;
-				uvs.push([(uv[0] + baseu * (uv[2] - uv[0])) / texU, (uv[1] + basev * (uv[3] - uv[1])) / texV]);
-			}
-			let finalVerts = verts;
-			if (variantX || variantY) finalVerts = applyVariantRotation(verts, variantX, variantY);
-			let cullface = null;
-			if (face.cullface && FACE_DIRS[face.cullface]) cullface = variantX || variantY ? rotateDir(FACE_DIRS[face.cullface], variantX, variantY) : FACE_DIRS[face.cullface];
-			quads.push({
-				texKey,
-				tintIndex: Number.isInteger(face.tintindex) ? face.tintindex : -1,
-				cullface,
-				shade: element.shade !== false,
-				normal: computeNormal(finalVerts),
-				verts: finalVerts.map((v) => [
-					v[0] / 16,
-					v[1] / 16,
-					v[2] / 16
-				]),
-				uvs
-			});
-		}
-	}
-	return {
-		quads,
-		fullCube
-	};
-}
-function isFullCube(elements) {
-	if (!elements || elements.length !== 1) return false;
-	const el = elements[0];
-	if (el.rotation) return false;
-	return el.from[0] === 0 && el.from[1] === 0 && el.from[2] === 0 && el.to[0] === 16 && el.to[1] === 16 && el.to[2] === 16 && el.faces && Object.keys(el.faces).length === 6;
-}
-function resolveTexture(ref, textures) {
-	let v = ref;
-	let guard = 0;
-	while (guard++ < 16) if (typeof v === "string" && v.startsWith("#")) v = textures[v.slice(1)];
-	else if (typeof v === "string" && textures && Object.prototype.hasOwnProperty.call(textures, v)) v = textures[v];
-	else if (v && typeof v === "object" && typeof v.sprite === "string") v = v.sprite;
-	else break;
-	if (typeof v !== "string" || v.startsWith("#")) return null;
-	let s = v;
-	if (s.includes(":")) s = s.split(":").slice(-1)[0];
-	s = s.replace(/^textures\//, "");
-	return s;
-}
-function autoUV(dir, from, to) {
-	switch (dir) {
-		case "down":
-		case "up": return [
-			from[0],
-			from[2],
-			to[0],
-			to[2]
-		];
-		case "north":
-		case "south": return [
-			from[0],
-			16 - to[1],
-			to[0],
-			16 - from[1]
-		];
-		case "west":
-		case "east": return [
-			from[2],
-			16 - to[1],
-			to[2],
-			16 - from[1]
-		];
-		default: return [
-			0,
-			0,
-			16,
-			16
-		];
-	}
-}
-function elementTransform(rotation) {
-	const axes = [
-		"x",
-		"y",
-		"z"
-	], origin = rotation.origin || [
-		8,
-		8,
-		8
-	];
-	const angles = axes.map((axis) => Number(rotation.axis ? rotation.axis === axis ? rotation.angle : 0 : rotation[axis]) || 0);
-	const columns = axes.map((_, index) => {
-		let vector = axes.map((_, i) => i === index ? 1 : 0);
-		for (let i = 0; i < 3; i++) if (angles[i]) vector = rotateAround(vector, axes[i], angles[i], [
-			0,
-			0,
-			0
-		]);
-		if (rotation.rescale) {
-			const divisor = Math.max(...vector.map(Math.abs));
-			vector = vector.map((value) => value / divisor);
-		}
-		return vector;
-	});
-	return (vertex) => {
-		const point = vertex.map((value, i) => value - origin[i]);
-		return origin.map((value, i) => value + columns.reduce((sum, column, j) => sum + column[i] * point[j], 0));
-	};
-}
-function rotateAround([x, y, z], axis, angleDeg, origin) {
-	const a = angleDeg * Math.PI / 180;
-	const c = Math.cos(a);
-	const s = Math.sin(a);
-	const px = x - origin[0];
-	const py = y - origin[1];
-	const pz = z - origin[2];
-	let rx, ry, rz;
-	if (axis === "x") {
-		rx = px;
-		ry = py * c - pz * s;
-		rz = py * s + pz * c;
-	} else if (axis === "y") {
-		rx = px * c + pz * s;
-		ry = py;
-		rz = -px * s + pz * c;
-	} else {
-		rx = px * c - py * s;
-		ry = px * s + py * c;
-		rz = pz;
-	}
-	return [
-		rx + origin[0],
-		ry + origin[1],
-		rz + origin[2]
-	];
-}
-function rotateDir(dir, x, y) {
-	let d = dir;
-	if (x) d = rotateAround(d, "x", -x, [
-		0,
-		0,
-		0
-	]);
-	if (y) d = rotateAround(d, "y", -y, [
-		0,
-		0,
-		0
-	]);
-	return d.map((v) => Math.round(v));
-}
-function applyVariantRotation(verts, x, y) {
-	const center = [
-		8,
-		8,
-		8
-	];
-	return verts.map((v) => {
-		let p = v;
-		if (x) p = rotateAround(p, "x", -x, center);
-		if (y) p = rotateAround(p, "y", -y, center);
-		return p;
-	});
-}
-function computeNormal(verts) {
-	const e1 = [
-		verts[1][0] - verts[0][0],
-		verts[1][1] - verts[0][1],
-		verts[1][2] - verts[0][2]
-	];
-	const e2 = [
-		verts[2][0] - verts[0][0],
-		verts[2][1] - verts[0][1],
-		verts[2][2] - verts[0][2]
-	];
-	const n = [
-		e1[1] * e2[2] - e1[2] * e2[1],
-		e1[2] * e2[0] - e1[0] * e2[2],
-		e1[0] * e2[1] - e1[1] * e2[0]
-	];
-	const len = Math.sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
-	if (len < 1e-9) return [
-		0,
-		1,
-		0
-	];
-	return [
-		n[0] / len,
-		n[1] / len,
-		n[2] / len
-	];
-}
-
-//#endregion
 //#region src/blocks.js
 const face = (u0, v0, u1, v1) => ({
 	uv: [
@@ -56020,6 +56557,1174 @@ function matchWhen(when, props) {
 		}
 	}
 	return true;
+}
+
+//#endregion
+//#region src/entityModel.js
+function cuboidFaces(c, texW, texH) {
+	const { u, v, x, y, z, dx, dy, dz, mirror } = c;
+	const [rx, ry, rz] = c.dil || [
+		0,
+		0,
+		0
+	];
+	let x0 = x - rx, y0 = y - ry, z0 = z - rz;
+	let x1 = x + dx + rx, y1 = y + dy + ry, z1 = z + dz + rz;
+	if (mirror) {
+		const t = x0;
+		x0 = x1;
+		x1 = t;
+	}
+	const V = {
+		v0: [
+			x0,
+			y0,
+			z0
+		],
+		v1: [
+			x1,
+			y0,
+			z0
+		],
+		v2: [
+			x1,
+			y1,
+			z0
+		],
+		v3: [
+			x0,
+			y1,
+			z0
+		],
+		v4: [
+			x0,
+			y0,
+			z1
+		],
+		v5: [
+			x1,
+			y0,
+			z1
+		],
+		v6: [
+			x1,
+			y1,
+			z1
+		],
+		v7: [
+			x0,
+			y1,
+			z1
+		]
+	};
+	const uN = u + dz, uE = u + dz + dx, uE2 = u + dz + dx + dx;
+	const uS = u + dz + dx + dz, uS2 = u + dz + dx + dz + dx;
+	const vT = v, vM = v + dz, vB = v + dz + dy;
+	const flatX = x0 === x1, flatY = y0 === y1, flatZ = z0 === z1;
+	const FACES = [
+		[
+			[
+				"v5",
+				"v4",
+				"v0",
+				"v1"
+			],
+			[
+				uN,
+				vT,
+				uE,
+				vM
+			],
+			[
+				0,
+				-1,
+				0
+			],
+			flatX || flatY || flatZ
+		],
+		[
+			[
+				"v2",
+				"v3",
+				"v7",
+				"v6"
+			],
+			[
+				uE,
+				vM,
+				uE2,
+				vT
+			],
+			[
+				0,
+				1,
+				0
+			],
+			flatX || flatZ
+		],
+		[
+			[
+				"v0",
+				"v4",
+				"v7",
+				"v3"
+			],
+			[
+				u,
+				vM,
+				uN,
+				vB
+			],
+			[
+				-1,
+				0,
+				0
+			],
+			flatX || flatY || flatZ
+		],
+		[
+			[
+				"v1",
+				"v0",
+				"v3",
+				"v2"
+			],
+			[
+				uN,
+				vM,
+				uE,
+				vB
+			],
+			[
+				0,
+				0,
+				-1
+			],
+			flatX || flatY || flatZ
+		],
+		[
+			[
+				"v5",
+				"v1",
+				"v2",
+				"v6"
+			],
+			[
+				uE,
+				vM,
+				uS,
+				vB
+			],
+			[
+				1,
+				0,
+				0
+			],
+			flatY || flatZ
+		],
+		[
+			[
+				"v4",
+				"v5",
+				"v6",
+				"v7"
+			],
+			[
+				uS,
+				vM,
+				uS2,
+				vB
+			],
+			[
+				0,
+				0,
+				1
+			],
+			flatX || flatY
+		]
+	];
+	if (flatY) FACES[1][1] = [
+		uN,
+		vM,
+		uE,
+		vT
+	];
+	if (flatZ) FACES[5][1] = [
+		uE,
+		vM,
+		uN,
+		vB
+	];
+	if (flatX) FACES[4][1] = [
+		uN,
+		vM,
+		u,
+		vB
+	];
+	const out = [];
+	for (const [idx, [u1, v1, u2, v2], dir, skip] of FACES) {
+		if (skip) continue;
+		const nuv = (uu, vv) => [uu / texW, vv / texH];
+		let pairs = [
+			[V[idx[0]], nuv(u2, v1)],
+			[V[idx[1]], nuv(u1, v1)],
+			[V[idx[2]], nuv(u1, v2)],
+			[V[idx[3]], nuv(u2, v2)]
+		];
+		let d = dir;
+		if (mirror && d[0] !== 0) d = [
+			-d[0],
+			d[1],
+			d[2]
+		];
+		if (mirror) pairs.reverse();
+		out.push({
+			verts: pairs.map((p) => p[0]),
+			uvs: pairs.map((p) => p[1]),
+			dir: d
+		});
+	}
+	return out;
+}
+function partRotation(rot) {
+	const [pitch, yaw, roll] = rot;
+	const cx = Math.cos(pitch), sx = Math.sin(pitch);
+	const cy = Math.cos(yaw), sy = Math.sin(yaw);
+	const cr = Math.cos(roll), sr = Math.sin(roll);
+	return ([x, y, z]) => {
+		const y1 = y * cx - z * sx, z1 = y * sx + z * cx;
+		const x2 = x * cy + z1 * sy, z2 = -x * sy + z1 * cy;
+		return [
+			x2 * cr - y1 * sr,
+			x2 * sr + y1 * cr,
+			z2
+		];
+	};
+}
+const add3 = (a, b) => [
+	a[0] + b[0],
+	a[1] + b[1],
+	a[2] + b[2]
+];
+function compileModel(model, includeParts = false) {
+	const { w, h, parts } = model;
+	const quads = [];
+	const walk = (node, toModel, toDir) => {
+		for (const name of Object.keys(node)) {
+			const p = node[name];
+			const rotate = partRotation(p.rot || [
+				0,
+				0,
+				0
+			]);
+			const pivot = p.pivot || [
+				0,
+				0,
+				0
+			];
+			const childToModel = (pt) => toModel(add3(pivot, rotate(pt)));
+			const childToDir = (d) => toDir(rotate(d));
+			for (const c of p.cuboids || []) for (const face of cuboidFaces(c, w, h)) {
+				const verts = face.verts.map(childToModel).map(([mx, my, mz]) => [
+					mx / 16,
+					(24 - my) / 16,
+					-mz / 16
+				]);
+				const nd = childToDir(face.dir);
+				const quad = {
+					verts,
+					uvs: face.uvs,
+					normal: [
+						nd[0],
+						-nd[1],
+						-nd[2]
+					]
+				};
+				if (includeParts) quad.part = p;
+				quads.push(quad);
+			}
+			walk(p.children || {}, childToModel, childToDir);
+		}
+	};
+	walk(parts, (p) => p, (d) => d);
+	return quads;
+}
+function quadsToEntityMesh(quads, mat) {
+	return new Mesh(quadsToEntityGeometry(quads), mat);
+}
+function quadsToEntityGeometry(quads) {
+	const n = quads.length;
+	const positions = new Float32Array(n * 12);
+	const uvs = new Float32Array(n * 8);
+	const normals = new Float32Array(n * 12);
+	const indices = new Uint32Array(n * 6);
+	for (let i = 0; i < n; i++) {
+		const q = quads[i];
+		for (let k = 0; k < 4; k++) {
+			positions[i * 12 + k * 3] = q.verts[k][0];
+			positions[i * 12 + k * 3 + 1] = q.verts[k][1];
+			positions[i * 12 + k * 3 + 2] = q.verts[k][2];
+			uvs[i * 8 + k * 2] = q.uvs[k][0];
+			uvs[i * 8 + k * 2 + 1] = q.uvs[k][1];
+			normals[i * 12 + k * 3] = q.normal[0];
+			normals[i * 12 + k * 3 + 1] = q.normal[1];
+			normals[i * 12 + k * 3 + 2] = q.normal[2];
+		}
+		const b = i * 4;
+		indices[i * 6] = b;
+		indices[i * 6 + 1] = b + 1;
+		indices[i * 6 + 2] = b + 2;
+		indices[i * 6 + 3] = b;
+		indices[i * 6 + 4] = b + 2;
+		indices[i * 6 + 5] = b + 3;
+	}
+	const geo = new BufferGeometry();
+	geo.setAttribute("position", new BufferAttribute(positions, 3));
+	geo.setAttribute("uv", new BufferAttribute(uvs, 2));
+	geo.setAttribute("normal", new BufferAttribute(normals, 3));
+	geo.setIndex(new BufferAttribute(indices, 1));
+	return geo;
+}
+const modelTemplates = /* @__PURE__ */ new Map();
+const MAX_MODEL_TEMPLATES = 128;
+const MAX_MODEL_BYTES = 8388608;
+let modelBytes = 0;
+function modelTemplate(model) {
+	const key = JSON.stringify([
+		model.w,
+		model.h,
+		model.parts
+	]);
+	let template = modelTemplates.get(key);
+	if (template) {
+		modelTemplates.delete(key);
+		modelTemplates.set(key, template);
+		return template;
+	}
+	const quads = compileModel(model, true);
+	const geometry = quadsToEntityGeometry(quads);
+	const indices = /* @__PURE__ */ new Map();
+	let boneIndex = 1;
+	const walk = (nodes) => {
+		for (const node of Object.values(nodes)) {
+			indices.set(node, boneIndex++);
+			walk(node.children || {});
+		}
+	};
+	walk(model.parts);
+	const skinIndices = new Uint16Array(quads.length * 16);
+	const skinWeights = new Float32Array(quads.length * 16);
+	for (let i = 0; i < quads.length; i++) for (let k = 0; k < 4; k++) {
+		skinIndices[i * 16 + k * 4] = indices.get(quads[i].part);
+		skinWeights[i * 16 + k * 4] = 1;
+	}
+	const bytes = key.length * 2 + geometry.index.array.byteLength + skinIndices.byteLength + skinWeights.byteLength + Object.values(geometry.attributes).reduce((sum, attribute) => sum + attribute.array.byteLength, 0);
+	template = {
+		geometry,
+		skinIndices,
+		skinWeights,
+		sphere: null,
+		bytes
+	};
+	if (bytes <= MAX_MODEL_BYTES) {
+		modelTemplates.set(key, template);
+		modelBytes += bytes;
+		while (modelTemplates.size > MAX_MODEL_TEMPLATES || modelBytes > MAX_MODEL_BYTES) {
+			const oldest = modelTemplates.keys().next().value;
+			modelBytes -= modelTemplates.get(oldest).bytes;
+			modelTemplates.delete(oldest);
+		}
+	}
+	return template;
+}
+function createEntityModelMesh(model, material) {
+	return new Mesh(modelTemplate(model).geometry.clone(), material);
+}
+var EntitySkeleton = class extends Skeleton {
+	constructor(bones) {
+		super(bones);
+		const indices = new Map(bones.map((bone, index) => [bone, index]));
+		this.parentIndices = bones.map((bone) => indices.get(bone.parent) ?? -1);
+		this.modelMatrices = bones.map(() => new Matrix4());
+		this.offsetMatrix = new Matrix4();
+	}
+	update() {
+		for (let i = 0; i < this.bones.length; i++) {
+			const matrix = this.modelMatrices[i].copy(this.bones[i].matrix);
+			const parent = this.parentIndices[i];
+			if (parent >= 0) matrix.premultiply(this.modelMatrices[parent]);
+			this.offsetMatrix.multiplyMatrices(matrix, this.boneInverses[i]).toArray(this.boneMatrices, i * 16);
+		}
+		if (this.boneTexture) this.boneTexture.needsUpdate = true;
+	}
+};
+var EntitySkinnedMesh = class extends SkinnedMesh {
+	applyBoneTransform(index, target) {
+		const boneIndex = this.geometry.attributes.skinIndex.getX(index);
+		target.applyMatrix4(this.skeleton.boneInverses[boneIndex]);
+		for (let bone = this.skeleton.bones[boneIndex]; bone && bone !== this; bone = bone.parent) target.applyMatrix4(bone.matrix);
+		return target;
+	}
+};
+function createEntityRig(model, material) {
+	const template = modelTemplate(model);
+	const geometry = template.geometry.clone();
+	const root = new Bone();
+	root.position.y = 24 / 16;
+	root.scale.set(1 / 16, -1 / 16, -1 / 16);
+	const bones = [root];
+	const parts = {};
+	const walk = (nodes, parent) => {
+		for (const [name, node] of Object.entries(nodes)) {
+			const bone = new Bone();
+			bone.name = name;
+			bone.position.fromArray(node.pivot || [
+				0,
+				0,
+				0
+			]);
+			bone.rotation.set(...node.rot || [
+				0,
+				0,
+				0
+			], "ZYX");
+			bone.userData.restPosition = bone.position.clone();
+			bone.userData.restRotation = bone.rotation.clone();
+			bones.push(bone);
+			parts[name] = bone;
+			parent.add(bone);
+			walk(node.children || {}, bone);
+		}
+	};
+	walk(model.parts, root);
+	geometry.setAttribute("skinIndex", new Uint16BufferAttribute(template.skinIndices, 4));
+	geometry.setAttribute("skinWeight", new Float32BufferAttribute(template.skinWeights, 4));
+	const mesh = new EntitySkinnedMesh(geometry, material);
+	mesh.bindMode = DetachedBindMode;
+	mesh.add(root);
+	mesh.bind(new EntitySkeleton(bones));
+	if (!template.sphere) {
+		mesh.computeBoundingSphere();
+		mesh.boundingSphere.radius += 1.5;
+		template.sphere = mesh.boundingSphere.clone();
+	} else mesh.boundingSphere = template.sphere.clone();
+	mesh.userData.parts = parts;
+	mesh.userData.resetPose = () => {
+		for (let i = 1; i < bones.length; i++) {
+			const bone = bones[i];
+			bone.position.copy(bone.userData.restPosition);
+			bone.rotation.copy(bone.userData.restRotation);
+			bone.scale.setScalar(1);
+		}
+	};
+	geometry.addEventListener("dispose", () => mesh.skeleton.dispose());
+	return mesh;
+}
+function sortTransparentFaces(mesh) {
+	const faces = Array.from({ length: mesh.geometry.index.count / 6 }, (_, index) => ({
+		index,
+		distance: 0
+	}));
+	const cameraPosition = new Vector3();
+	const center = new Vector3();
+	const opposite = new Vector3();
+	return (camera) => {
+		cameraPosition.setFromMatrixPosition(camera.matrixWorld);
+		for (const face of faces) {
+			mesh.getVertexPosition(face.index * 4, center);
+			mesh.getVertexPosition(face.index * 4 + 2, opposite);
+			center.add(opposite).multiplyScalar(.5).applyMatrix4(mesh.matrixWorld);
+			face.distance = center.distanceToSquared(cameraPosition);
+		}
+		faces.sort((a, b) => b.distance - a.distance || a.index - b.index);
+		const indices = mesh.geometry.index;
+		for (let i = 0; i < faces.length; i++) {
+			const b = faces[i].index * 4, offset = i * 6;
+			indices.array[offset] = b;
+			indices.array[offset + 1] = b + 1;
+			indices.array[offset + 2] = b + 2;
+			indices.array[offset + 3] = b;
+			indices.array[offset + 4] = b + 2;
+			indices.array[offset + 5] = b + 3;
+		}
+		indices.needsUpdate = true;
+	};
+}
+
+//#endregion
+//#region ../Gudu.blog/gudu.blog/scripts/mc-special-entities.mjs
+const { models, paintings } = mc_special_models_1_21_10_default;
+const rad = Math.PI / 180;
+const strip = (name) => typeof name === "string" ? name.replace(/^minecraft:/, "") : "";
+const material = (map, options) => new MeshLambertMaterial({
+	map,
+	side: 2,
+	alphaTest: .1,
+	...options
+});
+const groupAt = (entity) => {
+	const root = new Group();
+	root.position.fromArray(entity.pos);
+	return root;
+};
+const partTemplates = /* @__PURE__ */ new WeakMap();
+function vanillaModel(recipe, mat) {
+	function build(parts, parent) {
+		for (const [name, part] of Object.entries(parts)) {
+			const node = new Group();
+			node.name = name;
+			node.position.fromArray(part.pivot).multiplyScalar(1 / 16);
+			node.rotation.set(...part.rot, "ZYX");
+			node.scale.fromArray(part.scale);
+			if (part.cuboids.length) {
+				let template = partTemplates.get(part);
+				if (!template) {
+					template = {
+						w: recipe.w,
+						h: recipe.h,
+						parts: { body: { cuboids: part.cuboids } }
+					};
+					partTemplates.set(part, template);
+				}
+				const mesh = createEntityModelMesh(template, mat);
+				mesh.scale.set(1, -1, -1);
+				mesh.position.y = 1.5;
+				node.add(mesh);
+			}
+			parent.add(node);
+			build(part.children, node);
+		}
+	}
+	const root = new Group();
+	build(recipe.parts, root);
+	return root;
+}
+const layers = {
+	arrow: ["Arrow", "entity/projectiles/arrow"],
+	spectral_arrow: ["Arrow", "entity/projectiles/spectral_arrow"],
+	trident: ["Trident", "entity/trident"],
+	end_crystal: ["EndCrystal", "entity/end_crystal/end_crystal"],
+	evoker_fangs: ["EvokerFangs", "entity/illager/evoker_fangs"],
+	leash_knot: ["LeashKnot", "entity/lead_knot"],
+	llama_spit: ["LlamaSpit", "entity/llama/spit"],
+	shulker_bullet: ["ShulkerBullet", "entity/shulker/spark"],
+	wither_skull: ["WitherSkull", "entity/wither/wither"],
+	breeze_wind_charge: ["WindCharge", "entity/projectiles/wind_charge"],
+	wind_charge: ["WindCharge", "entity/projectiles/wind_charge"]
+};
+async function projectileOrDecoration(id, n, rotation, assets) {
+	const [recipe, base] = layers[id], [yaw, pitch] = rotation;
+	let key = base;
+	if (id === "arrow" && (n.Color != null && n.Color !== -1 || n.item?.components?.["minecraft:potion_contents"])) key = "entity/projectiles/tipped_arrow";
+	if (id === "wither_skull" && n.dangerous) key = "entity/wither/wither_invulnerable";
+	const model = vanillaModel(models[recipe], material(await assets.getTexture(key)));
+	if ([
+		"arrow",
+		"spectral_arrow",
+		"llama_spit",
+		"trident"
+	].includes(id)) {
+		model.rotation.set(0, (yaw - 90) * rad, (pitch + (id === "trident" ? 90 : 0)) * rad, "YXZ");
+		if (id === "llama_spit") model.position.y = .15;
+	} else if (id === "end_crystal") {
+		model.scale.setScalar(2);
+		model.position.y = -1;
+		model.getObjectByName("base").visible = !!(n.ShowBottom ?? n.show_bottom ?? true);
+		model.getObjectByName("outer_glass").position.y -= .55;
+		const axis = new Vector3(Math.SQRT1_2, 0, Math.SQRT1_2);
+		for (const name of [
+			"outer_glass",
+			"inner_glass",
+			"cube"
+		]) model.getObjectByName(name)?.rotateOnAxis(axis, Math.PI / 3);
+	} else if (id === "evoker_fangs") {
+		model.rotation.y = (90 - yaw) * rad;
+		model.scale.set(-1, -1, 1);
+		model.position.y = 1.501;
+	} else if (id === "leash_knot" || id === "wither_skull") {
+		model.scale.set(-1, -1, 1);
+		if (id === "wither_skull") model.getObjectByName("head").rotation.set(pitch * rad, yaw * rad, 0, "YXZ");
+	} else if (id === "shulker_bullet") {
+		model.position.y = .15;
+		model.scale.set(-.5, -.5, .5);
+		model.rotation.set(pitch * rad, -yaw * rad, 0, "YXZ");
+	}
+	return model;
+}
+async function blockBody(state, assets, origin) {
+	const name = typeof state === "string" ? state : state?.Name ?? state?.name;
+	if (!name || strip(name) === "air") return null;
+	const baked = await new BlockModelResolver(assets).resolve(name, state.Properties ?? state.properties ?? {});
+	if (!baked?.quads?.length) return null;
+	const materials = /* @__PURE__ */ new Map();
+	await Promise.all([...new Set(baked.quads.map((q) => q.texKey))].map(async (key) => {
+		const map = await assets.getTexture(key);
+		if (map) materials.set(key, material(map, {
+			vertexColors: true,
+			transparent: !!baked.translucent
+		}));
+	}));
+	return quadsToMesh(baked.quads, origin, (key) => materials.get(key), true);
+}
+async function itemBody(stack, assets, context) {
+	const item = typeof stack === "string" ? { id: stack } : stack;
+	if (!item?.id || strip(item.id) === "air" || item.count === 0 || item.Count === 0) return null;
+	return buildEquippedItem(item, assets, context);
+}
+function displayTransform(holder, t) {
+	if (Array.isArray(t) && t.length === 16 && t.every(Number.isFinite)) {
+		holder.matrix.set(...t);
+		holder.matrixAutoUpdate = false;
+	} else if (t && typeof t === "object") {
+		const left = new Quaternion().fromArray(t.left_rotation ?? [
+			0,
+			0,
+			0,
+			1
+		]);
+		const right = new Quaternion().fromArray(t.right_rotation ?? [
+			0,
+			0,
+			0,
+			1
+		]);
+		holder.matrix.compose(new Vector3().fromArray(t.translation ?? [
+			0,
+			0,
+			0
+		]), left, new Vector3().fromArray(t.scale ?? [
+			1,
+			1,
+			1
+		])).multiply(new Matrix4().makeRotationFromQuaternion(right));
+		holder.matrixAutoUpdate = false;
+	}
+	holder.matrixWorldNeedsUpdate = true;
+}
+function displayFacing(pivot, mode) {
+	if (![
+		"center",
+		"horizontal",
+		"vertical"
+	].includes(mode)) return;
+	const world = new Quaternion(), cameraAngles = new Euler(0, 0, 0, "YXZ");
+	const fixed = new Euler().setFromQuaternion(pivot.quaternion, "YXZ");
+	const previous = new Quaternion();
+	pivot.traverse((child) => {
+		if (!child.isMesh) return;
+		child.onBeforeRender = (_renderer, _scene, camera) => {
+			camera.getWorldQuaternion(world);
+			cameraAngles.setFromQuaternion(world, "YXZ");
+			if (mode === "vertical") cameraAngles.x = fixed.x;
+			if (mode === "horizontal") cameraAngles.y = fixed.y;
+			cameraAngles.z = 0;
+			pivot.quaternion.copy(pivot.parent.getWorldQuaternion(previous)).invert().multiply(world.setFromEuler(cameraAngles));
+			pivot.updateMatrixWorld(true);
+		};
+		child.frustumCulled = false;
+	});
+}
+function plainText(component) {
+	if (typeof component === "string") {
+		if (/^[\[{"]/.test(component)) try {
+			return plainText(JSON.parse(component));
+		} catch {}
+		return component;
+	}
+	if (Array.isArray(component)) return component.map(plainText).join("");
+	return component ? String(component.text ?? component.translate ?? "") + plainText(component.extra ?? "") : "";
+}
+function textBody(n) {
+	const text = plainText(n.text);
+	if (!text || typeof document === "undefined") return null;
+	const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
+	const font = "16px monospace";
+	ctx.font = font;
+	const max = Math.max(16, Math.min(4096, (n.line_width || 200) * 2));
+	const lines = [];
+	for (const paragraph of text.split("\n")) {
+		let line = "";
+		for (const char of paragraph) {
+			if (line && ctx.measureText(line + char).width > max) {
+				lines.push(line);
+				line = "";
+			}
+			line += char;
+		}
+		lines.push(line);
+		if (lines.length >= 225) break;
+	}
+	lines.length = Math.min(225, lines.length);
+	canvas.width = Math.max(2, Math.ceil(Math.max(...lines.map((line) => ctx.measureText(line).width))) + 4);
+	canvas.height = lines.length * 18 + 4;
+	ctx.font = font;
+	const background = (n.background ?? 1073741824) >>> 0;
+	ctx.fillStyle = "#" + ((background & 16777215) * 256 + (background >>> 24)).toString(16).padStart(8, "0");
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
+	ctx.fillStyle = "#fff";
+	ctx.globalAlpha = ((n.text_opacity ?? 255) & 255) / 255;
+	ctx.textAlign = n.alignment === "left" || n.alignment === "right" ? n.alignment : "center";
+	const x = ctx.textAlign === "left" ? 2 : ctx.textAlign === "right" ? canvas.width - 2 : canvas.width / 2;
+	lines.forEach((line, i) => ctx.fillText(line, x, 16 + i * 18));
+	const texture = new CanvasTexture(canvas);
+	texture.magFilter = NearestFilter;
+	texture.colorSpace = SRGBColorSpace;
+	const mesh = new Mesh(new PlaneGeometry(canvas.width / 80, canvas.height / 80), new MeshBasicMaterial({
+		map: texture,
+		side: 2,
+		transparent: true,
+		depthWrite: false
+	}));
+	mesh.position.y = canvas.height / 160;
+	return mesh;
+}
+async function painting(n, assets) {
+	const desc = typeof n.variant === "object" ? [
+		n.variant.asset_id,
+		n.variant.width,
+		n.variant.height
+	] : paintings[strip(n.variant ?? n.Motive ?? "kebab")];
+	if (!desc) return null;
+	const [name, w, h] = desc;
+	if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
+	const [face, back] = await Promise.all(["painting/" + strip(name), "painting/back"].map((key) => assets.getTexture(key)));
+	if (!face) return null;
+	const frontMat = material(face), backMat = material(back);
+	const model = new Mesh(new BoxGeometry(w, h, 1 / 16), [
+		backMat,
+		backMat,
+		backMat,
+		backMat,
+		frontMat,
+		backMat
+	]);
+	const uv = model.geometry.getAttribute("uv");
+	for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+	const facing = n.facing ?? n.Facing ?? "south";
+	model.rotation.y = {
+		north: Math.PI,
+		south: 0,
+		east: Math.PI / 2,
+		west: -Math.PI / 2
+	}[facing] ?? [
+		0,
+		-Math.PI / 2,
+		Math.PI,
+		Math.PI / 2
+	][facing] ?? 0;
+	return model;
+}
+async function avatar(n, rotation, assets, data) {
+	let skin;
+	try {
+		const properties = n.profile?.properties;
+		const entry = properties?.find?.((p) => p.name === "textures") ?? properties?.textures?.[0];
+		const info = entry && JSON.parse(atob(entry.value)).textures?.SKIN;
+		const hash = info?.url?.match(/^https?:\/\/textures\.minecraft\.net\/texture\/([a-f0-9]{64})$/i)?.[1]?.toLowerCase();
+		if (hash) skin = {
+			hash,
+			slim: info.metadata?.model === "slim"
+		};
+	} catch {}
+	const slim = !!skin?.slim;
+	let map;
+	if (skin && data?.skins?.[skin.hash]) try {
+		map = await assets.getRecordedSkin?.(skin.hash, data.skins[skin.hash]);
+	} catch {}
+	const model = vanillaModel(models[slim ? "PlayerSlim" : "Player"], material(map || await assets.getTexture(slim ? "entity/player/slim/alex" : "entity/player/wide/steve")));
+	model.scale.set(-.9375, -.9375, .9375);
+	model.position.y = 1.40625;
+	model.rotation.y = (180 - rotation[0]) * rad;
+	model.getObjectByName("head").rotation.x = rotation[1] * rad;
+	return model;
+}
+function billboard(map, width, height, options = {}) {
+	if (!map) return null;
+	const texture = map.clone();
+	const [u, v, w, h] = options.uv ?? [
+		0,
+		0,
+		1,
+		1
+	];
+	texture.offset.set(u, v + h);
+	texture.repeat.set(w, -h);
+	texture.needsUpdate = true;
+	const sprite = new Sprite(new SpriteMaterial({
+		map: texture,
+		color: options.color ?? 16777215,
+		transparent: true,
+		alphaTest: .05,
+		depthWrite: false
+	}));
+	sprite.scale.set(width, height, 1);
+	sprite.position.y = options.lift ?? 0;
+	return sprite;
+}
+function orbFrame(value) {
+	return [
+		3,
+		7,
+		17,
+		37,
+		73,
+		149,
+		307,
+		617,
+		1237,
+		2477
+	].filter((v) => value >= v).length;
+}
+async function effect(id, n, assets) {
+	if (id === "lightning_bolt") {
+		const group = new Group(), mat = new MeshBasicMaterial({
+			color: 12372223,
+			transparent: true,
+			opacity: .8
+		});
+		for (const points of [[
+			[
+				0,
+				0,
+				0
+			],
+			[
+				.4,
+				3,
+				0
+			],
+			[
+				-.45,
+				5,
+				.2
+			],
+			[
+				.7,
+				9,
+				.1
+			],
+			[
+				0,
+				12,
+				-.2
+			],
+			[
+				1.2,
+				16,
+				0
+			]
+		], [
+			[
+				-.45,
+				5,
+				.2
+			],
+			[
+				-1.8,
+				6.8,
+				.5
+			],
+			[
+				-2.4,
+				8,
+				.7
+			]
+		]]) for (let i = 1; i < points.length; i++) {
+			const a = new Vector3(...points[i - 1]), b = new Vector3(...points[i]);
+			const direction = b.clone().sub(a);
+			const segment = new Mesh(new CylinderGeometry(.035, .09, direction.length(), 4), mat);
+			segment.position.copy(a).lerp(b, .5);
+			segment.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), direction.normalize());
+			group.add(segment);
+		}
+		return group;
+	}
+	if (id === "area_effect_cloud") {
+		const texture = await assets.getTexture("particle/effect_0");
+		if (!texture) return null;
+		const radius = Math.min(32, Math.max(.1, n.Radius ?? n.radius ?? 3));
+		const group = new Group();
+		const sample = billboard(texture, .12, .12, { color: n.Color ?? n.color ?? 11183300 });
+		for (let i = 0; i < 24; i++) {
+			const r = radius * Math.sqrt((i + .5) / 24), angle = i * 2.399963;
+			const particle = i === 0 ? sample : sample.clone();
+			particle.position.set(r * Math.cos(angle), .05 + .08 * (i % 3), r * Math.sin(angle));
+			group.add(particle);
+		}
+		return group;
+	}
+	const spriteKeys = {
+		dragon_fireball: "entity/enderdragon/dragon_fireball",
+		fireball: "item/fire_charge",
+		small_fireball: "item/fire_charge",
+		fishing_bobber: "entity/fishing_hook",
+		experience_orb: "entity/experience_orb"
+	};
+	if (id === "experience_orb") {
+		const frame = orbFrame(n.Value ?? n.value ?? 1);
+		return billboard(await assets.getTexture(spriteKeys[id]), .5, .5, {
+			color: 8978233,
+			lift: .125,
+			uv: [
+				frame % 4 / 4,
+				Math.floor(frame / 4) / 4,
+				.25,
+				.25
+			]
+		});
+	}
+	const size = {
+		dragon_fireball: 2,
+		fireball: 1,
+		small_fireball: .3125,
+		fishing_bobber: .5
+	}[id];
+	return billboard(await assets.getTexture(spriteKeys[id]), size, size);
+}
+const thrownItems = {
+	egg: "egg",
+	ender_pearl: "ender_pearl",
+	snowball: "snowball",
+	experience_bottle: "experience_bottle",
+	eye_of_ender: "ender_eye",
+	firework_rocket: "firework_rocket",
+	splash_potion: "splash_potion",
+	lingering_potion: "lingering_potion",
+	potion: "splash_potion"
+};
+async function supplementalEntity(entity, assets, data) {
+	const id = strip(entity.id), n = entity.nbt ?? {}, rotation = entity.rotation ?? [0, 0];
+	const root = groupAt(entity);
+	let body;
+	if (id === "marker" || id === "interaction") return root;
+	if (id === "player" || id === "mannequin") body = await avatar(n, rotation, assets, data);
+	else if (Object.hasOwn(layers, id)) body = await projectileOrDecoration(id, n, rotation, assets);
+	else if (id === "painting") body = await painting(n, assets);
+	else if (id === "tnt" || id === "falling_block") {
+		body = await blockBody(n.block_state ?? n.BlockState ?? (id === "tnt" ? "minecraft:tnt" : "minecraft:sand"), assets, [
+			-.5,
+			0,
+			-.5
+		]);
+		const fuse = n.fuse ?? n.Fuse;
+		if (id === "tnt" && body && Number.isFinite(fuse)) {
+			const swell = Math.min(1, Math.max(0, 1 - (fuse + 1) / 10));
+			body.scale.setScalar(1 + .3 * swell ** 4);
+			if (Math.floor(fuse / 5) % 2 === 0) body.traverse((part) => part.material?.emissive?.setHex(10066329));
+		}
+	} else if (id === "item" || id === "ominous_item_spawner" || Object.hasOwn(thrownItems, id)) {
+		body = await itemBody(n.Item ?? n.item ?? n.FireworksItem ?? (thrownItems[id] && "minecraft:" + thrownItems[id]), assets, "ground");
+		if (body) {
+			if (id === "item") body.position.y += .15;
+			if (Object.hasOwn(thrownItems, id) && id !== "firework_rocket") {
+				const pivot = new Group();
+				pivot.add(body);
+				body = pivot;
+				displayFacing(pivot, "center");
+			} else root.rotation.y = -rotation[0] * rad;
+		}
+	} else if ([
+		"block_display",
+		"item_display",
+		"text_display"
+	].includes(id)) {
+		const content = id === "block_display" ? await blockBody(n.block_state ?? n.BlockState, assets, [
+			0,
+			0,
+			0
+		]) : id === "item_display" ? await itemBody(n.item ?? n.Item, assets, n.item_display || "none") : textBody(n);
+		if (content) {
+			const transformed = new Group();
+			transformed.add(content);
+			displayTransform(transformed, n.transformation);
+			body = new Group();
+			body.add(transformed);
+			body.rotation.set(rotation[1] * rad, -rotation[0] * rad, 0, "YXZ");
+			displayFacing(body, n.billboard);
+		}
+	} else if ([
+		"dragon_fireball",
+		"fireball",
+		"small_fireball",
+		"experience_orb",
+		"fishing_bobber",
+		"area_effect_cloud",
+		"lightning_bolt"
+	].includes(id)) body = await effect(id, n, assets);
+	else return null;
+	if (body) root.add(body);
+	return root;
+}
+
+//#endregion
+//#region src/entityPlacement.js
+const DEG$3 = Math.PI / 180;
+const f = Math.fround;
+const flip = new Vector3(-1, -1, 1);
+const axes = {
+	x: new Vector3(1, 0, 0),
+	y: new Vector3(0, 1, 0),
+	z: new Vector3(0, 0, 1)
+};
+const toVanilla = new Matrix4().makeScale(1, -1, -1).multiply(new Matrix4().makeTranslation(0, -1.5, 0));
+const attachments = [
+	[
+		0,
+		0,
+		0
+	],
+	[
+		Math.PI,
+		0,
+		0
+	],
+	[
+		Math.PI / 2,
+		0,
+		0
+	],
+	[
+		Math.PI / 2,
+		0,
+		Math.PI
+	],
+	[
+		Math.PI / 2,
+		0,
+		-Math.PI / 2
+	],
+	[
+		Math.PI / 2,
+		0,
+		Math.PI / 2
+	]
+].map((angles) => new Quaternion().setFromEuler(new Euler(...angles, "XYZ")));
+const bedDirections = {
+	south: [
+		0,
+		0,
+		1,
+		90
+	],
+	west: [
+		-1,
+		0,
+		0,
+		0
+	],
+	north: [
+		0,
+		0,
+		-1,
+		270
+	],
+	east: [
+		1,
+		0,
+		0,
+		180
+	]
+};
+function sleepingDirection(state, data) {
+	if (!data?.bounds || !data.blocks) return null;
+	const b = data.bounds, [x, y, z] = state.pos.map(Math.floor);
+	if (x < b.minX || x >= b.minX + b.width || y < b.minY || y >= b.minY + b.height || z < b.minZ || z >= b.minZ + b.depth) return null;
+	const block = data.palette[data.blocks.get(x - b.minX + (z - b.minZ) * b.width + (y - b.minY) * b.width * b.depth)];
+	return block?.name?.endsWith("_bed") ? bedDirections[block.properties?.facing] || null : null;
+}
+function createMobPlacement(group, id, state, appearance, data) {
+	const n = state.nbt || {}, baseScale = id === "ender_dragon" ? 1 : entityScale(n);
+	const yaw = Number(state.rotation?.[0]) || 0, pitch = Number(state.rotation?.[1]) || 0;
+	const scale = appearance.scale ?? 1, modelScale = appearance.modelScale ?? scale;
+	group.scale.setScalar(scale * baseScale);
+	group.rotation.y = -yaw * DEG$3 - (id === "ender_dragon" ? Math.PI : 0);
+	if (id === "ender_dragon") return (mesh) => mesh.position.set(0, f(1.501) - 1.5, -1);
+	const inverseGroup = new Matrix4().compose(new Vector3(), group.quaternion, group.scale).invert();
+	const matrix = new Matrix4(), temporary = new Matrix4(), quaternion = new Quaternion();
+	const position = new Vector3(), rotation = new Quaternion(), meshScale = new Vector3();
+	const translate = (x, y, z) => matrix.multiply(temporary.makeTranslation(x, y, z));
+	const rotate = (axis, degrees) => matrix.multiply(temporary.makeRotationAxis(axes[axis], degrees * DEG$3));
+	const scaleVector = new Vector3();
+	const uniformScale = (value) => matrix.scale(scaleVector.setScalar(value));
+	const sleeping = String(n.Pose ?? n.pose).replace(/^minecraft:/, "").toLowerCase() === "sleeping" || n.sleeping_pos != null || n.SleepingX != null;
+	const bed = sleeping ? sleepingDirection(state, data) : null;
+	const standing = sleeping ? getEntityHitbox({
+		...state,
+		nbt: {
+			...n,
+			Pose: "standing",
+			pose: "standing",
+			sleeping_pos: void 0,
+			SleepingX: void 0
+		}
+	}) : null;
+	const height = getEntityHitbox(state)?.max[1] || 0;
+	const flipDegrees = [
+		"spider",
+		"cave_spider",
+		"silverfish",
+		"endermite"
+	].includes(id) ? 180 : 90;
+	const fish = [
+		"cod",
+		"salmon",
+		"tropical_fish"
+	].includes(id);
+	const dynamic = fish || id === "pufferfish";
+	let lastAge;
+	return (mesh, age = 0) => {
+		if (lastAge === void 0 || dynamic && age !== lastAge) {
+			lastAge = age;
+			matrix.identity();
+			if (bed) translate(-bed[0] * (standing.eyeHeight - .1), 0, -bed[2] * (standing.eyeHeight - .1));
+			uniformScale(baseScale);
+			if (id === "squid" || id === "glow_squid") {
+				translate(0, isBaby(n) ? .25 : .5, 0);
+				rotate("y", 180 - yaw);
+				translate(0, isBaby(n) ? f(-.6) : f(-1.2), 0);
+			} else {
+				if (id === "pufferfish") translate(0, Math.cos(age * .05) * .08, 0);
+				if (!sleeping || id === "armor_stand") rotate("y", (id === "shulker" ? 0 : 180) - yaw);
+				if (id !== "armor_stand") {
+					if (Number(n.DeathTime) > 0) rotate("z", Math.min(1, Math.sqrt(Math.max(0, (Number(n.DeathTime) - 1) / 20 * 1.6))) * flipDegrees);
+					else if (sleeping) {
+						rotate("y", bed?.[3] ?? yaw);
+						rotate("z", flipDegrees);
+						rotate("y", 270);
+					} else if (state.upsideDown) {
+						translate(0, (height + .1) / baseScale, 0);
+						rotate("z", 180);
+					}
+				}
+				if (id === "phantom") rotate("x", pitch);
+				if (id === "shulker") {
+					translate(0, .5, 0);
+					quaternion.copy(attachments[Number(n.AttachFace)] || attachments[0]);
+					matrix.multiply(temporary.makeRotationFromQuaternion(quaternion));
+					translate(0, -.5, 0);
+				}
+				if (fish) {
+					const drySalmon = id === "salmon" && !state.touchingWater;
+					rotate("y", 4.3 * (drySalmon ? 1.3 : 1) * Math.sin(age * .6 * (drySalmon ? 1.7 : 1)));
+					if (!state.touchingWater) {
+						translate(id === "cod" ? .1 : .2, .1, id === "cod" ? -.1 : 0);
+						rotate("z", 90);
+					}
+				}
+			}
+			matrix.scale(flip);
+			uniformScale(scale / modelScale);
+			if (id === "slime" || id === "sulfur_cube") translate(0, f(.001) * f(.999) / scale, 0);
+			if (id === "phantom") translate(0, 1.3125, .1875);
+			translate(0, id === "sulfur_cube" ? -1.5 : -f(1.501), 0);
+			translate(0, 1.5 * (1 - modelScale), 0);
+			uniformScale(modelScale);
+			matrix.multiply(toVanilla).premultiply(inverseGroup).decompose(position, rotation, meshScale);
+		}
+		mesh.position.copy(position);
+		mesh.quaternion.copy(rotation);
+		mesh.scale.copy(meshScale);
+	};
 }
 
 //#endregion
@@ -88254,7 +89959,7 @@ function resolveItemModelDef(def, out = [], context = "fixed", item = {}) {
 async function buildEntityMesh(entity, assets, data, ancestors = /* @__PURE__ */ new Set()) {
 	if (ancestors.size >= 32 || ancestors.has(entity.nbt)) return null;
 	const next = new Set(ancestors).add(entity.nbt);
-	const model = await buildSingleEntityMesh(entity, assets, data) ?? hitboxAnchor(entity);
+	const model = await supplementalEntity(entity, assets, data) ?? await buildSingleEntityMesh(entity, assets, data) ?? hitboxAnchor(entity);
 	if (!model) return null;
 	const passengers = Array.isArray(entity.nbt?.Passengers) ? entity.nbt.Passengers.filter((p) => p && typeof p.id === "string") : [];
 	if (!passengers.length) return registerEntityHitbox(model, entity);
@@ -89552,6 +91257,1126 @@ function hitboxAnchor(entity) {
 	const anchor = new Group();
 	anchor.position.fromArray(entity.pos);
 	return anchor;
+}
+
+//#endregion
+//#region node_modules/three/examples/jsm/controls/OrbitControls.js
+/**
+* Fires when the camera has been transformed by the controls.
+*
+* @event OrbitControls#change
+* @type {Object}
+*/
+const _changeEvent = { type: "change" };
+/**
+* Fires when an interaction was initiated.
+*
+* @event OrbitControls#start
+* @type {Object}
+*/
+const _startEvent = { type: "start" };
+/**
+* Fires when an interaction has finished.
+*
+* @event OrbitControls#end
+* @type {Object}
+*/
+const _endEvent = { type: "end" };
+const _ray = new Ray();
+const _plane = new Plane();
+const _TILT_LIMIT = Math.cos(70 * MathUtils.DEG2RAD);
+const _v = new Vector3();
+const _twoPI = 2 * Math.PI;
+const _STATE = {
+	NONE: -1,
+	ROTATE: 0,
+	DOLLY: 1,
+	PAN: 2,
+	TOUCH_ROTATE: 3,
+	TOUCH_PAN: 4,
+	TOUCH_DOLLY_PAN: 5,
+	TOUCH_DOLLY_ROTATE: 6
+};
+const _EPS = 1e-6;
+/**
+* Orbit controls allow the camera to orbit around a target.
+*
+* OrbitControls performs orbiting, dollying (zooming), and panning. Unlike {@link TrackballControls},
+* it maintains the "up" direction `object.up` (+Y by default).
+*
+* - Orbit: Left mouse / touch: one-finger move.
+* - Zoom: Middle mouse, or mousewheel / touch: two-finger spread or squish.
+* - Pan: Right mouse, or left mouse + ctrl/meta/shiftKey, or arrow keys / touch: two-finger move.
+*
+* ```js
+* const controls = new OrbitControls( camera, renderer.domElement );
+*
+* // controls.update() must be called after any manual changes to the camera's transform
+* camera.position.set( 0, 20, 100 );
+* controls.update();
+*
+* function animate() {
+*
+* 	// required if controls.enableDamping or controls.autoRotate are set to true
+* 	controls.update();
+*
+* 	renderer.render( scene, camera );
+*
+* }
+* ```
+*
+* @augments Controls
+* @three_import import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+*/
+var OrbitControls = class extends Controls {
+	/**
+	* Constructs a new controls instance.
+	*
+	* @param {Object3D} object - The object that is managed by the controls.
+	* @param {?HTMLElement} domElement - The HTML element used for event listeners.
+	*/
+	constructor(object, domElement = null) {
+		super(object, domElement);
+		this.state = _STATE.NONE;
+		/**
+		* The focus point of the controls, the `object` orbits around this.
+		* It can be updated manually at any point to change the focus of the controls.
+		*
+		* @type {Vector3}
+		*/
+		this.target = new Vector3();
+		/**
+		* The focus point of the `minTargetRadius` and `maxTargetRadius` limits.
+		* It can be updated manually at any point to change the center of interest
+		* for the `target`.
+		*
+		* @type {Vector3}
+		*/
+		this.cursor = new Vector3();
+		/**
+		* How far you can dolly in (perspective camera only).
+		*
+		* @type {number}
+		* @default 0
+		*/
+		this.minDistance = 0;
+		/**
+		* How far you can dolly out (perspective camera only).
+		*
+		* @type {number}
+		* @default Infinity
+		*/
+		this.maxDistance = Infinity;
+		/**
+		* How far you can zoom in (orthographic camera only).
+		*
+		* @type {number}
+		* @default 0
+		*/
+		this.minZoom = 0;
+		/**
+		* How far you can zoom out (orthographic camera only).
+		*
+		* @type {number}
+		* @default Infinity
+		*/
+		this.maxZoom = Infinity;
+		/**
+		* How close you can get the target to the 3D `cursor`.
+		*
+		* @type {number}
+		* @default 0
+		*/
+		this.minTargetRadius = 0;
+		/**
+		* How far you can move the target from the 3D `cursor`.
+		*
+		* @type {number}
+		* @default Infinity
+		*/
+		this.maxTargetRadius = Infinity;
+		/**
+		* How far you can orbit vertically, lower limit. Range is `[0, Math.PI]` radians.
+		*
+		* @type {number}
+		* @default 0
+		*/
+		this.minPolarAngle = 0;
+		/**
+		* How far you can orbit vertically, upper limit. Range is `[0, Math.PI]` radians.
+		*
+		* @type {number}
+		* @default Math.PI
+		*/
+		this.maxPolarAngle = Math.PI;
+		/**
+		* How far you can orbit horizontally, lower limit. If set, the interval `[ min, max ]`
+		* must be a sub-interval of `[ - 2 PI, 2 PI ]`, with `( max - min < 2 PI )`.
+		*
+		* @type {number}
+		* @default -Infinity
+		*/
+		this.minAzimuthAngle = -Infinity;
+		/**
+		* How far you can orbit horizontally, upper limit. If set, the interval `[ min, max ]`
+		* must be a sub-interval of `[ - 2 PI, 2 PI ]`, with `( max - min < 2 PI )`.
+		*
+		* @type {number}
+		* @default -Infinity
+		*/
+		this.maxAzimuthAngle = Infinity;
+		/**
+		* Set to `true` to enable damping (inertia), which can be used to give a sense of weight
+		* to the controls. Note that if this is enabled, you must call `update()` in your animation
+		* loop.
+		*
+		* @type {boolean}
+		* @default false
+		*/
+		this.enableDamping = false;
+		/**
+		* The damping inertia used if `enableDamping` is set to `true`.
+		*
+		* Note that for this to work, you must call `update()` in your animation loop.
+		*
+		* @type {number}
+		* @default 0.05
+		*/
+		this.dampingFactor = .05;
+		/**
+		* Enable or disable zooming (dollying) of the camera.
+		*
+		* @type {boolean}
+		* @default true
+		*/
+		this.enableZoom = true;
+		/**
+		* Speed of zooming / dollying.
+		*
+		* @type {number}
+		* @default 1
+		*/
+		this.zoomSpeed = 1;
+		/**
+		* Enable or disable horizontal and vertical rotation of the camera.
+		*
+		* Note that it is possible to disable a single axis by setting the min and max of the
+		* `minPolarAngle` or `minAzimuthAngle` to the same value, which will cause the vertical
+		* or horizontal rotation to be fixed at that value.
+		*
+		* @type {boolean}
+		* @default true
+		*/
+		this.enableRotate = true;
+		/**
+		* Speed of rotation.
+		*
+		* @type {number}
+		* @default 1
+		*/
+		this.rotateSpeed = 1;
+		/**
+		* How fast to rotate the camera when the keyboard is used.
+		*
+		* @type {number}
+		* @default 1
+		*/
+		this.keyRotateSpeed = 1;
+		/**
+		* Enable or disable camera panning.
+		*
+		* @type {boolean}
+		* @default true
+		*/
+		this.enablePan = true;
+		/**
+		* Speed of panning.
+		*
+		* @type {number}
+		* @default 1
+		*/
+		this.panSpeed = 1;
+		/**
+		* Defines how the camera's position is translated when panning. If `true`, the camera pans
+		* in screen space. Otherwise, the camera pans in the plane orthogonal to the camera's up
+		* direction.
+		*
+		* @type {boolean}
+		* @default true
+		*/
+		this.screenSpacePanning = true;
+		/**
+		* How fast to pan the camera when the keyboard is used in
+		* pixels per keypress.
+		*
+		* @type {number}
+		* @default 7
+		*/
+		this.keyPanSpeed = 7;
+		/**
+		* Setting this property to `true` allows to zoom to the cursor's position.
+		*
+		* @type {boolean}
+		* @default false
+		*/
+		this.zoomToCursor = false;
+		/**
+		* Set to true to automatically rotate around the target
+		*
+		* Note that if this is enabled, you must call `update()` in your animation loop.
+		* If you want the auto-rotate speed to be independent of the frame rate (the refresh
+		* rate of the display), you must pass the time `deltaTime`, in seconds, to `update()`.
+		*
+		* @type {boolean}
+		* @default false
+		*/
+		this.autoRotate = false;
+		/**
+		* How fast to rotate around the target if `autoRotate` is `true`. The default  equates to 30 seconds
+		* per orbit at 60fps.
+		*
+		* Note that if `autoRotate` is enabled, you must call `update()` in your animation loop.
+		*
+		* @type {number}
+		* @default 2
+		*/
+		this.autoRotateSpeed = 2;
+		/**
+		* This object contains references to the keycodes for controlling camera panning.
+		*
+		* ```js
+		* controls.keys = {
+		* 	LEFT: 'ArrowLeft', //left arrow
+		* 	UP: 'ArrowUp', // up arrow
+		* 	RIGHT: 'ArrowRight', // right arrow
+		* 	BOTTOM: 'ArrowDown' // down arrow
+		* }
+		* ```
+		* @type {Object}
+		*/
+		this.keys = {
+			LEFT: "ArrowLeft",
+			UP: "ArrowUp",
+			RIGHT: "ArrowRight",
+			BOTTOM: "ArrowDown"
+		};
+		/**
+		* This object contains references to the mouse actions used by the controls.
+		*
+		* ```js
+		* controls.mouseButtons = {
+		* 	LEFT: THREE.MOUSE.ROTATE,
+		* 	MIDDLE: THREE.MOUSE.DOLLY,
+		* 	RIGHT: THREE.MOUSE.PAN
+		* }
+		* ```
+		* @type {Object}
+		*/
+		this.mouseButtons = {
+			LEFT: MOUSE.ROTATE,
+			MIDDLE: MOUSE.DOLLY,
+			RIGHT: MOUSE.PAN
+		};
+		/**
+		* This object contains references to the touch actions used by the controls.
+		*
+		* ```js
+		* controls.mouseButtons = {
+		* 	ONE: THREE.TOUCH.ROTATE,
+		* 	TWO: THREE.TOUCH.DOLLY_PAN
+		* }
+		* ```
+		* @type {Object}
+		*/
+		this.touches = {
+			ONE: TOUCH.ROTATE,
+			TWO: TOUCH.DOLLY_PAN
+		};
+		/**
+		* Used internally by `saveState()` and `reset()`.
+		*
+		* @type {Vector3}
+		*/
+		this.target0 = this.target.clone();
+		/**
+		* Used internally by `saveState()` and `reset()`.
+		*
+		* @type {Vector3}
+		*/
+		this.position0 = this.object.position.clone();
+		/**
+		* Used internally by `saveState()` and `reset()`.
+		*
+		* @type {number}
+		*/
+		this.zoom0 = this.object.zoom;
+		this._cursorStyle = "auto";
+		this._domElementKeyEvents = null;
+		this._lastPosition = new Vector3();
+		this._lastQuaternion = new Quaternion();
+		this._lastTargetPosition = new Vector3();
+		this._quat = new Quaternion().setFromUnitVectors(object.up, new Vector3(0, 1, 0));
+		this._quatInverse = this._quat.clone().invert();
+		this._spherical = new Spherical();
+		this._sphericalDelta = new Spherical();
+		this._scale = 1;
+		this._panOffset = new Vector3();
+		this._rotateStart = new Vector2();
+		this._rotateEnd = new Vector2();
+		this._rotateDelta = new Vector2();
+		this._panStart = new Vector2();
+		this._panEnd = new Vector2();
+		this._panDelta = new Vector2();
+		this._dollyStart = new Vector2();
+		this._dollyEnd = new Vector2();
+		this._dollyDelta = new Vector2();
+		this._dollyDirection = new Vector3();
+		this._mouse = new Vector2();
+		this._performCursorZoom = false;
+		this._pointers = [];
+		this._pointerPositions = {};
+		this._controlActive = false;
+		this._onPointerMove = onPointerMove.bind(this);
+		this._onPointerDown = onPointerDown.bind(this);
+		this._onPointerUp = onPointerUp.bind(this);
+		this._onContextMenu = onContextMenu.bind(this);
+		this._onMouseWheel = onMouseWheel.bind(this);
+		this._onKeyDown = onKeyDown.bind(this);
+		this._onTouchStart = onTouchStart.bind(this);
+		this._onTouchMove = onTouchMove.bind(this);
+		this._onMouseDown = onMouseDown.bind(this);
+		this._onMouseMove = onMouseMove.bind(this);
+		this._interceptControlDown = interceptControlDown.bind(this);
+		this._interceptControlUp = interceptControlUp.bind(this);
+		if (this.domElement !== null) this.connect(this.domElement);
+		this.update();
+	}
+	/**
+	* Defines the visual representation of the cursor.
+	*
+	* @type {('auto'|'grab')}
+	* @default 'auto'
+	*/
+	set cursorStyle(type) {
+		this._cursorStyle = type;
+		if (type === "grab") this.domElement.style.cursor = "grab";
+		else this.domElement.style.cursor = "auto";
+	}
+	get cursorStyle() {
+		return this._cursorStyle;
+	}
+	connect(element) {
+		super.connect(element);
+		this.domElement.addEventListener("pointerdown", this._onPointerDown);
+		this.domElement.addEventListener("pointercancel", this._onPointerUp);
+		this.domElement.addEventListener("contextmenu", this._onContextMenu);
+		this.domElement.addEventListener("wheel", this._onMouseWheel, { passive: false });
+		this.domElement.getRootNode().addEventListener("keydown", this._interceptControlDown, {
+			passive: true,
+			capture: true
+		});
+		this.domElement.style.touchAction = "none";
+	}
+	disconnect() {
+		this.state = _STATE.NONE;
+		this.domElement.removeEventListener("pointerdown", this._onPointerDown);
+		this.domElement.ownerDocument.removeEventListener("pointermove", this._onPointerMove);
+		this.domElement.ownerDocument.removeEventListener("pointerup", this._onPointerUp);
+		this.domElement.removeEventListener("pointercancel", this._onPointerUp);
+		this.domElement.removeEventListener("wheel", this._onMouseWheel);
+		this.domElement.removeEventListener("contextmenu", this._onContextMenu);
+		this.stopListenToKeyEvents();
+		const document = this.domElement.getRootNode();
+		document.removeEventListener("keydown", this._interceptControlDown, { capture: true });
+		document.removeEventListener("keyup", this._interceptControlUp, { capture: true });
+		this._controlActive = false;
+		this._pointers.length = 0;
+		this._pointerPositions = {};
+		this.domElement.style.touchAction = "";
+		this.domElement.style.cursor = "auto";
+	}
+	dispose() {
+		this.disconnect();
+	}
+	/**
+	* Get the current vertical rotation, in radians.
+	*
+	* @return {number} The current vertical rotation, in radians.
+	*/
+	getPolarAngle() {
+		return this._spherical.phi;
+	}
+	/**
+	* Get the current horizontal rotation, in radians.
+	*
+	* @return {number} The current horizontal rotation, in radians.
+	*/
+	getAzimuthalAngle() {
+		return this._spherical.theta;
+	}
+	/**
+	* Returns the distance from the camera to the target.
+	*
+	* @return {number} The distance from the camera to the target.
+	*/
+	getDistance() {
+		return this.object.position.distanceTo(this.target);
+	}
+	/**
+	* Adds key event listeners to the given DOM element.
+	* `window` is a recommended argument for using this method.
+	*
+	* @param {HTMLElement} domElement - The DOM element
+	*/
+	listenToKeyEvents(domElement) {
+		domElement.addEventListener("keydown", this._onKeyDown);
+		this._domElementKeyEvents = domElement;
+	}
+	/**
+	* Removes the key event listener previously defined with `listenToKeyEvents()`.
+	*/
+	stopListenToKeyEvents() {
+		if (this._domElementKeyEvents !== null) {
+			this._domElementKeyEvents.removeEventListener("keydown", this._onKeyDown);
+			this._domElementKeyEvents = null;
+		}
+	}
+	/**
+	* Save the current state of the controls. This can later be recovered with `reset()`.
+	*/
+	saveState() {
+		this.target0.copy(this.target);
+		this.position0.copy(this.object.position);
+		this.zoom0 = this.object.zoom;
+	}
+	/**
+	* Reset the controls to their state from either the last time the `saveState()`
+	* was called, or the initial state.
+	*/
+	reset() {
+		this.target.copy(this.target0);
+		this.object.position.copy(this.position0);
+		this.object.zoom = this.zoom0;
+		this.object.updateProjectionMatrix();
+		this.dispatchEvent(_changeEvent);
+		this.update();
+		this.state = _STATE.NONE;
+	}
+	/**
+	* Programmatically pan the camera.
+	*
+	* @param {number} deltaX - The horizontal pan amount in pixels.
+	* @param {number} deltaY - The vertical pan amount in pixels.
+	*/
+	pan(deltaX, deltaY) {
+		this._pan(deltaX, deltaY);
+		this.update();
+	}
+	/**
+	* Programmatically dolly in (zoom in for perspective camera).
+	*
+	* @param {number} dollyScale - The dolly scale factor.
+	*/
+	dollyIn(dollyScale) {
+		this._dollyIn(dollyScale);
+		this.update();
+	}
+	/**
+	* Programmatically dolly out (zoom out for perspective camera).
+	*
+	* @param {number} dollyScale - The dolly scale factor.
+	*/
+	dollyOut(dollyScale) {
+		this._dollyOut(dollyScale);
+		this.update();
+	}
+	/**
+	* Programmatically rotate the camera left (around the vertical axis).
+	*
+	* @param {number} angle - The rotation angle in radians.
+	*/
+	rotateLeft(angle) {
+		this._rotateLeft(angle);
+		this.update();
+	}
+	/**
+	* Programmatically rotate the camera up (around the horizontal axis).
+	*
+	* @param {number} angle - The rotation angle in radians.
+	*/
+	rotateUp(angle) {
+		this._rotateUp(angle);
+		this.update();
+	}
+	update(deltaTime = null) {
+		const position = this.object.position;
+		_v.copy(position).sub(this.target);
+		_v.applyQuaternion(this._quat);
+		this._spherical.setFromVector3(_v);
+		if (this.autoRotate && this.state === _STATE.NONE) this._rotateLeft(this._getAutoRotationAngle(deltaTime));
+		if (this.enableDamping) {
+			this._spherical.theta += this._sphericalDelta.theta * this.dampingFactor;
+			this._spherical.phi += this._sphericalDelta.phi * this.dampingFactor;
+		} else {
+			this._spherical.theta += this._sphericalDelta.theta;
+			this._spherical.phi += this._sphericalDelta.phi;
+		}
+		let min = this.minAzimuthAngle;
+		let max = this.maxAzimuthAngle;
+		if (isFinite(min) && isFinite(max)) {
+			if (min < -Math.PI) min += _twoPI;
+			else if (min > Math.PI) min -= _twoPI;
+			if (max < -Math.PI) max += _twoPI;
+			else if (max > Math.PI) max -= _twoPI;
+			if (min <= max) this._spherical.theta = Math.max(min, Math.min(max, this._spherical.theta));
+			else this._spherical.theta = this._spherical.theta > (min + max) / 2 ? Math.max(min, this._spherical.theta) : Math.min(max, this._spherical.theta);
+		}
+		this._spherical.phi = Math.max(this.minPolarAngle, Math.min(this.maxPolarAngle, this._spherical.phi));
+		this._spherical.makeSafe();
+		if (this.enableDamping === true) this.target.addScaledVector(this._panOffset, this.dampingFactor);
+		else this.target.add(this._panOffset);
+		this.target.sub(this.cursor);
+		this.target.clampLength(this.minTargetRadius, this.maxTargetRadius);
+		this.target.add(this.cursor);
+		let zoomChanged = false;
+		if (this.zoomToCursor && this._performCursorZoom || this.object.isOrthographicCamera) this._spherical.radius = this._clampDistance(this._spherical.radius);
+		else {
+			const prevRadius = this._spherical.radius;
+			this._spherical.radius = this._clampDistance(this._spherical.radius * this._scale);
+			zoomChanged = prevRadius != this._spherical.radius;
+		}
+		_v.setFromSpherical(this._spherical);
+		_v.applyQuaternion(this._quatInverse);
+		position.copy(this.target).add(_v);
+		this.object.lookAt(this.target);
+		if (this.enableDamping === true) {
+			this._sphericalDelta.theta *= 1 - this.dampingFactor;
+			this._sphericalDelta.phi *= 1 - this.dampingFactor;
+			this._panOffset.multiplyScalar(1 - this.dampingFactor);
+		} else {
+			this._sphericalDelta.set(0, 0, 0);
+			this._panOffset.set(0, 0, 0);
+		}
+		if (this.zoomToCursor && this._performCursorZoom) {
+			let newRadius = null;
+			if (this.object.isPerspectiveCamera) {
+				const prevRadius = _v.length();
+				newRadius = this._clampDistance(prevRadius * this._scale);
+				const radiusDelta = prevRadius - newRadius;
+				this.object.position.addScaledVector(this._dollyDirection, radiusDelta);
+				this.object.updateMatrixWorld();
+				zoomChanged = !!radiusDelta;
+			} else if (this.object.isOrthographicCamera) {
+				const mouseBefore = new Vector3(this._mouse.x, this._mouse.y, 0);
+				mouseBefore.unproject(this.object);
+				const prevZoom = this.object.zoom;
+				this.object.zoom = Math.max(this.minZoom, Math.min(this.maxZoom, this.object.zoom / this._scale));
+				this.object.updateProjectionMatrix();
+				zoomChanged = prevZoom !== this.object.zoom;
+				const mouseAfter = new Vector3(this._mouse.x, this._mouse.y, 0);
+				mouseAfter.unproject(this.object);
+				this.object.position.sub(mouseAfter).add(mouseBefore);
+				this.object.updateMatrixWorld();
+				newRadius = _v.length();
+			} else {
+				console.warn("WARNING: OrbitControls.js encountered an unknown camera type - zoom to cursor disabled.");
+				this.zoomToCursor = false;
+			}
+			if (newRadius !== null) {
+				if (this.screenSpacePanning) this.target.set(0, 0, -1).transformDirection(this.object.matrix).multiplyScalar(newRadius).add(this.object.position);
+				else {
+					_ray.origin.copy(this.object.position);
+					_ray.direction.set(0, 0, -1).transformDirection(this.object.matrix);
+					if (Math.abs(this.object.up.dot(_ray.direction)) < _TILT_LIMIT) this.object.lookAt(this.target);
+					else {
+						_plane.setFromNormalAndCoplanarPoint(this.object.up, this.target);
+						_ray.intersectPlane(_plane, this.target);
+					}
+				}
+			}
+		} else if (this.object.isOrthographicCamera) {
+			const prevZoom = this.object.zoom;
+			this.object.zoom = Math.max(this.minZoom, Math.min(this.maxZoom, this.object.zoom / this._scale));
+			if (prevZoom !== this.object.zoom) {
+				this.object.updateProjectionMatrix();
+				zoomChanged = true;
+			}
+		}
+		this._scale = 1;
+		this._performCursorZoom = false;
+		if (zoomChanged || this._lastPosition.distanceToSquared(this.object.position) > _EPS || 8 * (1 - this._lastQuaternion.dot(this.object.quaternion)) > _EPS || this._lastTargetPosition.distanceToSquared(this.target) > _EPS) {
+			this.dispatchEvent(_changeEvent);
+			this._lastPosition.copy(this.object.position);
+			this._lastQuaternion.copy(this.object.quaternion);
+			this._lastTargetPosition.copy(this.target);
+			return true;
+		}
+		return false;
+	}
+	_getAutoRotationAngle(deltaTime) {
+		if (deltaTime !== null) return _twoPI / 60 * this.autoRotateSpeed * deltaTime;
+		else return _twoPI / 60 / 60 * this.autoRotateSpeed;
+	}
+	_getZoomScale(delta) {
+		const normalizedDelta = Math.abs(delta * .01);
+		return Math.pow(.95, this.zoomSpeed * normalizedDelta);
+	}
+	_rotateLeft(angle) {
+		this._sphericalDelta.theta -= angle;
+	}
+	_rotateUp(angle) {
+		this._sphericalDelta.phi -= angle;
+	}
+	_panLeft(distance, objectMatrix) {
+		_v.setFromMatrixColumn(objectMatrix, 0);
+		_v.multiplyScalar(-distance);
+		this._panOffset.add(_v);
+	}
+	_panUp(distance, objectMatrix) {
+		if (this.screenSpacePanning === true) _v.setFromMatrixColumn(objectMatrix, 1);
+		else {
+			_v.setFromMatrixColumn(objectMatrix, 0);
+			_v.crossVectors(this.object.up, _v);
+		}
+		_v.multiplyScalar(distance);
+		this._panOffset.add(_v);
+	}
+	_pan(deltaX, deltaY) {
+		const element = this.domElement;
+		if (this.object.isPerspectiveCamera) {
+			const position = this.object.position;
+			_v.copy(position).sub(this.target);
+			let targetDistance = _v.length();
+			targetDistance *= Math.tan(this.object.fov / 2 * Math.PI / 180);
+			this._panLeft(2 * deltaX * targetDistance / element.clientHeight, this.object.matrix);
+			this._panUp(2 * deltaY * targetDistance / element.clientHeight, this.object.matrix);
+		} else if (this.object.isOrthographicCamera) {
+			this._panLeft(deltaX * (this.object.right - this.object.left) / this.object.zoom / element.clientWidth, this.object.matrix);
+			this._panUp(deltaY * (this.object.top - this.object.bottom) / this.object.zoom / element.clientHeight, this.object.matrix);
+		} else {
+			console.warn("WARNING: OrbitControls.js encountered an unknown camera type - pan disabled.");
+			this.enablePan = false;
+		}
+	}
+	_dollyOut(dollyScale) {
+		if (this.object.isPerspectiveCamera || this.object.isOrthographicCamera) this._scale /= dollyScale;
+		else {
+			console.warn("WARNING: OrbitControls.js encountered an unknown camera type - dolly/zoom disabled.");
+			this.enableZoom = false;
+		}
+	}
+	_dollyIn(dollyScale) {
+		if (this.object.isPerspectiveCamera || this.object.isOrthographicCamera) this._scale *= dollyScale;
+		else {
+			console.warn("WARNING: OrbitControls.js encountered an unknown camera type - dolly/zoom disabled.");
+			this.enableZoom = false;
+		}
+	}
+	_updateZoomParameters(x, y) {
+		if (!this.zoomToCursor) return;
+		this._performCursorZoom = true;
+		const rect = this.domElement.getBoundingClientRect();
+		const dx = x - rect.left;
+		const dy = y - rect.top;
+		const w = rect.width;
+		const h = rect.height;
+		this._mouse.x = dx / w * 2 - 1;
+		this._mouse.y = -(dy / h) * 2 + 1;
+		this._dollyDirection.set(this._mouse.x, this._mouse.y, 1).unproject(this.object).sub(this.object.position).normalize();
+	}
+	_clampDistance(dist) {
+		return Math.max(this.minDistance, Math.min(this.maxDistance, dist));
+	}
+	_handleMouseDownRotate(event) {
+		this._rotateStart.set(event.clientX, event.clientY);
+	}
+	_handleMouseDownDolly(event) {
+		this._updateZoomParameters(event.clientX, event.clientX);
+		this._dollyStart.set(event.clientX, event.clientY);
+	}
+	_handleMouseDownPan(event) {
+		this._panStart.set(event.clientX, event.clientY);
+	}
+	_handleMouseMoveRotate(event) {
+		this._rotateEnd.set(event.clientX, event.clientY);
+		this._rotateDelta.subVectors(this._rotateEnd, this._rotateStart).multiplyScalar(this.rotateSpeed);
+		const element = this.domElement;
+		this._rotateLeft(_twoPI * this._rotateDelta.x / element.clientHeight);
+		this._rotateUp(_twoPI * this._rotateDelta.y / element.clientHeight);
+		this._rotateStart.copy(this._rotateEnd);
+		this.update();
+	}
+	_handleMouseMoveDolly(event) {
+		this._dollyEnd.set(event.clientX, event.clientY);
+		this._dollyDelta.subVectors(this._dollyEnd, this._dollyStart);
+		if (this._dollyDelta.y > 0) this._dollyOut(this._getZoomScale(this._dollyDelta.y));
+		else if (this._dollyDelta.y < 0) this._dollyIn(this._getZoomScale(this._dollyDelta.y));
+		this._dollyStart.copy(this._dollyEnd);
+		this.update();
+	}
+	_handleMouseMovePan(event) {
+		this._panEnd.set(event.clientX, event.clientY);
+		this._panDelta.subVectors(this._panEnd, this._panStart).multiplyScalar(this.panSpeed);
+		this._pan(this._panDelta.x, this._panDelta.y);
+		this._panStart.copy(this._panEnd);
+		this.update();
+	}
+	_handleMouseWheel(event) {
+		this._updateZoomParameters(event.clientX, event.clientY);
+		if (event.deltaY < 0) this._dollyIn(this._getZoomScale(event.deltaY));
+		else if (event.deltaY > 0) this._dollyOut(this._getZoomScale(event.deltaY));
+		this.update();
+	}
+	_handleKeyDown(event) {
+		let needsUpdate = false;
+		switch (event.code) {
+			case this.keys.UP:
+				if (event.ctrlKey || event.metaKey || event.shiftKey) {
+					if (this.enableRotate) this._rotateUp(_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
+				} else if (this.enablePan) this._pan(0, this.keyPanSpeed);
+				needsUpdate = true;
+				break;
+			case this.keys.BOTTOM:
+				if (event.ctrlKey || event.metaKey || event.shiftKey) {
+					if (this.enableRotate) this._rotateUp(-_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
+				} else if (this.enablePan) this._pan(0, -this.keyPanSpeed);
+				needsUpdate = true;
+				break;
+			case this.keys.LEFT:
+				if (event.ctrlKey || event.metaKey || event.shiftKey) {
+					if (this.enableRotate) this._rotateLeft(_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
+				} else if (this.enablePan) this._pan(this.keyPanSpeed, 0);
+				needsUpdate = true;
+				break;
+			case this.keys.RIGHT:
+				if (event.ctrlKey || event.metaKey || event.shiftKey) {
+					if (this.enableRotate) this._rotateLeft(-_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
+				} else if (this.enablePan) this._pan(-this.keyPanSpeed, 0);
+				needsUpdate = true;
+		}
+		if (needsUpdate) {
+			event.preventDefault();
+			this.update();
+		}
+	}
+	_handleTouchStartRotate(event) {
+		if (this._pointers.length === 1) this._rotateStart.set(event.pageX, event.pageY);
+		else {
+			const position = this._getSecondPointerPosition(event);
+			const x = .5 * (event.pageX + position.x);
+			const y = .5 * (event.pageY + position.y);
+			this._rotateStart.set(x, y);
+		}
+	}
+	_handleTouchStartPan(event) {
+		if (this._pointers.length === 1) this._panStart.set(event.pageX, event.pageY);
+		else {
+			const position = this._getSecondPointerPosition(event);
+			const x = .5 * (event.pageX + position.x);
+			const y = .5 * (event.pageY + position.y);
+			this._panStart.set(x, y);
+		}
+	}
+	_handleTouchStartDolly(event) {
+		const position = this._getSecondPointerPosition(event);
+		const dx = event.pageX - position.x;
+		const dy = event.pageY - position.y;
+		const distance = Math.sqrt(dx * dx + dy * dy);
+		this._dollyStart.set(0, distance);
+	}
+	_handleTouchStartDollyPan(event) {
+		if (this.enableZoom) this._handleTouchStartDolly(event);
+		if (this.enablePan) this._handleTouchStartPan(event);
+	}
+	_handleTouchStartDollyRotate(event) {
+		if (this.enableZoom) this._handleTouchStartDolly(event);
+		if (this.enableRotate) this._handleTouchStartRotate(event);
+	}
+	_handleTouchMoveRotate(event) {
+		if (this._pointers.length == 1) this._rotateEnd.set(event.pageX, event.pageY);
+		else {
+			const position = this._getSecondPointerPosition(event);
+			const x = .5 * (event.pageX + position.x);
+			const y = .5 * (event.pageY + position.y);
+			this._rotateEnd.set(x, y);
+		}
+		this._rotateDelta.subVectors(this._rotateEnd, this._rotateStart).multiplyScalar(this.rotateSpeed);
+		const element = this.domElement;
+		this._rotateLeft(_twoPI * this._rotateDelta.x / element.clientHeight);
+		this._rotateUp(_twoPI * this._rotateDelta.y / element.clientHeight);
+		this._rotateStart.copy(this._rotateEnd);
+	}
+	_handleTouchMovePan(event) {
+		if (this._pointers.length === 1) this._panEnd.set(event.pageX, event.pageY);
+		else {
+			const position = this._getSecondPointerPosition(event);
+			const x = .5 * (event.pageX + position.x);
+			const y = .5 * (event.pageY + position.y);
+			this._panEnd.set(x, y);
+		}
+		this._panDelta.subVectors(this._panEnd, this._panStart).multiplyScalar(this.panSpeed);
+		this._pan(this._panDelta.x, this._panDelta.y);
+		this._panStart.copy(this._panEnd);
+	}
+	_handleTouchMoveDolly(event) {
+		const position = this._getSecondPointerPosition(event);
+		const dx = event.pageX - position.x;
+		const dy = event.pageY - position.y;
+		const distance = Math.sqrt(dx * dx + dy * dy);
+		this._dollyEnd.set(0, distance);
+		this._dollyDelta.set(0, Math.pow(this._dollyEnd.y / this._dollyStart.y, this.zoomSpeed));
+		this._dollyOut(this._dollyDelta.y);
+		this._dollyStart.copy(this._dollyEnd);
+		const centerX = (event.pageX + position.x) * .5;
+		const centerY = (event.pageY + position.y) * .5;
+		this._updateZoomParameters(centerX, centerY);
+	}
+	_handleTouchMoveDollyPan(event) {
+		if (this.enableZoom) this._handleTouchMoveDolly(event);
+		if (this.enablePan) this._handleTouchMovePan(event);
+	}
+	_handleTouchMoveDollyRotate(event) {
+		if (this.enableZoom) this._handleTouchMoveDolly(event);
+		if (this.enableRotate) this._handleTouchMoveRotate(event);
+	}
+	_addPointer(event) {
+		this._pointers.push(event.pointerId);
+	}
+	_removePointer(event) {
+		delete this._pointerPositions[event.pointerId];
+		for (let i = 0; i < this._pointers.length; i++) if (this._pointers[i] == event.pointerId) {
+			this._pointers.splice(i, 1);
+			return;
+		}
+	}
+	_isTrackingPointer(event) {
+		for (let i = 0; i < this._pointers.length; i++) if (this._pointers[i] == event.pointerId) return true;
+		return false;
+	}
+	_trackPointer(event) {
+		let position = this._pointerPositions[event.pointerId];
+		if (position === void 0) {
+			position = new Vector2();
+			this._pointerPositions[event.pointerId] = position;
+		}
+		position.set(event.pageX, event.pageY);
+	}
+	_getSecondPointerPosition(event) {
+		const pointerId = event.pointerId === this._pointers[0] ? this._pointers[1] : this._pointers[0];
+		return this._pointerPositions[pointerId];
+	}
+	_customWheelEvent(event) {
+		const mode = event.deltaMode;
+		const newEvent = {
+			clientX: event.clientX,
+			clientY: event.clientY,
+			deltaY: event.deltaY
+		};
+		switch (mode) {
+			case 1:
+				newEvent.deltaY *= 16;
+				break;
+			case 2: newEvent.deltaY *= 100;
+		}
+		if (event.ctrlKey && !this._controlActive) newEvent.deltaY *= 10;
+		return newEvent;
+	}
+};
+function onPointerDown(event) {
+	if (this.enabled === false) return;
+	if (this._pointers.length === 0) {
+		this.domElement.setPointerCapture(event.pointerId);
+		this.domElement.ownerDocument.addEventListener("pointermove", this._onPointerMove);
+		this.domElement.ownerDocument.addEventListener("pointerup", this._onPointerUp);
+	}
+	if (this._isTrackingPointer(event)) return;
+	this._addPointer(event);
+	if (event.pointerType === "touch") this._onTouchStart(event);
+	else this._onMouseDown(event);
+	if (this._cursorStyle === "grab") this.domElement.style.cursor = "grabbing";
+}
+function onPointerMove(event) {
+	if (this.enabled === false) return;
+	if (event.pointerType === "touch") this._onTouchMove(event);
+	else this._onMouseMove(event);
+}
+function onPointerUp(event) {
+	this._removePointer(event);
+	switch (this._pointers.length) {
+		case 0:
+			this.domElement.releasePointerCapture(event.pointerId);
+			this.domElement.ownerDocument.removeEventListener("pointermove", this._onPointerMove);
+			this.domElement.ownerDocument.removeEventListener("pointerup", this._onPointerUp);
+			this.dispatchEvent(_endEvent);
+			this.state = _STATE.NONE;
+			if (this._cursorStyle === "grab") this.domElement.style.cursor = "grab";
+			break;
+		case 1:
+			const pointerId = this._pointers[0];
+			const position = this._pointerPositions[pointerId];
+			this._onTouchStart({
+				pointerId,
+				pageX: position.x,
+				pageY: position.y
+			});
+	}
+}
+function onMouseDown(event) {
+	let mouseAction;
+	switch (event.button) {
+		case 0:
+			mouseAction = this.mouseButtons.LEFT;
+			break;
+		case 1:
+			mouseAction = this.mouseButtons.MIDDLE;
+			break;
+		case 2:
+			mouseAction = this.mouseButtons.RIGHT;
+			break;
+		default: mouseAction = -1;
+	}
+	switch (mouseAction) {
+		case MOUSE.DOLLY:
+			if (this.enableZoom === false) return;
+			this._handleMouseDownDolly(event);
+			this.state = _STATE.DOLLY;
+			break;
+		case MOUSE.ROTATE:
+			if (event.ctrlKey || event.metaKey || event.shiftKey) {
+				if (this.enablePan === false) return;
+				this._handleMouseDownPan(event);
+				this.state = _STATE.PAN;
+			} else {
+				if (this.enableRotate === false) return;
+				this._handleMouseDownRotate(event);
+				this.state = _STATE.ROTATE;
+			}
+			break;
+		case MOUSE.PAN:
+			if (event.ctrlKey || event.metaKey || event.shiftKey) {
+				if (this.enableRotate === false) return;
+				this._handleMouseDownRotate(event);
+				this.state = _STATE.ROTATE;
+			} else {
+				if (this.enablePan === false) return;
+				this._handleMouseDownPan(event);
+				this.state = _STATE.PAN;
+			}
+			break;
+		default: this.state = _STATE.NONE;
+	}
+	if (this.state !== _STATE.NONE) this.dispatchEvent(_startEvent);
+}
+function onMouseMove(event) {
+	switch (this.state) {
+		case _STATE.ROTATE:
+			if (this.enableRotate === false) return;
+			this._handleMouseMoveRotate(event);
+			break;
+		case _STATE.DOLLY:
+			if (this.enableZoom === false) return;
+			this._handleMouseMoveDolly(event);
+			break;
+		case _STATE.PAN:
+			if (this.enablePan === false) return;
+			this._handleMouseMovePan(event);
+	}
+}
+function onMouseWheel(event) {
+	if (this.enabled === false || this.enableZoom === false || this.state !== _STATE.NONE) return;
+	event.preventDefault();
+	this.dispatchEvent(_startEvent);
+	this._handleMouseWheel(this._customWheelEvent(event));
+	this.dispatchEvent(_endEvent);
+}
+function onKeyDown(event) {
+	if (this.enabled === false) return;
+	this._handleKeyDown(event);
+}
+function onTouchStart(event) {
+	this._trackPointer(event);
+	switch (this._pointers.length) {
+		case 1:
+			switch (this.touches.ONE) {
+				case TOUCH.ROTATE:
+					if (this.enableRotate === false) return;
+					this._handleTouchStartRotate(event);
+					this.state = _STATE.TOUCH_ROTATE;
+					break;
+				case TOUCH.PAN:
+					if (this.enablePan === false) return;
+					this._handleTouchStartPan(event);
+					this.state = _STATE.TOUCH_PAN;
+					break;
+				default: this.state = _STATE.NONE;
+			}
+			break;
+		case 2:
+			switch (this.touches.TWO) {
+				case TOUCH.DOLLY_PAN:
+					if (this.enableZoom === false && this.enablePan === false) return;
+					this._handleTouchStartDollyPan(event);
+					this.state = _STATE.TOUCH_DOLLY_PAN;
+					break;
+				case TOUCH.DOLLY_ROTATE:
+					if (this.enableZoom === false && this.enableRotate === false) return;
+					this._handleTouchStartDollyRotate(event);
+					this.state = _STATE.TOUCH_DOLLY_ROTATE;
+					break;
+				default: this.state = _STATE.NONE;
+			}
+			break;
+		default: this.state = _STATE.NONE;
+	}
+	if (this.state !== _STATE.NONE) this.dispatchEvent(_startEvent);
+}
+function onTouchMove(event) {
+	this._trackPointer(event);
+	switch (this.state) {
+		case _STATE.TOUCH_ROTATE:
+			if (this.enableRotate === false) return;
+			this._handleTouchMoveRotate(event);
+			this.update();
+			break;
+		case _STATE.TOUCH_PAN:
+			if (this.enablePan === false) return;
+			this._handleTouchMovePan(event);
+			this.update();
+			break;
+		case _STATE.TOUCH_DOLLY_PAN:
+			if (this.enableZoom === false && this.enablePan === false) return;
+			this._handleTouchMoveDollyPan(event);
+			this.update();
+			break;
+		case _STATE.TOUCH_DOLLY_ROTATE:
+			if (this.enableZoom === false && this.enableRotate === false) return;
+			this._handleTouchMoveDollyRotate(event);
+			this.update();
+			break;
+		default: this.state = _STATE.NONE;
+	}
+}
+function onContextMenu(event) {
+	if (this.enabled === false) return;
+	event.preventDefault();
+}
+function interceptControlDown(event) {
+	if (event.key === "Control") {
+		this._controlActive = true;
+		this.domElement.getRootNode().addEventListener("keyup", this._interceptControlUp, {
+			passive: true,
+			capture: true
+		});
+	}
+}
+function interceptControlUp(event) {
+	if (event.key === "Control") {
+		this._controlActive = false;
+		this.domElement.getRootNode().removeEventListener("keyup", this._interceptControlUp, {
+			passive: true,
+			capture: true
+		});
+	}
 }
 
 //#endregion
@@ -98211,6 +101036,7 @@ function selectRenderNbtField(path, name) {
 	if (path[2] === "Entities" && path.slice(3).every((key) => key === "Passengers")) return entityFields.has(name);
 	return true;
 }
+for (const key of "item BlockState block_state transformation billboard text background text_opacity line_width alignment item_display facing Fuse fuse ShowBottom show_bottom Value value dangerous Potion Color FireworksItem Radius radius profile Motive".split(" ")) entityFields.add(key);
 
 //#endregion
 //#region src/nbtStream.js
@@ -98447,8 +101273,18 @@ const SKIP = /* @__PURE__ */ new Set([
 	"barrier",
 	"light"
 ]);
+const MARKERS = /* @__PURE__ */ new Set([
+	"minecraft:barrier",
+	"minecraft:light",
+	"minecraft:structure_void",
+	"minecraft:moving_piston"
+]);
 const MAX_PAGE_BYTES = 1073741824;
 const skip = (name) => SKIP.has((name || "").replace(/^minecraft:/, ""));
+function markerPaletteFlags(palette) {
+	const flags = Uint8Array.from(palette, (p) => MARKERS.has(p.Name));
+	return flags.includes(1) ? flags : null;
+}
 function finishEncodedPage(palette, indices, length, count, runs) {
 	if (palette.length === 1) return palette[0];
 	const bits = Math.ceil(Math.log2(palette.length)), words = Math.ceil(length * bits / 32);
@@ -98563,36 +101399,40 @@ var BlockStatePageWriter = class {
 		}
 		if (this.used === 4096) this.flush();
 	}
+	emitZeroRun(count) {
+		const stored = this.skip[0] ? 0 : 1;
+		while (count > 0) {
+			const take = Math.min(count, BLOCK_PAGE_SIZE - this.used);
+			if (stored !== this.previous) {
+				this.previous = stored;
+				this.runs++;
+				let id = this.lookup.get(stored);
+				if (id === void 0) {
+					id = this.pagePalette.length;
+					this.lookup.set(stored, id);
+					this.pagePalette.push(stored);
+				}
+				this.id = id;
+			}
+			this.indices.fill(this.id, this.used, this.used + take);
+			this.used += take;
+			this.position += take;
+			if (stored) {
+				this.result.count += take;
+				this.result.counts[0] += take;
+			}
+			if (this.used === 4096) this.flush();
+			count -= take;
+		}
+	}
 	word(word) {
 		const bits = this.bits;
 		if (word === 0 && (!this.carryBits || this.carry === 0)) {
-			const available = 32 + this.carryBits, stored = this.skip[0] ? 0 : 1;
-			let count = Math.min(Math.floor(available / bits), this.result.volume - this.position);
+			const available = 32 + this.carryBits;
+			const count = Math.min(Math.floor(available / bits), this.result.volume - this.position);
 			this.carryBits = available % bits;
 			this.carry = 0;
-			while (count > 0) {
-				const take = Math.min(count, BLOCK_PAGE_SIZE - this.used);
-				if (stored !== this.previous) {
-					this.previous = stored;
-					this.runs++;
-					let id = this.lookup.get(stored);
-					if (id === void 0) {
-						id = this.pagePalette.length;
-						this.lookup.set(stored, id);
-						this.pagePalette.push(stored);
-					}
-					this.id = id;
-				}
-				this.indices.fill(this.id, this.used, this.used + take);
-				this.used += take;
-				this.position += take;
-				if (stored) {
-					this.result.count += take;
-					this.result.counts[0] += take;
-				}
-				if (this.used === 4096) this.flush();
-				count -= take;
-			}
+			this.emitZeroRun(count);
 			return;
 		}
 		if (bits === 32) {
@@ -98659,6 +101499,31 @@ var BlockStatePageWriter = class {
 		return this.result;
 	}
 };
+var MarkerBlockStatePageWriter = class extends BlockStatePageWriter {
+	constructor(palette, volume, longCount, budget, markers, onMarker) {
+		super(palette, volume, longCount, budget);
+		this.markers = markers;
+		this.onMarker = onMarker;
+	}
+	emit(value) {
+		if (this.markers[value] && this.position < this.result.volume) this.onMarker(this.position, value);
+		super.emit(value);
+	}
+	emitZeroRun(count) {
+		if (this.markers[0]) {
+			const end = this.position + count;
+			for (let index = this.position; index < end; index++) this.onMarker(index, 0);
+		}
+		super.emitZeroRun(count);
+	}
+};
+function createBlockStatePageWriter(palette, volume, longCount, budget, onMarker) {
+	if (onMarker) {
+		const markers = markerPaletteFlags(palette);
+		if (markers) return new MarkerBlockStatePageWriter(palette, volume, longCount, budget, markers, onMarker);
+	}
+	return new BlockStatePageWriter(palette, volume, longCount, budget);
+}
 var PageCache = class {
 	constructor() {
 		this.pages = /* @__PURE__ */ new Map();
@@ -98862,7 +101727,7 @@ var PagedBlockStore = class {
 //#endregion
 //#region src/schematicNbt.js
 const FAST_BUFFER_BYTES = 33554432;
-async function readSchematicNBT(data, { renderOnly = false, onProgress, onStage, maxBytes = MAX_NBT_BYTES, maxExpandedBytes, streamThreshold = FAST_BUFFER_BYTES, compactBlocks = false, yieldTask, signal } = {}) {
+async function readSchematicNBT(data, { renderOnly = false, onProgress, onStage, maxBytes = MAX_NBT_BYTES, maxExpandedBytes, streamThreshold = FAST_BUFFER_BYTES, compactBlocks = false, markerBlocks = false, yieldTask, signal } = {}) {
 	throwIfAborted(signal);
 	validateNbtLimit(maxBytes);
 	const maxNodes = compactBlocks ? 16e6 : void 0;
@@ -98977,7 +101842,10 @@ async function readSchematicNBT(data, { renderOnly = false, onProgress, onStage,
 					size?.y,
 					size?.z
 				];
-				const writer = new BlockStatePageWriter(region.BlockStatePalette || [], Math.abs(dimensions[0] * dimensions[1] * dimensions[2]), length, budget);
+				const markerCells = markerBlocks ? [] : null;
+				const onMarker = markerCells && ((index, state) => markerCells.push(index, state));
+				const volume = Math.abs(dimensions[0] * dimensions[1] * dimensions[2]);
+				const writer = createBlockStatePageWriter(region.BlockStatePalette || [], volume, length, budget, onMarker);
 				return {
 					push(bytes) {
 						writer.push(bytes);
@@ -98989,7 +101857,9 @@ async function readSchematicNBT(data, { renderOnly = false, onProgress, onStage,
 						}
 					},
 					finish() {
-						regions.set(key, writer.finish());
+						const states = writer.finish();
+						if (markerCells?.length) states.markerCells = markerCells;
+						regions.set(key, states);
 					}
 				};
 			} });
@@ -99076,7 +101946,7 @@ function vec(v) {
 		z: Number(v.z)
 	};
 }
-async function parseLitematicaRoot(root, onProgress, renderOnly, nbtInfo, compactBlocks, { yieldTask, signal } = {}) {
+async function parseLitematicaRoot(root, onProgress, nbtInfo, { renderOnly = false, compactBlocks, markerBlocks: collectMarkers, yieldTask, signal } = {}) {
 	throwIfAborted(signal);
 	const yieldWork = yieldTask || (() => new Promise((resolve) => setTimeout(resolve, 0)));
 	const meta = root.Metadata || {};
@@ -99162,6 +102032,7 @@ async function parseLitematicaRoot(root, onProgress, renderOnly, nbtInfo, compac
 	};
 	let blocks = /* @__PURE__ */ new Map();
 	const packedRegions = [], pageBudget = createBlockPageBudget();
+	const markerBlocks = collectMarkers ? [] : void 0;
 	const tileEntities = [];
 	const entities = [];
 	let doneBlocks = 0;
@@ -99185,6 +102056,14 @@ async function parseLitematicaRoot(root, onProgress, renderOnly, nbtInfo, compac
 			localToGlobal[i] = getGlobalIndex(paletteList[i].Name, paletteList[i].Properties);
 			isSkip[i] = SKIP_NAMES.has((paletteList[i].Name || "").replace(/^minecraft:/, "")) ? 1 : 0;
 		}
+		const recordMarker = markerBlocks && ((index, localState) => {
+			markerBlocks.push({
+				x: wx0 + index % dx,
+				y: wy0 + Math.floor(index / (dx * dz)),
+				z: wz0 + Math.floor(index / dx) % dz,
+				state: localToGlobal[localState]
+			});
+		});
 		if (Array.isArray(region.TileEntities)) for (const te of region.TileEntities) {
 			if (renderOnly && !renderedBlockEntities.has(te.id)) continue;
 			tileEntities.push({
@@ -99218,7 +102097,7 @@ async function parseLitematicaRoot(root, onProgress, renderOnly, nbtInfo, compac
 		if (paged) {
 			let states = region.BlockStates;
 			if (!states?.isPagedBlockStates) {
-				const writer = new BlockStatePageWriter(paletteList, dx * dy * dz, states.length, pageBudget);
+				const writer = createBlockStatePageWriter(paletteList, dx * dy * dz, states.length, pageBudget, recordMarker);
 				const words = new Uint32Array(states.buffer, states.byteOffset, states.length * 2), low = LITTLE_ENDIAN ? 0 : 1;
 				for (let i = 0; i < states.length; i++) {
 					writer.word(words[i * 2 + low]);
@@ -99232,7 +102111,21 @@ async function parseLitematicaRoot(root, onProgress, renderOnly, nbtInfo, compac
 				}
 				writer.inputBytes = states.length * 8;
 				states = writer.finish();
-			} else pageBudget.add(states.bytes);
+			} else {
+				pageBudget.add(states.bytes);
+				if (states.markerCells) {
+					const cells = states.markerCells;
+					for (let i = 0; i < cells.length; i += 2) {
+						recordMarker(cells[i], cells[i + 1]);
+						if ((i & 65535) === 0 && performance.now() - lastYield >= 12) {
+							await withAbort(yieldWork(), signal);
+							throwIfAborted(signal);
+							lastYield = performance.now();
+						}
+					}
+					delete states.markerCells;
+				}
+			}
 			packedRegions.push({
 				...regionList.find((r) => r.name === name),
 				states,
@@ -99244,6 +102137,7 @@ async function parseLitematicaRoot(root, onProgress, renderOnly, nbtInfo, compac
 			continue;
 		}
 		const bits = Math.max(2, Math.ceil(Math.log2(paletteList.length)));
+		const markerStates = markerBlocks && markerPaletteFlags(paletteList);
 		const rowSize = dz * dx;
 		const lx0 = wx0 - minX;
 		const lz0 = wz0 - minZ;
@@ -99252,6 +102146,10 @@ async function parseLitematicaRoot(root, onProgress, renderOnly, nbtInfo, compac
 		for (let start = 0; start < volume; start += decoded.length) {
 			const count = Math.min(decoded.length, volume - start);
 			decodeBlockStates(region.BlockStates, bits, count, start, decoded);
+			if (markerStates) for (let j = 0; j < count; j++) {
+				const li = decoded[j];
+				if (markerStates[li]) recordMarker(start + j, li);
+			}
 			let j = 0;
 			while (j < count) {
 				const index = start + j;
@@ -99292,7 +102190,7 @@ async function parseLitematicaRoot(root, onProgress, renderOnly, nbtInfo, compac
 	if (paged) blocks = new PagedBlockStore(packedRegions, bounds, palette.length);
 	onProgress?.(1);
 	throwIfAborted(signal);
-	return {
+	const result = {
 		metadata,
 		palette,
 		blocks,
@@ -99302,22 +102200,38 @@ async function parseLitematicaRoot(root, onProgress, renderOnly, nbtInfo, compac
 		regions: regionList,
 		nbtInfo
 	};
+	if (markerBlocks) result.markerBlocks = markerBlocks;
+	return result;
 }
 async function parseLitematica(buffer, onProgress, options) {
+	const parseOptions = { ...options };
 	const { root, stats } = await readSchematicNBT(buffer, {
-		...options,
-		compactBlocks: options?.compactBlocks !== false,
+		...parseOptions,
+		compactBlocks: parseOptions.compactBlocks !== false,
 		onProgress: (value) => onProgress?.(value * .5)
 	});
-	return parseLitematicaRoot(root, (value) => onProgress?.(.5 + value * .5), options?.renderOnly ?? false, stats, options?.compactBlocks, options);
+	return parseLitematicaRoot(root, (value) => onProgress?.(.5 + value * .5), stats, parseOptions);
 }
 
 //#endregion
 //#region ../Gudu.blog/gudu.blog/scripts/mc-renderer-entry.mjs
 const archive = new URL("../../assets/minecraft/vanilla-resources/vanilla.json", import.meta.url);
 const packURL = new URL("../../assets/minecraft/resource-packs/xk-redstone-display-26.3.0.zip", import.meta.url);
+const entityTexturesURL = new URL("../../assets/minecraft/vanilla-resources/entity-textures.json", import.meta.url);
 let catalogRequest;
 let packRequest;
+let entityTexturesRequest;
+async function supplementalTexture(key) {
+	if (!key.startsWith("painting/") && key !== "particle/effect_0") return null;
+	entityTexturesRequest ??= fetch(entityTexturesURL).then((response) => {
+		if (!response.ok) throw Error("无法读取原版实体贴图（HTTP " + response.status + "）。");
+		return response.json();
+	}).catch((error) => {
+		entityTexturesRequest = void 0;
+		throw error;
+	});
+	return (await entityTexturesRequest)[key];
+}
 function loadDefaultPack() {
 	if (!packRequest) packRequest = fetch(packURL).then(async (response) => {
 		if (!response.ok) throw new Error("无法读取 XK 红石材质包（HTTP " + response.status + "）。");
@@ -99364,8 +102278,9 @@ var AssetProvider = class extends AssetProvider$1 {
 			return textureFromBlob(new Blob([bytes], { type: "image/png" }), animation);
 		}
 		const { json, png } = await loadCatalog();
-		if (!Object.hasOwn(png, key)) return null;
-		const text = atob(png[key]);
+		const base64 = Object.hasOwn(png, key) ? png[key] : await supplementalTexture(key);
+		if (!base64) return null;
+		const text = atob(base64);
 		const bytes = Uint8Array.from(text, (char) => char.charCodeAt(0));
 		const metadata = json["textures/" + key + ".png.mcmeta"];
 		const animation = metadata ? metadata.animation || false : null;
@@ -99513,4 +102428,4 @@ var AssetProvider = class extends AssetProvider$1 {
 };
 
 //#endregion
-export { AssetProvider, BlockModelResolver, DoubleSide, Group, MeshLambertMaterial, Renderer, makeOverlay as createEntityHitboxLines, createEntityRig, extractBanners, extractDecoratedPots, extractPlayerHeads, extractSigns, extractStatues, getEntityHitbox, parseLitematica };
+export { AssetProvider, BlockModelResolver, Box3, BufferGeometry, DoubleSide, Float32BufferAttribute, Group, LineBasicMaterial, LineSegments, MeshLambertMaterial, Renderer, Sprite, SpriteMaterial, buildEntityMesh, makeOverlay as createEntityHitboxLines, createEntityRig, extractBanners, extractDecoratedPots, extractPlayerHeads, extractSigns, extractStatues, getEntityHitbox, isAssetTexture, minecartRenderPose, parseLitematica };

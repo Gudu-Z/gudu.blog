@@ -1,6 +1,7 @@
 import { eventTarget } from './mc-replay.mjs';
-import { mountEventList } from './mc-event-list.mjs';
-import { validSpeed, getDefaultSpeed, saveDefaultSpeed } from './mc-playback-settings.mjs';
+import { eventKind, mountEventList } from './mc-event-list.mjs';
+import { validSpeed, getDefaultPlayback, saveDefaultPlayback, SPEED_UNITS, speedClock, toClockRate, fromClockRate,
+  GRANULARITY_LABELS, normalizeGranularity } from './mc-playback-settings.mjs';
 
 const eventNames = {
   setBlock: '设置方块', update: '方块更新', phase: '游戏刻阶段', levelTick: '维度刻',
@@ -187,7 +188,10 @@ export function adjacentCursor(axis, phases, cursor, mode, direction) {
 // Sub-tick records have an order and no timestamps. Spread the visible stops
 // evenly over their tick for presentation. A dropped UI frame simply seeks to
 // the position now due; createReplay still applies all intervening mutations.
-export function playbackCursor(axis, phases, time, mode) {
+export function playbackCursor(axis, phases, time, mode, clock = 'tick') {
+  const elapsed = Math.max(0, Math.floor(time));
+  if (clock === 'event') return axis.forStep(Math.min(elapsed, axis.end));
+  if (clock === 'phase') return axis.forStep(elapsed === 0 ? 0 : phases[elapsed - 1] ?? axis.end);
   const offset = Math.max(0, Math.min(axis.maxOffset, Math.floor(time)));
   const result = axis.at(offset);
   if (time >= axis.maxOffset + 1 || result.groupIndex < 0 || mode === 'tick') return result;
@@ -202,7 +206,9 @@ export function playbackCursor(axis, phases, time, mode) {
   return result;
 }
 
-function timeFor(cursor, axis, phases, mode) {
+export function timeFor(cursor, axis, phases, mode, clock = 'tick') {
+  if (clock === 'event') return cursor.step;
+  if (clock === 'phase') return lowerBound(phases, cursor.step + 1);
   const { groupIndex, step, offset } = cursor;
   if (groupIndex < 0 || step === 0) return offset;
   const group = axis.groups[groupIndex];
@@ -251,8 +257,14 @@ export function changedProperties(before, after) {
     .map(key => ({ key, from: before.properties.get(key) ?? '', to: after.properties.get(key) ?? '' }));
 }
 
+// The card's fields stand two to a row, which leaves each value about 16
+// monospace characters. A longer value takes the whole row rather than
+// running into its neighbour.
+const halfRow = 16;
+
 function field(name, code, value, wide = false) {
-  const item = element('div', '', wide ? 'mc-field mc-field-wide' : 'mc-field');
+  const length = typeof value === 'string' ? value.length : value.textContent.length;
+  const item = element('div', '', wide || length > halfRow ? 'mc-field mc-field-wide' : 'mc-field');
   const term = element('dt', name + ' ');
   const codeName = element('span', '/ ' + code);
   codeName.setAttribute('aria-hidden', 'true');
@@ -261,6 +273,17 @@ function field(name, code, value, wide = false) {
   data.append(value);
   item.append(term, data);
   return item;
+}
+
+// A block or entity id may break after its underscores and its namespace's
+// colon, never inside a word.
+function idText(id) {
+  const text = document.createDocumentFragment();
+  for (const part of id.split(/(?<=[_:])/)) {
+    if (text.childNodes.length) text.append(document.createElement('wbr'));
+    text.append(part);
+  }
+  return text;
 }
 
 function properties(map) {
@@ -287,7 +310,7 @@ function eventFields(scene, replay, event) {
       const world = pos.map((n, axis) => Number((n + scene.origin[axis]).toFixed(3)));
       list.append(field('坐标', 'POS', world.join(', ')));
     }
-    if (type) list.append(field('实体', 'ENTITY', type));
+    if (type) list.append(field('实体', 'ENTITY', idText(type)));
     if (pose?.pos) list.append(field('朝向 / 俯仰', 'YAW / PITCH', `${pose.yaw.toFixed(1)}° / ${pose.pitch.toFixed(1)}°`));
     return list;
   }
@@ -301,12 +324,14 @@ function eventFields(scene, replay, event) {
     const before = event.before !== undefined ? parseBlockState(scene.palette[event.before]) : null;
     if (!before || before.id !== after.id) {
       const swap = document.createDocumentFragment();
-      if (before) swap.append(before.id + ' → ');
-      swap.append(element('b', after.id, 'mc-change-to'));
+      if (before) swap.append(idText(before.id), ' → ');
+      const to = element('b', '', 'mc-change-to');
+      to.append(idText(after.id));
+      swap.append(to);
       list.append(field('方块', 'BLOCK', swap));
       if (after.properties.size) list.append(field('状态', 'STATE', properties(after.properties), true));
     } else {
-      list.append(field('方块', 'BLOCK', after.id));
+      list.append(field('方块', 'BLOCK', idText(after.id)));
       const changes = document.createDocumentFragment();
       for (const { key, from, to } of changedProperties(before, after)) {
         const change = element('span', '', 'mc-change');
@@ -318,10 +343,16 @@ function eventFields(scene, replay, event) {
   } else {
     const index = replay.blocks.get(event.pos.join(','));
     const state = parseBlockState(index === undefined ? 'minecraft:air' : scene.palette[index]);
-    list.append(field('方块', 'BLOCK', state.id));
+    list.append(field('方块', 'BLOCK', idText(state.id)));
     if (state.properties.size) list.append(field('状态', 'STATE', properties(state.properties), true));
   }
   if (event.piston) list.append(field('进度', 'PROGRESS', `${Math.round(event.piston.progress * 100)}%`));
+  // A moving piston's cell whose block entity the recording has not caught
+  // at this step: the view outlines the empty cell (js/mc-markers.mjs).
+  const key = event.pos.join(','), here = replay.blocks.get(key);
+  if (here !== undefined && scene.palette[here]?.startsWith('minecraft:moving_piston') && !replay.pistons?.has(key)) {
+    list.append(field('活塞', 'PISTON', '这一步没有活塞数据', true));
+  }
   return list;
 }
 
@@ -329,28 +360,33 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   const { groups, depths } = indexTicks(scene.events);
   const axis = createTickAxis(groups, scene.tickRange);
   const phases = phaseStops(scene.events, groups);
-  const hasTime = groups.length > 0 || Boolean(scene.tickRange);
+  // Apply the final phase's trailing mutations as its own stop when needed.
+  const phaseDuration = phases.length + (axis.end > (phases.at(-1) ?? 0) ? 1 : 0);
+  function duration() {
+    const clock = speedClock(speedUnit);
+    if (clock === 'event') return axis.end;
+    if (clock === 'phase') return phaseDuration;
+    return groups.length || scene.tickRange ? axis.maxOffset + 1 : 0;
+  }
   const panel = element('aside', '', 'mc-timeline');
   panel.setAttribute('aria-label', '回放时间轴');
-  // The clock reads like an instrument: the game tick large, the step and any
-  // note (start of the recording, a tick without events) small beside it.
+  // The clock reads like an instrument: the game tick large, any note (start
+  // of the recording, a tick without events) small beside the number, in the
+  // room under its label. The note stands out of the flow, so the clock keeps
+  // its width as the note comes and goes and the buttons beside it stay put.
+  // The step count is left to the scrubber's spoken value.
   const clock = element('output', '', 'mc-clock');
   const clockTick = element('b', '', 'mc-clock-tick');
-  const clockStep = element('span', '', 'mc-clock-step');
   const clockNote = element('span', '', 'mc-clock-note');
   const tickLabel = element('span', '游戏刻 ', 'mc-clock-label');
   const tickCode = element('span', '/ GAME TICK');
   tickCode.setAttribute('aria-hidden', 'true');
   tickLabel.append(tickCode);
+  const tickValue = element('span', '', 'mc-clock-value');
+  tickValue.append(clockTick, clockNote);
   const tickField = element('span', '', 'mc-clock-field');
-  tickField.append(tickLabel, clockTick);
-  const stepLabel = element('span', '步 ', 'mc-clock-label');
-  const stepCode = element('span', '/ STEP');
-  stepCode.setAttribute('aria-hidden', 'true');
-  stepLabel.append(stepCode);
-  const stepField = element('span', '', 'mc-clock-field');
-  stepField.append(stepLabel, clockStep);
-  clock.append(tickField, stepField, clockNote);
+  tickField.append(tickLabel, tickValue);
+  clock.append(tickField);
   const slider = element('input', '', 'mc-slider');
   slider.type = 'range';
   slider.min = String(axis.origin);
@@ -376,9 +412,8 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   const shareStatus = element('span', '', 'mc-share-status');
   shareStatus.setAttribute('role', 'status');
   let playing = false, ready = false, frame = 0, tallest = 0;
-  let speed = getDefaultSpeed(options.ticksPerSecond);
-  // The list starts at the phase level; a double-click opens a row's next level.
-  let mode = 'phase', cursor = axis.forStep(0);
+  let { rate: speed, unit: speedUnit } = getDefaultPlayback(options.authorSpeed, options.speedUnit);
+  let mode = normalizeGranularity(figure.dataset.granularity) ?? 'phase', cursor = axis.forStep(0);
   let time = 0, baseTime = 0, baseStamp = 0;
 
   // The settings open as a card over the list, styled like the event card,
@@ -395,45 +430,74 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   rateInput.type = 'number';
   rateInput.step = 'any';
   rateInput.min = '0';
-  rateInput.value = String(speed);
-  const rateControl = element('span', '', 'mc-input-unit');
-  rateControl.append(rateInput, element('span', 'gt/s', 'mc-unit'));
-  rateLabel.append(fieldName('速度', 'SPEED'), rateControl);
-  function setSpeed(value) {
-    if (!validSpeed(value)) return false;
-    if (playing) {
+  rateLabel.append(fieldName('速度', 'SPEED'), rateInput);
+  const unitLabel = element('label', '', 'mc-unit-label');
+  const unitSelect = element('select', '', 'mc-speed-unit');
+  for (const [unit, text] of Object.entries(SPEED_UNITS)) {
+    const option = element('option', text);
+    option.value = unit;
+    unitSelect.append(option);
+  }
+  unitLabel.append(fieldName('单位', 'UNIT'), unitSelect);
+
+  function syncRateControls() {
+    unitSelect.value = speedUnit;
+    rateInput.value = String(fromClockRate(speed, speedUnit));
+  }
+  function setSpeed(rate, unit = speedUnit) {
+    if (!validSpeed(fromClockRate(rate, unit))) return false;
+    const changedClock = speedClock(unit) !== speedClock(speedUnit);
+    if (playing && !changedClock && rate !== speed) {
       const now = performance.now();
       baseTime = timeAt(now);
       baseStamp = now;
     }
-    speed = value;
+    speed = rate;
+    speedUnit = unit;
+    if (changedClock) rebasePlayback();
     summarize();
     return true;
   }
   function summarize() {
-    summarySpeed.textContent = `${speed} gt/s`;
+    const value = fromClockRate(speed, speedUnit);
+    const rounded = Number(value.toPrecision(10));
+    const display = Number.isFinite(rounded) ? rounded : value;
+    summarySpeed.textContent = speedUnit === 'x' ? `${display}×` : `${display} ${SPEED_UNITS[speedUnit]}`;
     summaryMode.textContent = selectMode.selectedOptions[0]?.textContent ?? '';
-    settingsSummary.setAttribute('aria-label', `播放设置：速度 ${speed} gt/s，粒度 ${summaryMode.textContent}`);
+    settingsSummary.setAttribute('aria-label', `播放设置：速度 ${summarySpeed.textContent}，粒度 ${summaryMode.textContent}`);
   }
-  rateInput.addEventListener('input', () => setSpeed(rateInput.valueAsNumber));
+  syncRateControls();
+  rateInput.addEventListener('input', () => setSpeed(toClockRate(rateInput.valueAsNumber, speedUnit)));
   rateInput.addEventListener('change', () => {
-    if (!setSpeed(rateInput.valueAsNumber)) rateInput.value = String(speed);
+    if (!setSpeed(toClockRate(rateInput.valueAsNumber, speedUnit))) syncRateControls();
+  });
+  unitSelect.addEventListener('change', () => {
+    let unit = unitSelect.value;
+    let rate = speed;
+    if (speedClock(unit) !== speedClock(speedUnit)) {
+      rate = toClockRate(fromClockRate(speed, speedUnit), unit);
+    } else if (!validSpeed(fromClockRate(rate, unit))) {
+      unit = 'gt/s';
+    }
+    setSpeed(rate, unit);
+    syncRateControls();
   });
   const saveSpeed = action('设为默认', () => {
-    shareStatus.textContent = saveDefaultSpeed(speed) ? `默认播放速度已设为 ${speed} gt/s。` : '浏览器无法保存默认速度。';
+    shareStatus.textContent = saveDefaultPlayback(speed, speedUnit) ? `默认播放速度已设为 ${summarySpeed.textContent}。` : '浏览器无法保存默认速度。';
   });
   saveSpeed.className = 'mc-speed-default';
   const resetSpeed = action('恢复默认', () => {
-    const cleared = saveDefaultSpeed(null);
-    setSpeed(getDefaultSpeed(options.ticksPerSecond));
-    rateInput.value = String(speed);
-    shareStatus.textContent = cleared ? `已恢复默认速度 ${speed} gt/s。` : '浏览器无法清除默认速度。';
+    const cleared = saveDefaultPlayback(null);
+    const defaults = getDefaultPlayback(options.authorSpeed, options.speedUnit);
+    setSpeed(defaults.rate, defaults.unit);
+    syncRateControls();
+    shareStatus.textContent = cleared ? `已恢复默认速度 ${summarySpeed.textContent}。` : '浏览器无法清除默认速度。';
   });
   resetSpeed.className = 'mc-speed-reset';
   const modeLabel = element('label', '', 'mc-mode');
   modeLabel.append(fieldName('粒度', 'LEVEL'));
   const selectMode = element('select', '', 'mc-granularity');
-  for (const [value, name] of [['tick', '游戏刻'], ['phase', '阶段'], ['event', '事件']]) {
+  for (const [value, name] of Object.entries(GRANULARITY_LABELS)) {
     const option = element('option', name);
     option.value = value;
     selectMode.append(option);
@@ -443,8 +507,8 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   // The card also explains the list's marks and the keyboard.
   const legend = element('div', '', 'mc-legend');
   legend.append(fieldName('记号', 'MARKS'));
-  for (const [kind, name] of [['set', '方块变化'], ['update', '更新'], ['tick', '计划刻'], ['event', '方块事件'],
-    ['piston', '活塞'], ['game', '游戏事件'], ['entity', '实体']]) {
+  for (const [kind, name] of [['set', '方块变化'], ['neighbour', '邻居更新'], ['shape', '形状更新'],
+    ['tick', '计划刻'], ['event', '方块事件'], ['piston', '活塞'], ['game', '游戏事件'], ['entity', '实体']]) {
     const item = element('span', '', 'mc-legend-item');
     const glyph = element('i', '', 'mc-glyph');
     glyph.dataset.kind = kind;
@@ -456,7 +520,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   keys.append(fieldName('快捷键', 'KEYS'), element('span', '空格 播放 / 暂停', 'mc-legend-item'),
     element('span', '← → 上一步 / 下一步', 'mc-legend-item'),
     element('span', '双击 / 回车 展开或收起下一级', 'mc-legend-item'));
-  settings.append(rateLabel, modeLabel, saveSpeed, resetSpeed, legend, keys);
+  settings.append(rateLabel, unitLabel, modeLabel, saveSpeed, resetSpeed, legend, keys);
   // The summary reads "20 gt/s · 阶段" beside the settings icon.
   settingsSummary.title = '播放设置';
   settingsSummary.append(summarySpeed, element('span', '·', 'mc-settings-dot'), summaryMode, icon('tune'));
@@ -479,7 +543,8 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   const next = iconAction('next', '下一步（→）', () => manual(adjacentCursor(axis, phases, cursor, mode, 1)));
   const play = iconAction('play', '播放（空格）', () => {
     if (playing) { stop(); return; }
-    if (time >= axis.maxOffset + 1 || (cursor.offset === axis.maxOffset && cursor.step === axis.end && (cursor.step > 0 || axis.maxOffset > 0))) {
+    const done = cursor.step === axis.end && (speedClock(speedUnit) !== 'tick' || cursor.offset === axis.maxOffset);
+    if (time >= duration() || (done && (cursor.step > 0 || axis.maxOffset > 0))) {
       manual(axis.forStep(0));
     }
     baseTime = time;
@@ -578,16 +643,24 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   container.append(panel);
 
   function timeAt(stamp) {
-    return Math.min(axis.maxOffset + 1, baseTime + Math.max(0, stamp - baseStamp) * speed / 1000);
+    return Math.min(duration(), baseTime + (Math.max(0, stamp - baseStamp) / 1000) * speed);
+  }
+
+  function rebasePlayback() {
+    time = baseTime = timeFor(cursor, axis, phases, mode, speedClock(speedUnit));
+    baseStamp = performance.now();
+    if (!duration() && playing) stop();
+    setReady(ready);
   }
 
   function animate(stamp) {
     if (!playing) return;
     time = timeAt(stamp);
-    const due = playbackCursor(axis, phases, time, mode);
+    const clock = speedClock(speedUnit);
+    const due = playbackCursor(axis, phases, time, mode, clock);
     // Starting mid-phase at a bookmark must never rewind to the phase entry.
-    if (due.step >= cursor.step && !sameCursor(cursor, due)) present(due);
-    if (time >= axis.maxOffset + 1) stop();
+    if (due.step > cursor.step || (clock === 'tick' && due.step === cursor.step && !sameCursor(cursor, due))) present(due);
+    if (time >= duration()) stop();
     else if (playing) frame = requestAnimationFrame(animate);
   }
 
@@ -595,7 +668,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     const was = playing;
     playing = false;
     if (was) showPlaying(false);
-    play.disabled = !hasTime || !ready;
+    play.disabled = !duration() || !ready;
     cancelAnimationFrame(frame);
     tallest = 0;
     inspect.style.minHeight = '';
@@ -612,7 +685,6 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     slider.value = String(axis.origin + offset);
     const note = !step && offset === 0 ? '录制起点' : gap ? '无事件' : '';
     clockTick.textContent = String(tick).padStart(3, '0');
-    clockStep.textContent = `${step} / ${axis.end}`;
     clockNote.textContent = note;
     slider.setAttribute('aria-valuetext', `游戏刻 ${tick}${note ? ' · ' + note : ''} · 第 ${step} / ${axis.end} 步`);
     prev.disabled = sameCursor(cursor, adjacentCursor(axis, phases, cursor, mode, -1));
@@ -620,7 +692,15 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     list.sync(step, { ...cursor, mode });
     const label = event ? eventLabel(event) : step === 0 && offset === 0 ? '初始结构' : '本刻没有记录事件';
     const detail = event?.detail;
-    eventText.textContent = detail && !Object.hasOwn(subtypes, detail) && detail !== label ? `${label} · ${detail}` : label;
+    const title = detail && !Object.hasOwn(subtypes, detail) && detail !== label ? `${label} · ${detail}` : label;
+    // The kind's mark, in its colour, ties the card to the event's mark on the model.
+    const kind = event && eventKind(event);
+    if (kind && kind !== 'phase') {
+      const mark = element('i', '', 'mc-glyph');
+      mark.dataset.kind = kind;
+      mark.setAttribute('aria-hidden', 'true');
+      eventText.replaceChildren(mark, title);
+    } else eventText.textContent = title;
     const fields = eventFields(scene, replay, event);
     parent.hidden = event?.parent === undefined;
     if (!parent.hidden) {
@@ -646,7 +726,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
 
   function manual(target, resetCamera = false) {
     stop();
-    time = timeFor(target, axis, phases, mode);
+    time = timeFor(target, axis, phases, mode, speedClock(speedUnit));
     present(target, resetCamera);
   }
   function seek(step, resetCamera = false, tickHint) {
@@ -654,7 +734,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   }
   function setReady(value) {
     ready = value;
-    play.disabled = !hasTime || (!ready && !playing);
+    play.disabled = !duration() || (!ready && !playing);
   }
   return {
     seek, stop, setReady, getTick: () => cursor.tick,

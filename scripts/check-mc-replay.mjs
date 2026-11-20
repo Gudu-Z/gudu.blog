@@ -14,9 +14,9 @@ import { createReplayHitboxes, replayEntityBounds } from '../js/mc-entity-hitbox
 import { Group } from '../js/vendor/mc-engine.mjs';
 import { createReplay, eventTarget, validateScene } from '../js/mc-replay.mjs';
 import { readPalette, replayBounds, renderData } from '../js/mc-render-data.mjs';
-import { adjacentCursor, createTickAxis, indexTicks, phaseStops, playbackCursor } from '../js/mc-timeline.mjs';
+import { adjacentCursor, createTickAxis, indexTicks, phaseStops, playbackCursor, timeFor } from '../js/mc-timeline.mjs';
 import { branchShapes, indexEventRows, visibleSteps } from '../js/mc-event-list.mjs';
-import { getDefaultSpeed, saveDefaultSpeed } from '../js/mc-playback-settings.mjs';
+import { fromClockRate, getDefaultPlayback, normalizeSpeedUnit, saveDefaultPlayback, toClockRate } from '../js/mc-playback-settings.mjs';
 import { exportScene } from './mc-export.mjs';
 import { readStateRegistry } from './mc-export-registry.mjs';
 
@@ -208,6 +208,89 @@ await test('player skin export uses the Java cache key and embeds the matching P
   assert.deepEqual(scene.skins, { [hash]: png.toString('base64') });
 });
 
+await test('export resolves only a recorded account, embeds its skin once, and keeps replay and account UUIDs private', async () => {
+  const account = 'abcd1234-1234-4abc-8abc-abcde1234567';
+  const proxy = '11111111-1234-3abc-8abc-000000000001';
+  const unknownProxy = '22222222-1234-3abc-8abc-000000000002';
+  const snapshot = { id: 'minecraft:mannequin', Pos: [0, 1, 0], UUID: proxy, profile: { id: account, name: 'private-test-name' } };
+  const move = { type: 'entityMove', entityType: 'minecraft:player', entityUuid: proxy, x: .5, y: 1, z: 0 };
+  const area = { dimension: 'minecraft:overworld', blocks: [{ x: 0, y: 1, z: 0, stateId: 0 }],
+    entities: [snapshot, { ...snapshot, UUID: unknownProxy, profile: undefined }] };
+  const diagnostics = {};
+  const scene = exportScene({ frames: [{ tick: 1, events: [move, { ...move, entityUuid: unknownProxy }] }] },
+    { areas: [area] }, ['minecraft:air'], '1.21.10', area.dimension, diagnostics);
+  assert.deepEqual([...diagnostics.playerAccounts.values()], [account]);
+  const catalog = JSON.parse(await readFile(new URL('../assets/minecraft/vanilla-resources/vanilla.json', import.meta.url)));
+  const png = Buffer.from(catalog.png['entity/player/slim/alex'], 'base64');
+  const hash = createHash('sha256').update(png).digest('hex');
+  const url = 'https://textures.minecraft.net/texture/' + hash;
+  const data = { textures: { SKIN: { url, metadata: { model: 'slim' } } } };
+  const property = { name: 'textures', value: Buffer.from(JSON.stringify(data)).toString('base64') };
+  const queries = [];
+  const fetchImpl = async (address, options) => {
+    queries.push(address);
+    assert.equal(options.redirect, 'error');
+    assert.ok(options.signal instanceof AbortSignal);
+    if (address === url) return new Response(png);
+    return Response.json({ id: account.replaceAll('-', ''), properties: [property] });
+  };
+  await attachPlayerSkins(scene, '.', undefined, { accounts: diagnostics.playerAccounts, fetchImpl });
+  assert.deepEqual(queries, ['https://sessionserver.mojang.com/session/minecraft/profile/' + account.replaceAll('-', ''), url]);
+  for (const player of [scene.players[0], scene.events[0].player]) {
+    assert.equal(player.skin, hash);
+    assert.equal(player.model, 'slim');
+  }
+  assert.equal(scene.players[1].skin, undefined);
+  assert.deepEqual(scene.skins, { [hash]: png.toString('base64') });
+  const serialized = JSON.stringify(validateScene(scene));
+  for (const secret of [account, proxy, unknownProxy, 'private-test-name']) assert.ok(!serialized.includes(secret));
+});
+
+await test('recorded player, mannequin and passenger skin hashes use the texture CDN without account queries', async () => {
+  const catalog = JSON.parse(await readFile(new URL('../assets/minecraft/vanilla-resources/vanilla.json', import.meta.url)));
+  const png = Buffer.from(catalog.png['entity/player/wide/steve'], 'base64');
+  const hash = createHash('sha256').update(png).digest('hex');
+  const url = 'https://textures.minecraft.net/texture/' + hash;
+  const data = { textures: { SKIN: { url } } };
+  const profile = { properties: [{ name: 'textures', value: Buffer.from(JSON.stringify(data)).toString('base64') }] };
+  const actor = { nbt: { profile } };
+  for (const scene of [
+    { players: [{ id: 'p', skin: hash }], events: [] },
+    { entities: [actor], events: [] },
+    { events: [{ entity: actor }, { entity: actor }] },
+    { events: [{ entity: { nbt: { Passengers: [{ id: 'minecraft:mannequin', profile }] } } }] },
+  ]) {
+    const queries = [];
+    await attachPlayerSkins(scene, '.', undefined, { accounts: new Map([['p', 'abcd1234-1234-4abc-8abc-abcde1234567']]),
+      fetchImpl: async address => { queries.push(address); return new Response(png); } });
+    assert.deepEqual(queries, [url]);
+    assert.deepEqual(scene.skins, { [hash]: png.toString('base64') });
+  }
+});
+
+await test('failed player skin lookup or corrupt content falls back without publishing a texture', async t => {
+  t.mock.method(console, 'warn', () => {});
+  const hash = '1'.repeat(64);
+  for (const respond of [() => { throw new TypeError('offline'); }, () => { throw new DOMException('timed out', 'TimeoutError'); },
+    () => new Response('unavailable', { status: 429 }), () => new Response('broken PNG'),
+    () => new Response('excessive', { headers: { 'content-length': 2 ** 25 } })]) {
+    const scene = { players: [{ skin: hash }, { skin: hash }], events: [] };
+    let calls = 0;
+    await attachPlayerSkins(scene, '.', undefined, { fetchImpl: async () => { calls++; return respond(); } });
+    assert.equal(calls, 1);
+    assert.equal(scene.skins, undefined);
+  }
+  const scene = { players: [{ id: 'offline' }, { id: 'a' }, { id: 'b' }], events: [] };
+  const accounts = new Map([['offline', '11111111-1234-3abc-8abc-000000000001'], ['a', 'abcd1234-1234-4abc-8abc-abcde1234567'],
+    ['b', 'abcd1234-1234-4abc-8abc-abcde1234568']]);
+  const queries = [];
+  await attachPlayerSkins(scene, '.', undefined, { accounts, fetchImpl: async url => {
+    queries.push(url); return new Response(null, { status: 429 });
+  } });
+  assert.deepEqual(queries, ['https://sessionserver.mojang.com/session/minecraft/profile/abcd123412344abc8abcabcde1234567']);
+  assert.equal(scene.skins, undefined);
+});
+
 await test('native frames retain local positions and can be rendered after the replay moves on', () => {
   const scene = validateScene({
     version: 1, dimension: 'minecraft:overworld', origin: [100, 64, 200],
@@ -320,8 +403,24 @@ await test('timeline keeps contiguous game ticks in recording order and resets h
   assert.deepEqual(indexTicks([]).groups, []);
 });
 
+await test('speed units round-trip through the same game clock', () => {
+  for (const [raw, input, rate] of [['GT/s', 5, 5], ['s/gt', 0.2, 5], ['×', 0.25, 5], ['x', 2, 40], ['event/s', 3, 3], ['phase/s', .5, .5]]) {
+    const unit = normalizeSpeedUnit(raw);
+    assert.equal(toClockRate(input, unit), rate);
+    assert.equal(fromClockRate(rate, unit), input);
+  }
+  assert.equal(toClockRate(20), 20);
+  assert.equal(normalizeSpeedUnit('0'), undefined);
+  assert.equal(toClockRate(Number.MIN_VALUE, 's/gt'), undefined);
+  assert.equal(toClockRate(Number.MAX_VALUE, 'x'), undefined);
+  assert.equal(toClockRate(Number.MAX_VALUE, 's/gt'), undefined);
+  assert.equal(fromClockRate(Number.MIN_VALUE, 'x'), undefined);
+});
+
 await test('playback uses 20 gt/s, accepts an article speed, and only persists an explicit reader default', () => {
   const storage = new Map();
+  const saveDefaultSpeed = value => saveDefaultPlayback(value, 'gt/s');
+  const getDefaultSpeed = value => getDefaultPlayback(value).rate;
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
   Object.defineProperty(globalThis, 'window', { configurable: true, value: {
     localStorage: {
@@ -340,6 +439,10 @@ await test('playback uses 20 gt/s, accepts an article speed, and only persists a
     assert.equal(getDefaultSpeed(), 8.5);
     assert.equal(saveDefaultSpeed(null), true);
     assert.equal(getDefaultSpeed(4), 4);
+    assert.equal(saveDefaultPlayback(3.5, 'event/s'), true);
+    assert.deepEqual(getDefaultPlayback(2, 'phase/s'), { rate: 3.5, unit: 'event/s' });
+    assert.equal(saveDefaultPlayback(null), true);
+    assert.deepEqual(getDefaultPlayback(2, 'phase/s'), { rate: 2, unit: 'phase/s' });
     window.localStorage.getItem = () => { throw new Error('Storage blocked'); };
     window.localStorage.setItem = window.localStorage.getItem;
     assert.equal(getDefaultSpeed(2.5), 2.5);
@@ -438,6 +541,50 @@ await test('the event list draws each tick as a tree of branches from parent to 
   const deep = branchShapes([{ tick: 0, first: 1, last: 4 }], [0, 1, 2, 3], null, 2);
   assert.deepEqual(Array.from(deep.depth), [0, 1, 2, 2]);
   assert.deepEqual(shape(deep, 3), { depth: 2, pass: 0, next: true, child: false });
+});
+
+await test('replays retain model appearance without publishing profile, inventory or command NBT', () => {
+  const vehicle = '00000001-0000-4000-8000-000000000001';
+  const itemId = '00000002-0000-4000-8000-000000000002';
+  const secret = 'private-test-value';
+  const stack = { id: 'minecraft:diamond_sword', count: 1, components: {
+    'minecraft:custom_data': { secret }, 'minecraft:enchantment_glint_override': 1,
+  } };
+  const entity = { UUID: vehicle, id: 'minecraft:minecart', Pos: [0, 0, 0], Rotation: [90, 0],
+    Items: [stack], Passengers: [{ id: 'minecraft:pig', Variant: 'minecraft:warm', Owner: secret }] };
+  const original = { areas: [{ dimension: 'minecraft:overworld', entities: [entity],
+    blocks: [{ x: 0, y: 0, z: 0, stateId: 0 }] }] };
+  const tag = { entityUuid: itemId, entityType: 'minecraft:item_display', x: 0, y: 0, z: 0 };
+  const pose = { translation: [.25, 0, .25], scale: [1, 2, 1], left_rotation: [0, 0, 0, 1] };
+  const spawn = { ...tag, type: 'entitySpawn', entityNbt: { id: tag.entityType, item: stack,
+    transformation: pose, profile: { secret } } };
+  const scene = validateScene(exportScene({frames:[{tick: 0, events:[spawn,
+    {...tag,type:'entitySpawn',despawn:true}] }]}, original, ['minecraft:air'], '1.21.10'));
+  const replay = createReplay(scene);
+  assert.deepEqual([...replay.entities.values()][0].nbt.Passengers, [{id:'minecraft:pig', Variant:'minecraft:warm', Owner:true}]);
+  replay.seek(1);
+  const appearance = replay.entities.get(scene.events[0].actorId).nbt;
+  assert.deepEqual(appearance.transformation, pose);
+  assert.deepEqual(appearance.item, {id:stack.id,count:1,components:{enchantment_glint_override:true}});
+  replay.seek(2);
+  assert.equal(replay.entities.size, 1);
+  replay.seek(1);
+  assert.deepEqual(replay.entities.get(scene.events[0].actorId).nbt, appearance);
+  assert.ok(!JSON.stringify(scene).includes(secret));
+  assert.ok(!JSON.stringify(scene).includes(vehicle));
+});
+
+await test('event and phase clocks count recorded stops across tick gaps and arbitrary seeks', () => {
+  const events = [{ tick: 0, type: 'phase' }, { tick: 0, type: 'setBlock' }, { tick: 0, type: 'phase' },
+    { tick: 5, type: 'phase' }, { tick: 5, type: 'setBlock' }];
+  const groups = indexTicks(events).groups, axis = createTickAxis(groups, [0, 10]), stops = phaseStops(events, groups);
+  for (const mode of ['tick', 'phase', 'event']) {
+    const steps = (clock, times) => times.map(t => playbackCursor(axis, stops, t, mode, clock).step);
+    assert.deepEqual(steps('event', [0, .99, 1, 2, 3, 4, 5, 50]), [0, 0, 1, 2, 3, 4, 5, 5]);
+    assert.deepEqual(steps('phase', [0, .99, 1, 2, 3, 4, 50]), [0, 0, 1, 3, 4, 5, 5]);
+    assert.equal(timeFor(axis.forStep(2), axis, stops, mode, 'event'), 2);
+    assert.equal(timeFor(axis.forStep(2), axis, stops, mode, 'phase'), 1);
+  }
 });
 
 await test('tick-time playback preserves blank frames and the real duration independently of event density', () => {

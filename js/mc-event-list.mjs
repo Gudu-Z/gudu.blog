@@ -69,12 +69,14 @@ export function visibleSteps(groups, depths, open) {
 }
 
 // A small mark at the end of each event's tick on the ruler: a block change,
-// an update, a scheduled tick, a block event, a piston, a game event or an
-// entity. Phases mark the structure already and take none.
+// a neighbour update, a shape update, a scheduled tick, a block event, a
+// piston, a game event or an entity. The two updates share a mark and differ
+// in colour; the 3D view draws them differently too. Phases mark the
+// structure already and take none.
 export function eventKind(event) {
   const { type, detail = '' } = event;
   if (type === 'setBlock' || event.after !== undefined) return 'set';
-  if (type === 'update') return 'update';
+  if (type === 'update') return detail === 'ShapeUpdate' ? 'shape' : 'neighbour';
   if (type === 'addScheduleTick' || /^Execute(Block|Fluid)Tick$/.test(detail)) return 'tick';
   if (type === 'addBlockEvent' || detail === 'ExecuteBlockEvent') return 'event';
   if (/^(pistonStructure|movingPiston|movingPistonTick)$/.test(type)
@@ -83,6 +85,12 @@ export function eventKind(event) {
   if (/^entity/.test(type)) return 'entity';
   if (type === 'phase' || type === 'levelTick') return 'phase';
   return 'other';
+}
+
+// Queued for later rather than happening now: a scheduled tick or a block
+// event being added. The 3D view draws these with a dashed box.
+export function eventPending(event) {
+  return event.type === 'addScheduleTick' || event.type === 'addBlockEvent';
 }
 
 // Inside each game tick the shown rows form a tree: a row hangs off the

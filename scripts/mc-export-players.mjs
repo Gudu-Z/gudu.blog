@@ -1,4 +1,5 @@
-import { hitboxNbt } from './mc-export-hitbox.mjs';
+import { entityVisualNbt } from './mc-export-appearance.mjs';
+import { profileSkin } from './mc-player-skins.mjs';
 import { createHash } from 'node:crypto';
 
 function uuid(value) {
@@ -28,22 +29,6 @@ function isPlayerSnapshot(nbt, key, recordedPlayers) {
   return formatUuid(bytes.toString('hex')) === key;
 }
 
-function appearance(nbt) {
-  const properties = nbt?.profile?.properties;
-  if (!Array.isArray(properties)) return {};
-  const textures = properties.find(item => item?.name === 'textures');
-  if (typeof textures?.value !== 'string') return {};
-  try {
-    const skin = JSON.parse(Buffer.from(textures.value, 'base64').toString('utf8')).textures?.SKIN;
-    // Store the texture's content address only. The account, signature and
-    // other profile data need never leave the recording machine.
-    const hash = /^https?:\/\/textures\.minecraft\.net\/texture\/([a-f0-9]{64})$/i.exec(skin?.url)?.[1];
-    return hash ? { skin: hash.toLowerCase(), model: skin.metadata?.model === 'slim' ? 'slim' : 'wide' } : {};
-  } catch {
-    return {};
-  }
-}
-
 function finitePos(pos) {
   return Array.isArray(pos) && pos.length === 3 && pos.every(Number.isFinite);
 }
@@ -68,7 +53,19 @@ export function actorTracks(areas, frames, local) {
     if (!ids.has(key)) ids.set(key, kind + '-' + (++counters[kind]));
     return ids.get(key);
   }
-  const players = [], entities = [];
+  const separateIds = new Set(areas.flatMap(area => (area.entities ?? []).map(nbt => uuid(nbt.UUID))).filter(Boolean));
+  const separateActor = nbt => separateIds.has(uuid(nbt.UUID));
+  function visualNbt(nbt, player) {
+    // The player skin is already stored once in the scene skin table.
+    return entityVisualNbt(player && nbt ? { ...nbt, profile: undefined } : nbt, separateActor);
+  }
+  const players = [], entities = [], playerAccounts = new Map();
+  function appearance(nbt, actorId) {
+    // MTR stores the real account in profile.id. A proxy entity UUID is only a replay key.
+    const account = uuid(nbt?.profile?.id) ?? (nbt?.id === 'minecraft:player' ? uuid(nbt.UUID) : null);
+    if (account) playerAccounts.set(actorId, account);
+    return profileSkin(nbt?.profile);
+  }
   let omittedEntities = 0;
   for (const area of areas) {
     for (const nbt of area.entities ?? []) {
@@ -81,10 +78,10 @@ export function actorTracks(areas, frames, local) {
       const player = isPlayerSnapshot(nbt, key, recorded);
       const state = { id: idFor(key, player ? 'player' : 'entity'), pos: local(nbt.Pos), yaw, pitch };
       if (player) {
-        Object.assign(state, appearance(nbt), hitboxNbt(nbt));
+        Object.assign(state, appearance(nbt, state.id), visualNbt(nbt, true));
         players.push(state);
       } else {
-        Object.assign(state, { type: nbt.id }, hitboxNbt(nbt));
+        Object.assign(state, { type: nbt.id }, visualNbt(nbt, false));
         entities.push(state);
       }
       active.set(key, state);
@@ -105,6 +102,12 @@ export function actorTracks(areas, frames, local) {
       event[previous.type ? 'entity' : 'player'] = { id: previous.id, removed: true };
       return;
     }
+    if (previous?.type && tag.type === 'entitySetHealth' && Number.isFinite(tag.newHealth)) {
+      const state = { ...previous, nbt: { ...previous.nbt, Health: tag.newHealth } };
+      active.set(key, state);
+      event.entity = state;
+      return;
+    }
     if (!spawn && (!previous || !motion.has(tag.type))) return;
     const entityType = validType(tag.entityType) ? tag.entityType : tag.entityNbt?.id;
     if (spawn && !validType(entityType)) return;
@@ -120,8 +123,9 @@ export function actorTracks(areas, frames, local) {
     if (spawn) {
       const kind = entityType === 'minecraft:player' || (tag.entityNbt && isPlayerSnapshot(tag.entityNbt, key, recorded))
         ? 'player' : 'entity';
-      const metadata = kind === 'player' ? appearance(tag.entityNbt) : { type: entityType };
-      state = { id: idFor(key, kind), ...metadata, ...hitboxNbt(tag.entityNbt), pos, yaw, pitch };
+      const id = idFor(key, kind);
+      const metadata = kind === 'player' ? appearance(tag.entityNbt, id) : { type: entityType };
+      state = { id, ...metadata, ...visualNbt(tag.entityNbt, kind === 'player'), pos, yaw, pitch };
     } else {
       state = { ...previous, pos, yaw, pitch };
     }
@@ -132,5 +136,5 @@ export function actorTracks(areas, frames, local) {
 
   // MTR writes an area exit at the first position outside the box.
   const isActive = tag => active.has(uuid(tag.entityUuid));
-  return { players, entities, apply, isActive, omittedEntities };
+  return { players, entities, apply, isActive, omittedEntities, playerAccounts };
 }

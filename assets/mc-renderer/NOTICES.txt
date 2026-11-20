@@ -1,6 +1,7 @@
 Minecraft article renderer
 Rendering core: Gudu-Z/LitematicWebViewer — https://github.com/Gudu-Z/LitematicWebViewer
-Upstream revision: 7bc86862b3a175adfc56b7196e0a84b3796a810f
+Upstream revision: 07e067ba6ad3c792985ae88749d15785926e15c8
+Special entity geometry, painting descriptors and textures extracted from Minecraft Java 1.21.10 (Mojang Studios / Microsoft), via scripts/MinecraftEntityModels.java.
 Blog adaptation: the renderer consumes local article data, models and textures.
 Vanilla Minecraft assets from the upstream public/assets/minecraft directory are by Mojang Studios / Microsoft.
 zlib portions of pako: https://zlib.net/zlib_license.html — Jean-loup Gailly and Mark Adler.

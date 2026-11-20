@@ -160,7 +160,10 @@ await test('scene fences publish accessible posters and bookmark references only
     await writeFile(join(directory, 'scene.json'), JSON.stringify(manifest));
     const fence = fields => ['```mc-scene', 'scene: lamp', fields, '```'].join('\n');
     await post('lamp.md', frontmatter({ category: 'Minecraft' }, [
-      fence('caption: "灯面 <A>"'), '## mc-lamp', fence('bookmark: side\ncaption: 灯的侧面\nspeed: 2.5'),
+      fence('caption: "灯面 <A>"'), '## mc-lamp', fence('bookmark: side\ncaption: 灯的侧面\nspeed: 2.5\ngranularity: 游戏刻'),
+      fence('granularity: event'), fence('speed: 0.5\nspeed-unit: s/gt'), fence('speed: 2\nspeed-unit: x'),
+      fence('speed-unit: gt/s'), fence('speed: 3.5\nspeed-unit: event/s'),
+      fence('speed: 2\nspeed-unit: PHASE/S'),
     ].join('\n\n')));
     await post('other.md', frontmatter());
     await post('unrecorded.md', frontmatter({ draft: true }, '```mc-scene\nscene: pending\n```'));
@@ -171,7 +174,15 @@ await test('scene fences publish accessible posters and bookmark references only
     assert.match(html, /<h2 id="mc-lamp">/);
     assert.match(html, /id="mc-lamp-2" data-src="\.\.\/assets\/minecraft\/lamp\/scene\.json" data-bookmark=""/);
     assert.match(html, /id="mc-lamp-3"[^>]* data-bookmark="side"/);
-    assert.match(html, /data-bookmark="side" data-speed="2\.5"/);
+    assert.match(html, /data-bookmark="side" data-speed="2\.5" data-granularity="tick"/);
+    assert.match(html, /id="mc-lamp-4"[^>]* data-granularity="event"/);
+    assert.equal(html.match(/ data-granularity=/g).length, 2);
+    assert.match(html, /id="mc-lamp-5"[^>]* data-speed="0\.5" data-speed-unit="s\/gt"/);
+    assert.match(html, /id="mc-lamp-6"[^>]* data-speed="2" data-speed-unit="x"/);
+    assert.match(html, /id="mc-lamp-7"[^>]* data-bookmark="" data-speed-unit="gt\/s"/);
+    assert.match(html, /id="mc-lamp-8"[^>]* data-speed="3\.5" data-speed-unit="event\/s"/);
+    assert.match(html, /id="mc-lamp-9"[^>]* data-speed="2" data-speed-unit="phase\/s"/);
+    assert.equal(html.match(/ data-speed-unit=/g).length, 5);
     assert.match(html, /<img data-mc-poster src="\.\.\/assets\/minecraft\/lamp\/front\.png"/);
     assert.match(html, /<img data-mc-poster src="\.\.\/assets\/minecraft\/lamp\/side\.png"/);
     assert.match(html, /<button type="button" data-mc-open hidden>/);
@@ -180,8 +191,16 @@ await test('scene fences publish accessible posters and bookmark references only
     assert.doesNotMatch(await read('js/posts-data.js'), /hasScenes|data-mc|scene\.json|scene: lamp|bookmark: side|\.litematic/);
     assert.match((await metadata()).find(entry => entry.slug === 'lamp').excerpt, /灯面 <A>/);
     await buildBlog({ root, checkOnly: true });
+    await post('lamp.md', frontmatter({}, fence('granularity: invalid')));
+    await assert.rejects(buildBlog({ root }), /lamp\.md.*mc-scene.*granularity/);
     await post('lamp.md', frontmatter({}, fence('speed: 0')));
     await assert.rejects(buildBlog({ root }), /speed/);
+    await post('lamp.md', frontmatter({}, fence('speed: -1\nspeed-unit: event/s')));
+    await assert.rejects(buildBlog({ root }), /lamp\.md.*mc-scene.*speed/);
+    await post('lamp.md', frontmatter({}, fence('speed-unit: mph')));
+    await assert.rejects(buildBlog({ root }), /lamp\.md.*mc-scene.*speed-unit/);
+    await post('lamp.md', frontmatter({}, fence('speed: 1e308\nspeed-unit: x')));
+    await assert.rejects(buildBlog({ root }), /lamp\.md.*mc-scene.*speed/);
     await post('lamp.md', frontmatter({}, fence('bookmark: missing')));
     await assert.rejects(buildBlog({ root }), /lamp\.md.*找不到书签 missing/);
     await post('lamp.md', frontmatter({}, fence('bookmark: side')));

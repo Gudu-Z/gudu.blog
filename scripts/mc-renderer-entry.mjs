@@ -3,8 +3,11 @@ import { AssetProvider as ViewerAssets, parseResourceJSON, textureFromBlob } fro
 
 import { readResourcePack } from '@lwv/resourcePacks.js';
 
-export { Group, MeshLambertMaterial, DoubleSide } from 'three';
+export { Box3, BufferGeometry, DoubleSide, Float32BufferAttribute, Group, LineBasicMaterial, LineSegments, MeshLambertMaterial, Sprite, SpriteMaterial } from 'three';
 export { getEntityHitbox, makeOverlay as createEntityHitboxLines } from '@lwv/entityHitboxes.js';
+export { isAssetTexture } from '@lwv/assets.js';
+export { minecartRenderPose } from '@lwv/entityMinecart.js';
+export { buildEntityMesh } from '@lwv/entities.js';
 export { createEntityRig } from '@lwv/entityModel.js';
 export { Renderer } from '@lwv/renderer.js';
 export { BlockModelResolver } from '@lwv/blocks.js';
@@ -13,7 +16,17 @@ export { extractSigns, extractPlayerHeads, extractBanners, extractStatues, extra
 
 const archive = new URL('../../assets/minecraft/vanilla-resources/vanilla.json', import.meta.url);
 const packURL = new URL('../../assets/minecraft/resource-packs/xk-redstone-display-26.3.0.zip', import.meta.url);
-let catalogRequest, packRequest;
+const entityTexturesURL = new URL('../../assets/minecraft/vanilla-resources/entity-textures.json', import.meta.url);
+let catalogRequest, packRequest, entityTexturesRequest;
+
+async function supplementalTexture(key) {
+  if (!key.startsWith('painting/') && key !== 'particle/effect_0') return null;
+  entityTexturesRequest ??= fetch(entityTexturesURL).then(response => {
+    if (!response.ok) throw Error('无法读取原版实体贴图（HTTP ' + response.status + '）。');
+    return response.json();
+  }).catch(error => { entityTexturesRequest = undefined; throw error; });
+  return (await entityTexturesRequest)[key];
+}
 
 function loadDefaultPack() {
   if (!packRequest) {
@@ -76,8 +89,9 @@ export class AssetProvider extends ViewerAssets {
       return textureFromBlob(new Blob([bytes], { type: 'image/png' }), animation);
     }
     const { json, png } = await loadCatalog();
-    if (!Object.hasOwn(png, key)) return null;
-    const text = atob(png[key]);
+    const base64 = Object.hasOwn(png, key) ? png[key] : await supplementalTexture(key);
+    if (!base64) return null;
+    const text = atob(base64);
     const bytes = Uint8Array.from(text, char => char.charCodeAt(0));
     const metadata = json['textures/' + key + '.png.mcmeta'];
     const animation = metadata ? metadata.animation || false : null;

@@ -53,6 +53,18 @@ export function chooseSpot(box, cw, ch, area, controls = [], keep = null) {
   return { side, fits: false, left, top, right: left + cw, bottom: top + ch };
 }
 
+// The parked card and the last-resort spot for a large target can reach
+// the axes even though the normal beside-the-target spots clear them.
+export function clearAxes(spot, axes, area) {
+  if (!overlap(spot, axes)) return spot;
+  const width = spot.right - spot.left, height = spot.bottom - spot.top;
+  const left = axes.left - width - 4, top = axes.bottom + 4;
+  if (left >= area.left && (spot.left - left < top - spot.top || top + height > area.bottom)) {
+    return { ...spot, left, right: left + width };
+  }
+  return { ...spot, top, bottom: top + height };
+}
+
 export function mountCallout(stage, details) {
   const home = details.parentNode, homeNext = details.nextSibling;
   const card = document.createElement('div');
@@ -85,9 +97,10 @@ export function mountCallout(stage, details) {
     return { left: margin, top: margin + 18, right, bottom: stage.clientHeight - margin };
   }
   function controls() {
-    return Array.from(stage.querySelectorAll('.mc-view-reset, .mc-controls'), button => ({
-      left: button.offsetLeft, top: button.offsetTop, right: button.offsetLeft + button.offsetWidth,
-      bottom: button.offsetTop + button.offsetHeight,
+    return Array.from(stage.querySelectorAll('.mc-view-reset, .mc-controls, .mc-axes'), element => ({
+      axes: element.classList.contains('mc-axes'),
+      left: element.offsetLeft, top: element.offsetTop, right: element.offsetLeft + element.offsetWidth,
+      bottom: element.offsetTop + element.offsetHeight,
     }));
   }
 
@@ -114,17 +127,27 @@ export function mountCallout(stage, details) {
       return;
     }
     const cw = card.offsetWidth, ch = card.offsetHeight, area = freeArea();
-    const spot = box ? chooseSpot(box, cw, ch, area, controls(), side) : null;
-    side = spot?.side ?? null;
-    const left = Math.round(spot ? spot.left : area.left), top = Math.round(spot ? spot.top : area.top);
+    const obstacles = controls(), axes = obstacles.find(rect => rect.axes);
+    const preferred = box ? chooseSpot(box, cw, ch, area, obstacles, side)
+      : { side: null, left: area.left, top: area.top, right: area.left + cw, bottom: area.top + ch };
+    const spot = clearAxes(preferred, axes, area);
+    side = spot.side;
+    const left = Math.round(spot.left), top = Math.round(spot.top);
     // Turning the view, the card keeps up with its target at once; a jump to
     // another side or another target eases, so the eye can follow it.
-    card.classList.toggle('is-moving', Math.hypot(left - lastLeft, top - lastTop) > 48);
+    let ease = Math.hypot(left - lastLeft, top - lastTop) > 48;
+    if (ease && axes) {
+      // Even two clear spots can take the card across the axes as it slides.
+      const start = card.getBoundingClientRect(), origin = stage.getBoundingClientRect();
+      ease = Math.min(start.top - origin.top, top) >= axes.bottom
+        || Math.max(start.right - origin.left, left + cw) <= axes.left;
+    }
+    card.classList.toggle('is-moving', ease);
     lastLeft = left;
     lastTop = top;
     card.style.transform = `translate(${left}px, ${top}px)`;
-    leader.style.display = spot ? '' : 'none';
-    if (spot) {
+    leader.style.display = side ? '' : 'none';
+    if (side) {
       const points = leaderPoints(spot);
       line.setAttribute('points', points.map(point => point.map(Math.round).join(',')).join(' '));
       dot.setAttribute('cx', String(Math.round(points[0][0])));
