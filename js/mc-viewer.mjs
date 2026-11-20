@@ -410,10 +410,11 @@ function setInset(renderer, right) {
 
 // The default view faces the structure's long side: that side shows the most
 // area and the short side runs away from the reader into the view. It looks
-// from 25° off the side's normal, turned toward the long axis's positive end,
-// at the engine's own 26° elevation. Of the two long sides it takes the one
-// from which the recorded players show, else the south side (for a build
-// longer north–south, the east side).
+// from 25° off the side's normal, moved to the reader's left, so the long
+// side's right half runs away into the view, at the engine's own 26°
+// elevation. Of the two long sides it takes the one from which the recorded
+// players show, else the south side (for a build longer north–south, the
+// east side).
 const BROADSIDE_TURN = 25 * Math.PI / 180;
 const DEFAULT_ELEVATION = Math.atan2(.55, Math.hypot(.8, .8));
 const isAir = entry => /(^|:)(cave_|void_)?air$/.test(entry?.name ?? '');
@@ -452,11 +453,11 @@ function structureFootprint({ blocks, bounds, palette }) {
 
 // The default view as an azimuth (0 looks from the south, +Z; π/2 from the
 // east, +X) and an elevation, for the camera that fitToBounds just placed.
+// Subtracting the turn from a side's own azimuth moves the camera to the
+// reader's left on every side.
 function defaultView(renderer, framing) {
   const [width, depth] = framing.footprint ?? blockFootprint(framing.blocks ?? [], framing.palette ?? [], framing.bounds);
-  const sides = width >= depth
-    ? [BROADSIDE_TURN, Math.PI - BROADSIDE_TURN]
-    : [Math.PI / 2 - BROADSIDE_TURN, BROADSIDE_TURN - Math.PI / 2];
+  const sides = (width >= depth ? [0, Math.PI] : [Math.PI / 2, -Math.PI / 2]).map(normal => normal - BROADSIDE_TURN);
   const view = { azimuth: sides[0], elevation: DEFAULT_ELEVATION };
   if (framing.players?.length) {
     const target = renderer.controls.target, distance = renderer.camera.position.distanceTo(target);
