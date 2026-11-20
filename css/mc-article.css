@@ -304,6 +304,11 @@
 .mc-input-unit { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .mc-unit { flex: none; color: var(--code-name); font: 11px/1 Consolas, "SFMono-Regular", monospace; }
 .mc-play-settings :is(input, select) { width: 100%; min-width: 0; color: var(--paper); background: var(--panel); }
+/* A switch for something the view offers (its entity hitboxes): the name,
+   the game's key for it, and a checkbox, across the card. */
+.mc-play-settings .mc-switch { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; }
+.mc-switch-keys { margin-left: auto; color: var(--code-name); font: 10px/1 Consolas, "SFMono-Regular", monospace; letter-spacing: 0.06em; }
+.mc-play-settings .mc-switch-input { width: 15px; height: 15px; margin: 0; accent-color: var(--red); cursor: pointer; }
 .mc-play-settings > button { font-size: .75rem; }
 /* The card's legend of marks and its keys. */
 .mc-legend {

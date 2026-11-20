@@ -1,4 +1,4 @@
-import { createReplay, validateScene } from './mc-replay.mjs';
+import { createReplay, eventTarget, validateScene } from './mc-replay.mjs';
 import { mountTimeline } from './mc-timeline.mjs';
 import { mountCallout } from './mc-callout.mjs';
 
@@ -158,7 +158,8 @@ function mountFigure(figure) {
       }
       const bookmark = scene.bookmarks?.[figure.dataset.bookmark] ?? {};
       const replay = scene.schematic ? null : createReplay(scene);
-      let framePending = false, frameLoading = false, resetPending = false, playingNow = false, focus;
+      let framePending = false, frameLoading = false, resetPending = false, playingNow = false;
+      let focus, focusActor, parentTarget;
       // Keep at most one geometry build in flight. The clock may pass several
       // ticks during a build; submit the latest block and piston state when it finishes.
       function submitLatest() {
@@ -168,7 +169,10 @@ function mountFigure(figure) {
         resetPending = false;
         if (reset && !bookmark.camera) viewer.resetView();
         viewer.render(replay.blocks, {
-          revision: replay.revision, focus, pistons: replay.pistons,
+          revision: replay.revision, focus, focusActor, pistons: replay.pistons,
+          parentFocus: parentTarget?.block, parentActor: parentTarget?.actorId,
+          entities: replay.entities, entityRevision: replay.entityRevision,
+          players: replay.players, playerRevision: replay.playerRevision,
           camera: reset ? bookmark.camera : undefined,
         });
       }
@@ -176,11 +180,14 @@ function mountFigure(figure) {
         playback = mountTimeline(view, figure, scene, replay, bookmark, (step, resetCamera, position) => {
           resumeStep = step;
           resumeTick = position.tick;
-          const eventPos = position.gap ? undefined : replay.event?.pos;
+          const event = position.gap ? null : replay.event;
+          const target = eventTarget(replay, event);
+          parentTarget = event?.parent === undefined ? null : eventTarget(replay, scene.events[event.parent]);
           const atBookmark = step === (bookmark.step ?? 0) && (bookmark.tick === undefined
             ? !position.gap || (step === 0 && position.tick === scene.tickRange?.[0])
             : position.tick === bookmark.tick);
-          focus = atBookmark ? bookmark.focus ?? eventPos : eventPos;
+          focus = (atBookmark ? bookmark.focus : undefined) ?? target.block;
+          focusActor = focus ? undefined : target.actorId;
           framePending = true;
           resetPending ||= resetCamera;
           submitLatest();
@@ -249,6 +256,15 @@ function mountFigure(figure) {
       if (signal.aborted) { instance.destroy(); return; }
       viewer = instance;
       mountViewHint(stage, signal);
+      // A recording with entities offers their hitboxes as a switch in the
+      // settings card; F3+B in the view flips it too.
+      const boxes = instance.entityBoxes;
+      if (boxes && playback) {
+        const show = playback.addSwitch('实体框', 'HITBOXES', {
+          checked: boxes.visible, keys: 'F3+B', onChange: value => boxes.set(value),
+        });
+        boxes.onChange(show);
+      }
       window.addEventListener('site:theme', event => viewer?.setTheme(event.detail.theme), { signal });
       submitLatest();
       document.addEventListener('visibilitychange', () => {

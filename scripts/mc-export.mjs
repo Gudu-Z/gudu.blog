@@ -4,6 +4,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { validateScene } from '../js/mc-replay.mjs';
+import { actorTracks } from './mc-export-players.mjs';
+import { attachPlayerSkins } from './mc-player-skins.mjs';
 import { readRecordingNbt } from './mc-export-nbt.mjs';
 import { blockStateName, readStateRegistry } from './mc-export-registry.mjs';
 
@@ -38,7 +40,7 @@ function detail(tag) {
   }
 }
 
-export function exportScene(profile, record, registry, minecraftVersion, selectedDimension) {
+export function exportScene(profile, record, registry, minecraftVersion, selectedDimension, diagnostics = {}) {
   const recordedAreas = array(record.areas, 'record.dat: areas');
   const dimensions = new Set(recordedAreas.map(area => area.dimension));
   if (dimensions.size === 0) throw Error('初始快照没有选区。请先框选电路，再开始一次新录制。');
@@ -90,6 +92,10 @@ export function exportScene(profile, record, registry, minecraftVersion, selecte
       }
     }
   }
+  const frames = array(profile.frames, 'profile.dat: frames');
+  const actors = actorTracks(areas, frames, local);
+  diagnostics.omittedEntities = actors.omittedEntities;
+  const actorInArea = pos => boxes.some(box => pos.every((n, i) => n >= box.min[i] && n <= box.max[i] + 1));
   const events = [];
   function visit(tag, tick, parent, inheritedDimension) {
     const type = tag.type;
@@ -104,7 +110,13 @@ export function exportScene(profile, record, registry, minecraftVersion, selecte
     if (world && !eventDimension && dimensions.size > 1 && contains(world)) {
       throw Error(`多维度录制包含无法确定维度的 ${type} 事件，请使用单维度录制。`);
     }
-    const include = (!eventDimension || eventDimension === dimension) && (!world || contains(world));
+    let inArea = !world || contains(world);
+    if (world && typeof tag.entityUuid === 'string') {
+      inArea = actorInArea([tag.x, tag.y, tag.z])
+        || (actors.isActive(tag) && ((type === 'entitySpawn' && tag.despawn)
+          || (['entityMove', 'entityCollideAxis'].includes(type) && actorInArea([tag.oldX, tag.oldY, tag.oldZ]))));
+    }
+    const include = (!eventDimension || eventDimension === dimension) && inArea;
     let nextParent = parent;
     if (include) {
       const event = { tick, type, stage: children.length ? 'enter' : 'leaf' };
@@ -125,6 +137,7 @@ export function exportScene(profile, record, registry, minecraftVersion, selecte
         event.piston = tag.despawn ? null : piston(fromId(tag.stateId ?? tag.movedBlockStateId),
           tag.directionId, tag.extending, tag.isSourcePiston, tag.progress ?? 0);
       }
+      actors.apply(tag, event);
       nextParent = events.length;
       events.push(event);
     }
@@ -132,7 +145,6 @@ export function exportScene(profile, record, registry, minecraftVersion, selecte
     // successful setBlock) runs before its children, once only.
     for (const child of children) visit(child, tick, nextParent, eventDimension);
   }
-  const frames = array(profile.frames, 'profile.dat: frames');
   for (const frame of frames) {
     if (!Number.isSafeInteger(frame.tick)) throw Error('帧的游戏刻无效。');
     for (const tag of array(frame.events, 'frame.events')) visit(tag, frame.tick);
@@ -142,13 +154,15 @@ export function exportScene(profile, record, registry, minecraftVersion, selecte
   const monotonic = frames.every((frame, i) => i === 0 || frame.tick >= frames[i - 1].tick);
   const tickRange = frames.length && monotonic ? [frames[0].tick, frames.at(-1).tick] : undefined;
   return { version: 1, minecraftVersion, dimension, ...(tickRange ? { tickRange } : {}), origin, palette, blocks: [...blocks.values()],
-    pistons: [...pistons.values()], events, bookmarks: {} };
+    pistons: [...pistons.values()], ...(actors.players.length ? { players: actors.players } : {}),
+    ...(actors.entities.length ? { entities: actors.entities } : {}), events, bookmarks: {} };
 }
 
-const usage = '用法：node scripts/mc-export.mjs <录制目录> <输出 scene.json> --minecraft <游戏版本> [--registry <blocks.json>] [--dimension minecraft:overworld]';
+const usage = '用法：node scripts/mc-export.mjs <录制目录> <输出 scene.json> --minecraft <游戏版本> [--registry <blocks.json>] [--dimension minecraft:overworld] [--skin-cache <assets/skins>]';
 async function main() {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-    minecraft: { type: 'string' }, registry: { type: 'string' }, dimension: { type: 'string' }, help: { type: 'boolean' }
+    minecraft: { type: 'string' }, registry: { type: 'string' }, dimension: { type: 'string' },
+    'skin-cache': { type: 'string' }, help: { type: 'boolean' }
   } });
   if (values.help) { console.log(usage); return; }
   if (positionals.length !== 2 || !values.minecraft) throw Error(usage);
@@ -160,7 +174,10 @@ async function main() {
   const [profile, record, registry] = await Promise.all([
     readNbt('profile.dat'), readNbt('record.dat'), readStateRegistry(values.minecraft, values.registry)
   ]);
-  const scene = validateScene(exportScene(profile, record, registry, values.minecraft, values.dimension));
+  const diagnostics = {};
+  const scene = exportScene(profile, record, registry, values.minecraft, values.dimension, diagnostics);
+  await attachPlayerSkins(scene, source, values['skin-cache']);
+  validateScene(scene);
   const output = resolve(destination);
   await mkdir(dirname(output), { recursive: true });
   const temporary = join(dirname(output), `.mc-export-${randomUUID()}.tmp`);
@@ -177,9 +194,7 @@ async function main() {
     }
   } finally { await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
   console.log(`已导出 ${scene.blocks.length} 个方块、${scene.events.length} 个事件 → ${output}`);
-  const omittedEntities = record.areas.filter(area => area.dimension === scene.dimension)
-    .reduce((count, area) => count + (area.entities?.length ?? 0), 0);
-  if (omittedEntities) console.log(`快照中另有 ${omittedEntities} 条实体记录；此版回放展示方块状态与运动活塞。`);
+  if (diagnostics.omittedEntities) console.log(`另有 ${diagnostics.omittedEntities} 条缺少类型或身份的实体快照未导出。`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

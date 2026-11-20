@@ -24,11 +24,28 @@ const bundle = await rolldown({
   plugins: [{
     name: 'minecraft-rendering-core',
     resolveId(specifier) {
+      if (specifier === 'jszip') return requireUpstream.resolve('jszip/dist/jszip.min.js');
+      if (specifier === 'three') return join(dirname(requireUpstream.resolve('three')), 'three.module.js');
       if (specifier.startsWith('@lwv/')) return join(source, specifier.slice(5));
     },
     transform(code, id) {
+      if (resolve(id) === join(source, 'entities.js')) {
+        // A dropped item or projectile can have a physics box without an implemented mesh.
+        // Keep the upstream registration, vehicle transforms and passenger traversal.
+        const buildBody = 'await buildSingleEntityMesh(entity, assets, data)';
+        if (code.split(buildBody).length !== 2) throw new Error('请核对查看器的 buildEntityMesh 实体入口。');
+        return "import { getEntityHitbox } from './entityHitboxes.js'\n" +
+          code.replace(buildBody, buildBody + ' ?? hitboxAnchor(entity)') +
+          `\nfunction hitboxAnchor(entity) {
+  if (!getEntityHitbox(entity)) return null
+  const anchor = new THREE.Group()
+  anchor.position.fromArray(entity.pos)
+  return anchor
+}\n`;
+      }
       // Reuse the same nearest-filtered PNG decoder and animation logic for our local archive.
-      if (resolve(id) === join(source, 'assets.js')) return code + '\nexport { textureFromBlob };\n';
+      if (resolve(id) === join(source, 'entityHitboxes.js')) return code + '\nexport { makeOverlay };\n';
+      if (resolve(id) === join(source, 'assets.js')) return code + '\nexport { parseResourceJSON, textureFromBlob };\n';
     },
   }],
   onwarn(warning, log) {
@@ -75,14 +92,15 @@ const notices = [
   'Vanilla Minecraft assets from the upstream public/assets/minecraft directory are by Mojang Studios / Microsoft.',
   'zlib portions of pako: https://zlib.net/zlib_license.html — Jean-loup Gailly and Mark Adler.',
 ];
-for (const name of ['three', 'pako']) {
+notices.push('Default resource pack: XK Redstone Display 26.3.0, by Xe_Kr (XeKr). https://modrinth.com/resourcepack/xk-redstone-display — Original ZIP includes README.txt and licence terms (CC BY-NC-ND 4.0).');
+for (const name of ['three', 'pako', 'jszip']) {
   const location = join(checkout, 'node_modules', name);
   const pkg = JSON.parse(readFileSync(join(location, 'package.json'), 'utf8'));
-  notices.push('', pkg.name + ' ' + pkg.version + ' (' + pkg.license + ')', readFileSync(join(location, 'LICENSE'), 'utf8').trim());
+  notices.push('', pkg.name + ' ' + pkg.version + ' (' + pkg.license + ')', readFileSync(join(location, name === 'jszip' ? 'LICENSE.markdown' : 'LICENSE'), 'utf8').trim());
 }
 
 for (const [path, contents] of [
-  ['js/vendor/mc-engine.mjs', engine.code],
+  ['js/vendor/mc-engine.mjs', engine.code.replace(/^[\t ]+$/gm, '')],
   ['assets/minecraft/vanilla-resources/vanilla.json', JSON.stringify(catalog, (_key, value) => Object.is(value, -0) ? JSON.rawJSON('-0') : value)],
   ['assets/mc-renderer/NOTICES.txt', notices.join('\n') + '\n'],
 ]) {

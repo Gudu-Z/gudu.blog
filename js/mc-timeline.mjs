@@ -1,3 +1,4 @@
+import { eventTarget } from './mc-replay.mjs';
 import { mountEventList } from './mc-event-list.mjs';
 import { validSpeed, getDefaultSpeed, saveDefaultSpeed } from './mc-playback-settings.mjs';
 
@@ -276,6 +277,20 @@ function properties(map) {
 // style. A block change lists only what it changed, the new value in orange.
 function eventFields(scene, replay, event) {
   const list = element('dl', '', 'mc-fields');
+  if (event?.type.startsWith('entity')) {
+    const { actorId } = eventTarget(replay, event);
+    const player = replay.players.get(actorId) ?? event.player;
+    const pose = player ?? replay.entities.get(actorId) ?? event.entity;
+    const type = player ? 'minecraft:player' : pose?.type ?? (/^[\w.-]+:[\w./-]+$/.test(event.detail) ? event.detail : null);
+    const pos = pose?.pos ?? event.pos;
+    if (pos) {
+      const world = pos.map((n, axis) => Number((n + scene.origin[axis]).toFixed(3)));
+      list.append(field('坐标', 'POS', world.join(', ')));
+    }
+    if (type) list.append(field('实体', 'ENTITY', type));
+    if (pose?.pos) list.append(field('朝向 / 俯仰', 'YAW / PITCH', `${pose.yaw.toFixed(1)}° / ${pose.pitch.toFixed(1)}°`));
+    return list;
+  }
   if (!event?.pos) {
     if (event?.piston) list.append(field('进度', 'PROGRESS', `${Math.round(event.piston.progress * 100)}%`));
     return list;
@@ -531,7 +546,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   secondary.append(articleView, share);
   if (figure.closest('[data-mc-author]')) {
     secondary.append(action('复制书签配置', async () => {
-      const focused = cursor.groupIndex < 0 ? undefined : replay.event?.pos;
+      const focused = cursor.groupIndex < 0 ? undefined : eventTarget(replay, replay.event).block;
       const isBookmark = cursor.step === bookmark.step && (bookmark.tick === undefined || cursor.tick === bookmark.tick);
       const config = JSON.stringify({
         step: cursor.step, tick: cursor.groupIndex < 0 ? cursor.tick : undefined,
@@ -647,6 +662,20 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     details: inspect,
     // The clock, transport, settings and links, which a wide figure floats in its 3D view.
     controls,
+    // A switch in the settings card for something the 3D view offers, such as
+    // its entity hitboxes; the returned setter follows changes made elsewhere.
+    addSwitch(name, code, { checked, keys, onChange }) {
+      const row = element('label', '', 'mc-switch');
+      const input = element('input', '', 'mc-switch-input');
+      input.type = 'checkbox';
+      input.checked = checked;
+      input.addEventListener('change', () => onChange(input.checked));
+      row.append(fieldName(name, code));
+      if (keys) row.append(element('span', keys, 'mc-switch-keys'));
+      row.append(input);
+      settings.insertBefore(row, legend);
+      return value => { input.checked = value; };
+    },
     destroy() { stop(); list.destroy(); settingsWatch.abort(); },
   };
 }

@@ -36,6 +36,7 @@ const server = createServer(async (request, response) => {
     let contentType = types[extension];
     if (parts[0] === 'js' && extension === '.mjs') contentType = types['.js'];
     if (parts[0] === 'assets' && parts[1] === 'minecraft') contentType ??= sceneTypes[extension];
+    if (parts[0] === 'assets' && parts[1] === 'minecraft' && parts[2] === 'resource-packs' && extension === '.zip') contentType = 'application/zip';
     if (!contentType) throw new Error('Not found');
     if (relativePath === 'feed.xml') contentType = 'application/rss+xml; charset=utf-8';
     const info = await stat(file);
@@ -67,4 +68,4 @@ server.on('error', async error => {
   console.error(process.platform === 'win32' ? '  $env:PORT=4174; npm run dev' : '  PORT=4174 npm run dev');
   process.exitCode = 1;
 });
-server.listen(port, '127.0.0.1', () => console.log(`Gudu's universe: http://localhost:${port}`));
+server.listen(port, '127.0.0.1', () => console.log(`Gudu's universe: http://localhost:${server.address().port}`));

@@ -1,5 +1,5 @@
 // The current event's card in the 3D view, held close to its target (the
-// orange box round its block) the way a
+// orange box round its block, or the white hitbox of an entity) the way a
 // tooltip is: on the target's right when the card fits there, else its left,
 // below or above, slid along that side to stay in the free part of the view
 // (inside the margins, clear of the floating timeline and the view's buttons)

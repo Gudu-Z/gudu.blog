@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFile } from 'node:fs/promises';
-import { createReplay, validateScene } from '../js/mc-replay.mjs';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
+import { createInterface } from 'node:readline/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { attachPlayerSkins } from './mc-player-skins.mjs';
+import { readRecordingNbt } from './mc-export-nbt.mjs';
+import { createReplayHitboxes, replayEntityBounds } from '../js/mc-entity-hitboxes.mjs';
+import { Group } from '../js/vendor/mc-engine.mjs';
+import { createReplay, eventTarget, validateScene } from '../js/mc-replay.mjs';
 import { readPalette, replayBounds, renderData } from '../js/mc-render-data.mjs';
 import { adjacentCursor, createTickAxis, indexTicks, phaseStops, playbackCursor } from '../js/mc-timeline.mjs';
 import { branchShapes, indexEventRows, visibleSteps } from '../js/mc-event-list.mjs';
@@ -62,6 +73,141 @@ await test('piston progress, removal and bookmark seeking are reversible', () =>
   assert.throws(() => validateScene({ ...scene, bookmarks: { broken: { step: 3 } } }));
 });
 
+await test('the NBT reader retains the four UUID ints that link player proxies to movement events', () => {
+  const words = Buffer.alloc(16);
+  [1, -1, 0x40008000, 2].forEach((word, i) => words.writeInt32BE(word, i * 4));
+  const tag = key => Buffer.concat([
+    Buffer.from([11, 0, key.length]), Buffer.from(key), Buffer.from([0, 0, 0, 4]), words,
+  ]);
+  const nbt = readRecordingNbt(Buffer.concat([
+    Buffer.from([10, 0, 0]), tag('UUID'), tag('id'), Buffer.from([0]),
+  ]));
+  assert.deepEqual(nbt.UUID, [1, -1, 0x40008000, 2]);
+  assert.deepEqual(nbt.id, nbt.UUID);
+});
+
+await test('players keep fractional poses and their own reversible lifecycle across entity events', () => {
+  const uuidA = '00000001-0000-4000-8000-000000000001';
+  const uuidB = '00000002-0000-4000-8000-000000000002';
+  const still = { entityType: 'minecraft:player', entityUuid: uuidA, x: -0.75, y: 64.1, z: 1.5 };
+  const move = { ...still, type: 'entityMove', y: 64.25, yaw: 90, pitch: -15 };
+  const join = { ...still, type: 'entitySpawn', entityUuid: uuidB, x: 0.125, yaw: 35, pitch: 5 };
+  const profile = { frames: [{ tick: 0, events: [{ ...still, type: 'entityTick' }, move] },
+    { tick: 1, events: [join, { ...move, type: 'entitySpawn', despawn: true }] }] };
+  const snap = { id: 'minecraft:mannequin', UUID: uuidA, Pos: [-0.75, 64.1, 1.5], Rotation: [10, 5] };
+  const blocks = [{ x: -1, y: 64, z: 1, stateId: 1 }, { x: 0, y: 65, z: 2, stateId: 0 }];
+  const area = { entities: [snap], blocks, dimension: 'minecraft:overworld' };
+  const scene = validateScene(exportScene(profile, { areas: [area, area] }, ['minecraft:air', 'minecraft:stone'], '1.21.10'));
+  assert.equal(scene.players.length, 1);
+  assert.ok(!JSON.stringify(scene).includes(uuidA));
+  const initial = scene.players[0];
+  assert.equal(initial.pos[0], .25);
+  assert.equal(initial.yaw, 10);
+  const replay = createReplay(scene);
+  replay.seek(1);
+  assert.equal(replay.playerRevision, 0);
+  assert.deepEqual(replay.players.get(initial.id), initial);
+  replay.seek(2);
+  assert.deepEqual(replay.players.get(initial.id).pos, [.25, .25, .5]);
+  assert.equal(replay.players.get(initial.id).pitch, -15);
+  replay.seek(4);
+  const second = scene.events[2].player.id;
+  assert.deepEqual([...replay.players.keys()], [second]);
+  replay.seek(3);
+  assert.equal(replay.players.size, 2);
+  replay.seek(0);
+  assert.deepEqual([...replay.players.values()], [initial]);
+  assert.equal(replay.revision, 0, 'Player transforms do not invalidate the block meshes.');
+  assert.throws(() => validateScene({ ...scene, players: [initial, initial] }));
+});
+
+await test('entity ticks select the recorded actor across movement, despawn and backward seeks', () => {
+  const key = '00000001-0000-4000-8000-000000000001';
+  const entityType = 'minecraft:pig';
+  const pos = [10.25, 64, -1.5];
+  const snapshot = { UUID: key, id: entityType, Pos: pos, Rotation: [0, 0], Age: -24000 };
+  const tag = { entityUuid: key, entityType, x: pos[0], y: pos[1], z: pos[2] };
+  const area = { dimension: 'minecraft:overworld', entities: [snapshot], blocks: [
+    { x: 10, y: 64, z: -2, stateId: 0 }, { x: 11, y: 65, z: -1, stateId: 0 },
+  ] };
+  const events = [{ ...tag, type: 'entityTick' }, { ...tag, type: 'entityMove', x: 10.75, yaw: 90 },
+    { ...tag, type: 'entitySpawn', despawn: true }, { ...tag, type: 'entitySpawn' }];
+  const scene = validateScene(exportScene({ frames: [{ tick: 1, events }] }, { areas: [area, area] }, ['minecraft:air'], '1.21.10'));
+  assert.equal(scene.entities.length, 1);
+  const [actor] = scene.entities;
+  assert.equal(actor.type, entityType);
+  assert.equal(actor.nbt.Age, -24000);
+  assert.equal(JSON.stringify(scene).includes(key), false);
+  assert.ok(scene.events.every(event => event.actorId === actor.id));
+  assert.equal(scene.events[0].entity, undefined);
+  const replay = createReplay(scene);
+  replay.seek(1);
+  assert.deepEqual(eventTarget(replay, replay.event), { actorId: actor.id });
+  assert.equal(replay.entityRevision, 0);
+  for (const [step, x] of [[2, .75], [3, undefined], [4, .25], [0, .25], [2, .75]]) {
+    replay.seek(step);
+    assert.equal(replay.entities.get(actor.id)?.pos[0], x);
+  }
+  assert.equal(replay.revision, 0);
+  assert.equal(replay.playerRevision, 0);
+  assert.deepEqual(eventTarget(replay, { type: 'blockEntityTick', pos: [1, 2, 3] }), { block: [1, 2, 3] });
+});
+
+await test('hitboxes use unscaled world axes and update the eye vector independently of movement and visibility', () => {
+  const renderer = { scene: new Group(), requestRender() {} };
+  const layer = createReplayHitboxes(renderer);
+  const pose = { id: 'player-1', pos: [5.25, 10.5, -3.75], yaw: 0, pitch: 0 };
+  const update = state => layer.sync(new Map([[state.id, state]]), new Map());
+  const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `${actual} should equal ${expected}`);
+  update(pose);
+  const base = layer.boundsFor(pose.id);
+  [.6, 1.8, .6].forEach((width, axis) => close(base.max[axis] - base.min[axis], width));
+  close(base.min[1], pose.pos[1]);
+  const line = renderer.scene.getObjectByName('entity-hitbox');
+  const points = line.geometry.getAttribute('position');
+  const start = points.count - 6;
+  close(points.getY(start), 1.62);
+  close(points.getZ(start + 1), 2);
+  update({ ...pose, yaw: 90, pitch: 30 });
+  assert.deepEqual(layer.boundsFor(pose.id), base);
+  close(points.getX(start + 1), -Math.sqrt(3));
+  close(points.getY(start + 1), .62);
+  layer.setVisible(false);
+  update({ ...pose, pos: [5.25, 11.5, -3.75] });
+  layer.setVisible(true);
+  assert.equal(renderer.scene.getObjectByName('entity-hitbox'), line);
+  close(layer.boundsFor(pose.id).min[1], 11.5);
+  update({ ...pose, nbt: { Pose: 'crouching' } });
+  const crouched = layer.boundsFor(pose.id);
+  close(crouched.max[1] - crouched.min[1], 1.5);
+  const crouchedPoints = renderer.scene.getObjectByName('entity-hitbox').geometry.getAttribute('position');
+  close(crouchedPoints.getY(crouchedPoints.count - 6), 1.27);
+  update({ ...pose, nbt: { Invisible: 1 } });
+  assert.equal(layer.boundsFor(pose.id), null);
+  update(pose);
+  assert.deepEqual(layer.boundsFor(pose.id), base);
+  assert.equal(replayEntityBounds({ ...pose, type: 'example:unknown' }), null);
+  layer.sync(new Map(), new Map());
+  assert.equal(layer.boundsFor(pose.id), null);
+  layer.destroy();
+  assert.equal(renderer.scene.children.length, 0);
+});
+
+await test('player skin export uses the Java cache key and embeds the matching PNG exactly once', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'mc-player-skin-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const catalog = JSON.parse(await readFile(new URL('../assets/minecraft/vanilla-resources/vanilla.json', import.meta.url)));
+  const png = Buffer.from(catalog.png['entity/player/wide/steve'], 'base64');
+  const hash = createHash('sha256').update(png).digest('hex');
+  const key = createHash('sha1').update(hash, 'utf16le').digest('hex');
+  const cache = join(dir, 'assets', 'skins', key.slice(0, 2));
+  await mkdir(cache, { recursive: true });
+  await writeFile(join(cache, key), png);
+  const scene = { players: [{ skin: hash }], events: [{ player: { skin: hash } }] };
+  await attachPlayerSkins(scene, join(dir, 'versions', 'game', 'config', 'mtr', 'recording'));
+  assert.deepEqual(scene.skins, { [hash]: png.toString('base64') });
+});
+
 await test('native frames retain local positions and can be rendered after the replay moves on', () => {
   const scene = validateScene({
     version: 1, dimension: 'minecraft:overworld', origin: [100, 64, 200],
@@ -84,12 +230,33 @@ await test('native frames retain local positions and can be rendered after the r
   assert.deepEqual([...changed.blocks], [[65, 2]]);
 });
 
+await test('the local preview server serves the default resource pack as the original ZIP', { timeout: 10000 }, async t => {
+  const server = spawn(process.execPath, [fileURLToPath(new URL('./serve.mjs', import.meta.url))], {
+    env: { ...process.env, PORT: '0' }, stdio: ['ignore', 'pipe', 'inherit'], windowsHide: true,
+  });
+  const exited = once(server, 'exit');
+  t.after(async () => {
+    if (server.exitCode === null && server.signalCode === null) server.kill();
+    await exited;
+  });
+  const lines = createInterface({ input: server.stdout });
+  const [message] = await once(lines, 'line', { signal: t.signal });
+  const address = new URL(message.match(/http:\/\/localhost:\d+/)[0]);
+  address.hostname = '127.0.0.1';
+  const path = '/assets/minecraft/resource-packs/xk-redstone-display-26.3.0.zip';
+  const response = await fetch(new URL(path, address), { signal: t.signal });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'application/zip');
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), await readFile(new URL('..' + path, import.meta.url)));
+});
+
 await test('the deployed engine resolves powered and unpowered lamps from the blog resource pack', async t => {
   const { AssetProvider, BlockModelResolver } = await import('../js/vendor/mc-engine.mjs');
   const packURL = new URL('../assets/minecraft/vanilla-resources/vanilla.json', import.meta.url);
+  const xkURL = new URL('../assets/minecraft/resource-packs/xk-redstone-display-26.3.0.zip', import.meta.url);
   const fetchPack = t.mock.method(globalThis, 'fetch', async url => {
-    assert.equal(String(url), packURL.href);
-    return new Response(await readFile(packURL));
+    assert.ok([packURL.href, xkURL.href].includes(String(url)));
+    return new Response(await readFile(url));
   });
   const assets = new AssetProvider();
   const resources = await assets.ready();
@@ -101,7 +268,38 @@ await test('the deployed engine resolves powered and unpowered lamps from the bl
     assert.equal(Buffer.from(resources.png[texture], 'base64').readUInt32BE(), 0x89504e47);
   }
   await new AssetProvider().ready();
-  assert.equal(fetchPack.mock.callCount(), 1);
+  assert.deepEqual(fetchPack.mock.calls.map(call => String(call.arguments[0])).sort(), [packURL.href, xkURL.href].sort());
+  for (const power of ['0', '7', '15']) {
+    const wire = await models.resolve('minecraft:redstone_wire', { north: 'side', south: 'side', east: 'none', west: 'none', power });
+    assert.ok(wire.quads.some(q => q.texKey === 'block/redstone_dust_p' + power.padStart(2, '0')));
+  }
+});
+
+await test('an unavailable default pack leaves the current figure on vanilla and the next figure can retry', async t => {
+  const { AssetProvider } = await import('../js/vendor/mc-engine.mjs?pack-recovery');
+  let attempts = 0;
+  t.mock.method(console, 'warn', () => {});
+  t.mock.method(globalThis, 'fetch', async url => {
+    if (url.pathname.endsWith('.zip')) {
+      attempts++;
+      if (attempts === 1) return new Response(null, { status: 404 });
+      if (attempts === 2) return new Response('<html>not a resource pack</html>');
+    }
+    return new Response(await readFile(url));
+  });
+  const wire = 'blockstates/redstone_wire.json';
+  const first = new AssetProvider(), concurrent = new AssetProvider();
+  const [vanilla] = await Promise.all([first.ready(), concurrent.ready()]);
+  assert.deepEqual(await concurrent.getJSON(wire), vanilla.json[wire]);
+  assert.equal(attempts, 1);
+
+  const invalidZip = new AssetProvider();
+  assert.deepEqual(await invalidZip.getJSON(wire), vanilla.json[wire]);
+  const recovered = new AssetProvider();
+  const packed = await recovered.getJSON(wire);
+  assert.ok(packed && JSON.stringify(packed).includes('redstone_dust_p07'));
+  assert.deepEqual(await first.getJSON(wire), vanilla.json[wire]);
+  assert.equal(attempts, 3);
 });
 
 await test('the bundled registry includes vanilla 1.21.10 state properties', async () => {

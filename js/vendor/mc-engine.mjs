@@ -1,6 +1,11 @@
 /*! Blog Minecraft renderer, based on Gudu-Z/LitematicWebViewer 7bc86862b3a175adfc56b7196e0a84b3796a810f. Rebuild with scripts/mc-vendor-renderer.mjs. Notices: assets/mc-renderer/NOTICES.txt */
 //#region \0rolldown/runtime.js
+var __create = Object.create;
 var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __esmMin = (fn, res, err) => () => {
 	if (err) throw err[0];
 	try {
@@ -9,6 +14,7 @@ var __esmMin = (fn, res, err) => () => {
 		throw err = [e], e;
 	}
 };
+var __commonJSMin = (cb, mod) => () => (mod || (cb((mod = { exports: {} }).exports, mod), cb = null), mod.exports);
 var __exportAll = (all, no_symbols) => {
 	let target = {};
 	for (var name in all) {
@@ -22,6 +28,28 @@ var __exportAll = (all, no_symbols) => {
 	}
 	return target;
 };
+var __copyProps = (to, from, except, desc) => {
+	if (from && typeof from === "object" || typeof from === "function") {
+		for (var keys = __getOwnPropNames(from), i = 0, n = keys.length, key; i < n; i++) {
+			key = keys[i];
+			if (!__hasOwnProp.call(to, key) && key !== except) {
+				__defProp(to, key, {
+					get: ((k) => from[k]).bind(null, key),
+					enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable
+				});
+			}
+		}
+	}
+	return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(isNodeMode || !mod || !mod.__esModule || !__hasOwnProp.call(mod, "default") ? __defProp(target, "default", {
+	value: mod,
+	enumerable: true
+}) : target, mod));
+var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, { get: (a, b) => (typeof require !== "undefined" ? require : a)[b] }) : x)(function(x) {
+	if (typeof require !== "undefined") return require.apply(this, arguments);
+	throw Error("Calling `require` for \"" + x + "\" in an environment that doesn't expose the `require` function. See https://rolldown.rs/in-depth/bundling-cjs#require-external-modules for more details.");
+});
 
 //#endregion
 //#region node_modules/three/build/three.core.js
@@ -71,6 +99,13 @@ const FrontSide = 0;
 * @constant
 */
 const BackSide = 1;
+/**
+* Both front and back faces are rendered.
+*
+* @type {number}
+* @constant
+*/
+const DoubleSide = 2;
 /**
 * The default blending.
 *
@@ -7787,7 +7822,7 @@ var Matrix4 = class Matrix4 {
 	/**
 	* Creates a perspective projection matrix. This is used internally by
 	* {@link PerspectiveCamera#updateProjectionMatrix}.
-	
+
 	* @param {number} left - Left boundary of the viewing frustum at the near plane.
 	* @param {number} right - Right boundary of the viewing frustum at the near plane.
 	* @param {number} top - Top boundary of the viewing frustum at the near plane.
@@ -7836,7 +7871,7 @@ var Matrix4 = class Matrix4 {
 	/**
 	* Creates a orthographic projection matrix. This is used internally by
 	* {@link OrthographicCamera#updateProjectionMatrix}.
-	
+
 	* @param {number} left - Left boundary of the viewing frustum at the near plane.
 	* @param {number} right - Right boundary of the viewing frustum at the near plane.
 	* @param {number} top - Top boundary of the viewing frustum at the near plane.
@@ -34685,3600 +34720,3137 @@ function textureFromBlob(blob, animated) {
 }
 
 //#endregion
-//#region node_modules/three/examples/jsm/controls/OrbitControls.js
-/**
-* Fires when the camera has been transformed by the controls.
-*
-* @event OrbitControls#change
-* @type {Object}
-*/
-const _changeEvent = { type: "change" };
-/**
-* Fires when an interaction was initiated.
-*
-* @event OrbitControls#start
-* @type {Object}
-*/
-const _startEvent = { type: "start" };
-/**
-* Fires when an interaction has finished.
-*
-* @event OrbitControls#end
-* @type {Object}
-*/
-const _endEvent = { type: "end" };
-const _ray = new Ray();
-const _plane = new Plane();
-const _TILT_LIMIT = Math.cos(70 * MathUtils.DEG2RAD);
-const _v = new Vector3();
-const _twoPI = 2 * Math.PI;
-const _STATE = {
-	NONE: -1,
-	ROTATE: 0,
-	DOLLY: 1,
-	PAN: 2,
-	TOUCH_ROTATE: 3,
-	TOUCH_PAN: 4,
-	TOUCH_DOLLY_PAN: 5,
-	TOUCH_DOLLY_ROTATE: 6
-};
-const _EPS = 1e-6;
-/**
-* Orbit controls allow the camera to orbit around a target.
-*
-* OrbitControls performs orbiting, dollying (zooming), and panning. Unlike {@link TrackballControls},
-* it maintains the "up" direction `object.up` (+Y by default).
-*
-* - Orbit: Left mouse / touch: one-finger move.
-* - Zoom: Middle mouse, or mousewheel / touch: two-finger spread or squish.
-* - Pan: Right mouse, or left mouse + ctrl/meta/shiftKey, or arrow keys / touch: two-finger move.
-*
-* ```js
-* const controls = new OrbitControls( camera, renderer.domElement );
-*
-* // controls.update() must be called after any manual changes to the camera's transform
-* camera.position.set( 0, 20, 100 );
-* controls.update();
-*
-* function animate() {
-*
-* 	// required if controls.enableDamping or controls.autoRotate are set to true
-* 	controls.update();
-*
-* 	renderer.render( scene, camera );
-*
-* }
-* ```
-*
-* @augments Controls
-* @three_import import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-*/
-var OrbitControls = class extends Controls {
-	/**
-	* Constructs a new controls instance.
-	*
-	* @param {Object3D} object - The object that is managed by the controls.
-	* @param {?HTMLElement} domElement - The HTML element used for event listeners.
+//#region node_modules/jszip/dist/jszip.min.js
+var require_jszip_min = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+	/*!
+
+	JSZip v3.10.2 - A JavaScript class for generating and reading zip files
+	<http://stuartk.com/jszip>
+
+	(c) 2009-2016 Stuart Knightley <stuart [at] stuartk.com>
+	Dual licenced under the MIT license or GPLv3. See https://raw.github.com/Stuk/jszip/main/LICENSE.markdown.
+
+	JSZip uses the library pako released under the MIT license :
+	https://github.com/nodeca/pako/blob/main/LICENSE
 	*/
-	constructor(object, domElement = null) {
-		super(object, domElement);
-		this.state = _STATE.NONE;
-		/**
-		* The focus point of the controls, the `object` orbits around this.
-		* It can be updated manually at any point to change the focus of the controls.
-		*
-		* @type {Vector3}
-		*/
-		this.target = new Vector3();
-		/**
-		* The focus point of the `minTargetRadius` and `maxTargetRadius` limits.
-		* It can be updated manually at any point to change the center of interest
-		* for the `target`.
-		*
-		* @type {Vector3}
-		*/
-		this.cursor = new Vector3();
-		/**
-		* How far you can dolly in (perspective camera only).
-		*
-		* @type {number}
-		* @default 0
-		*/
-		this.minDistance = 0;
-		/**
-		* How far you can dolly out (perspective camera only).
-		*
-		* @type {number}
-		* @default Infinity
-		*/
-		this.maxDistance = Infinity;
-		/**
-		* How far you can zoom in (orthographic camera only).
-		*
-		* @type {number}
-		* @default 0
-		*/
-		this.minZoom = 0;
-		/**
-		* How far you can zoom out (orthographic camera only).
-		*
-		* @type {number}
-		* @default Infinity
-		*/
-		this.maxZoom = Infinity;
-		/**
-		* How close you can get the target to the 3D `cursor`.
-		*
-		* @type {number}
-		* @default 0
-		*/
-		this.minTargetRadius = 0;
-		/**
-		* How far you can move the target from the 3D `cursor`.
-		*
-		* @type {number}
-		* @default Infinity
-		*/
-		this.maxTargetRadius = Infinity;
-		/**
-		* How far you can orbit vertically, lower limit. Range is `[0, Math.PI]` radians.
-		*
-		* @type {number}
-		* @default 0
-		*/
-		this.minPolarAngle = 0;
-		/**
-		* How far you can orbit vertically, upper limit. Range is `[0, Math.PI]` radians.
-		*
-		* @type {number}
-		* @default Math.PI
-		*/
-		this.maxPolarAngle = Math.PI;
-		/**
-		* How far you can orbit horizontally, lower limit. If set, the interval `[ min, max ]`
-		* must be a sub-interval of `[ - 2 PI, 2 PI ]`, with `( max - min < 2 PI )`.
-		*
-		* @type {number}
-		* @default -Infinity
-		*/
-		this.minAzimuthAngle = -Infinity;
-		/**
-		* How far you can orbit horizontally, upper limit. If set, the interval `[ min, max ]`
-		* must be a sub-interval of `[ - 2 PI, 2 PI ]`, with `( max - min < 2 PI )`.
-		*
-		* @type {number}
-		* @default -Infinity
-		*/
-		this.maxAzimuthAngle = Infinity;
-		/**
-		* Set to `true` to enable damping (inertia), which can be used to give a sense of weight
-		* to the controls. Note that if this is enabled, you must call `update()` in your animation
-		* loop.
-		*
-		* @type {boolean}
-		* @default false
-		*/
-		this.enableDamping = false;
-		/**
-		* The damping inertia used if `enableDamping` is set to `true`.
-		*
-		* Note that for this to work, you must call `update()` in your animation loop.
-		*
-		* @type {number}
-		* @default 0.05
-		*/
-		this.dampingFactor = .05;
-		/**
-		* Enable or disable zooming (dollying) of the camera.
-		*
-		* @type {boolean}
-		* @default true
-		*/
-		this.enableZoom = true;
-		/**
-		* Speed of zooming / dollying.
-		*
-		* @type {number}
-		* @default 1
-		*/
-		this.zoomSpeed = 1;
-		/**
-		* Enable or disable horizontal and vertical rotation of the camera.
-		*
-		* Note that it is possible to disable a single axis by setting the min and max of the
-		* `minPolarAngle` or `minAzimuthAngle` to the same value, which will cause the vertical
-		* or horizontal rotation to be fixed at that value.
-		*
-		* @type {boolean}
-		* @default true
-		*/
-		this.enableRotate = true;
-		/**
-		* Speed of rotation.
-		*
-		* @type {number}
-		* @default 1
-		*/
-		this.rotateSpeed = 1;
-		/**
-		* How fast to rotate the camera when the keyboard is used.
-		*
-		* @type {number}
-		* @default 1
-		*/
-		this.keyRotateSpeed = 1;
-		/**
-		* Enable or disable camera panning.
-		*
-		* @type {boolean}
-		* @default true
-		*/
-		this.enablePan = true;
-		/**
-		* Speed of panning.
-		*
-		* @type {number}
-		* @default 1
-		*/
-		this.panSpeed = 1;
-		/**
-		* Defines how the camera's position is translated when panning. If `true`, the camera pans
-		* in screen space. Otherwise, the camera pans in the plane orthogonal to the camera's up
-		* direction.
-		*
-		* @type {boolean}
-		* @default true
-		*/
-		this.screenSpacePanning = true;
-		/**
-		* How fast to pan the camera when the keyboard is used in
-		* pixels per keypress.
-		*
-		* @type {number}
-		* @default 7
-		*/
-		this.keyPanSpeed = 7;
-		/**
-		* Setting this property to `true` allows to zoom to the cursor's position.
-		*
-		* @type {boolean}
-		* @default false
-		*/
-		this.zoomToCursor = false;
-		/**
-		* Set to true to automatically rotate around the target
-		*
-		* Note that if this is enabled, you must call `update()` in your animation loop.
-		* If you want the auto-rotate speed to be independent of the frame rate (the refresh
-		* rate of the display), you must pass the time `deltaTime`, in seconds, to `update()`.
-		*
-		* @type {boolean}
-		* @default false
-		*/
-		this.autoRotate = false;
-		/**
-		* How fast to rotate around the target if `autoRotate` is `true`. The default  equates to 30 seconds
-		* per orbit at 60fps.
-		*
-		* Note that if `autoRotate` is enabled, you must call `update()` in your animation loop.
-		*
-		* @type {number}
-		* @default 2
-		*/
-		this.autoRotateSpeed = 2;
-		/**
-		* This object contains references to the keycodes for controlling camera panning.
-		*
-		* ```js
-		* controls.keys = {
-		* 	LEFT: 'ArrowLeft', //left arrow
-		* 	UP: 'ArrowUp', // up arrow
-		* 	RIGHT: 'ArrowRight', // right arrow
-		* 	BOTTOM: 'ArrowDown' // down arrow
-		* }
-		* ```
-		* @type {Object}
-		*/
-		this.keys = {
-			LEFT: "ArrowLeft",
-			UP: "ArrowUp",
-			RIGHT: "ArrowRight",
-			BOTTOM: "ArrowDown"
-		};
-		/**
-		* This object contains references to the mouse actions used by the controls.
-		*
-		* ```js
-		* controls.mouseButtons = {
-		* 	LEFT: THREE.MOUSE.ROTATE,
-		* 	MIDDLE: THREE.MOUSE.DOLLY,
-		* 	RIGHT: THREE.MOUSE.PAN
-		* }
-		* ```
-		* @type {Object}
-		*/
-		this.mouseButtons = {
-			LEFT: MOUSE.ROTATE,
-			MIDDLE: MOUSE.DOLLY,
-			RIGHT: MOUSE.PAN
-		};
-		/**
-		* This object contains references to the touch actions used by the controls.
-		*
-		* ```js
-		* controls.mouseButtons = {
-		* 	ONE: THREE.TOUCH.ROTATE,
-		* 	TWO: THREE.TOUCH.DOLLY_PAN
-		* }
-		* ```
-		* @type {Object}
-		*/
-		this.touches = {
-			ONE: TOUCH.ROTATE,
-			TWO: TOUCH.DOLLY_PAN
-		};
-		/**
-		* Used internally by `saveState()` and `reset()`.
-		*
-		* @type {Vector3}
-		*/
-		this.target0 = this.target.clone();
-		/**
-		* Used internally by `saveState()` and `reset()`.
-		*
-		* @type {Vector3}
-		*/
-		this.position0 = this.object.position.clone();
-		/**
-		* Used internally by `saveState()` and `reset()`.
-		*
-		* @type {number}
-		*/
-		this.zoom0 = this.object.zoom;
-		this._cursorStyle = "auto";
-		this._domElementKeyEvents = null;
-		this._lastPosition = new Vector3();
-		this._lastQuaternion = new Quaternion();
-		this._lastTargetPosition = new Vector3();
-		this._quat = new Quaternion().setFromUnitVectors(object.up, new Vector3(0, 1, 0));
-		this._quatInverse = this._quat.clone().invert();
-		this._spherical = new Spherical();
-		this._sphericalDelta = new Spherical();
-		this._scale = 1;
-		this._panOffset = new Vector3();
-		this._rotateStart = new Vector2();
-		this._rotateEnd = new Vector2();
-		this._rotateDelta = new Vector2();
-		this._panStart = new Vector2();
-		this._panEnd = new Vector2();
-		this._panDelta = new Vector2();
-		this._dollyStart = new Vector2();
-		this._dollyEnd = new Vector2();
-		this._dollyDelta = new Vector2();
-		this._dollyDirection = new Vector3();
-		this._mouse = new Vector2();
-		this._performCursorZoom = false;
-		this._pointers = [];
-		this._pointerPositions = {};
-		this._controlActive = false;
-		this._onPointerMove = onPointerMove.bind(this);
-		this._onPointerDown = onPointerDown.bind(this);
-		this._onPointerUp = onPointerUp.bind(this);
-		this._onContextMenu = onContextMenu.bind(this);
-		this._onMouseWheel = onMouseWheel.bind(this);
-		this._onKeyDown = onKeyDown.bind(this);
-		this._onTouchStart = onTouchStart.bind(this);
-		this._onTouchMove = onTouchMove.bind(this);
-		this._onMouseDown = onMouseDown.bind(this);
-		this._onMouseMove = onMouseMove.bind(this);
-		this._interceptControlDown = interceptControlDown.bind(this);
-		this._interceptControlUp = interceptControlUp.bind(this);
-		if (this.domElement !== null) this.connect(this.domElement);
-		this.update();
-	}
-	/**
-	* Defines the visual representation of the cursor.
-	*
-	* @type {('auto'|'grab')}
-	* @default 'auto'
-	*/
-	set cursorStyle(type) {
-		this._cursorStyle = type;
-		if (type === "grab") this.domElement.style.cursor = "grab";
-		else this.domElement.style.cursor = "auto";
-	}
-	get cursorStyle() {
-		return this._cursorStyle;
-	}
-	connect(element) {
-		super.connect(element);
-		this.domElement.addEventListener("pointerdown", this._onPointerDown);
-		this.domElement.addEventListener("pointercancel", this._onPointerUp);
-		this.domElement.addEventListener("contextmenu", this._onContextMenu);
-		this.domElement.addEventListener("wheel", this._onMouseWheel, { passive: false });
-		this.domElement.getRootNode().addEventListener("keydown", this._interceptControlDown, {
-			passive: true,
-			capture: true
-		});
-		this.domElement.style.touchAction = "none";
-	}
-	disconnect() {
-		this.state = _STATE.NONE;
-		this.domElement.removeEventListener("pointerdown", this._onPointerDown);
-		this.domElement.ownerDocument.removeEventListener("pointermove", this._onPointerMove);
-		this.domElement.ownerDocument.removeEventListener("pointerup", this._onPointerUp);
-		this.domElement.removeEventListener("pointercancel", this._onPointerUp);
-		this.domElement.removeEventListener("wheel", this._onMouseWheel);
-		this.domElement.removeEventListener("contextmenu", this._onContextMenu);
-		this.stopListenToKeyEvents();
-		const document = this.domElement.getRootNode();
-		document.removeEventListener("keydown", this._interceptControlDown, { capture: true });
-		document.removeEventListener("keyup", this._interceptControlUp, { capture: true });
-		this._controlActive = false;
-		this._pointers.length = 0;
-		this._pointerPositions = {};
-		this.domElement.style.touchAction = "";
-		this.domElement.style.cursor = "auto";
-	}
-	dispose() {
-		this.disconnect();
-	}
-	/**
-	* Get the current vertical rotation, in radians.
-	*
-	* @return {number} The current vertical rotation, in radians.
-	*/
-	getPolarAngle() {
-		return this._spherical.phi;
-	}
-	/**
-	* Get the current horizontal rotation, in radians.
-	*
-	* @return {number} The current horizontal rotation, in radians.
-	*/
-	getAzimuthalAngle() {
-		return this._spherical.theta;
-	}
-	/**
-	* Returns the distance from the camera to the target.
-	*
-	* @return {number} The distance from the camera to the target.
-	*/
-	getDistance() {
-		return this.object.position.distanceTo(this.target);
-	}
-	/**
-	* Adds key event listeners to the given DOM element.
-	* `window` is a recommended argument for using this method.
-	*
-	* @param {HTMLElement} domElement - The DOM element
-	*/
-	listenToKeyEvents(domElement) {
-		domElement.addEventListener("keydown", this._onKeyDown);
-		this._domElementKeyEvents = domElement;
-	}
-	/**
-	* Removes the key event listener previously defined with `listenToKeyEvents()`.
-	*/
-	stopListenToKeyEvents() {
-		if (this._domElementKeyEvents !== null) {
-			this._domElementKeyEvents.removeEventListener("keydown", this._onKeyDown);
-			this._domElementKeyEvents = null;
-		}
-	}
-	/**
-	* Save the current state of the controls. This can later be recovered with `reset()`.
-	*/
-	saveState() {
-		this.target0.copy(this.target);
-		this.position0.copy(this.object.position);
-		this.zoom0 = this.object.zoom;
-	}
-	/**
-	* Reset the controls to their state from either the last time the `saveState()`
-	* was called, or the initial state.
-	*/
-	reset() {
-		this.target.copy(this.target0);
-		this.object.position.copy(this.position0);
-		this.object.zoom = this.zoom0;
-		this.object.updateProjectionMatrix();
-		this.dispatchEvent(_changeEvent);
-		this.update();
-		this.state = _STATE.NONE;
-	}
-	/**
-	* Programmatically pan the camera.
-	*
-	* @param {number} deltaX - The horizontal pan amount in pixels.
-	* @param {number} deltaY - The vertical pan amount in pixels.
-	*/
-	pan(deltaX, deltaY) {
-		this._pan(deltaX, deltaY);
-		this.update();
-	}
-	/**
-	* Programmatically dolly in (zoom in for perspective camera).
-	*
-	* @param {number} dollyScale - The dolly scale factor.
-	*/
-	dollyIn(dollyScale) {
-		this._dollyIn(dollyScale);
-		this.update();
-	}
-	/**
-	* Programmatically dolly out (zoom out for perspective camera).
-	*
-	* @param {number} dollyScale - The dolly scale factor.
-	*/
-	dollyOut(dollyScale) {
-		this._dollyOut(dollyScale);
-		this.update();
-	}
-	/**
-	* Programmatically rotate the camera left (around the vertical axis).
-	*
-	* @param {number} angle - The rotation angle in radians.
-	*/
-	rotateLeft(angle) {
-		this._rotateLeft(angle);
-		this.update();
-	}
-	/**
-	* Programmatically rotate the camera up (around the horizontal axis).
-	*
-	* @param {number} angle - The rotation angle in radians.
-	*/
-	rotateUp(angle) {
-		this._rotateUp(angle);
-		this.update();
-	}
-	update(deltaTime = null) {
-		const position = this.object.position;
-		_v.copy(position).sub(this.target);
-		_v.applyQuaternion(this._quat);
-		this._spherical.setFromVector3(_v);
-		if (this.autoRotate && this.state === _STATE.NONE) this._rotateLeft(this._getAutoRotationAngle(deltaTime));
-		if (this.enableDamping) {
-			this._spherical.theta += this._sphericalDelta.theta * this.dampingFactor;
-			this._spherical.phi += this._sphericalDelta.phi * this.dampingFactor;
-		} else {
-			this._spherical.theta += this._sphericalDelta.theta;
-			this._spherical.phi += this._sphericalDelta.phi;
-		}
-		let min = this.minAzimuthAngle;
-		let max = this.maxAzimuthAngle;
-		if (isFinite(min) && isFinite(max)) {
-			if (min < -Math.PI) min += _twoPI;
-			else if (min > Math.PI) min -= _twoPI;
-			if (max < -Math.PI) max += _twoPI;
-			else if (max > Math.PI) max -= _twoPI;
-			if (min <= max) this._spherical.theta = Math.max(min, Math.min(max, this._spherical.theta));
-			else this._spherical.theta = this._spherical.theta > (min + max) / 2 ? Math.max(min, this._spherical.theta) : Math.min(max, this._spherical.theta);
-		}
-		this._spherical.phi = Math.max(this.minPolarAngle, Math.min(this.maxPolarAngle, this._spherical.phi));
-		this._spherical.makeSafe();
-		if (this.enableDamping === true) this.target.addScaledVector(this._panOffset, this.dampingFactor);
-		else this.target.add(this._panOffset);
-		this.target.sub(this.cursor);
-		this.target.clampLength(this.minTargetRadius, this.maxTargetRadius);
-		this.target.add(this.cursor);
-		let zoomChanged = false;
-		if (this.zoomToCursor && this._performCursorZoom || this.object.isOrthographicCamera) this._spherical.radius = this._clampDistance(this._spherical.radius);
-		else {
-			const prevRadius = this._spherical.radius;
-			this._spherical.radius = this._clampDistance(this._spherical.radius * this._scale);
-			zoomChanged = prevRadius != this._spherical.radius;
-		}
-		_v.setFromSpherical(this._spherical);
-		_v.applyQuaternion(this._quatInverse);
-		position.copy(this.target).add(_v);
-		this.object.lookAt(this.target);
-		if (this.enableDamping === true) {
-			this._sphericalDelta.theta *= 1 - this.dampingFactor;
-			this._sphericalDelta.phi *= 1 - this.dampingFactor;
-			this._panOffset.multiplyScalar(1 - this.dampingFactor);
-		} else {
-			this._sphericalDelta.set(0, 0, 0);
-			this._panOffset.set(0, 0, 0);
-		}
-		if (this.zoomToCursor && this._performCursorZoom) {
-			let newRadius = null;
-			if (this.object.isPerspectiveCamera) {
-				const prevRadius = _v.length();
-				newRadius = this._clampDistance(prevRadius * this._scale);
-				const radiusDelta = prevRadius - newRadius;
-				this.object.position.addScaledVector(this._dollyDirection, radiusDelta);
-				this.object.updateMatrixWorld();
-				zoomChanged = !!radiusDelta;
-			} else if (this.object.isOrthographicCamera) {
-				const mouseBefore = new Vector3(this._mouse.x, this._mouse.y, 0);
-				mouseBefore.unproject(this.object);
-				const prevZoom = this.object.zoom;
-				this.object.zoom = Math.max(this.minZoom, Math.min(this.maxZoom, this.object.zoom / this._scale));
-				this.object.updateProjectionMatrix();
-				zoomChanged = prevZoom !== this.object.zoom;
-				const mouseAfter = new Vector3(this._mouse.x, this._mouse.y, 0);
-				mouseAfter.unproject(this.object);
-				this.object.position.sub(mouseAfter).add(mouseBefore);
-				this.object.updateMatrixWorld();
-				newRadius = _v.length();
-			} else {
-				console.warn("WARNING: OrbitControls.js encountered an unknown camera type - zoom to cursor disabled.");
-				this.zoomToCursor = false;
-			}
-			if (newRadius !== null) {
-				if (this.screenSpacePanning) this.target.set(0, 0, -1).transformDirection(this.object.matrix).multiplyScalar(newRadius).add(this.object.position);
-				else {
-					_ray.origin.copy(this.object.position);
-					_ray.direction.set(0, 0, -1).transformDirection(this.object.matrix);
-					if (Math.abs(this.object.up.dot(_ray.direction)) < _TILT_LIMIT) this.object.lookAt(this.target);
-					else {
-						_plane.setFromNormalAndCoplanarPoint(this.object.up, this.target);
-						_ray.intersectPlane(_plane, this.target);
+	(function(e) {
+		if ("object" == typeof exports && "undefined" != typeof module) module.exports = e();
+		else if ("function" == typeof define && define.amd) define([], e);
+		else ("undefined" != typeof window ? window : "undefined" != typeof global ? global : "undefined" != typeof self ? self : this).JSZip = e();
+	})(function() {
+		return function s(a, o, h) {
+			function u(r, e) {
+				if (!o[r]) {
+					if (!a[r]) {
+						var t = "function" == typeof __require && __require;
+						if (!e && t) return t(r, !0);
+						if (l) return l(r, !0);
+						var n = /* @__PURE__ */ new Error("Cannot find module '" + r + "'");
+						throw n.code = "MODULE_NOT_FOUND", n;
 					}
+					var i = o[r] = { exports: {} };
+					a[r][0].call(i.exports, function(e) {
+						var t = a[r][1][e];
+						return u(t || e);
+					}, i, i.exports, s, a, o, h);
 				}
+				return o[r].exports;
 			}
-		} else if (this.object.isOrthographicCamera) {
-			const prevZoom = this.object.zoom;
-			this.object.zoom = Math.max(this.minZoom, Math.min(this.maxZoom, this.object.zoom / this._scale));
-			if (prevZoom !== this.object.zoom) {
-				this.object.updateProjectionMatrix();
-				zoomChanged = true;
-			}
-		}
-		this._scale = 1;
-		this._performCursorZoom = false;
-		if (zoomChanged || this._lastPosition.distanceToSquared(this.object.position) > _EPS || 8 * (1 - this._lastQuaternion.dot(this.object.quaternion)) > _EPS || this._lastTargetPosition.distanceToSquared(this.target) > _EPS) {
-			this.dispatchEvent(_changeEvent);
-			this._lastPosition.copy(this.object.position);
-			this._lastQuaternion.copy(this.object.quaternion);
-			this._lastTargetPosition.copy(this.target);
-			return true;
-		}
-		return false;
-	}
-	_getAutoRotationAngle(deltaTime) {
-		if (deltaTime !== null) return _twoPI / 60 * this.autoRotateSpeed * deltaTime;
-		else return _twoPI / 60 / 60 * this.autoRotateSpeed;
-	}
-	_getZoomScale(delta) {
-		const normalizedDelta = Math.abs(delta * .01);
-		return Math.pow(.95, this.zoomSpeed * normalizedDelta);
-	}
-	_rotateLeft(angle) {
-		this._sphericalDelta.theta -= angle;
-	}
-	_rotateUp(angle) {
-		this._sphericalDelta.phi -= angle;
-	}
-	_panLeft(distance, objectMatrix) {
-		_v.setFromMatrixColumn(objectMatrix, 0);
-		_v.multiplyScalar(-distance);
-		this._panOffset.add(_v);
-	}
-	_panUp(distance, objectMatrix) {
-		if (this.screenSpacePanning === true) _v.setFromMatrixColumn(objectMatrix, 1);
-		else {
-			_v.setFromMatrixColumn(objectMatrix, 0);
-			_v.crossVectors(this.object.up, _v);
-		}
-		_v.multiplyScalar(distance);
-		this._panOffset.add(_v);
-	}
-	_pan(deltaX, deltaY) {
-		const element = this.domElement;
-		if (this.object.isPerspectiveCamera) {
-			const position = this.object.position;
-			_v.copy(position).sub(this.target);
-			let targetDistance = _v.length();
-			targetDistance *= Math.tan(this.object.fov / 2 * Math.PI / 180);
-			this._panLeft(2 * deltaX * targetDistance / element.clientHeight, this.object.matrix);
-			this._panUp(2 * deltaY * targetDistance / element.clientHeight, this.object.matrix);
-		} else if (this.object.isOrthographicCamera) {
-			this._panLeft(deltaX * (this.object.right - this.object.left) / this.object.zoom / element.clientWidth, this.object.matrix);
-			this._panUp(deltaY * (this.object.top - this.object.bottom) / this.object.zoom / element.clientHeight, this.object.matrix);
-		} else {
-			console.warn("WARNING: OrbitControls.js encountered an unknown camera type - pan disabled.");
-			this.enablePan = false;
-		}
-	}
-	_dollyOut(dollyScale) {
-		if (this.object.isPerspectiveCamera || this.object.isOrthographicCamera) this._scale /= dollyScale;
-		else {
-			console.warn("WARNING: OrbitControls.js encountered an unknown camera type - dolly/zoom disabled.");
-			this.enableZoom = false;
-		}
-	}
-	_dollyIn(dollyScale) {
-		if (this.object.isPerspectiveCamera || this.object.isOrthographicCamera) this._scale *= dollyScale;
-		else {
-			console.warn("WARNING: OrbitControls.js encountered an unknown camera type - dolly/zoom disabled.");
-			this.enableZoom = false;
-		}
-	}
-	_updateZoomParameters(x, y) {
-		if (!this.zoomToCursor) return;
-		this._performCursorZoom = true;
-		const rect = this.domElement.getBoundingClientRect();
-		const dx = x - rect.left;
-		const dy = y - rect.top;
-		const w = rect.width;
-		const h = rect.height;
-		this._mouse.x = dx / w * 2 - 1;
-		this._mouse.y = -(dy / h) * 2 + 1;
-		this._dollyDirection.set(this._mouse.x, this._mouse.y, 1).unproject(this.object).sub(this.object.position).normalize();
-	}
-	_clampDistance(dist) {
-		return Math.max(this.minDistance, Math.min(this.maxDistance, dist));
-	}
-	_handleMouseDownRotate(event) {
-		this._rotateStart.set(event.clientX, event.clientY);
-	}
-	_handleMouseDownDolly(event) {
-		this._updateZoomParameters(event.clientX, event.clientX);
-		this._dollyStart.set(event.clientX, event.clientY);
-	}
-	_handleMouseDownPan(event) {
-		this._panStart.set(event.clientX, event.clientY);
-	}
-	_handleMouseMoveRotate(event) {
-		this._rotateEnd.set(event.clientX, event.clientY);
-		this._rotateDelta.subVectors(this._rotateEnd, this._rotateStart).multiplyScalar(this.rotateSpeed);
-		const element = this.domElement;
-		this._rotateLeft(_twoPI * this._rotateDelta.x / element.clientHeight);
-		this._rotateUp(_twoPI * this._rotateDelta.y / element.clientHeight);
-		this._rotateStart.copy(this._rotateEnd);
-		this.update();
-	}
-	_handleMouseMoveDolly(event) {
-		this._dollyEnd.set(event.clientX, event.clientY);
-		this._dollyDelta.subVectors(this._dollyEnd, this._dollyStart);
-		if (this._dollyDelta.y > 0) this._dollyOut(this._getZoomScale(this._dollyDelta.y));
-		else if (this._dollyDelta.y < 0) this._dollyIn(this._getZoomScale(this._dollyDelta.y));
-		this._dollyStart.copy(this._dollyEnd);
-		this.update();
-	}
-	_handleMouseMovePan(event) {
-		this._panEnd.set(event.clientX, event.clientY);
-		this._panDelta.subVectors(this._panEnd, this._panStart).multiplyScalar(this.panSpeed);
-		this._pan(this._panDelta.x, this._panDelta.y);
-		this._panStart.copy(this._panEnd);
-		this.update();
-	}
-	_handleMouseWheel(event) {
-		this._updateZoomParameters(event.clientX, event.clientY);
-		if (event.deltaY < 0) this._dollyIn(this._getZoomScale(event.deltaY));
-		else if (event.deltaY > 0) this._dollyOut(this._getZoomScale(event.deltaY));
-		this.update();
-	}
-	_handleKeyDown(event) {
-		let needsUpdate = false;
-		switch (event.code) {
-			case this.keys.UP:
-				if (event.ctrlKey || event.metaKey || event.shiftKey) {
-					if (this.enableRotate) this._rotateUp(_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
-				} else if (this.enablePan) this._pan(0, this.keyPanSpeed);
-				needsUpdate = true;
-				break;
-			case this.keys.BOTTOM:
-				if (event.ctrlKey || event.metaKey || event.shiftKey) {
-					if (this.enableRotate) this._rotateUp(-_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
-				} else if (this.enablePan) this._pan(0, -this.keyPanSpeed);
-				needsUpdate = true;
-				break;
-			case this.keys.LEFT:
-				if (event.ctrlKey || event.metaKey || event.shiftKey) {
-					if (this.enableRotate) this._rotateLeft(_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
-				} else if (this.enablePan) this._pan(this.keyPanSpeed, 0);
-				needsUpdate = true;
-				break;
-			case this.keys.RIGHT:
-				if (event.ctrlKey || event.metaKey || event.shiftKey) {
-					if (this.enableRotate) this._rotateLeft(-_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
-				} else if (this.enablePan) this._pan(-this.keyPanSpeed, 0);
-				needsUpdate = true;
-		}
-		if (needsUpdate) {
-			event.preventDefault();
-			this.update();
-		}
-	}
-	_handleTouchStartRotate(event) {
-		if (this._pointers.length === 1) this._rotateStart.set(event.pageX, event.pageY);
-		else {
-			const position = this._getSecondPointerPosition(event);
-			const x = .5 * (event.pageX + position.x);
-			const y = .5 * (event.pageY + position.y);
-			this._rotateStart.set(x, y);
-		}
-	}
-	_handleTouchStartPan(event) {
-		if (this._pointers.length === 1) this._panStart.set(event.pageX, event.pageY);
-		else {
-			const position = this._getSecondPointerPosition(event);
-			const x = .5 * (event.pageX + position.x);
-			const y = .5 * (event.pageY + position.y);
-			this._panStart.set(x, y);
-		}
-	}
-	_handleTouchStartDolly(event) {
-		const position = this._getSecondPointerPosition(event);
-		const dx = event.pageX - position.x;
-		const dy = event.pageY - position.y;
-		const distance = Math.sqrt(dx * dx + dy * dy);
-		this._dollyStart.set(0, distance);
-	}
-	_handleTouchStartDollyPan(event) {
-		if (this.enableZoom) this._handleTouchStartDolly(event);
-		if (this.enablePan) this._handleTouchStartPan(event);
-	}
-	_handleTouchStartDollyRotate(event) {
-		if (this.enableZoom) this._handleTouchStartDolly(event);
-		if (this.enableRotate) this._handleTouchStartRotate(event);
-	}
-	_handleTouchMoveRotate(event) {
-		if (this._pointers.length == 1) this._rotateEnd.set(event.pageX, event.pageY);
-		else {
-			const position = this._getSecondPointerPosition(event);
-			const x = .5 * (event.pageX + position.x);
-			const y = .5 * (event.pageY + position.y);
-			this._rotateEnd.set(x, y);
-		}
-		this._rotateDelta.subVectors(this._rotateEnd, this._rotateStart).multiplyScalar(this.rotateSpeed);
-		const element = this.domElement;
-		this._rotateLeft(_twoPI * this._rotateDelta.x / element.clientHeight);
-		this._rotateUp(_twoPI * this._rotateDelta.y / element.clientHeight);
-		this._rotateStart.copy(this._rotateEnd);
-	}
-	_handleTouchMovePan(event) {
-		if (this._pointers.length === 1) this._panEnd.set(event.pageX, event.pageY);
-		else {
-			const position = this._getSecondPointerPosition(event);
-			const x = .5 * (event.pageX + position.x);
-			const y = .5 * (event.pageY + position.y);
-			this._panEnd.set(x, y);
-		}
-		this._panDelta.subVectors(this._panEnd, this._panStart).multiplyScalar(this.panSpeed);
-		this._pan(this._panDelta.x, this._panDelta.y);
-		this._panStart.copy(this._panEnd);
-	}
-	_handleTouchMoveDolly(event) {
-		const position = this._getSecondPointerPosition(event);
-		const dx = event.pageX - position.x;
-		const dy = event.pageY - position.y;
-		const distance = Math.sqrt(dx * dx + dy * dy);
-		this._dollyEnd.set(0, distance);
-		this._dollyDelta.set(0, Math.pow(this._dollyEnd.y / this._dollyStart.y, this.zoomSpeed));
-		this._dollyOut(this._dollyDelta.y);
-		this._dollyStart.copy(this._dollyEnd);
-		const centerX = (event.pageX + position.x) * .5;
-		const centerY = (event.pageY + position.y) * .5;
-		this._updateZoomParameters(centerX, centerY);
-	}
-	_handleTouchMoveDollyPan(event) {
-		if (this.enableZoom) this._handleTouchMoveDolly(event);
-		if (this.enablePan) this._handleTouchMovePan(event);
-	}
-	_handleTouchMoveDollyRotate(event) {
-		if (this.enableZoom) this._handleTouchMoveDolly(event);
-		if (this.enableRotate) this._handleTouchMoveRotate(event);
-	}
-	_addPointer(event) {
-		this._pointers.push(event.pointerId);
-	}
-	_removePointer(event) {
-		delete this._pointerPositions[event.pointerId];
-		for (let i = 0; i < this._pointers.length; i++) if (this._pointers[i] == event.pointerId) {
-			this._pointers.splice(i, 1);
-			return;
-		}
-	}
-	_isTrackingPointer(event) {
-		for (let i = 0; i < this._pointers.length; i++) if (this._pointers[i] == event.pointerId) return true;
-		return false;
-	}
-	_trackPointer(event) {
-		let position = this._pointerPositions[event.pointerId];
-		if (position === void 0) {
-			position = new Vector2();
-			this._pointerPositions[event.pointerId] = position;
-		}
-		position.set(event.pageX, event.pageY);
-	}
-	_getSecondPointerPosition(event) {
-		const pointerId = event.pointerId === this._pointers[0] ? this._pointers[1] : this._pointers[0];
-		return this._pointerPositions[pointerId];
-	}
-	_customWheelEvent(event) {
-		const mode = event.deltaMode;
-		const newEvent = {
-			clientX: event.clientX,
-			clientY: event.clientY,
-			deltaY: event.deltaY
-		};
-		switch (mode) {
-			case 1:
-				newEvent.deltaY *= 16;
-				break;
-			case 2: newEvent.deltaY *= 100;
-		}
-		if (event.ctrlKey && !this._controlActive) newEvent.deltaY *= 10;
-		return newEvent;
-	}
-};
-function onPointerDown(event) {
-	if (this.enabled === false) return;
-	if (this._pointers.length === 0) {
-		this.domElement.setPointerCapture(event.pointerId);
-		this.domElement.ownerDocument.addEventListener("pointermove", this._onPointerMove);
-		this.domElement.ownerDocument.addEventListener("pointerup", this._onPointerUp);
-	}
-	if (this._isTrackingPointer(event)) return;
-	this._addPointer(event);
-	if (event.pointerType === "touch") this._onTouchStart(event);
-	else this._onMouseDown(event);
-	if (this._cursorStyle === "grab") this.domElement.style.cursor = "grabbing";
-}
-function onPointerMove(event) {
-	if (this.enabled === false) return;
-	if (event.pointerType === "touch") this._onTouchMove(event);
-	else this._onMouseMove(event);
-}
-function onPointerUp(event) {
-	this._removePointer(event);
-	switch (this._pointers.length) {
-		case 0:
-			this.domElement.releasePointerCapture(event.pointerId);
-			this.domElement.ownerDocument.removeEventListener("pointermove", this._onPointerMove);
-			this.domElement.ownerDocument.removeEventListener("pointerup", this._onPointerUp);
-			this.dispatchEvent(_endEvent);
-			this.state = _STATE.NONE;
-			if (this._cursorStyle === "grab") this.domElement.style.cursor = "grab";
-			break;
-		case 1:
-			const pointerId = this._pointers[0];
-			const position = this._pointerPositions[pointerId];
-			this._onTouchStart({
-				pointerId,
-				pageX: position.x,
-				pageY: position.y
-			});
-	}
-}
-function onMouseDown(event) {
-	let mouseAction;
-	switch (event.button) {
-		case 0:
-			mouseAction = this.mouseButtons.LEFT;
-			break;
-		case 1:
-			mouseAction = this.mouseButtons.MIDDLE;
-			break;
-		case 2:
-			mouseAction = this.mouseButtons.RIGHT;
-			break;
-		default: mouseAction = -1;
-	}
-	switch (mouseAction) {
-		case MOUSE.DOLLY:
-			if (this.enableZoom === false) return;
-			this._handleMouseDownDolly(event);
-			this.state = _STATE.DOLLY;
-			break;
-		case MOUSE.ROTATE:
-			if (event.ctrlKey || event.metaKey || event.shiftKey) {
-				if (this.enablePan === false) return;
-				this._handleMouseDownPan(event);
-				this.state = _STATE.PAN;
-			} else {
-				if (this.enableRotate === false) return;
-				this._handleMouseDownRotate(event);
-				this.state = _STATE.ROTATE;
-			}
-			break;
-		case MOUSE.PAN:
-			if (event.ctrlKey || event.metaKey || event.shiftKey) {
-				if (this.enableRotate === false) return;
-				this._handleMouseDownRotate(event);
-				this.state = _STATE.ROTATE;
-			} else {
-				if (this.enablePan === false) return;
-				this._handleMouseDownPan(event);
-				this.state = _STATE.PAN;
-			}
-			break;
-		default: this.state = _STATE.NONE;
-	}
-	if (this.state !== _STATE.NONE) this.dispatchEvent(_startEvent);
-}
-function onMouseMove(event) {
-	switch (this.state) {
-		case _STATE.ROTATE:
-			if (this.enableRotate === false) return;
-			this._handleMouseMoveRotate(event);
-			break;
-		case _STATE.DOLLY:
-			if (this.enableZoom === false) return;
-			this._handleMouseMoveDolly(event);
-			break;
-		case _STATE.PAN:
-			if (this.enablePan === false) return;
-			this._handleMouseMovePan(event);
-	}
-}
-function onMouseWheel(event) {
-	if (this.enabled === false || this.enableZoom === false || this.state !== _STATE.NONE) return;
-	event.preventDefault();
-	this.dispatchEvent(_startEvent);
-	this._handleMouseWheel(this._customWheelEvent(event));
-	this.dispatchEvent(_endEvent);
-}
-function onKeyDown(event) {
-	if (this.enabled === false) return;
-	this._handleKeyDown(event);
-}
-function onTouchStart(event) {
-	this._trackPointer(event);
-	switch (this._pointers.length) {
-		case 1:
-			switch (this.touches.ONE) {
-				case TOUCH.ROTATE:
-					if (this.enableRotate === false) return;
-					this._handleTouchStartRotate(event);
-					this.state = _STATE.TOUCH_ROTATE;
-					break;
-				case TOUCH.PAN:
-					if (this.enablePan === false) return;
-					this._handleTouchStartPan(event);
-					this.state = _STATE.TOUCH_PAN;
-					break;
-				default: this.state = _STATE.NONE;
-			}
-			break;
-		case 2:
-			switch (this.touches.TWO) {
-				case TOUCH.DOLLY_PAN:
-					if (this.enableZoom === false && this.enablePan === false) return;
-					this._handleTouchStartDollyPan(event);
-					this.state = _STATE.TOUCH_DOLLY_PAN;
-					break;
-				case TOUCH.DOLLY_ROTATE:
-					if (this.enableZoom === false && this.enableRotate === false) return;
-					this._handleTouchStartDollyRotate(event);
-					this.state = _STATE.TOUCH_DOLLY_ROTATE;
-					break;
-				default: this.state = _STATE.NONE;
-			}
-			break;
-		default: this.state = _STATE.NONE;
-	}
-	if (this.state !== _STATE.NONE) this.dispatchEvent(_startEvent);
-}
-function onTouchMove(event) {
-	this._trackPointer(event);
-	switch (this.state) {
-		case _STATE.TOUCH_ROTATE:
-			if (this.enableRotate === false) return;
-			this._handleTouchMoveRotate(event);
-			this.update();
-			break;
-		case _STATE.TOUCH_PAN:
-			if (this.enablePan === false) return;
-			this._handleTouchMovePan(event);
-			this.update();
-			break;
-		case _STATE.TOUCH_DOLLY_PAN:
-			if (this.enableZoom === false && this.enablePan === false) return;
-			this._handleTouchMoveDollyPan(event);
-			this.update();
-			break;
-		case _STATE.TOUCH_DOLLY_ROTATE:
-			if (this.enableZoom === false && this.enableRotate === false) return;
-			this._handleTouchMoveDollyRotate(event);
-			this.update();
-			break;
-		default: this.state = _STATE.NONE;
-	}
-}
-function onContextMenu(event) {
-	if (this.enabled === false) return;
-	event.preventDefault();
-}
-function interceptControlDown(event) {
-	if (event.key === "Control") {
-		this._controlActive = true;
-		this.domElement.getRootNode().addEventListener("keyup", this._interceptControlUp, {
-			passive: true,
-			capture: true
-		});
-	}
-}
-function interceptControlUp(event) {
-	if (event.key === "Control") {
-		this._controlActive = false;
-		this.domElement.getRootNode().removeEventListener("keyup", this._interceptControlUp, {
-			passive: true,
-			capture: true
-		});
-	}
-}
-
-//#endregion
-//#region src/fluidFlowBlocks.js
-const FLUID_FLOW_BLOCKS = /* @__PURE__ */ new Set([
-	"acacia_door",
-	"acacia_fence",
-	"acacia_fence_gate",
-	"acacia_hanging_sign",
-	"acacia_leaves",
-	"acacia_log",
-	"acacia_planks",
-	"acacia_pressure_plate",
-	"acacia_shelf",
-	"acacia_sign",
-	"acacia_slab",
-	"acacia_stairs",
-	"acacia_trapdoor",
-	"acacia_wall_hanging_sign",
-	"acacia_wall_sign",
-	"acacia_wood",
-	"amethyst_block",
-	"amethyst_cluster",
-	"ancient_debris",
-	"andesite",
-	"andesite_slab",
-	"andesite_stairs",
-	"andesite_wall",
-	"anvil",
-	"azalea_leaves",
-	"bamboo",
-	"bamboo_block",
-	"bamboo_door",
-	"bamboo_fence",
-	"bamboo_fence_gate",
-	"bamboo_hanging_sign",
-	"bamboo_mosaic",
-	"bamboo_mosaic_slab",
-	"bamboo_mosaic_stairs",
-	"bamboo_planks",
-	"bamboo_pressure_plate",
-	"bamboo_shelf",
-	"bamboo_sign",
-	"bamboo_slab",
-	"bamboo_stairs",
-	"bamboo_trapdoor",
-	"bamboo_wall_hanging_sign",
-	"bamboo_wall_sign",
-	"barrel",
-	"barrier",
-	"basalt",
-	"beacon",
-	"bedrock",
-	"bee_nest",
-	"beehive",
-	"bell",
-	"birch_door",
-	"birch_fence",
-	"birch_fence_gate",
-	"birch_hanging_sign",
-	"birch_leaves",
-	"birch_log",
-	"birch_planks",
-	"birch_pressure_plate",
-	"birch_shelf",
-	"birch_sign",
-	"birch_slab",
-	"birch_stairs",
-	"birch_trapdoor",
-	"birch_wall_hanging_sign",
-	"birch_wall_sign",
-	"birch_wood",
-	"black_banner",
-	"black_bed",
-	"black_candle_cake",
-	"black_concrete",
-	"black_concrete_powder",
-	"black_concrete_slab",
-	"black_concrete_stairs",
-	"black_glazed_terracotta",
-	"black_shulker_box",
-	"black_stained_glass",
-	"black_stained_glass_pane",
-	"black_terracotta",
-	"black_wall_banner",
-	"black_wool",
-	"black_wool_slab",
-	"black_wool_stairs",
-	"blackstone",
-	"blackstone_slab",
-	"blackstone_stairs",
-	"blackstone_wall",
-	"blast_furnace",
-	"blue_banner",
-	"blue_bed",
-	"blue_candle_cake",
-	"blue_concrete",
-	"blue_concrete_powder",
-	"blue_concrete_slab",
-	"blue_concrete_stairs",
-	"blue_glazed_terracotta",
-	"blue_ice",
-	"blue_shulker_box",
-	"blue_stained_glass",
-	"blue_stained_glass_pane",
-	"blue_terracotta",
-	"blue_wall_banner",
-	"blue_wool",
-	"blue_wool_slab",
-	"blue_wool_stairs",
-	"bone_block",
-	"bookshelf",
-	"brain_coral_block",
-	"brewing_stand",
-	"brick_slab",
-	"brick_stairs",
-	"brick_wall",
-	"bricks",
-	"brown_banner",
-	"brown_bed",
-	"brown_candle_cake",
-	"brown_concrete",
-	"brown_concrete_powder",
-	"brown_concrete_slab",
-	"brown_concrete_stairs",
-	"brown_glazed_terracotta",
-	"brown_mushroom_block",
-	"brown_shulker_box",
-	"brown_stained_glass",
-	"brown_stained_glass_pane",
-	"brown_terracotta",
-	"brown_wall_banner",
-	"brown_wool",
-	"brown_wool_slab",
-	"brown_wool_stairs",
-	"bubble_coral_block",
-	"budding_amethyst",
-	"cactus",
-	"cake",
-	"calcite",
-	"calibrated_sculk_sensor",
-	"campfire",
-	"candle_cake",
-	"cartography_table",
-	"carved_pumpkin",
-	"cauldron",
-	"chain_command_block",
-	"cherry_door",
-	"cherry_fence",
-	"cherry_fence_gate",
-	"cherry_hanging_sign",
-	"cherry_leaves",
-	"cherry_log",
-	"cherry_planks",
-	"cherry_pressure_plate",
-	"cherry_shelf",
-	"cherry_sign",
-	"cherry_slab",
-	"cherry_stairs",
-	"cherry_trapdoor",
-	"cherry_wall_hanging_sign",
-	"cherry_wall_sign",
-	"cherry_wood",
-	"chest",
-	"chipped_anvil",
-	"chiseled_bookshelf",
-	"chiseled_cinnabar",
-	"chiseled_copper",
-	"chiseled_deepslate",
-	"chiseled_nether_bricks",
-	"chiseled_polished_blackstone",
-	"chiseled_quartz_block",
-	"chiseled_red_sandstone",
-	"chiseled_resin_bricks",
-	"chiseled_sandstone",
-	"chiseled_stone_bricks",
-	"chiseled_sulfur",
-	"chiseled_tuff",
-	"chiseled_tuff_bricks",
-	"cinnabar",
-	"cinnabar_brick_slab",
-	"cinnabar_brick_stairs",
-	"cinnabar_brick_wall",
-	"cinnabar_bricks",
-	"cinnabar_slab",
-	"cinnabar_stairs",
-	"cinnabar_wall",
-	"clay",
-	"coal_block",
-	"coal_ore",
-	"coarse_dirt",
-	"cobbled_deepslate",
-	"cobbled_deepslate_slab",
-	"cobbled_deepslate_stairs",
-	"cobbled_deepslate_wall",
-	"cobblestone",
-	"cobblestone_slab",
-	"cobblestone_stairs",
-	"cobblestone_wall",
-	"command_block",
-	"composter",
-	"conduit",
-	"copper_bars",
-	"copper_block",
-	"copper_bulb",
-	"copper_chain",
-	"copper_chest",
-	"copper_door",
-	"copper_grate",
-	"copper_lantern",
-	"copper_ore",
-	"copper_trapdoor",
-	"cracked_deepslate_bricks",
-	"cracked_deepslate_tiles",
-	"cracked_nether_bricks",
-	"cracked_polished_blackstone_bricks",
-	"cracked_stone_bricks",
-	"crafter",
-	"crafting_table",
-	"creaking_heart",
-	"crimson_door",
-	"crimson_fence",
-	"crimson_fence_gate",
-	"crimson_hanging_sign",
-	"crimson_hyphae",
-	"crimson_nylium",
-	"crimson_planks",
-	"crimson_pressure_plate",
-	"crimson_shelf",
-	"crimson_sign",
-	"crimson_slab",
-	"crimson_stairs",
-	"crimson_stem",
-	"crimson_trapdoor",
-	"crimson_wall_hanging_sign",
-	"crimson_wall_sign",
-	"crying_obsidian",
-	"cut_copper",
-	"cut_copper_slab",
-	"cut_copper_stairs",
-	"cut_red_sandstone",
-	"cut_red_sandstone_slab",
-	"cut_sandstone",
-	"cut_sandstone_slab",
-	"cyan_banner",
-	"cyan_bed",
-	"cyan_candle_cake",
-	"cyan_concrete",
-	"cyan_concrete_powder",
-	"cyan_concrete_slab",
-	"cyan_concrete_stairs",
-	"cyan_glazed_terracotta",
-	"cyan_shulker_box",
-	"cyan_stained_glass",
-	"cyan_stained_glass_pane",
-	"cyan_terracotta",
-	"cyan_wall_banner",
-	"cyan_wool",
-	"cyan_wool_slab",
-	"cyan_wool_stairs",
-	"damaged_anvil",
-	"dark_oak_door",
-	"dark_oak_fence",
-	"dark_oak_fence_gate",
-	"dark_oak_hanging_sign",
-	"dark_oak_leaves",
-	"dark_oak_log",
-	"dark_oak_planks",
-	"dark_oak_pressure_plate",
-	"dark_oak_shelf",
-	"dark_oak_sign",
-	"dark_oak_slab",
-	"dark_oak_stairs",
-	"dark_oak_trapdoor",
-	"dark_oak_wall_hanging_sign",
-	"dark_oak_wall_sign",
-	"dark_oak_wood",
-	"dark_prismarine",
-	"dark_prismarine_slab",
-	"dark_prismarine_stairs",
-	"daylight_detector",
-	"dead_brain_coral",
-	"dead_brain_coral_block",
-	"dead_brain_coral_fan",
-	"dead_brain_coral_wall_fan",
-	"dead_bubble_coral",
-	"dead_bubble_coral_block",
-	"dead_bubble_coral_fan",
-	"dead_bubble_coral_wall_fan",
-	"dead_fire_coral",
-	"dead_fire_coral_block",
-	"dead_fire_coral_fan",
-	"dead_fire_coral_wall_fan",
-	"dead_horn_coral",
-	"dead_horn_coral_block",
-	"dead_horn_coral_fan",
-	"dead_horn_coral_wall_fan",
-	"dead_tube_coral",
-	"dead_tube_coral_block",
-	"dead_tube_coral_fan",
-	"dead_tube_coral_wall_fan",
-	"decorated_pot",
-	"deepslate",
-	"deepslate_brick_slab",
-	"deepslate_brick_stairs",
-	"deepslate_brick_wall",
-	"deepslate_bricks",
-	"deepslate_coal_ore",
-	"deepslate_copper_ore",
-	"deepslate_diamond_ore",
-	"deepslate_emerald_ore",
-	"deepslate_gold_ore",
-	"deepslate_iron_ore",
-	"deepslate_lapis_ore",
-	"deepslate_redstone_ore",
-	"deepslate_tile_slab",
-	"deepslate_tile_stairs",
-	"deepslate_tile_wall",
-	"deepslate_tiles",
-	"diamond_block",
-	"diamond_ore",
-	"diorite",
-	"diorite_slab",
-	"diorite_stairs",
-	"diorite_wall",
-	"dirt",
-	"dirt_path",
-	"dispenser",
-	"dragon_egg",
-	"dried_ghast",
-	"dried_kelp_block",
-	"dripstone_block",
-	"dropper",
-	"emerald_block",
-	"emerald_ore",
-	"enchanting_table",
-	"end_portal_frame",
-	"end_stone",
-	"end_stone_brick_slab",
-	"end_stone_brick_stairs",
-	"end_stone_brick_wall",
-	"end_stone_bricks",
-	"ender_chest",
-	"exposed_chiseled_copper",
-	"exposed_copper",
-	"exposed_copper_bars",
-	"exposed_copper_bulb",
-	"exposed_copper_chain",
-	"exposed_copper_chest",
-	"exposed_copper_door",
-	"exposed_copper_grate",
-	"exposed_copper_lantern",
-	"exposed_copper_trapdoor",
-	"exposed_cut_copper",
-	"exposed_cut_copper_slab",
-	"exposed_cut_copper_stairs",
-	"exposed_lightning_rod",
-	"farmland",
-	"fire_coral_block",
-	"fletching_table",
-	"flowering_azalea_leaves",
-	"frosted_ice",
-	"furnace",
-	"gilded_blackstone",
-	"glass",
-	"glass_pane",
-	"glowstone",
-	"gold_block",
-	"gold_ore",
-	"granite",
-	"granite_slab",
-	"granite_stairs",
-	"granite_wall",
-	"grass_block",
-	"gravel",
-	"gray_banner",
-	"gray_bed",
-	"gray_candle_cake",
-	"gray_concrete",
-	"gray_concrete_powder",
-	"gray_concrete_slab",
-	"gray_concrete_stairs",
-	"gray_glazed_terracotta",
-	"gray_shulker_box",
-	"gray_stained_glass",
-	"gray_stained_glass_pane",
-	"gray_terracotta",
-	"gray_wall_banner",
-	"gray_wool",
-	"gray_wool_slab",
-	"gray_wool_stairs",
-	"green_banner",
-	"green_bed",
-	"green_candle_cake",
-	"green_concrete",
-	"green_concrete_powder",
-	"green_concrete_slab",
-	"green_concrete_stairs",
-	"green_glazed_terracotta",
-	"green_shulker_box",
-	"green_stained_glass",
-	"green_stained_glass_pane",
-	"green_terracotta",
-	"green_wall_banner",
-	"green_wool",
-	"green_wool_slab",
-	"green_wool_stairs",
-	"grindstone",
-	"hay_block",
-	"heavy_weighted_pressure_plate",
-	"honey_block",
-	"honeycomb_block",
-	"hopper",
-	"horn_coral_block",
-	"ice",
-	"infested_chiseled_stone_bricks",
-	"infested_cobblestone",
-	"infested_cracked_stone_bricks",
-	"infested_deepslate",
-	"infested_mossy_stone_bricks",
-	"infested_stone",
-	"infested_stone_bricks",
-	"iron_bars",
-	"iron_block",
-	"iron_chain",
-	"iron_door",
-	"iron_ore",
-	"iron_trapdoor",
-	"jack_o_lantern",
-	"jigsaw",
-	"jukebox",
-	"jungle_door",
-	"jungle_fence",
-	"jungle_fence_gate",
-	"jungle_hanging_sign",
-	"jungle_leaves",
-	"jungle_log",
-	"jungle_planks",
-	"jungle_pressure_plate",
-	"jungle_shelf",
-	"jungle_sign",
-	"jungle_slab",
-	"jungle_stairs",
-	"jungle_trapdoor",
-	"jungle_wall_hanging_sign",
-	"jungle_wall_sign",
-	"jungle_wood",
-	"lantern",
-	"lapis_block",
-	"lapis_ore",
-	"large_amethyst_bud",
-	"lava_cauldron",
-	"lectern",
-	"light_blue_banner",
-	"light_blue_bed",
-	"light_blue_candle_cake",
-	"light_blue_concrete",
-	"light_blue_concrete_powder",
-	"light_blue_concrete_slab",
-	"light_blue_concrete_stairs",
-	"light_blue_glazed_terracotta",
-	"light_blue_shulker_box",
-	"light_blue_stained_glass",
-	"light_blue_stained_glass_pane",
-	"light_blue_terracotta",
-	"light_blue_wall_banner",
-	"light_blue_wool",
-	"light_blue_wool_slab",
-	"light_blue_wool_stairs",
-	"light_gray_banner",
-	"light_gray_bed",
-	"light_gray_candle_cake",
-	"light_gray_concrete",
-	"light_gray_concrete_powder",
-	"light_gray_concrete_slab",
-	"light_gray_concrete_stairs",
-	"light_gray_glazed_terracotta",
-	"light_gray_shulker_box",
-	"light_gray_stained_glass",
-	"light_gray_stained_glass_pane",
-	"light_gray_terracotta",
-	"light_gray_wall_banner",
-	"light_gray_wool",
-	"light_gray_wool_slab",
-	"light_gray_wool_stairs",
-	"light_weighted_pressure_plate",
-	"lightning_rod",
-	"lime_banner",
-	"lime_bed",
-	"lime_candle_cake",
-	"lime_concrete",
-	"lime_concrete_powder",
-	"lime_concrete_slab",
-	"lime_concrete_stairs",
-	"lime_glazed_terracotta",
-	"lime_shulker_box",
-	"lime_stained_glass",
-	"lime_stained_glass_pane",
-	"lime_terracotta",
-	"lime_wall_banner",
-	"lime_wool",
-	"lime_wool_slab",
-	"lime_wool_stairs",
-	"lodestone",
-	"loom",
-	"magenta_banner",
-	"magenta_bed",
-	"magenta_candle_cake",
-	"magenta_concrete",
-	"magenta_concrete_powder",
-	"magenta_concrete_slab",
-	"magenta_concrete_stairs",
-	"magenta_glazed_terracotta",
-	"magenta_shulker_box",
-	"magenta_stained_glass",
-	"magenta_stained_glass_pane",
-	"magenta_terracotta",
-	"magenta_wall_banner",
-	"magenta_wool",
-	"magenta_wool_slab",
-	"magenta_wool_stairs",
-	"magma_block",
-	"mangrove_door",
-	"mangrove_fence",
-	"mangrove_fence_gate",
-	"mangrove_hanging_sign",
-	"mangrove_leaves",
-	"mangrove_log",
-	"mangrove_planks",
-	"mangrove_pressure_plate",
-	"mangrove_roots",
-	"mangrove_shelf",
-	"mangrove_sign",
-	"mangrove_slab",
-	"mangrove_stairs",
-	"mangrove_trapdoor",
-	"mangrove_wall_hanging_sign",
-	"mangrove_wall_sign",
-	"mangrove_wood",
-	"medium_amethyst_bud",
-	"melon",
-	"moss_block",
-	"mossy_cobblestone",
-	"mossy_cobblestone_slab",
-	"mossy_cobblestone_stairs",
-	"mossy_cobblestone_wall",
-	"mossy_stone_brick_slab",
-	"mossy_stone_brick_stairs",
-	"mossy_stone_brick_wall",
-	"mossy_stone_bricks",
-	"moving_piston",
-	"mud",
-	"mud_brick_slab",
-	"mud_brick_stairs",
-	"mud_brick_wall",
-	"mud_bricks",
-	"muddy_mangrove_roots",
-	"mushroom_stem",
-	"mycelium",
-	"nether_brick_fence",
-	"nether_brick_slab",
-	"nether_brick_stairs",
-	"nether_brick_wall",
-	"nether_bricks",
-	"nether_gold_ore",
-	"nether_quartz_ore",
-	"nether_wart_block",
-	"netherite_block",
-	"netherrack",
-	"note_block",
-	"oak_door",
-	"oak_fence",
-	"oak_fence_gate",
-	"oak_hanging_sign",
-	"oak_leaves",
-	"oak_log",
-	"oak_planks",
-	"oak_pressure_plate",
-	"oak_shelf",
-	"oak_sign",
-	"oak_slab",
-	"oak_stairs",
-	"oak_trapdoor",
-	"oak_wall_hanging_sign",
-	"oak_wall_sign",
-	"oak_wood",
-	"observer",
-	"obsidian",
-	"ochre_froglight",
-	"orange_banner",
-	"orange_bed",
-	"orange_candle_cake",
-	"orange_concrete",
-	"orange_concrete_powder",
-	"orange_concrete_slab",
-	"orange_concrete_stairs",
-	"orange_glazed_terracotta",
-	"orange_poplar_leaves",
-	"orange_shulker_box",
-	"orange_stained_glass",
-	"orange_stained_glass_pane",
-	"orange_terracotta",
-	"orange_wall_banner",
-	"orange_wool",
-	"orange_wool_slab",
-	"orange_wool_stairs",
-	"oxidized_chiseled_copper",
-	"oxidized_copper",
-	"oxidized_copper_bars",
-	"oxidized_copper_bulb",
-	"oxidized_copper_chain",
-	"oxidized_copper_chest",
-	"oxidized_copper_door",
-	"oxidized_copper_grate",
-	"oxidized_copper_lantern",
-	"oxidized_copper_trapdoor",
-	"oxidized_cut_copper",
-	"oxidized_cut_copper_slab",
-	"oxidized_cut_copper_stairs",
-	"oxidized_lightning_rod",
-	"packed_ice",
-	"packed_mud",
-	"pale_moss_block",
-	"pale_oak_door",
-	"pale_oak_fence",
-	"pale_oak_fence_gate",
-	"pale_oak_hanging_sign",
-	"pale_oak_leaves",
-	"pale_oak_log",
-	"pale_oak_planks",
-	"pale_oak_pressure_plate",
-	"pale_oak_shelf",
-	"pale_oak_sign",
-	"pale_oak_slab",
-	"pale_oak_stairs",
-	"pale_oak_trapdoor",
-	"pale_oak_wall_hanging_sign",
-	"pale_oak_wall_sign",
-	"pale_oak_wood",
-	"pearlescent_froglight",
-	"petrified_oak_slab",
-	"pink_banner",
-	"pink_bed",
-	"pink_candle_cake",
-	"pink_concrete",
-	"pink_concrete_powder",
-	"pink_concrete_slab",
-	"pink_concrete_stairs",
-	"pink_glazed_terracotta",
-	"pink_shulker_box",
-	"pink_stained_glass",
-	"pink_stained_glass_pane",
-	"pink_terracotta",
-	"pink_wall_banner",
-	"pink_wool",
-	"pink_wool_slab",
-	"pink_wool_stairs",
-	"piston",
-	"piston_head",
-	"podzol",
-	"pointed_dripstone",
-	"polished_andesite",
-	"polished_andesite_slab",
-	"polished_andesite_stairs",
-	"polished_basalt",
-	"polished_blackstone",
-	"polished_blackstone_brick_slab",
-	"polished_blackstone_brick_stairs",
-	"polished_blackstone_brick_wall",
-	"polished_blackstone_bricks",
-	"polished_blackstone_pressure_plate",
-	"polished_blackstone_slab",
-	"polished_blackstone_stairs",
-	"polished_blackstone_wall",
-	"polished_cinnabar",
-	"polished_cinnabar_slab",
-	"polished_cinnabar_stairs",
-	"polished_cinnabar_wall",
-	"polished_deepslate",
-	"polished_deepslate_slab",
-	"polished_deepslate_stairs",
-	"polished_deepslate_wall",
-	"polished_diorite",
-	"polished_diorite_slab",
-	"polished_diorite_stairs",
-	"polished_granite",
-	"polished_granite_slab",
-	"polished_granite_stairs",
-	"polished_sulfur",
-	"polished_sulfur_slab",
-	"polished_sulfur_stairs",
-	"polished_sulfur_wall",
-	"polished_tuff",
-	"polished_tuff_slab",
-	"polished_tuff_stairs",
-	"polished_tuff_wall",
-	"poplar_door",
-	"poplar_fence",
-	"poplar_fence_gate",
-	"poplar_hanging_sign",
-	"poplar_log",
-	"poplar_planks",
-	"poplar_pressure_plate",
-	"poplar_shelf",
-	"poplar_sign",
-	"poplar_slab",
-	"poplar_stairs",
-	"poplar_trapdoor",
-	"poplar_wall_hanging_sign",
-	"poplar_wall_sign",
-	"poplar_wood",
-	"potent_sulfur",
-	"powder_snow_cauldron",
-	"prismarine",
-	"prismarine_brick_slab",
-	"prismarine_brick_stairs",
-	"prismarine_bricks",
-	"prismarine_slab",
-	"prismarine_stairs",
-	"prismarine_wall",
-	"pumpkin",
-	"purple_banner",
-	"purple_bed",
-	"purple_candle_cake",
-	"purple_concrete",
-	"purple_concrete_powder",
-	"purple_concrete_slab",
-	"purple_concrete_stairs",
-	"purple_glazed_terracotta",
-	"purple_shulker_box",
-	"purple_stained_glass",
-	"purple_stained_glass_pane",
-	"purple_terracotta",
-	"purple_wall_banner",
-	"purple_wool",
-	"purple_wool_slab",
-	"purple_wool_stairs",
-	"purpur_block",
-	"purpur_pillar",
-	"purpur_slab",
-	"purpur_stairs",
-	"quartz_block",
-	"quartz_bricks",
-	"quartz_pillar",
-	"quartz_slab",
-	"quartz_stairs",
-	"raw_copper_block",
-	"raw_gold_block",
-	"raw_iron_block",
-	"red_banner",
-	"red_bed",
-	"red_candle_cake",
-	"red_concrete",
-	"red_concrete_powder",
-	"red_concrete_slab",
-	"red_concrete_stairs",
-	"red_glazed_terracotta",
-	"red_mushroom_block",
-	"red_nether_brick_slab",
-	"red_nether_brick_stairs",
-	"red_nether_brick_wall",
-	"red_nether_bricks",
-	"red_poplar_leaves",
-	"red_sand",
-	"red_sandstone",
-	"red_sandstone_slab",
-	"red_sandstone_stairs",
-	"red_sandstone_wall",
-	"red_shulker_box",
-	"red_stained_glass",
-	"red_stained_glass_pane",
-	"red_terracotta",
-	"red_wall_banner",
-	"red_wool",
-	"red_wool_slab",
-	"red_wool_stairs",
-	"redstone_block",
-	"redstone_lamp",
-	"redstone_ore",
-	"reinforced_deepslate",
-	"repeating_command_block",
-	"resin_block",
-	"resin_brick_slab",
-	"resin_brick_stairs",
-	"resin_brick_wall",
-	"resin_bricks",
-	"respawn_anchor",
-	"rooted_dirt",
-	"sand",
-	"sandstone",
-	"sandstone_slab",
-	"sandstone_stairs",
-	"sandstone_wall",
-	"sculk",
-	"sculk_catalyst",
-	"sculk_sensor",
-	"sculk_shrieker",
-	"sculk_vein",
-	"sea_lantern",
-	"shroomlight",
-	"shulker_box",
-	"slime_block",
-	"small_amethyst_bud",
-	"smithing_table",
-	"smoker",
-	"smooth_basalt",
-	"smooth_quartz",
-	"smooth_quartz_slab",
-	"smooth_quartz_stairs",
-	"smooth_red_sandstone",
-	"smooth_red_sandstone_slab",
-	"smooth_red_sandstone_stairs",
-	"smooth_sandstone",
-	"smooth_sandstone_slab",
-	"smooth_sandstone_stairs",
-	"smooth_stone",
-	"smooth_stone_slab",
-	"sniffer_egg",
-	"snow_block",
-	"soul_campfire",
-	"soul_lantern",
-	"soul_sand",
-	"soul_soil",
-	"spawner",
-	"sponge",
-	"spruce_door",
-	"spruce_fence",
-	"spruce_fence_gate",
-	"spruce_hanging_sign",
-	"spruce_leaves",
-	"spruce_log",
-	"spruce_planks",
-	"spruce_pressure_plate",
-	"spruce_shelf",
-	"spruce_sign",
-	"spruce_slab",
-	"spruce_stairs",
-	"spruce_trapdoor",
-	"spruce_wall_hanging_sign",
-	"spruce_wall_sign",
-	"spruce_wood",
-	"sticky_piston",
-	"stone",
-	"stone_brick_slab",
-	"stone_brick_stairs",
-	"stone_brick_wall",
-	"stone_bricks",
-	"stone_pressure_plate",
-	"stone_slab",
-	"stone_stairs",
-	"stonecutter",
-	"straw_bed",
-	"stripped_acacia_log",
-	"stripped_acacia_wood",
-	"stripped_bamboo_block",
-	"stripped_birch_log",
-	"stripped_birch_wood",
-	"stripped_cherry_log",
-	"stripped_cherry_wood",
-	"stripped_crimson_hyphae",
-	"stripped_crimson_stem",
-	"stripped_dark_oak_log",
-	"stripped_dark_oak_wood",
-	"stripped_jungle_log",
-	"stripped_jungle_wood",
-	"stripped_mangrove_log",
-	"stripped_mangrove_wood",
-	"stripped_oak_log",
-	"stripped_oak_wood",
-	"stripped_pale_oak_log",
-	"stripped_pale_oak_wood",
-	"stripped_poplar_log",
-	"stripped_poplar_wood",
-	"stripped_spruce_log",
-	"stripped_spruce_wood",
-	"stripped_warped_hyphae",
-	"stripped_warped_stem",
-	"structure_block",
-	"sulfur",
-	"sulfur_brick_slab",
-	"sulfur_brick_stairs",
-	"sulfur_brick_wall",
-	"sulfur_bricks",
-	"sulfur_slab",
-	"sulfur_spike",
-	"sulfur_stairs",
-	"sulfur_wall",
-	"suspicious_gravel",
-	"suspicious_sand",
-	"target",
-	"terracotta",
-	"test_block",
-	"test_instance_block",
-	"tinted_glass",
-	"tnt",
-	"trapped_chest",
-	"trial_spawner",
-	"tube_coral_block",
-	"tuff",
-	"tuff_brick_slab",
-	"tuff_brick_stairs",
-	"tuff_brick_wall",
-	"tuff_bricks",
-	"tuff_slab",
-	"tuff_stairs",
-	"tuff_wall",
-	"turtle_egg",
-	"vault",
-	"verdant_froglight",
-	"warped_door",
-	"warped_fence",
-	"warped_fence_gate",
-	"warped_hanging_sign",
-	"warped_hyphae",
-	"warped_nylium",
-	"warped_planks",
-	"warped_pressure_plate",
-	"warped_shelf",
-	"warped_sign",
-	"warped_slab",
-	"warped_stairs",
-	"warped_stem",
-	"warped_trapdoor",
-	"warped_wall_hanging_sign",
-	"warped_wall_sign",
-	"warped_wart_block",
-	"water_cauldron",
-	"waxed_chiseled_copper",
-	"waxed_copper_bars",
-	"waxed_copper_block",
-	"waxed_copper_bulb",
-	"waxed_copper_chain",
-	"waxed_copper_chest",
-	"waxed_copper_door",
-	"waxed_copper_grate",
-	"waxed_copper_lantern",
-	"waxed_copper_trapdoor",
-	"waxed_cut_copper",
-	"waxed_cut_copper_slab",
-	"waxed_cut_copper_stairs",
-	"waxed_exposed_chiseled_copper",
-	"waxed_exposed_copper",
-	"waxed_exposed_copper_bars",
-	"waxed_exposed_copper_bulb",
-	"waxed_exposed_copper_chain",
-	"waxed_exposed_copper_chest",
-	"waxed_exposed_copper_door",
-	"waxed_exposed_copper_grate",
-	"waxed_exposed_copper_lantern",
-	"waxed_exposed_copper_trapdoor",
-	"waxed_exposed_cut_copper",
-	"waxed_exposed_cut_copper_slab",
-	"waxed_exposed_cut_copper_stairs",
-	"waxed_exposed_lightning_rod",
-	"waxed_lightning_rod",
-	"waxed_oxidized_chiseled_copper",
-	"waxed_oxidized_copper",
-	"waxed_oxidized_copper_bars",
-	"waxed_oxidized_copper_bulb",
-	"waxed_oxidized_copper_chain",
-	"waxed_oxidized_copper_chest",
-	"waxed_oxidized_copper_door",
-	"waxed_oxidized_copper_grate",
-	"waxed_oxidized_copper_lantern",
-	"waxed_oxidized_copper_trapdoor",
-	"waxed_oxidized_cut_copper",
-	"waxed_oxidized_cut_copper_slab",
-	"waxed_oxidized_cut_copper_stairs",
-	"waxed_oxidized_lightning_rod",
-	"waxed_weathered_chiseled_copper",
-	"waxed_weathered_copper",
-	"waxed_weathered_copper_bars",
-	"waxed_weathered_copper_bulb",
-	"waxed_weathered_copper_chain",
-	"waxed_weathered_copper_chest",
-	"waxed_weathered_copper_door",
-	"waxed_weathered_copper_grate",
-	"waxed_weathered_copper_lantern",
-	"waxed_weathered_copper_trapdoor",
-	"waxed_weathered_cut_copper",
-	"waxed_weathered_cut_copper_slab",
-	"waxed_weathered_cut_copper_stairs",
-	"waxed_weathered_lightning_rod",
-	"weathered_chiseled_copper",
-	"weathered_copper",
-	"weathered_copper_bars",
-	"weathered_copper_bulb",
-	"weathered_copper_chain",
-	"weathered_copper_chest",
-	"weathered_copper_door",
-	"weathered_copper_grate",
-	"weathered_copper_lantern",
-	"weathered_copper_trapdoor",
-	"weathered_cut_copper",
-	"weathered_cut_copper_slab",
-	"weathered_cut_copper_stairs",
-	"weathered_lightning_rod",
-	"wet_sponge",
-	"white_banner",
-	"white_bed",
-	"white_candle_cake",
-	"white_concrete",
-	"white_concrete_powder",
-	"white_concrete_slab",
-	"white_concrete_stairs",
-	"white_glazed_terracotta",
-	"white_shulker_box",
-	"white_stained_glass",
-	"white_stained_glass_pane",
-	"white_terracotta",
-	"white_wall_banner",
-	"white_wool",
-	"white_wool_slab",
-	"white_wool_stairs",
-	"yellow_banner",
-	"yellow_bed",
-	"yellow_candle_cake",
-	"yellow_concrete",
-	"yellow_concrete_powder",
-	"yellow_concrete_slab",
-	"yellow_concrete_stairs",
-	"yellow_glazed_terracotta",
-	"yellow_poplar_leaves",
-	"yellow_shulker_box",
-	"yellow_stained_glass",
-	"yellow_stained_glass_pane",
-	"yellow_terracotta",
-	"yellow_wall_banner",
-	"yellow_wool",
-	"yellow_wool_slab",
-	"yellow_wool_stairs"
-]);
-
-//#endregion
-//#region src/compactFaceData.js
-const FACE_BATCH_SIZE = 4096;
-const MAX_COMPACT_TEMPLATES = 262144;
-const bits = /* @__PURE__ */ new Uint32Array(1);
-const floats = new Float32Array(bits.buffer);
-function nextFloat(value, up) {
-	if (value === 0) return up ? 2 ** -149 : -(2 ** -149);
-	floats[0] = value;
-	bits[0] += value > 0 === up ? 1 : -1;
-	return floats[0];
-}
-function canCompactFaces(bounds, key) {
-	return !key.startsWith("special/") && !key.endsWith("|translucent") && key !== "particle/bubble" && !/^block\/(water|lava)_(still|flow|overlay)$/.test(key) && bounds.width * bounds.depth <= 2 ** 32 && [
-		[bounds.minX, bounds.width],
-		[bounds.minY, bounds.height],
-		[bounds.minZ, bounds.depth]
-	].every(([min, size]) => Number.isInteger(min) && Number.isInteger(size) && Math.abs(min) <= 2 ** 24 && Math.abs(min + size) <= 2 ** 24);
-}
-var CompactFaceData = class {
-	constructor(count, bounds, { recordCapacity = count } = {}) {
-		this.isCompactFaceData = true;
-		this.count = count;
-		this.bounds = bounds;
-		this.cursor = 0;
-		this.cells = new Uint32Array(recordCapacity);
-		this.templateIds = new Uint32Array(recordCapacity);
-		this.cellYs = bounds.width * bounds.height * bounds.depth > 2 ** 32 ? new Uint32Array(recordCapacity) : null;
-		this.templates = [];
-		this.lookup = /* @__PURE__ */ new Map();
-		this.quads = /* @__PURE__ */ new WeakMap();
-		this.cellBounds = new Float64Array(Math.ceil(count / FACE_BATCH_SIZE) * 6);
-		this.faceBounds = new Float32Array(this.cellBounds.length);
-		for (let i = 0; i < this.cellBounds.length; i += 6) this.cellBounds.set([
-			Infinity,
-			Infinity,
-			Infinity,
-			-Infinity,
-			-Infinity,
-			-Infinity
-		], i);
-		this.faceBounds.set(this.cellBounds);
-		this.modelMin = [
-			Infinity,
-			Infinity,
-			Infinity
-		];
-		this.modelMax = [
-			-Infinity,
-			-Infinity,
-			-Infinity
-		];
-		this.worldBounds = new Float64Array([
-			Infinity,
-			Infinity,
-			Infinity,
-			-Infinity,
-			-Infinity,
-			-Infinity
-		]);
-		this.variants = 0;
-		this.absolute = 0;
-		this.offset = /* @__PURE__ */ new Float64Array(3);
-	}
-	intern(values) {
-		const key = values.join(",");
-		let id = this.lookup.get(key);
-		if (id === void 0) {
-			id = this.templates.length;
-			if (id >= MAX_COMPACT_TEMPLATES) throw Object.assign(/* @__PURE__ */ new Error("Too many distinct compact face templates"), {
-				code: "FILE_TOO_LARGE",
-				reason: "geometry"
-			});
-			this.lookup.set(key, id);
-			this.templates.push(values);
-		}
-		return id;
-	}
-	forQuad(quad) {
-		let record = this.quads.get(quad);
-		if (record) return record;
-		const values = /* @__PURE__ */ new Float32Array(32);
-		const quadBounds = new Float64Array([
-			Infinity,
-			Infinity,
-			Infinity,
-			-Infinity,
-			-Infinity,
-			-Infinity
-		]);
-		for (let v = 0; v < 4; v++) {
-			for (let a = 0; a < 3; a++) {
-				const original = quad.verts[v][a], anchor = Math.round(original);
-				values[v * 8 + a] = original - anchor;
-				values[v * 8 + 4 + a] = anchor;
-				quadBounds[a] = Math.min(quadBounds[a], original);
-				quadBounds[a + 3] = Math.max(quadBounds[a + 3], original);
-			}
-			values[v * 8 + 3] = quad.uvs[v][0];
-			values[v * 8 + 7] = quad.uvs[v][1];
-		}
-		for (let a = 0; a < 3; a++) {
-			this.modelMin[a] = Math.min(this.modelMin[a], quadBounds[a]);
-			this.modelMax[a] = Math.max(this.modelMax[a], quadBounds[a + 3]);
-		}
-		const b = this.bounds, minima = [
-			b.minX,
-			b.minY,
-			b.minZ
-		], sizes = [
-			b.width,
-			b.height,
-			b.depth
-		];
-		const anchored = quad.verts.every((vertex) => vertex.every((value, a) => Math.abs(Math.round(value)) < 2 ** 31 - 2 ** 24));
-		const precise = anchored && quad.verts.every((vertex) => vertex.every((value, a) => Math.fround(value) === value && Math.abs(minima[a] + Math.round(value)) <= 2 ** 24 && Math.abs(minima[a] + sizes[a] + Math.round(value)) <= 2 ** 24));
-		record = {
-			values,
-			quadBounds,
-			id: this.intern(values),
-			precise,
-			anchored
-		};
-		this.quads.set(quad, record);
-		return record;
-	}
-	write(quad, x, y, z, key) {
-		const record = this.forQuad(quad), offset = this.offset;
-		offset[0] = x;
-		offset[1] = y;
-		offset[2] = z;
-		let values = record.values, changed = false, absolute = !record.anchored;
-		for (let v = 0; v < 4 && !absolute && !record.precise; v++) for (let a = 0; a < 3; a++) {
-			const i = v * 8 + a, world = offset[a] + values[i + 4];
-			const expected = Math.fround(offset[a] + quad.verts[v][a]);
-			const actual = Math.fround(Math.fround(world) + values[i]);
-			if (actual === expected) continue;
-			const adjusted = nextFloat(values[i], expected > actual);
-			if (Math.fround(Math.fround(world) + adjusted) !== expected) {
-				absolute = true;
-				break;
-			}
-			if (!changed) {
-				values = values.slice();
-				changed = true;
-			}
-			values[i] = adjusted;
-		}
-		let id = record.id;
-		if (absolute) {
-			values = record.values.slice();
-			for (let v = 0; v < 4; v++) for (let a = 0; a < 3; a++) {
-				values[v * 8 + a] = offset[a] + quad.verts[v][a];
-				values[v * 8 + 4 + a] = 0;
-			}
-			id = (this.intern(values) | 2147483648) >>> 0;
-			this.absolute++;
-		} else if (changed) {
-			id = this.intern(values);
-			this.variants++;
-		}
-		const cursor = this.cursor++, batch = Math.floor(cursor / FACE_BATCH_SIZE) * 6;
-		const recordIndex = cursor - (this.recordBase || 0);
-		if (this.cellYs) {
-			this.cells[recordIndex] = key % (this.bounds.width * this.bounds.depth);
-			this.cellYs[recordIndex] = y - this.bounds.minY;
-		} else this.cells[recordIndex] = key;
-		this.templateIds[recordIndex] = id;
-		for (let a = 0; a < 3; a++) {
-			this.cellBounds[batch + a] = Math.min(this.cellBounds[batch + a], offset[a]);
-			this.cellBounds[batch + 3 + a] = Math.max(this.cellBounds[batch + 3 + a], offset[a]);
-			const min = Math.fround(offset[a] + record.quadBounds[a]), max = Math.fround(offset[a] + record.quadBounds[a + 3]);
-			this.worldBounds[a] = Math.min(this.worldBounds[a], min);
-			this.worldBounds[a + 3] = Math.max(this.worldBounds[a + 3], max);
-			this.faceBounds[batch + a] = Math.min(this.faceBounds[batch + a], min);
-			this.faceBounds[batch + a + 3] = Math.max(this.faceBounds[batch + a + 3], max);
-		}
-	}
-	finish() {
-		if (this.cursor !== this.count) throw new Error("Compact face count mismatch");
-		this.templateCount = this.templates.length;
-		const texels = this.templateCount * 8;
-		this.textureWidth = Math.min(1024, 2 ** Math.ceil(Math.log2(Math.max(8, texels))));
-		this.textureHeight = Math.ceil(texels / this.textureWidth);
-		if (this.textureHeight > 2048) throw Object.assign(/* @__PURE__ */ new Error("Too many distinct compact face templates"), {
-			code: "FILE_TOO_LARGE",
-			reason: "geometry"
-		});
-		this.templateData = new Float32Array(this.textureWidth * this.textureHeight * 4);
-		this.templates.forEach((values, i) => this.templateData.set(values, i * 32));
-		this.templates = this.lookup = this.quads = null;
-		return this;
-	}
-};
-function compactFaceKey(data, face) {
-	return data.cells[face] + (data.cellYs ? data.cellYs[face] * data.bounds.width * data.bounds.depth : 0);
-}
-function readCompactFace(data, face, positions, uvs) {
-	const key = compactFaceKey(data, face), b = data.bounds, raw = data.templateIds[face], id = raw & 2147483647;
-	const offset = raw & 2147483648 ? [
-		0,
-		0,
-		0
-	] : [
-		key % b.width + b.minX,
-		Math.floor(key / (b.width * b.depth)) + b.minY,
-		Math.floor(key / b.width) % b.depth + b.minZ
-	];
-	for (let v = 0; v < 4; v++) {
-		const base = id * 32 + v * 8;
-		for (let a = 0; a < 3; a++) positions[v * 3 + a] = Math.fround(offset[a] + data.templateData[base + 4 + a]) + data.templateData[base + a];
-		uvs[v * 2] = data.templateData[base + 3];
-		uvs[v * 2 + 1] = data.templateData[base + 7];
-	}
-}
-
-//#endregion
-//#region src/geometryBudget.js
-const MAX_GEOMETRY_BYTES = 6 * 1024 ** 3;
-const MAX_ARRAY_BYTES = 2 ** 31 - 1;
-function geometryLimit(bytes, maxBytes = MAX_GEOMETRY_BYTES) {
-	if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || maxBytes > MAX_GEOMETRY_BYTES) throw new RangeError("Invalid geometry budget");
-	if (!Number.isSafeInteger(bytes) || bytes > maxBytes) throw Object.assign(/* @__PURE__ */ new Error("Visible geometry exceeds the memory budget"), {
-		code: "FILE_TOO_LARGE",
-		reason: "geometry",
-		bytes,
-		maxBytes
-	});
-	return bytes;
-}
-function estimateGeometryBytes(counts, bounds, options = {}) {
-	options ??= {};
-	let bytes = 0;
-	const wide = bounds.width * bounds.height * bounds.depth > 2 ** 32;
-	for (const [key, count] of counts) {
-		const compact = options.compactFaces && canCompactFaces(bounds, key);
-		if ((compact ? count * 4 : key === "particle/bubble" ? count * 12 : count * 48) > MAX_ARRAY_BYTES) geometryLimit(MAX_GEOMETRY_BYTES + 1, options.maxGeometryBytes);
-		bytes += compact ? count * (wide ? 12 : 8) + Math.ceil(count / FACE_BATCH_SIZE) * 72 + 72 : key === "particle/bubble" ? count * 12 : count * (80 + (count * 4 < 65536 ? 12 : 24) + (options.trackBlocks ? wide ? 8 : 4 : 0));
-	}
-	return geometryLimit(bytes, options.maxGeometryBytes);
-}
-
-//#endregion
-//#region src/loadingTask.js
-function throwIfAborted(signal) {
-	if (signal?.aborted) throw Object.assign(/* @__PURE__ */ new Error("Loading cancelled"), {
-		name: "AbortError",
-		code: "ABORT_ERR"
-	});
-}
-function withAbort(promise, signal) {
-	if (!signal) return promise;
-	return new Promise((resolve, reject) => {
-		const cleanup = () => signal.removeEventListener("abort", abort);
-		const abort = () => {
-			cleanup();
-			reject(Object.assign(/* @__PURE__ */ new Error("Loading cancelled"), {
-				name: "AbortError",
-				code: "ABORT_ERR"
-			}));
-		};
-		Promise.resolve(promise).then((value) => {
-			cleanup();
-			resolve(value);
-		}, (error) => {
-			cleanup();
-			reject(error);
-		});
-		if (signal.aborted) abort();
-		else signal.addEventListener("abort", abort, { once: true });
-	});
-}
-
-//#endregion
-//#region src/geometryStream.js
-const MAX_GEOMETRY_BATCH_BYTES = 32 * 1024 ** 2;
-const SLAB_BYTES = 262144;
-const STREAM_STATE = Symbol("geometryStreamState");
-const TYPES = {
-	Float32Array,
-	Float64Array,
-	Uint16Array,
-	Uint32Array
-};
-const align = (value, size) => Math.ceil(value / size) * size;
-const fail = (message) => Object.assign(new Error(message), {
-	code: "WORKER_PROTOCOL",
-	reason: "geometry-stream"
-});
-function validateGeometryStream(options) {
-	const bytes = options.batchBytes ?? MAX_GEOMETRY_BATCH_BYTES;
-	if (!Number.isSafeInteger(bytes) || bytes < 1024 || bytes > MAX_GEOMETRY_BATCH_BYTES) throw new RangeError("Invalid geometry staging budget");
-	if (typeof options.onLayout !== "function" || typeof options.onBatch !== "function") throw new TypeError("Geometry streaming requires layout and batch consumers");
-	return bytes;
-}
-function fieldsFor(kind, count, bounds, trackBlocks) {
-	const field = (name, type, stride) => ({
-		name,
-		type,
-		stride,
-		length: count * stride
-	});
-	const wide = bounds.width * bounds.height * bounds.depth > 2 ** 32;
-	if (kind === "compact") return [
-		field("cells", "Uint32Array", 1),
-		field("templateIds", "Uint32Array", 1),
-		...wide ? [field("cellYs", "Uint32Array", 1)] : []
-	];
-	if (kind === "points") return [field("positions", "Float32Array", 3)];
-	return [
-		field("positions", "Float32Array", 12),
-		field("uvs", "Float32Array", 8),
-		field("indices", count * 4 < 65536 ? "Uint16Array" : "Uint32Array", 6),
-		...trackBlocks ? [field("blockKeys", wide ? "Float64Array" : "Uint32Array", 1)] : []
-	];
-}
-function segmentSize(fields, count) {
-	let bytes = 0;
-	for (const field of fields) {
-		const size = TYPES[field.type].BYTES_PER_ELEMENT;
-		bytes = align(bytes, size) + count * field.stride * size;
-	}
-	return bytes;
-}
-var GeometryStream = class {
-	constructor(counts, bounds, options, emitted, geometryBytes) {
-		const batchBytes = validateGeometryStream(options);
-		this.options = options;
-		this.bounds = bounds;
-		this.geometryBytes = geometryBytes;
-		this.emitted = emitted;
-		this.slabBytes = Math.min(SLAB_BYTES, batchBytes);
-		this.maxSlabs = Math.floor(batchBytes / this.slabBytes);
-		this.createdSlabs = 0;
-		this.free = [];
-		this.pending = [];
-		this.active = /* @__PURE__ */ new Set();
-		this.batchCount = 0;
-		this.groups = /* @__PURE__ */ new Map();
-		this.states = [];
-		const specs = [];
-		for (const [key, count] of counts) {
-			const kind = options.compactFaces && canCompactFaces(bounds, key) ? "compact" : key === "particle/bubble" ? "points" : "quads";
-			const buffers = fieldsFor(kind, count, bounds, options.trackBlocks);
-			const spec = {
-				groupIndex: specs.length,
-				key,
-				kind,
-				count,
-				buffers
-			};
-			specs.push(spec);
-			const recordBytes = buffers.reduce((bytes, field) => bytes + field.stride * TYPES[field.type].BYTES_PER_ELEMENT, 0);
-			let capacity = Math.min(count, Math.floor(this.slabBytes / recordBytes));
-			while (segmentSize(buffers, capacity) > this.slabBytes) capacity--;
-			if (!capacity) throw new RangeError("Geometry staging buffer cannot fit a record");
-			const group = kind === "compact" ? new CompactFaceData(count, bounds, { recordCapacity: 0 }) : kind === "points" ? {
-				positions: null,
-				v: 0
-			} : {
-				positions: null,
-				uvs: null,
-				indices: null,
-				v: 0,
-				f: 0
-			};
-			const state = {
-				spec,
-				group,
-				capacity,
-				start: 0,
-				next: 0,
-				slab: null
-			};
-			group.recordLimit = 0;
-			group[STREAM_STATE] = state;
-			this.groups.set(key, group);
-			this.states.push(state);
-		}
-		this.layout = {
-			version: 1,
-			bounds,
-			emitted,
-			geometryBytes,
-			groups: specs
-		};
-	}
-	async start() {
-		throwIfAborted(this.options.signal);
-		await withAbort(this.options.onLayout(this.layout), this.options.signal);
-		throwIfAborted(this.options.signal);
-	}
-	used(state) {
-		return state.spec.kind === "compact" ? state.group.cursor - state.start : state.group.v / (state.spec.kind === "points" ? 3 : 4);
-	}
-	retire(state) {
-		if (!state.slab) return;
-		const count = this.used(state), buffers = {};
-		for (const field of state.spec.buffers) {
-			buffers[field.name] = state.group[field.name].subarray(0, count * field.stride);
-			state.group[field.name] = null;
-		}
-		if (count) this.pending.push({
-			slab: state.slab,
-			part: {
-				groupIndex: state.spec.groupIndex,
-				start: state.start,
-				count,
-				buffers
-			}
-		});
-		else this.free.push(state.slab);
-		state.next = state.start + count;
-		state.slab = null;
-		this.active.delete(state);
-		state.group.recordLimit = 0;
-	}
-	prepare(group) {
-		const state = group[STREAM_STATE];
-		if (state.slab && this.used(state) < state.capacity) return true;
-		this.retire(state);
-		if (state.next >= state.spec.count) throw new Error("Streamed geometry exceeded its counted records");
-		let slab = this.free.pop();
-		if (!slab) {
-			if (this.createdSlabs === this.maxSlabs) return false;
-			slab = {
-				slabId: this.createdSlabs++,
-				buffer: new ArrayBuffer(this.slabBytes)
-			};
-		}
-		state.slab = slab;
-		state.start = state.next;
-		let offset = 0;
-		for (const field of state.spec.buffers) {
-			const Type = TYPES[field.type];
-			offset = align(offset, Type.BYTES_PER_ELEMENT);
-			group[field.name] = new Type(slab.buffer, offset, state.capacity * field.stride);
-			offset += group[field.name].byteLength;
-		}
-		if (state.spec.kind === "compact") group.recordBase = state.start;
-		else {
-			group.v = 0;
-			if (state.spec.kind === "quads") {
-				group.f = 0;
-				group.vertexBase = state.start * 4;
-			}
-		}
-		group.recordLimit = state.spec.kind === "compact" ? state.start + state.capacity : state.capacity * (state.spec.kind === "points" ? 3 : 4);
-		this.active.add(state);
-		return true;
-	}
-	async flushFor(group) {
-		await this.flush();
-		if (!this.prepare(group)) throw new Error("Geometry staging buffer was not returned");
-	}
-	async flush() {
-		throwIfAborted(this.options.signal);
-		for (const state of this.active) this.retire(state);
-		if (!this.pending.length) return;
-		const records = this.pending;
-		this.pending = [];
-		const expected = new Map(records.map(({ slab }) => [slab.slabId, slab]));
-		const batch = {
-			parts: records.map((record) => record.part),
-			slabs: records.map(({ slab }) => ({
-				slabId: slab.slabId,
-				buffer: slab.buffer
-			}))
-		};
-		const reply = await withAbort(this.options.onBatch(batch), this.options.signal);
-		throwIfAborted(this.options.signal);
-		if (!Array.isArray(reply?.slabs) || reply.slabs.length !== expected.size) throw fail("Missing recycled geometry slabs");
-		const seen = /* @__PURE__ */ new Set(), buffers = /* @__PURE__ */ new Set();
-		for (const returned of reply.slabs) {
-			if (!expected.get(returned?.slabId) || seen.has(returned.slabId) || !(returned.buffer instanceof ArrayBuffer) || returned.buffer.byteLength !== this.slabBytes || buffers.has(returned.buffer)) throw fail("Invalid recycled geometry slab");
-			seen.add(returned.slabId);
-			buffers.add(returned.buffer);
-		}
-		for (const returned of reply.slabs) {
-			const slab = expected.get(returned.slabId);
-			slab.buffer = returned.buffer;
-			this.free.push(slab);
-		}
-		this.batchCount++;
-	}
-	async finish() {
-		await this.flush();
-		const tails = [];
-		for (const state of this.states) {
-			throwIfAborted(this.options.signal);
-			const { spec, group } = state;
-			if (state.next !== spec.count) throw new Error("Streamed geometry count mismatch");
-			let metadata;
-			if (spec.kind === "compact") {
-				group.finish();
-				this.geometryBytes = geometryLimit(this.geometryBytes + group.templateData.byteLength, this.options.maxGeometryBytes);
-				const body = new Set(spec.buffers.map((field) => field.name));
-				metadata = Object.fromEntries(Object.entries(group).filter(([name]) => !body.has(name) && name !== "recordBase" && name !== "recordLimit"));
-			} else metadata = spec.kind === "points" ? { v: spec.count * 3 } : {
-				v: spec.count * 4,
-				f: spec.count * 6
-			};
-			tails.push({
-				groupIndex: spec.groupIndex,
-				metadata
-			});
-		}
-		this.free = [];
-		return {
-			streamed: true,
-			version: 1,
-			emitted: this.emitted,
-			geometryBytes: this.geometryBytes,
-			batchCount: this.batchCount,
-			tails
-		};
-	}
-	dispose() {
-		for (const state of this.active) {
-			for (const field of state.spec.buffers) state.group[field.name] = null;
-			state.slab = null;
-		}
-		this.active.clear();
-		this.pending = [];
-		this.free = [];
-	}
-};
-
-//#endregion
-//#region src/cullMaskCache.js
-const MAX_CACHE_BYTES = 67108864;
-const PAGE_MASKS = 65536;
-const MAX_CACHE_PAGES = 65536;
-var CullMaskCache = class {
-	constructor(maxBytes = MAX_CACHE_BYTES, { maxPages = MAX_CACHE_PAGES } = {}) {
-		if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || maxBytes > MAX_CACHE_BYTES) throw new RangeError("Invalid cull cache budget");
-		if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > MAX_CACHE_PAGES) throw new RangeError("Invalid cull cache page limit");
-		this.maxBytes = maxBytes;
-		this.maxPages = maxPages;
-		this.bytes = 0;
-		this.peakBytes = 0;
-		this.pages = [];
-		this.raw = null;
-		this.used = 0;
-		this.runs = 0;
-		this.previous = -1;
-		this.recording = maxBytes > 0;
-		this.length = 0;
-		this.readCount = 0;
-		this.pageIndex = 0;
-		this.offset = 0;
-		this.remaining = 0;
-		this.mask = 0;
-	}
-	append(mask) {
-		if (!this.recording) return;
-		if (!this.raw) {
-			const size = Math.min(PAGE_MASKS, this.maxBytes - this.bytes);
-			if (!size) {
-				this.recording = false;
-				return;
-			}
-			this.raw = new Uint8Array(size);
-			this.peakBytes = Math.max(this.peakBytes, this.bytes + size);
-		}
-		this.raw[this.used++] = mask;
-		this.length++;
-		if (mask !== this.previous) {
-			this.previous = mask;
-			this.runs++;
-		}
-		if (this.used === this.raw.length) this.seal();
-	}
-	seal() {
-		if (!this.used) return;
-		const compressedBytes = this.runs * 4;
-		if (compressedBytes < this.used && this.bytes + this.raw.byteLength + compressedBytes <= this.maxBytes) {
-			const data = new Uint32Array(this.runs);
-			this.peakBytes = Math.max(this.peakBytes, this.bytes + this.raw.byteLength + data.byteLength);
-			let start = 0, cursor = 0;
-			for (let i = 1; i <= this.used; i++) if (i === this.used || this.raw[i] !== this.raw[start]) {
-				data[cursor++] = i - start << 6 | this.raw[start];
-				start = i;
-			}
-			this.pages.push({
-				data,
-				length: this.used,
-				rle: true
-			});
-			this.bytes += data.byteLength;
-			if (this.bytes + this.raw.byteLength > this.maxBytes) this.raw = null;
-		} else {
-			this.pages.push({
-				data: this.raw,
-				length: this.used,
-				rle: false
-			});
-			this.bytes += this.raw.byteLength;
-			this.raw = null;
-		}
-		this.used = this.runs = 0;
-		this.previous = -1;
-		if (this.pages.length >= this.maxPages) {
-			this.recording = false;
-			this.raw = null;
-		}
-	}
-	finish() {
-		this.seal();
-		this.raw = null;
-		this.recording = false;
-	}
-	read() {
-		if (this.readCount >= this.length) return void 0;
-		let page = this.pages[this.pageIndex];
-		if (this.offset >= page.length) {
-			this.bytes -= page.data.byteLength;
-			this.pages[this.pageIndex++] = null;
-			this.offset = 0;
-			this.word = 0;
-			this.remaining = 0;
-			page = this.pages[this.pageIndex];
-		}
-		this.readCount++;
-		this.offset++;
-		if (!page.rle) return page.data[this.offset - 1];
-		if (!this.remaining) {
-			const entry = page.data[this.word || 0];
-			this.word = (this.word || 0) + 1;
-			this.remaining = entry >>> 6;
-			this.mask = entry & 63;
-		}
-		this.remaining--;
-		return this.mask;
-	}
-	dispose() {
-		this.pages = [];
-		this.raw = null;
-		this.bytes = 0;
-		this.recording = false;
-		this.length = this.readCount = this.used = this.remaining = 0;
-	}
-};
-
-//#endregion
-//#region src/geometry.js
-const SKIP_BLOCKS = /* @__PURE__ */ new Set([
-	"air",
-	"cave_air",
-	"void_air",
-	"structure_void",
-	"barrier",
-	"light"
-]);
-function shortName$1(name) {
-	return (name || "").replace(/^minecraft:/, "");
-}
-function isSkipBlock(name) {
-	return SKIP_BLOCKS.has(shortName$1(name));
-}
-function isLayeredTranslucentBlock(name) {
-	return ["slime_block", "honey_block"].includes(shortName$1(name));
-}
-function isTransparent(name) {
-	const n = shortName$1(name);
-	return n.endsWith("_leaves") || n.includes("glass") || n === "ice" || n === "water" || n === "lava" || n === "bubble_column" || n.endsWith("_grate") || n.endsWith("_bars") || n === "chain" || n.endsWith("_chain") || n === "tripwire" || n.endsWith("_roots") || isLayeredTranslucentBlock(n);
-}
-function isOverlayBlock(name) {
-	const n = shortName$1(name);
-	return n.endsWith("_leaves") || n === "glass" || n.endsWith("_stained_glass") || n === "tinted_glass" || n === "ice" || n === "frosted_ice" || n === "slime_block" || n === "honey_block";
-}
-function isRedstoneDustTex(texKey) {
-	return /(redstone_dust_dot|redstone_dust_line0|redstone_dust_line1)$/.test(texKey);
-}
-function fluidHeight(level) {
-	const l = Number(level) || 0;
-	return l <= 0 || l >= 8 ? 8 / 9 : (8 - l) / 9;
-}
-const ALWAYS_WATERLOGGED = /* @__PURE__ */ new Set([
-	"seagrass",
-	"tall_seagrass",
-	"kelp",
-	"kelp_plant"
-]);
-function fluidOfEntry(paletteEntry) {
-	const n = shortName$1(paletteEntry.name);
-	const props = paletteEntry.properties || {};
-	if (n === "water") return {
-		kind: "water",
-		level: Number(props.level) || 0,
-		waterlogged: false
-	};
-	if (n === "lava") return {
-		kind: "lava",
-		level: Number(props.level) || 0,
-		waterlogged: false
-	};
-	if (n === "bubble_column") return {
-		kind: "water",
-		level: 0,
-		waterlogged: false,
-		bubble: true
-	};
-	const wl = props.waterlogged;
-	if (wl === true || wl === "true" || wl === 1 || wl === "1") return {
-		kind: "water",
-		level: 0,
-		waterlogged: true
-	};
-	if (ALWAYS_WATERLOGGED.has(n)) return {
-		kind: "water",
-		level: 0,
-		waterlogged: true
-	};
-	return null;
-}
-function yieldThread$2() {
-	return new Promise((r) => setTimeout(r, 0));
-}
-function faceCulled(blocks, occludes, hideSame, q, lx, lz, ly, gi, grid, visible, cardinalGetAt) {
-	if (!q.cullface) return false;
-	const cf = q.cullface;
-	const nx = lx + cf[0];
-	const ny = ly + cf[1];
-	const nz = lz + cf[2];
-	if (nx < 0 || nx >= grid.W || ny < 0 || ny >= grid.H || nz < 0 || nz >= grid.D) return false;
-	if (visible && !visible(nx, ny, nz)) return false;
-	const ngi = cardinalGetAt ? cardinalGetAt(nx, ny, nz) : blocks.get(nx + nz * grid.W + ny * grid.strideY);
-	return ngi !== void 0 && (occludes[ngi] || hideSame[gi] && hideSame[ngi] === hideSame[gi]);
-}
-function faceKey(palette, gi, q) {
-	if (isLayeredTranslucentBlock(palette[gi].name)) return q.texKey + "|translucent";
-	if (isRedstoneDustTex(q.texKey)) return q.texKey + "|p" + (Number(palette[gi].properties?.power) || 0);
-	return q.texKey;
-}
-const FULL_BIT = {
-	"0,1,0": 1,
-	"0,-1,0": 2,
-	"0,0,-1": 4,
-	"0,0,1": 8,
-	"-1,0,0": 16,
-	"1,0,0": 32
-};
-function fullFaceMask(quads) {
-	if (!quads) return 0;
-	let mask = 0;
-	for (const q of quads) {
-		const nk = q.normal.map((v) => Math.round(v)).join(",");
-		const bit = FULL_BIT[nk];
-		if (!bit) continue;
-		let ax, b1, b2;
-		if (nk === "1,0,0" || nk === "-1,0,0") {
-			ax = 0;
-			b1 = 1;
-			b2 = 2;
-		} else if (nk === "0,1,0" || nk === "0,-1,0") {
-			ax = 1;
-			b1 = 0;
-			b2 = 2;
-		} else {
-			ax = 2;
-			b1 = 0;
-			b2 = 1;
-		}
-		const av = Math.round(q.verts[0][ax] * 16);
-		if (av !== 0 && av !== 16) continue;
-		let full = true;
-		for (const v of q.verts) if (Math.round(v[ax] * 16) !== av) {
-			full = false;
-			break;
-		}
-		if (!full) continue;
-		const b1min = Math.min(...q.verts.map((v) => v[b1]));
-		const b1max = Math.max(...q.verts.map((v) => v[b1]));
-		const b2min = Math.min(...q.verts.map((v) => v[b2]));
-		const b2max = Math.max(...q.verts.map((v) => v[b2]));
-		if (b1min > .001 || b1max < .999 || b2min > .001 || b2max < .999) continue;
-		mask |= bit;
-	}
-	return mask;
-}
-function flowAngle(palette, fluidOf, blocks, lx, lz, ly, gi, grid, kind, visible) {
-	const selfH = fluidHeight(fluidOf[gi].level);
-	let vx = 0;
-	let vz = 0;
-	const get = (dx, dy, dz) => {
-		const nx = lx + dx;
-		const ny = ly + dy;
-		const nz = lz + dz;
-		if (nx < 0 || nx >= grid.W || ny < 0 || ny >= grid.H || nz < 0 || nz >= grid.D) return void 0;
-		if (visible && !visible(nx, ny, nz)) return void 0;
-		return blocks.get(nx + nz * grid.W + ny * grid.strideY);
-	};
-	for (const [dx, dz] of [
-		[0, -1],
-		[0, 1],
-		[-1, 0],
-		[1, 0]
-	]) {
-		const ngi = get(dx, 0, dz);
-		const nfo = ngi === void 0 ? null : fluidOf[ngi];
-		if (nfo && nfo.kind !== kind) continue;
-		let diff = 0;
-		if (nfo) {
-			if (fluidHeight(nfo.level) > 0) diff = selfH - fluidHeight(nfo.level);
-		} else if (ngi === void 0 || !FLUID_FLOW_BLOCKS.has(shortName$1(palette[ngi].name))) {
-			const bgi = get(dx, -1, dz);
-			const bfo = bgi === void 0 ? null : fluidOf[bgi];
-			if (bfo && bfo.kind === kind && fluidHeight(bfo.level) > 0) diff = selfH - (fluidHeight(bfo.level) - 8 / 9);
-		}
-		if (diff !== 0) {
-			vx += dx * diff;
-			vz += dz * diff;
-		}
-	}
-	if (vx === 0 && vz === 0) return null;
-	return Math.atan2(vz, vx);
-}
-function bubbleScatter(lx, ly, lz) {
-	let h = lx * 374761393 + ly * 668265263 + lz * 1442695041 >>> 0;
-	const rnd = () => {
-		h = h * 1664525 + 1013904223 >>> 0;
-		return h / 4294967296;
-	};
-	const out = [];
-	const n = 4 + h % 3;
-	for (let i = 0; i < n; i++) out.push([
-		.38 + rnd() * .24,
-		.05 + rnd() * .9,
-		.38 + rnd() * .24
-	]);
-	return out;
-}
-function emitFluidFaces(palette, blocks, fluidOf, lx, lz, ly, x, y, z, gi, grid, selfMask, visible, record) {
-	const info = fluidOf[gi];
-	const kind = info.kind;
-	const isLava = kind === "lava";
-	const stillTex = isLava ? "block/lava_still" : "block/water_still";
-	const flowTex = isLava ? "block/lava_flow" : "block/water_flow";
-	const get = (dx, dy, dz) => {
-		const nx = lx + dx;
-		const ny = ly + dy;
-		const nz = lz + dz;
-		if (nx < 0 || nx >= grid.W || ny < 0 || ny >= grid.H || nz < 0 || nz >= grid.D) return void 0;
-		if (visible && !visible(nx, ny, nz)) return void 0;
-		return blocks.get(nx + nz * grid.W + ny * grid.strideY);
-	};
-	const giName = (gi2) => gi2 === void 0 ? "" : shortName$1(palette[gi2].name);
-	const isFluid = (gi2) => gi2 !== void 0 && !!fluidOf[gi2] && fluidOf[gi2].kind === kind;
-	const isFullSolid = (gi2) => gi2 !== void 0 && !!palette[gi2].baked && palette[gi2].baked.fullCube && !fluidOf[gi2] && !giName(gi2).endsWith("_leaves");
-	const isHeightSolid = (gi2) => isFullSolid(gi2) || gi2 !== void 0 && !fluidOf[gi2] && (giName(gi2).endsWith("_slab") || giName(gi2).endsWith("_stairs"));
-	const isCullingSolid = (gi2) => isFullSolid(gi2) && !isTransparent(palette[gi2].name);
-	const fluidH = (dx, dy, dz) => {
-		const ngi = get(dx, dy, dz);
-		if (ngi === void 0) return 0;
-		const nfo = fluidOf[ngi];
-		if (nfo && nfo.kind === kind) {
-			if (isFluid(get(dx, dy + 1, dz))) return 1;
-			return fluidHeight(nfo.level);
-		}
-		return isHeightSolid(ngi) ? -1 : 0;
-	};
-	const self = fluidH(0, 0, 0);
-	const corner = (dx, dz) => {
-		const a = fluidH(dx, 0, 0);
-		const b = fluidH(0, 0, dz);
-		if (a >= 1 || b >= 1) return 1;
-		let sum = 0;
-		let cnt = 0;
-		const add = (h) => {
-			if (h >= .8) {
-				sum += h * 10;
-				cnt += 10;
-			} else if (h >= 0) {
-				sum += h;
-				cnt += 1;
-			}
-		};
-		if (a > 0 || b > 0) {
-			const f = fluidH(dx, 0, dz);
-			if (f >= 1) return 1;
-			add(f);
-		}
-		add(self);
-		add(a);
-		add(b);
-		return sum / cnt;
-	};
-	let h00, h10, h01, h11;
-	if (self >= 1) h00 = h10 = h01 = h11 = 1;
-	else {
-		h00 = corner(-1, -1);
-		h10 = corner(1, -1);
-		h01 = corner(-1, 1);
-		h11 = corner(1, 1);
-	}
-	const above = get(0, 1, 0);
-	const below = get(0, -1, 0);
-	const aboveFluid = isFluid(above);
-	const bottomShown = !isFluid(below) && !isCullingSolid(below) && !(selfMask & 2);
-	const w = bottomShown ? .001 : 0;
-	const minCorner = Math.min(h00, h10, h01, h11);
-	const topShown = !aboveFluid && !(isCullingSolid(above) && minCorner >= 1) && !(selfMask & 1);
-	let count = 0;
-	if (topShown) {
-		const previewFlow = palette[gi].properties?.preview_flow;
-		const angle = previewFlow && previewFlow !== "auto" ? {
-			north: -Math.PI / 2,
-			south: Math.PI / 2,
-			east: 0,
-			west: Math.PI,
-			northeast: -Math.PI / 4,
-			southeast: Math.PI / 4,
-			southwest: Math.PI * .75,
-			northwest: -Math.PI * .75
-		}[previewFlow] ?? null : flowAngle(palette, fluidOf, blocks, lx, lz, ly, gi, grid, kind, visible);
-		let topTex = stillTex;
-		let topUVs = [
-			[0, 1],
-			[1, 1],
-			[0, 0],
-			[1, 0]
-		];
-		if (angle !== null) {
-			topTex = flowTex;
-			const af = angle - Math.PI / 2;
-			const ag = Math.sin(af) * .25;
-			const ah = Math.cos(af) * .25;
-			topUVs = [
-				[.5 - ah + ag, .5 + ah + ag],
-				[.5 + ah + ag, .5 + ah - ag],
-				[.5 - ah - ag, .5 - ah + ag],
-				[.5 + ah - ag, .5 - ah - ag]
-			];
-		}
-		record(topTex, [
-			[
-				x,
-				y + h01 - .001,
-				z + 1
-			],
-			[
-				x + 1,
-				y + h11 - .001,
-				z + 1
-			],
-			[
-				x,
-				y + h00 - .001,
-				z
-			],
-			[
-				x + 1,
-				y + h10 - .001,
-				z
-			]
-		], topUVs);
-		count++;
-	}
-	if (bottomShown) {
-		record(stillTex, [
-			[
-				x + 1,
-				y + w,
-				z + 1
-			],
-			[
-				x,
-				y + w,
-				z + 1
-			],
-			[
-				x + 1,
-				y + w,
-				z
-			],
-			[
-				x,
-				y + w,
-				z
-			]
-		], [
-			[0, 1],
-			[1, 1],
-			[0, 0],
-			[1, 0]
-		]);
-		count++;
-	}
-	const side = (dx, dz) => get(dx, 0, dz);
-	const overlayTex = isLava ? null : "block/water_overlay";
-	const emitSide = (dx, dz, bit, pos, uv) => {
-		const ngi = side(dx, dz);
-		if (isFluid(ngi) || isCullingSolid(ngi) || selfMask & bit) return;
-		record(overlayTex && isOverlayBlock(giName(ngi)) ? overlayTex : flowTex, pos, uv);
-		count++;
-	};
-	emitSide(0, -1, 4, [
-		[
-			x + 1,
-			y + w,
-			z
-		],
-		[
-			x,
-			y + w,
-			z
-		],
-		[
-			x + 1,
-			y + h10,
-			z
-		],
-		[
-			x,
-			y + h00,
-			z
-		]
-	], [
-		[0, 1],
-		[1, 1],
-		[0, 0],
-		[1, 0]
-	]);
-	emitSide(0, 1, 8, [
-		[
-			x,
-			y + w,
-			z + 1
-		],
-		[
-			x + 1,
-			y + w,
-			z + 1
-		],
-		[
-			x,
-			y + h01,
-			z + 1
-		],
-		[
-			x + 1,
-			y + h11,
-			z + 1
-		]
-	], [
-		[0, 1],
-		[1, 1],
-		[0, 0],
-		[1, 0]
-	]);
-	emitSide(-1, 0, 16, [
-		[
-			x,
-			y + h00,
-			z
-		],
-		[
-			x,
-			y + w,
-			z
-		],
-		[
-			x,
-			y + h01,
-			z + 1
-		],
-		[
-			x,
-			y + w,
-			z + 1
-		]
-	], [
-		[0, 0],
-		[0, 1],
-		[1, 0],
-		[1, 1]
-	]);
-	emitSide(1, 0, 32, [
-		[
-			x + 1,
-			y + h11,
-			z + 1
-		],
-		[
-			x + 1,
-			y + w,
-			z + 1
-		],
-		[
-			x + 1,
-			y + h10,
-			z
-		],
-		[
-			x + 1,
-			y + w,
-			z
-		]
-	], [
-		[0, 0],
-		[0, 1],
-		[1, 0],
-		[1, 1]
-	]);
-	if (info.bubble) for (const [bx, by, bz] of bubbleScatter(lx, ly, lz)) {
-		record("particle/bubble", [
-			x + bx,
-			y + by,
-			z + bz
-		]);
-		count++;
-	}
-	return count;
-}
-function writeFace(g, verts, uvs, ox, oy, oz, blockKey) {
-	const v = g.v;
-	const p = g.positions;
-	const u = g.uvs;
-	const ix = g.indices;
-	const f = g.f;
-	if (g.blockKeys) g.blockKeys[v / 4] = blockKey;
-	for (let k = 0; k < 4; k++) {
-		p[(v + k) * 3] = ox + verts[k][0];
-		p[(v + k) * 3 + 1] = oy + verts[k][1];
-		p[(v + k) * 3 + 2] = oz + verts[k][2];
-		u[(v + k) * 2] = uvs[k][0];
-		u[(v + k) * 2 + 1] = uvs[k][1];
-	}
-	const base = v + (g.vertexBase || 0);
-	ix[f] = base;
-	ix[f + 1] = base + 1;
-	ix[f + 2] = base + 2;
-	ix[f + 3] = base + 2;
-	ix[f + 4] = base + 1;
-	ix[f + 5] = base + 3;
-	g.v = v + 4;
-	g.f = f + 6;
-}
-async function buildFaceGroups(palette, blocks, bounds, onProgress, filter, options) {
-	return buildFaceGroupsInternal(palette, blocks, bounds, onProgress, filter, options, false);
-}
-async function buildFaceGroupsInternal(palette, blocks, bounds, onProgress, filter, options, streaming) {
-	throwIfAborted(options?.signal);
-	const yieldWork = options?.yieldTask || yieldThread$2;
-	const grid = {
-		W: bounds.width,
-		D: bounds.depth,
-		H: bounds.height,
-		strideY: bounds.width * bounds.depth
-	};
-	const minX = bounds.minX;
-	const minY = bounds.minY;
-	const minZ = bounds.minZ;
-	const visible = filter ? (lx, ly, lz) => filter(lx + minX, ly + minY, lz + minZ, ly) : null;
-	const renderable = new Uint8Array(palette.length);
-	const occludes = new Uint8Array(palette.length);
-	const hideSame = new Uint32Array(palette.length), sameBlockGroups = /* @__PURE__ */ new Map();
-	const quadsByPalette = new Array(palette.length);
-	const groupKeysByPalette = new Array(palette.length);
-	for (let i = 0; i < palette.length; i++) {
-		const name = palette[i].name;
-		const baked = palette[i].baked;
-		const sn = shortName$1(name);
-		if (sn === "player_head" || sn === "player_wall_head") {
-			quadsByPalette[i] = null;
-			hideSame[i] = 0;
-			continue;
-		}
-		if (baked && baked.quads && baked.quads.length && !isSkipBlock(name)) {
-			renderable[i] = 1;
-			occludes[i] = baked.fullCube && !isTransparent(name) ? 1 : 0;
-			quadsByPalette[i] = baked.quads;
-			groupKeysByPalette[i] = baked.quads.map((q) => {
-				const key = faceKey(palette, i, q);
-				return options?.includeGroup && !options.includeGroup(key) ? null : key;
-			});
-		} else quadsByPalette[i] = null;
-		if (sn.includes("glass") || sn.endsWith("_leaves") || isLayeredTranslucentBlock(sn)) {
-			if (!sameBlockGroups.has(sn)) sameBlockGroups.set(sn, i + 1);
-			hideSame[i] = sameBlockGroups.get(sn);
-		}
-	}
-	const fluidOf = palette.map(fluidOfEntry);
-	const selfMasks = palette.map((p) => {
-		const fo = fluidOfEntry(p);
-		if (!fo || !fo.waterlogged || isTransparent(p.name)) return 0;
-		return fullFaceMask(p.baked ? p.baked.quads : null);
-	});
-	const registry = /* @__PURE__ */ new Map(), orderedCounters = [];
-	const counterFor = (key) => {
-		let counter = registry.get(key);
-		if (!counter) {
-			counter = {
-				key,
-				count: 0
-			};
-			registry.set(key, counter);
-		}
-		return counter;
-	};
-	const counterRefs = groupKeysByPalette.map((keys) => keys?.map((key) => key === null ? null : counterFor(key)));
-	const addCount = (counter, amount) => {
-		if (!counter.count) orderedCounters.push(counter);
-		counter.count += amount;
-		emitted += amount;
-	};
-	const cardinalBit = (cf) => {
-		if (!cf) return 0;
-		if (cf[0] === 0 && cf[2] === 0 && (cf[1] === -1 || cf[1] === 1)) return cf[1] === 1 ? 1 : 2;
-		if (cf[0] === 0 && cf[1] === 0 && (cf[2] === -1 || cf[2] === 1)) return cf[2] === -1 ? 4 : 8;
-		if (cf[1] === 0 && cf[2] === 0 && (cf[0] === -1 || cf[0] === 1)) return cf[0] === -1 ? 16 : 32;
-		return 64;
-	};
-	const compiled = quadsByPalette.map((quads, gi) => {
-		if (!quads) return null;
-		const bits = quads.map((q) => cardinalBit(q.cullface)), directions = [];
-		let seen = 0, unknown = false;
-		for (let qi = 0; qi < quads.length; qi++) {
-			if (!counterRefs[gi][qi]) continue;
-			const bit = bits[qi];
-			if (bit === 64) unknown = true;
-			else if (bit && !(seen & bit)) {
-				directions.push({
-					bit,
-					quad: quads[qi]
-				});
-				seen |= bit;
-			}
-		}
-		return {
-			bits,
-			directions,
-			plans: unknown ? null : new Array(64)
-		};
-	});
-	const cardinalGetAt = typeof blocks.getAt === "function" && !blocks.onlyRegion ? blocks.getAt.bind(blocks) : null;
-	const hiddenMask = (info, lx, lz, ly, gi) => {
-		let mask = 0;
-		for (const { bit, quad } of info.directions) if (faceCulled(blocks, occludes, hideSame, quad, lx, lz, ly, gi, grid, visible, cardinalGetAt)) mask |= bit;
-		return mask;
-	};
-	const planFor = (gi, mask) => {
-		const info = compiled[gi];
-		let plan = info.plans[mask];
-		if (!plan) {
-			const seen = /* @__PURE__ */ new Map();
-			for (let qi = 0; qi < counterRefs[gi].length; qi++) {
-				const counter = counterRefs[gi][qi];
-				if (counter && !(info.bits[qi] & mask)) seen.set(counter, (seen.get(counter) || 0) + 1);
-			}
-			plan = [...seen].map(([counter, count]) => ({
-				counter,
-				count
-			}));
-			info.plans[mask] = plan;
-		}
-		return plan;
-	};
-	const cullCache = new CullMaskCache(options?.cullCacheBytes);
-	const keys = options?.keys;
-	const entries = keys && keys !== blocks.keyView ? function* () {
-		for (const key of keys) {
-			const gi = blocks.get(key);
-			if (gi !== void 0) yield [key, gi];
-		}
-	} : () => blocks;
-	const total = keys ? keys.length ?? keys.size ?? blocks.size : blocks.size;
-	let emitted = 0;
-	const report = (phase, completed) => {
-		throwIfAborted(options?.signal);
-		const stageFraction = total ? completed / total : 1;
-		const fraction = phase === "count" ? stageFraction * .5 : .5 + stageFraction * .5;
-		onProgress?.(fraction);
-		options?.onStage?.({
-			phase,
-			fraction,
-			stageFraction,
-			completed,
-			total
-		});
-	};
-	let n = 0;
-	let stream = null;
-	try {
-		report("count", 0);
-		for (const [key, gi] of entries()) {
-			if ((++n & 65535) === 0) {
-				report("count", n);
-				await yieldWork();
-				throwIfAborted(options?.signal);
-			}
-			const lx = key % grid.W;
-			const lz = Math.floor(key / grid.W) % grid.D;
-			const ly = Math.floor(key / grid.strideY);
-			const x = lx + minX;
-			const y = ly + minY;
-			const z = lz + minZ;
-			if (filter && !filter(x, y, z, ly)) continue;
-			const finfo = fluidOf[gi];
-			if (finfo) {
-				emitFluidFaces(palette, blocks, fluidOf, lx, lz, ly, x, y, z, gi, grid, selfMasks[gi], visible, (texKey) => {
-					if (options?.includeGroup && !options.includeGroup(texKey)) return;
-					addCount(counterFor(texKey), 1);
-				});
-				if (!finfo.waterlogged) continue;
-			}
-			if (!renderable[gi]) continue;
-			const info = compiled[gi], mask = hiddenMask(info, lx, lz, ly, gi);
-			if (info.directions.length) cullCache.append(mask);
-			if (info.plans) for (const { counter, count } of planFor(gi, mask)) addCount(counter, count);
-			else {
-				const quads = quadsByPalette[gi], refs = counterRefs[gi];
-				for (let qi = 0; qi < quads.length; qi++) {
-					const counter = refs[qi], bit = info.bits[qi];
-					if (!counter || (bit === 64 ? faceCulled(blocks, occludes, hideSame, quads[qi], lx, lz, ly, gi, grid, visible) : bit & mask)) continue;
-					addCount(counter, 1);
+			for (var l = "function" == typeof __require && __require, e = 0; e < h.length; e++) u(h[e]);
+			return u;
+		}({
+			1: [function(e, t, r) {
+				"use strict";
+				var d = e("./utils"), c = e("./support"), p = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+				r.encode = function(e) {
+					for (var t, r, n, i, s, a, o, h = [], u = 0, l = e.length, f = l, c = "string" !== d.getTypeOf(e); u < e.length;) f = l - u, n = c ? (t = e[u++], r = u < l ? e[u++] : 0, u < l ? e[u++] : 0) : (t = e.charCodeAt(u++), r = u < l ? e.charCodeAt(u++) : 0, u < l ? e.charCodeAt(u++) : 0), i = t >> 2, s = (3 & t) << 4 | r >> 4, a = 1 < f ? (15 & r) << 2 | n >> 6 : 64, o = 2 < f ? 63 & n : 64, h.push(p.charAt(i) + p.charAt(s) + p.charAt(a) + p.charAt(o));
+					return h.join("");
+				}, r.decode = function(e) {
+					var t, r, n, i, s, a, o = 0, h = 0, u = "data:";
+					if (e.substr(0, u.length) === u) throw new Error("Invalid base64 input, it looks like a data url.");
+					var l, f = 3 * (e = e.replace(/[^A-Za-z0-9+/=]/g, "")).length / 4;
+					if (e.charAt(e.length - 1) === p.charAt(64) && f--, e.charAt(e.length - 2) === p.charAt(64) && f--, f % 1 != 0) throw new Error("Invalid base64 input, bad content length.");
+					for (l = c.uint8array ? new Uint8Array(0 | f) : new Array(0 | f); o < e.length;) t = p.indexOf(e.charAt(o++)) << 2 | (i = p.indexOf(e.charAt(o++))) >> 4, r = (15 & i) << 4 | (s = p.indexOf(e.charAt(o++))) >> 2, n = (3 & s) << 6 | (a = p.indexOf(e.charAt(o++))), l[h++] = t, 64 !== s && (l[h++] = r), 64 !== a && (l[h++] = n);
+					return l;
+				};
+			}, {
+				"./support": 30,
+				"./utils": 32
+			}],
+			2: [function(e, t, r) {
+				"use strict";
+				var n = e("./external"), i = e("./stream/DataWorker"), s = e("./stream/Crc32Probe"), a = e("./stream/DataLengthProbe");
+				function o(e, t, r, n, i) {
+					this.compressedSize = e, this.uncompressedSize = t, this.crc32 = r, this.compression = n, this.compressedContent = i;
 				}
-			}
-		}
-		cullCache.finish();
-		const counts = new Map(orderedCounters.map((counter) => [counter.key, counter.count]));
-		report("count", total);
-		let geometryBytes = estimateGeometryBytes(counts, bounds, options);
-		options?.onStage?.({
-			phase: "allocate",
-			fraction: .5,
-			bytes: geometryBytes,
-			groups: [...counts].map(([key, count]) => ({
-				key,
-				count,
-				compact: !!options?.compactFaces && canCompactFaces(bounds, key)
-			}))
-		});
-		throwIfAborted(options?.signal);
-		stream = streaming ? new GeometryStream(counts, bounds, options, emitted, geometryBytes) : null;
-		const groups = stream ? stream.groups : /* @__PURE__ */ new Map();
-		if (stream) await stream.start();
-		else for (const [gKey, count] of counts) {
-			if (options?.compactFaces && canCompactFaces(bounds, gKey)) {
-				groups.set(gKey, new CompactFaceData(count, bounds));
-				continue;
-			}
-			groups.set(gKey, gKey === "particle/bubble" ? {
-				positions: new Float32Array(count * 3),
-				v: 0
-			} : {
-				positions: new Float32Array(count * 12),
-				uvs: new Float32Array(count * 8),
-				indices: count * 4 < 65536 ? new Uint16Array(count * 6) : new Uint32Array(count * 6),
-				...options?.trackBlocks ? { blockKeys: bounds.width * bounds.height * bounds.depth <= 2 ** 32 ? new Uint32Array(count) : new Float64Array(count) } : {},
-				v: 0,
-				f: 0
-			});
-		}
-		const groupsByPalette = groupKeysByPalette.map((keys) => keys?.map((key) => groups.get(key)));
-		n = 0;
-		report("fill", 0);
-		for (const [key, gi] of entries()) {
-			if ((++n & 65535) === 0) {
-				report("fill", n);
-				await yieldWork();
-				throwIfAborted(options?.signal);
-			}
-			const lx = key % grid.W;
-			const lz = Math.floor(key / grid.W) % grid.D;
-			const ly = Math.floor(key / grid.strideY);
-			const x = lx + minX;
-			const y = ly + minY;
-			const z = lz + minZ;
-			if (filter && !filter(x, y, z, ly)) continue;
-			const finfo = fluidOf[gi];
-			if (finfo) {
-				const pendingFluid = stream ? [] : null;
-				emitFluidFaces(palette, blocks, fluidOf, lx, lz, ly, x, y, z, gi, grid, selfMasks[gi], visible, (texKey, pos, uvs) => {
-					const g = groups.get(texKey);
-					if (!g) return;
-					if (pendingFluid) {
-						pendingFluid.push({
-							g,
-							texKey,
-							pos,
-							uvs
+				o.prototype = {
+					getContentWorker: function() {
+						var e = new i(n.Promise.resolve(this.compressedContent)).pipe(this.compression.uncompressWorker()).pipe(new a("data_length")), t = this;
+						return e.on("end", function() {
+							if (this.streamInfo.data_length !== t.uncompressedSize) throw new Error("Bug : uncompressed data size mismatch");
+						}), e;
+					},
+					getCompressedWorker: function() {
+						return new i(n.Promise.resolve(this.compressedContent)).withStreamInfo("compressedSize", this.compressedSize).withStreamInfo("uncompressedSize", this.uncompressedSize).withStreamInfo("crc32", this.crc32).withStreamInfo("compression", this.compression);
+					}
+				}, o.createWorkerFrom = function(e, t, r) {
+					return e.pipe(new s()).pipe(new a("uncompressedSize")).pipe(t.compressWorker(r)).pipe(new a("compressedSize")).withStreamInfo("compression", t);
+				}, t.exports = o;
+			}, {
+				"./external": 6,
+				"./stream/Crc32Probe": 25,
+				"./stream/DataLengthProbe": 26,
+				"./stream/DataWorker": 27
+			}],
+			3: [function(e, t, r) {
+				"use strict";
+				var n = e("./stream/GenericWorker");
+				r.STORE = {
+					magic: "\0\0",
+					compressWorker: function() {
+						return new n("STORE compression");
+					},
+					uncompressWorker: function() {
+						return new n("STORE decompression");
+					}
+				}, r.DEFLATE = e("./flate");
+			}, {
+				"./flate": 7,
+				"./stream/GenericWorker": 28
+			}],
+			4: [function(e, t, r) {
+				"use strict";
+				var n = e("./utils");
+				var o = function() {
+					for (var e, t = [], r = 0; r < 256; r++) {
+						e = r;
+						for (var n = 0; n < 8; n++) e = 1 & e ? 3988292384 ^ e >>> 1 : e >>> 1;
+						t[r] = e;
+					}
+					return t;
+				}();
+				t.exports = function(e, t) {
+					return void 0 !== e && e.length ? "string" !== n.getTypeOf(e) ? function(e, t, r, n) {
+						var i = o, s = n + r;
+						e ^= -1;
+						for (var a = n; a < s; a++) e = e >>> 8 ^ i[255 & (e ^ t[a])];
+						return -1 ^ e;
+					}(0 | t, e, e.length, 0) : function(e, t, r, n) {
+						var i = o, s = n + r;
+						e ^= -1;
+						for (var a = n; a < s; a++) e = e >>> 8 ^ i[255 & (e ^ t.charCodeAt(a))];
+						return -1 ^ e;
+					}(0 | t, e, e.length, 0) : 0;
+				};
+			}, { "./utils": 32 }],
+			5: [function(e, t, r) {
+				"use strict";
+				r.base64 = !1, r.binary = !1, r.dir = !1, r.createFolders = !0, r.date = null, r.compression = null, r.compressionOptions = null, r.comment = null, r.unixPermissions = null, r.dosPermissions = null;
+			}, {}],
+			6: [function(e, t, r) {
+				"use strict";
+				var n = null;
+				n = "undefined" != typeof Promise ? Promise : e("lie"), t.exports = { Promise: n };
+			}, { lie: 37 }],
+			7: [function(e, t, r) {
+				"use strict";
+				var n = "undefined" != typeof Uint8Array && "undefined" != typeof Uint16Array && "undefined" != typeof Uint32Array, i = e("pako"), s = e("./utils"), a = e("./stream/GenericWorker"), o = n ? "uint8array" : "array";
+				function h(e, t) {
+					a.call(this, "FlateWorker/" + e), this._pako = null, this._pakoAction = e, this._pakoOptions = t, this.meta = {};
+				}
+				r.magic = "\b\0", s.inherits(h, a), h.prototype.processChunk = function(e) {
+					this.meta = e.meta, null === this._pako && this._createPako(), this._pako.push(s.transformTo(o, e.data), !1);
+				}, h.prototype.flush = function() {
+					a.prototype.flush.call(this), null === this._pako && this._createPako(), this._pako.push([], !0);
+				}, h.prototype.cleanUp = function() {
+					a.prototype.cleanUp.call(this), this._pako = null;
+				}, h.prototype._createPako = function() {
+					this._pako = new i[this._pakoAction]({
+						raw: !0,
+						level: this._pakoOptions.level || -1
+					});
+					var t = this;
+					this._pako.onData = function(e) {
+						t.push({
+							data: e,
+							meta: t.meta
 						});
-						return;
+					};
+				}, r.compressWorker = function(e) {
+					return new h("Deflate", e);
+				}, r.uncompressWorker = function() {
+					return new h("Inflate", {});
+				};
+			}, {
+				"./stream/GenericWorker": 28,
+				"./utils": 32,
+				pako: 38
+			}],
+			8: [function(e, t, r) {
+				"use strict";
+				function A(e, t) {
+					var r, n = "";
+					for (r = 0; r < t; r++) n += String.fromCharCode(255 & e), e >>>= 8;
+					return n;
+				}
+				function n(e, t, r, n, i, s) {
+					var a, o, h = e.file, u = e.compression, l = s !== O.utf8encode, f = I.transformTo("string", s(h.name)), c = I.transformTo("string", O.utf8encode(h.name)), d = h.comment, p = I.transformTo("string", s(d)), m = I.transformTo("string", O.utf8encode(d)), _ = c.length !== h.name.length, g = m.length !== d.length, b = "", v = "", y = "", w = h.dir, k = h.date, x = {
+						crc32: 0,
+						compressedSize: 0,
+						uncompressedSize: 0
+					};
+					t && !r || (x.crc32 = e.crc32, x.compressedSize = e.compressedSize, x.uncompressedSize = e.uncompressedSize);
+					var S = 0;
+					t && (S |= 8), l || !_ && !g || (S |= 2048);
+					var z = 0, C = 0;
+					w && (z |= 16), "UNIX" === i ? (C = 798, z |= function(e, t) {
+						var r = e;
+						return e || (r = t ? 16893 : 33204), (65535 & r) << 16;
+					}(h.unixPermissions, w)) : (C = 20, z |= function(e) {
+						return 63 & (e || 0);
+					}(h.dosPermissions)), a = k.getUTCHours(), a <<= 6, a |= k.getUTCMinutes(), a <<= 5, a |= k.getUTCSeconds() / 2, o = k.getUTCFullYear() - 1980, o <<= 4, o |= k.getUTCMonth() + 1, o <<= 5, o |= k.getUTCDate(), _ && (v = A(1, 1) + A(B(f), 4) + c, b += "up" + A(v.length, 2) + v), g && (y = A(1, 1) + A(B(p), 4) + m, b += "uc" + A(y.length, 2) + y);
+					var E = "";
+					return E += "\n\0", E += A(S, 2), E += u.magic, E += A(a, 2), E += A(o, 2), E += A(x.crc32, 4), E += A(x.compressedSize, 4), E += A(x.uncompressedSize, 4), E += A(f.length, 2), E += A(b.length, 2), {
+						fileRecord: R.LOCAL_FILE_HEADER + E + f + b,
+						dirRecord: R.CENTRAL_FILE_HEADER + A(C, 2) + E + A(p.length, 2) + "\0\0\0\0" + A(z, 4) + A(n, 4) + f + b + p
+					};
+				}
+				var I = e("../utils"), i = e("../stream/GenericWorker"), O = e("../utf8"), B = e("../crc32"), R = e("../signature");
+				function s(e, t, r, n) {
+					i.call(this, "ZipFileWorker"), this.bytesWritten = 0, this.zipComment = t, this.zipPlatform = r, this.encodeFileName = n, this.streamFiles = e, this.accumulate = !1, this.contentBuffer = [], this.dirRecords = [], this.currentSourceOffset = 0, this.entriesCount = 0, this.currentFile = null, this._sources = [];
+				}
+				I.inherits(s, i), s.prototype.push = function(e) {
+					var t = e.meta.percent || 0, r = this.entriesCount, n = this._sources.length;
+					this.accumulate ? this.contentBuffer.push(e) : (this.bytesWritten += e.data.length, i.prototype.push.call(this, {
+						data: e.data,
+						meta: {
+							currentFile: this.currentFile,
+							percent: r ? (t + 100 * (r - n - 1)) / r : 100
+						}
+					}));
+				}, s.prototype.openedSource = function(e) {
+					this.currentSourceOffset = this.bytesWritten, this.currentFile = e.file.name;
+					var t = this.streamFiles && !e.file.dir;
+					if (t) {
+						var r = n(e, t, !1, this.currentSourceOffset, this.zipPlatform, this.encodeFileName);
+						this.push({
+							data: r.fileRecord,
+							meta: { percent: 0 }
+						});
+					} else this.accumulate = !0;
+				}, s.prototype.closedSource = function(e) {
+					this.accumulate = !1;
+					var t = this.streamFiles && !e.file.dir, r = n(e, t, !0, this.currentSourceOffset, this.zipPlatform, this.encodeFileName);
+					if (this.dirRecords.push(r.dirRecord), t) this.push({
+						data: function(e) {
+							return R.DATA_DESCRIPTOR + A(e.crc32, 4) + A(e.compressedSize, 4) + A(e.uncompressedSize, 4);
+						}(e),
+						meta: { percent: 100 }
+					});
+					else for (this.push({
+						data: r.fileRecord,
+						meta: { percent: 0 }
+					}); this.contentBuffer.length;) this.push(this.contentBuffer.shift());
+					this.currentFile = null;
+				}, s.prototype.flush = function() {
+					for (var e = this.bytesWritten, t = 0; t < this.dirRecords.length; t++) this.push({
+						data: this.dirRecords[t],
+						meta: { percent: 100 }
+					});
+					var r = this.bytesWritten - e, n = function(e, t, r, n, i) {
+						var s = I.transformTo("string", i(n));
+						return R.CENTRAL_DIRECTORY_END + "\0\0\0\0" + A(e, 2) + A(e, 2) + A(t, 4) + A(r, 4) + A(s.length, 2) + s;
+					}(this.dirRecords.length, r, e, this.zipComment, this.encodeFileName);
+					this.push({
+						data: n,
+						meta: { percent: 100 }
+					});
+				}, s.prototype.prepareNextSource = function() {
+					this.previous = this._sources.shift(), this.openedSource(this.previous.streamInfo), this.isPaused ? this.previous.pause() : this.previous.resume();
+				}, s.prototype.registerPrevious = function(e) {
+					this._sources.push(e);
+					var t = this;
+					return e.on("data", function(e) {
+						t.processChunk(e);
+					}), e.on("end", function() {
+						t.closedSource(t.previous.streamInfo), t._sources.length ? t.prepareNextSource() : t.end();
+					}), e.on("error", function(e) {
+						t.error(e);
+					}), this;
+				}, s.prototype.resume = function() {
+					return !!i.prototype.resume.call(this) && (!this.previous && this._sources.length ? (this.prepareNextSource(), !0) : this.previous || this._sources.length || this.generatedError ? void 0 : (this.end(), !0));
+				}, s.prototype.error = function(e) {
+					var t = this._sources;
+					if (!i.prototype.error.call(this, e)) return !1;
+					for (var r = 0; r < t.length; r++) try {
+						t[r].error(e);
+					} catch (e) {}
+					return !0;
+				}, s.prototype.lock = function() {
+					i.prototype.lock.call(this);
+					for (var e = this._sources, t = 0; t < e.length; t++) e[t].lock();
+				}, t.exports = s;
+			}, {
+				"../crc32": 4,
+				"../signature": 23,
+				"../stream/GenericWorker": 28,
+				"../utf8": 31,
+				"../utils": 32
+			}],
+			9: [function(e, t, r) {
+				"use strict";
+				var u = e("../compressions"), n = e("./ZipFileWorker");
+				r.generateWorker = function(e, a, t) {
+					var o = new n(a.streamFiles, t, a.platform, a.encodeFileName), h = 0;
+					try {
+						e.forEach(function(e, t) {
+							h++;
+							var r = function(e, t) {
+								var r = e || t, n = u[r];
+								if (!n) throw new Error(r + " is not a valid compression method !");
+								return n;
+							}(t.options.compression, a.compression), n = t.options.compressionOptions || a.compressionOptions || {}, i = t.dir, s = t.date;
+							t._compressWorker(r, n).withStreamInfo("file", {
+								name: e,
+								dir: i,
+								date: s,
+								comment: t.comment || "",
+								unixPermissions: t.unixPermissions,
+								dosPermissions: t.dosPermissions
+							}).pipe(o);
+						}), o.entriesCount = h;
+					} catch (e) {
+						o.error(e);
 					}
-					if (texKey === "particle/bubble") {
-						g.positions[g.v] = pos[0];
-						g.positions[g.v + 1] = pos[1];
-						g.positions[g.v + 2] = pos[2];
-						g.v += 3;
-					} else writeFace(g, pos, uvs, 0, 0, 0, key);
-				});
-				if (pendingFluid) for (const { g, texKey, pos, uvs } of pendingFluid) {
-					if (g.v >= g.recordLimit && !stream.prepare(g)) await stream.flushFor(g);
-					if (texKey === "particle/bubble") {
-						g.positions[g.v] = pos[0];
-						g.positions[g.v + 1] = pos[1];
-						g.positions[g.v + 2] = pos[2];
-						g.v += 3;
-					} else writeFace(g, pos, uvs, 0, 0, 0, key);
+					return o;
+				};
+			}, {
+				"../compressions": 3,
+				"./ZipFileWorker": 8
+			}],
+			10: [function(e, t, r) {
+				"use strict";
+				function n() {
+					if (!(this instanceof n)) return new n();
+					if (arguments.length) throw new Error("The constructor with parameters has been removed in JSZip 3.0, please check the upgrade guide.");
+					this.files = Object.create(null), this.comment = null, this.root = "", this.clone = function() {
+						var e = new n();
+						for (var t in this) "function" != typeof this[t] && (e[t] = this[t]);
+						return e;
+					};
 				}
-				if (!finfo.waterlogged) continue;
-			}
-			if (!renderable[gi]) continue;
-			const quads = quadsByPalette[gi], info = compiled[gi];
-			let mask = info.directions.length ? cullCache.read() : 0;
-			if (mask === void 0) mask = hiddenMask(info, lx, lz, ly, gi);
-			const faceGroups = groupsByPalette[gi];
-			for (let qi = 0; qi < quads.length; qi++) {
-				const q = quads[qi];
-				if (!faceGroups[qi]) continue;
-				const bit = info.bits[qi];
-				if (bit === 64 ? faceCulled(blocks, occludes, hideSame, q, lx, lz, ly, gi, grid, visible) : bit & mask) continue;
-				const group = faceGroups[qi];
-				if (group.isCompactFaceData) {
-					if (stream && group.cursor >= group.recordLimit && !stream.prepare(group)) await stream.flushFor(group);
-					group.write(q, x, y, z, key);
-				} else {
-					if (stream && group.v >= group.recordLimit && !stream.prepare(group)) await stream.flushFor(group);
-					writeFace(group, q.verts, q.uvs, x, y, z, key);
+				(n.prototype = e("./object")).loadAsync = e("./load"), n.support = e("./support"), n.defaults = e("./defaults"), n.version = "3.10.2", n.loadAsync = function(e, t) {
+					return new n().loadAsync(e, t);
+				}, n.external = e("./external"), t.exports = n;
+			}, {
+				"./defaults": 5,
+				"./external": 6,
+				"./load": 11,
+				"./object": 15,
+				"./support": 30
+			}],
+			11: [function(e, t, r) {
+				"use strict";
+				var u = e("./utils"), i = e("./external"), n = e("./utf8"), s = e("./zipEntries"), a = e("./stream/Crc32Probe"), l = e("./nodejsUtils");
+				function f(n) {
+					return new i.Promise(function(e, t) {
+						var r = n.decompressed.getContentWorker().pipe(new a());
+						r.on("error", function(e) {
+							t(e);
+						}).on("end", function() {
+							r.streamInfo.crc32 !== n.decompressed.crc32 ? t(/* @__PURE__ */ new Error("Corrupted zip : CRC32 mismatch")) : e();
+						}).resume();
+					});
 				}
-			}
-		}
-		if (stream) {
-			const result = await stream.finish();
-			report("fill", total);
-			return result;
-		}
-		for (const group of groups.values()) if (group.isCompactFaceData) {
-			throwIfAborted(options?.signal);
-			group.finish();
-			geometryBytes = geometryLimit(geometryBytes + group.templateData.byteLength, options?.maxGeometryBytes);
-		}
-		report("fill", total);
-		return {
-			groups,
-			emitted,
-			geometryBytes
-		};
-	} finally {
-		stream?.dispose();
-		cullCache.dispose();
+				t.exports = function(e, o) {
+					var h = this;
+					return o = u.extend(o || {}, {
+						base64: !1,
+						checkCRC32: !1,
+						optimizedBinaryString: !1,
+						createFolders: !1,
+						decodeFileName: n.utf8decode
+					}), l.isNode && l.isStream(e) ? i.Promise.reject(/* @__PURE__ */ new Error("JSZip can't accept a stream when loading a zip file.")) : u.prepareContent("the loaded zip file", e, !0, o.optimizedBinaryString, o.base64).then(function(e) {
+						var t = new s(o);
+						return t.load(e), t;
+					}).then(function(e) {
+						var t = [i.Promise.resolve(e)], r = e.files;
+						if (o.checkCRC32) for (var n = 0; n < r.length; n++) t.push(f(r[n]));
+						return i.Promise.all(t);
+					}).then(function(e) {
+						for (var t = e.shift(), r = t.files, n = 0; n < r.length; n++) {
+							var i = r[n], s = i.fileNameStr, a = u.resolve(i.fileNameStr);
+							h.file(a, i.decompressed, {
+								binary: !0,
+								optimizedBinaryString: !0,
+								date: i.date,
+								dir: i.dir,
+								comment: i.fileCommentStr.length ? i.fileCommentStr : null,
+								unixPermissions: i.unixPermissions,
+								dosPermissions: i.dosPermissions,
+								createFolders: o.createFolders
+							}), i.dir || (h.file(a).unsafeOriginalName = s);
+						}
+						return t.zipComment.length && (h.comment = t.zipComment), h;
+					});
+				};
+			}, {
+				"./external": 6,
+				"./nodejsUtils": 14,
+				"./stream/Crc32Probe": 25,
+				"./utf8": 31,
+				"./utils": 32,
+				"./zipEntries": 33
+			}],
+			12: [function(e, t, r) {
+				"use strict";
+				var n = e("../utils"), i = e("../stream/GenericWorker");
+				function s(e, t) {
+					i.call(this, "Nodejs stream input adapter for " + e), this._upstreamEnded = !1, this._bindStream(t);
+				}
+				n.inherits(s, i), s.prototype._bindStream = function(e) {
+					var t = this;
+					(this._stream = e).pause(), e.on("data", function(e) {
+						t.push({
+							data: e,
+							meta: { percent: 0 }
+						});
+					}).on("error", function(e) {
+						t.isPaused ? this.generatedError = e : t.error(e);
+					}).on("end", function() {
+						t.isPaused ? t._upstreamEnded = !0 : t.end();
+					});
+				}, s.prototype.pause = function() {
+					return !!i.prototype.pause.call(this) && (this._stream.pause(), !0);
+				}, s.prototype.resume = function() {
+					return !!i.prototype.resume.call(this) && (this._upstreamEnded ? this.end() : this._stream.resume(), !0);
+				}, t.exports = s;
+			}, {
+				"../stream/GenericWorker": 28,
+				"../utils": 32
+			}],
+			13: [function(e, t, r) {
+				"use strict";
+				var i = e("readable-stream").Readable;
+				function n(e, t, r) {
+					i.call(this, t), this._helper = e;
+					var n = this;
+					e.on("data", function(e, t) {
+						n.push(e) || n._helper.pause(), r && r(t);
+					}).on("error", function(e) {
+						n.emit("error", e);
+					}).on("end", function() {
+						n.push(null);
+					});
+				}
+				e("../utils").inherits(n, i), n.prototype._read = function() {
+					this._helper.resume();
+				}, t.exports = n;
+			}, {
+				"../utils": 32,
+				"readable-stream": 16
+			}],
+			14: [function(e, t, r) {
+				"use strict";
+				t.exports = {
+					isNode: "undefined" != typeof Buffer,
+					newBufferFrom: function(e, t) {
+						if (Buffer.from && Buffer.from !== Uint8Array.from) return Buffer.from(e, t);
+						if ("number" == typeof e) throw new Error("The \"data\" argument must not be a number");
+						return new Buffer(e, t);
+					},
+					allocBuffer: function(e) {
+						if (Buffer.alloc) return Buffer.alloc(e);
+						var t = new Buffer(e);
+						return t.fill(0), t;
+					},
+					isBuffer: function(e) {
+						return Buffer.isBuffer(e);
+					},
+					isStream: function(e) {
+						return e && "function" == typeof e.on && "function" == typeof e.pause && "function" == typeof e.resume;
+					}
+				};
+			}, {}],
+			15: [function(e, t, r) {
+				"use strict";
+				function s(e, t, r) {
+					var n, i = u.getTypeOf(t), s = u.extend(r || {}, f);
+					s.date = s.date || /* @__PURE__ */ new Date(), null !== s.compression && (s.compression = s.compression.toUpperCase()), "string" == typeof s.unixPermissions && (s.unixPermissions = parseInt(s.unixPermissions, 8)), s.unixPermissions && 16384 & s.unixPermissions && (s.dir = !0), s.dosPermissions && 16 & s.dosPermissions && (s.dir = !0), s.dir && (e = g(e)), s.createFolders && (n = _(e)) && b.call(this, n, !0);
+					var a = "string" === i && !1 === s.binary && !1 === s.base64;
+					r && void 0 !== r.binary || (s.binary = !a), (t instanceof c && 0 === t.uncompressedSize || s.dir || !t || 0 === t.length) && (s.base64 = !1, s.binary = !0, t = "", s.compression = "STORE", i = "string");
+					var o = null;
+					o = t instanceof c || t instanceof l ? t : p.isNode && p.isStream(t) ? new m(e, t) : u.prepareContent(e, t, s.binary, s.optimizedBinaryString, s.base64);
+					var h = new d(e, o, s);
+					this.files[e] = h;
+				}
+				var i = e("./utf8"), u = e("./utils"), l = e("./stream/GenericWorker"), a = e("./stream/StreamHelper"), f = e("./defaults"), c = e("./compressedObject"), d = e("./zipObject"), o = e("./generate"), p = e("./nodejsUtils"), m = e("./nodejs/NodejsStreamInputAdapter"), _ = function(e) {
+					"/" === e.slice(-1) && (e = e.substring(0, e.length - 1));
+					var t = e.lastIndexOf("/");
+					return 0 < t ? e.substring(0, t) : "";
+				}, g = function(e) {
+					return "/" !== e.slice(-1) && (e += "/"), e;
+				}, b = function(e, t) {
+					return t = void 0 !== t ? t : f.createFolders, e = g(e), this.files[e] || s.call(this, e, null, {
+						dir: !0,
+						createFolders: t
+					}), this.files[e];
+				};
+				function h(e) {
+					return "[object RegExp]" === Object.prototype.toString.call(e);
+				}
+				t.exports = {
+					load: function() {
+						throw new Error("This method has been removed in JSZip 3.0, please check the upgrade guide.");
+					},
+					forEach: function(e) {
+						var t, r, n;
+						for (t in this.files) n = this.files[t], (r = t.slice(this.root.length, t.length)) && t.slice(0, this.root.length) === this.root && e(r, n);
+					},
+					filter: function(r) {
+						var n = [];
+						return this.forEach(function(e, t) {
+							r(e, t) && n.push(t);
+						}), n;
+					},
+					file: function(e, t, r) {
+						if (1 !== arguments.length) return e = this.root + e, s.call(this, e, t, r), this;
+						if (h(e)) {
+							var n = e;
+							return this.filter(function(e, t) {
+								return !t.dir && n.test(e);
+							});
+						}
+						var i = this.files[this.root + e];
+						return i && !i.dir ? i : null;
+					},
+					folder: function(r) {
+						if (!r) return this;
+						if (h(r)) return this.filter(function(e, t) {
+							return t.dir && r.test(e);
+						});
+						var e = this.root + r, t = b.call(this, e), n = this.clone();
+						return n.root = t.name, n;
+					},
+					remove: function(r) {
+						r = this.root + r;
+						var e = this.files[r];
+						if (e || ("/" !== r.slice(-1) && (r += "/"), e = this.files[r]), e && !e.dir) delete this.files[r];
+						else for (var t = this.filter(function(e, t) {
+							return t.name.slice(0, r.length) === r;
+						}), n = 0; n < t.length; n++) delete this.files[t[n].name];
+						return this;
+					},
+					generate: function() {
+						throw new Error("This method has been removed in JSZip 3.0, please check the upgrade guide.");
+					},
+					generateInternalStream: function(e) {
+						var t, r = {};
+						try {
+							if ((r = u.extend(e || {}, {
+								streamFiles: !1,
+								compression: "STORE",
+								compressionOptions: null,
+								type: "",
+								platform: "DOS",
+								comment: null,
+								mimeType: "application/zip",
+								encodeFileName: i.utf8encode
+							})).type = r.type.toLowerCase(), r.compression = r.compression.toUpperCase(), "binarystring" === r.type && (r.type = "string"), !r.type) throw new Error("No output type specified.");
+							u.checkSupport(r.type), "darwin" !== r.platform && "freebsd" !== r.platform && "linux" !== r.platform && "sunos" !== r.platform || (r.platform = "UNIX"), "win32" === r.platform && (r.platform = "DOS");
+							var n = r.comment || this.comment || "";
+							t = o.generateWorker(this, r, n);
+						} catch (e) {
+							(t = new l("error")).error(e);
+						}
+						return new a(t, r.type || "string", r.mimeType);
+					},
+					generateAsync: function(e, t) {
+						return this.generateInternalStream(e).accumulate(t);
+					},
+					generateNodeStream: function(e, t) {
+						return (e = e || {}).type || (e.type = "nodebuffer"), this.generateInternalStream(e).toNodejsStream(t);
+					}
+				};
+			}, {
+				"./compressedObject": 2,
+				"./defaults": 5,
+				"./generate": 9,
+				"./nodejs/NodejsStreamInputAdapter": 12,
+				"./nodejsUtils": 14,
+				"./stream/GenericWorker": 28,
+				"./stream/StreamHelper": 29,
+				"./utf8": 31,
+				"./utils": 32,
+				"./zipObject": 35
+			}],
+			16: [function(e, t, r) {
+				"use strict";
+				t.exports = e("stream");
+			}, { stream: void 0 }],
+			17: [function(e, t, r) {
+				"use strict";
+				var n = e("./DataReader");
+				function i(e) {
+					n.call(this, e);
+					for (var t = 0; t < this.data.length; t++) e[t] = 255 & e[t];
+				}
+				e("../utils").inherits(i, n), i.prototype.byteAt = function(e) {
+					return this.data[this.zero + e];
+				}, i.prototype.lastIndexOfSignature = function(e) {
+					for (var t = e.charCodeAt(0), r = e.charCodeAt(1), n = e.charCodeAt(2), i = e.charCodeAt(3), s = this.length - 4; 0 <= s; --s) if (this.data[s] === t && this.data[s + 1] === r && this.data[s + 2] === n && this.data[s + 3] === i) return s - this.zero;
+					return -1;
+				}, i.prototype.readAndCheckSignature = function(e) {
+					var t = e.charCodeAt(0), r = e.charCodeAt(1), n = e.charCodeAt(2), i = e.charCodeAt(3), s = this.readData(4);
+					return t === s[0] && r === s[1] && n === s[2] && i === s[3];
+				}, i.prototype.readData = function(e) {
+					if (this.checkOffset(e), 0 === e) return [];
+					var t = this.data.slice(this.zero + this.index, this.zero + this.index + e);
+					return this.index += e, t;
+				}, t.exports = i;
+			}, {
+				"../utils": 32,
+				"./DataReader": 18
+			}],
+			18: [function(e, t, r) {
+				"use strict";
+				var n = e("../utils");
+				function i(e) {
+					this.data = e, this.length = e.length, this.index = 0, this.zero = 0;
+				}
+				i.prototype = {
+					checkOffset: function(e) {
+						this.checkIndex(this.index + e);
+					},
+					checkIndex: function(e) {
+						if (this.length < this.zero + e || e < 0) throw new Error("End of data reached (data length = " + this.length + ", asked index = " + e + "). Corrupted zip ?");
+					},
+					setIndex: function(e) {
+						this.checkIndex(e), this.index = e;
+					},
+					skip: function(e) {
+						this.setIndex(this.index + e);
+					},
+					byteAt: function() {},
+					readInt: function(e) {
+						var t, r = 0;
+						for (this.checkOffset(e), t = this.index + e - 1; t >= this.index; t--) r = (r << 8) + this.byteAt(t);
+						return this.index += e, r;
+					},
+					readString: function(e) {
+						return n.transformTo("string", this.readData(e));
+					},
+					readData: function() {},
+					lastIndexOfSignature: function() {},
+					readAndCheckSignature: function() {},
+					readDate: function() {
+						var e = this.readInt(4);
+						return new Date(Date.UTC(1980 + (e >> 25 & 127), (e >> 21 & 15) - 1, e >> 16 & 31, e >> 11 & 31, e >> 5 & 63, (31 & e) << 1));
+					}
+				}, t.exports = i;
+			}, { "../utils": 32 }],
+			19: [function(e, t, r) {
+				"use strict";
+				var n = e("./Uint8ArrayReader");
+				function i(e) {
+					n.call(this, e);
+				}
+				e("../utils").inherits(i, n), i.prototype.readData = function(e) {
+					this.checkOffset(e);
+					var t = this.data.slice(this.zero + this.index, this.zero + this.index + e);
+					return this.index += e, t;
+				}, t.exports = i;
+			}, {
+				"../utils": 32,
+				"./Uint8ArrayReader": 21
+			}],
+			20: [function(e, t, r) {
+				"use strict";
+				var n = e("./DataReader");
+				function i(e) {
+					n.call(this, e);
+				}
+				e("../utils").inherits(i, n), i.prototype.byteAt = function(e) {
+					return this.data.charCodeAt(this.zero + e);
+				}, i.prototype.lastIndexOfSignature = function(e) {
+					return this.data.lastIndexOf(e) - this.zero;
+				}, i.prototype.readAndCheckSignature = function(e) {
+					return e === this.readData(4);
+				}, i.prototype.readData = function(e) {
+					this.checkOffset(e);
+					var t = this.data.slice(this.zero + this.index, this.zero + this.index + e);
+					return this.index += e, t;
+				}, t.exports = i;
+			}, {
+				"../utils": 32,
+				"./DataReader": 18
+			}],
+			21: [function(e, t, r) {
+				"use strict";
+				var n = e("./ArrayReader");
+				function i(e) {
+					n.call(this, e);
+				}
+				e("../utils").inherits(i, n), i.prototype.readData = function(e) {
+					if (this.checkOffset(e), 0 === e) return /* @__PURE__ */ new Uint8Array(0);
+					var t = this.data.subarray(this.zero + this.index, this.zero + this.index + e);
+					return this.index += e, t;
+				}, t.exports = i;
+			}, {
+				"../utils": 32,
+				"./ArrayReader": 17
+			}],
+			22: [function(e, t, r) {
+				"use strict";
+				var n = e("../utils"), i = e("../support"), s = e("./ArrayReader"), a = e("./StringReader"), o = e("./NodeBufferReader"), h = e("./Uint8ArrayReader");
+				t.exports = function(e) {
+					var t = n.getTypeOf(e);
+					return n.checkSupport(t), "string" !== t || i.uint8array ? "nodebuffer" === t ? new o(e) : i.uint8array ? new h(n.transformTo("uint8array", e)) : new s(n.transformTo("array", e)) : new a(e);
+				};
+			}, {
+				"../support": 30,
+				"../utils": 32,
+				"./ArrayReader": 17,
+				"./NodeBufferReader": 19,
+				"./StringReader": 20,
+				"./Uint8ArrayReader": 21
+			}],
+			23: [function(e, t, r) {
+				"use strict";
+				r.LOCAL_FILE_HEADER = "PK", r.CENTRAL_FILE_HEADER = "PK", r.CENTRAL_DIRECTORY_END = "PK", r.ZIP64_CENTRAL_DIRECTORY_LOCATOR = "PK\x07", r.ZIP64_CENTRAL_DIRECTORY_END = "PK", r.DATA_DESCRIPTOR = "PK\x07\b";
+			}, {}],
+			24: [function(e, t, r) {
+				"use strict";
+				var n = e("./GenericWorker"), i = e("../utils");
+				function s(e) {
+					n.call(this, "ConvertWorker to " + e), this.destType = e;
+				}
+				i.inherits(s, n), s.prototype.processChunk = function(e) {
+					this.push({
+						data: i.transformTo(this.destType, e.data),
+						meta: e.meta
+					});
+				}, t.exports = s;
+			}, {
+				"../utils": 32,
+				"./GenericWorker": 28
+			}],
+			25: [function(e, t, r) {
+				"use strict";
+				var n = e("./GenericWorker"), i = e("../crc32");
+				function s() {
+					n.call(this, "Crc32Probe"), this.withStreamInfo("crc32", 0);
+				}
+				e("../utils").inherits(s, n), s.prototype.processChunk = function(e) {
+					this.streamInfo.crc32 = i(e.data, this.streamInfo.crc32 || 0), this.push(e);
+				}, t.exports = s;
+			}, {
+				"../crc32": 4,
+				"../utils": 32,
+				"./GenericWorker": 28
+			}],
+			26: [function(e, t, r) {
+				"use strict";
+				var n = e("../utils"), i = e("./GenericWorker");
+				function s(e) {
+					i.call(this, "DataLengthProbe for " + e), this.propName = e, this.withStreamInfo(e, 0);
+				}
+				n.inherits(s, i), s.prototype.processChunk = function(e) {
+					if (e) {
+						var t = this.streamInfo[this.propName] || 0;
+						this.streamInfo[this.propName] = t + e.data.length;
+					}
+					i.prototype.processChunk.call(this, e);
+				}, t.exports = s;
+			}, {
+				"../utils": 32,
+				"./GenericWorker": 28
+			}],
+			27: [function(e, t, r) {
+				"use strict";
+				var n = e("../utils"), i = e("./GenericWorker");
+				function s(e) {
+					i.call(this, "DataWorker");
+					var t = this;
+					this.dataIsReady = !1, this.index = 0, this.max = 0, this.data = null, this.type = "", this._tickScheduled = !1, e.then(function(e) {
+						t.dataIsReady = !0, t.data = e, t.max = e && e.length || 0, t.type = n.getTypeOf(e), t.isPaused || t._tickAndRepeat();
+					}, function(e) {
+						t.error(e);
+					});
+				}
+				n.inherits(s, i), s.prototype.cleanUp = function() {
+					i.prototype.cleanUp.call(this), this.data = null;
+				}, s.prototype.resume = function() {
+					return !!i.prototype.resume.call(this) && (!this._tickScheduled && this.dataIsReady && (this._tickScheduled = !0, n.delay(this._tickAndRepeat, [], this)), !0);
+				}, s.prototype._tickAndRepeat = function() {
+					this._tickScheduled = !1, this.isPaused || this.isFinished || (this._tick(), this.isFinished || (n.delay(this._tickAndRepeat, [], this), this._tickScheduled = !0));
+				}, s.prototype._tick = function() {
+					if (this.isPaused || this.isFinished) return !1;
+					var e = null, t = Math.min(this.max, this.index + 16384);
+					if (this.index >= this.max) return this.end();
+					switch (this.type) {
+						case "string":
+							e = this.data.substring(this.index, t);
+							break;
+						case "uint8array":
+							e = this.data.subarray(this.index, t);
+							break;
+						case "array":
+						case "nodebuffer": e = this.data.slice(this.index, t);
+					}
+					return this.index = t, this.push({
+						data: e,
+						meta: { percent: this.max ? this.index / this.max * 100 : 0 }
+					});
+				}, t.exports = s;
+			}, {
+				"../utils": 32,
+				"./GenericWorker": 28
+			}],
+			28: [function(e, t, r) {
+				"use strict";
+				function n(e) {
+					this.name = e || "default", this.streamInfo = {}, this.generatedError = null, this.extraStreamInfo = {}, this.isPaused = !0, this.isFinished = !1, this.isLocked = !1, this._listeners = {
+						data: [],
+						end: [],
+						error: []
+					}, this.previous = null;
+				}
+				n.prototype = {
+					push: function(e) {
+						this.emit("data", e);
+					},
+					end: function() {
+						if (this.isFinished) return !1;
+						this.flush();
+						try {
+							this.emit("end"), this.cleanUp(), this.isFinished = !0;
+						} catch (e) {
+							this.emit("error", e);
+						}
+						return !0;
+					},
+					error: function(e) {
+						return !this.isFinished && (this.isPaused ? this.generatedError = e : (this.isFinished = !0, this.emit("error", e), this.previous && this.previous.error(e), this.cleanUp()), !0);
+					},
+					on: function(e, t) {
+						return this._listeners[e].push(t), this;
+					},
+					cleanUp: function() {
+						this.streamInfo = this.generatedError = this.extraStreamInfo = null, this._listeners = [];
+					},
+					emit: function(e, t) {
+						if (this._listeners[e]) for (var r = 0; r < this._listeners[e].length; r++) this._listeners[e][r].call(this, t);
+					},
+					pipe: function(e) {
+						return e.registerPrevious(this);
+					},
+					registerPrevious: function(e) {
+						if (this.isLocked) throw new Error("The stream '" + this + "' has already been used.");
+						this.streamInfo = e.streamInfo, this.mergeStreamInfo(), this.previous = e;
+						var t = this;
+						return e.on("data", function(e) {
+							t.processChunk(e);
+						}), e.on("end", function() {
+							t.end();
+						}), e.on("error", function(e) {
+							t.error(e);
+						}), this;
+					},
+					pause: function() {
+						return !this.isPaused && !this.isFinished && (this.isPaused = !0, this.previous && this.previous.pause(), !0);
+					},
+					resume: function() {
+						if (!this.isPaused || this.isFinished) return !1;
+						var e = this.isPaused = !1;
+						return this.generatedError && (this.error(this.generatedError), e = !0), this.previous && this.previous.resume(), !e;
+					},
+					flush: function() {},
+					processChunk: function(e) {
+						this.push(e);
+					},
+					withStreamInfo: function(e, t) {
+						return this.extraStreamInfo[e] = t, this.mergeStreamInfo(), this;
+					},
+					mergeStreamInfo: function() {
+						for (var e in this.extraStreamInfo) Object.prototype.hasOwnProperty.call(this.extraStreamInfo, e) && (this.streamInfo[e] = this.extraStreamInfo[e]);
+					},
+					lock: function() {
+						if (this.isLocked) throw new Error("The stream '" + this + "' has already been used.");
+						this.isLocked = !0, this.previous && this.previous.lock();
+					},
+					toString: function() {
+						var e = "Worker " + this.name;
+						return this.previous ? this.previous + " -> " + e : e;
+					}
+				}, t.exports = n;
+			}, {}],
+			29: [function(e, t, r) {
+				"use strict";
+				var h = e("../utils"), i = e("./ConvertWorker"), s = e("./GenericWorker"), u = e("../base64"), n = e("../support"), a = e("../external"), o = null;
+				if (n.nodestream) try {
+					o = e("../nodejs/NodejsStreamOutputAdapter");
+				} catch (e) {}
+				function l(e, o) {
+					return new a.Promise(function(t, r) {
+						var n = [], i = e._internalType, s = e._outputType, a = e._mimeType;
+						e.on("data", function(e, t) {
+							n.push(e), o && o(t);
+						}).on("error", function(e) {
+							n = [], r(e);
+						}).on("end", function() {
+							try {
+								t(function(e, t, r) {
+									switch (e) {
+										case "blob": return h.newBlob(h.transformTo("arraybuffer", t), r);
+										case "base64": return u.encode(t);
+										default: return h.transformTo(e, t);
+									}
+								}(s, function(e, t) {
+									var r, n = 0, i = null, s = 0;
+									for (r = 0; r < t.length; r++) s += t[r].length;
+									switch (e) {
+										case "string": return t.join("");
+										case "array": return Array.prototype.concat.apply([], t);
+										case "uint8array":
+											for (i = new Uint8Array(s), r = 0; r < t.length; r++) i.set(t[r], n), n += t[r].length;
+											return i;
+										case "nodebuffer": return Buffer.concat(t);
+										default: throw new Error("concat : unsupported type '" + e + "'");
+									}
+								}(i, n), a));
+							} catch (e) {
+								r(e);
+							}
+							n = [];
+						}).resume();
+					});
+				}
+				function f(e, t, r) {
+					var n = t;
+					switch (t) {
+						case "blob":
+						case "arraybuffer":
+							n = "uint8array";
+							break;
+						case "base64": n = "string";
+					}
+					try {
+						this._internalType = n, this._outputType = t, this._mimeType = r, h.checkSupport(n), this._worker = e.pipe(new i(n)), e.lock();
+					} catch (e) {
+						this._worker = new s("error"), this._worker.error(e);
+					}
+				}
+				f.prototype = {
+					accumulate: function(e) {
+						return l(this, e);
+					},
+					on: function(e, t) {
+						var r = this;
+						return "data" === e ? this._worker.on(e, function(e) {
+							t.call(r, e.data, e.meta);
+						}) : this._worker.on(e, function() {
+							h.delay(t, arguments, r);
+						}), this;
+					},
+					resume: function() {
+						return h.delay(this._worker.resume, [], this._worker), this;
+					},
+					pause: function() {
+						return this._worker.pause(), this;
+					},
+					toNodejsStream: function(e) {
+						if (h.checkSupport("nodestream"), "nodebuffer" !== this._outputType) throw new Error(this._outputType + " is not supported by this method");
+						return new o(this, { objectMode: "nodebuffer" !== this._outputType }, e);
+					}
+				}, t.exports = f;
+			}, {
+				"../base64": 1,
+				"../external": 6,
+				"../nodejs/NodejsStreamOutputAdapter": 13,
+				"../support": 30,
+				"../utils": 32,
+				"./ConvertWorker": 24,
+				"./GenericWorker": 28
+			}],
+			30: [function(e, t, r) {
+				"use strict";
+				if (r.base64 = !0, r.array = !0, r.string = !0, r.arraybuffer = "undefined" != typeof ArrayBuffer && "undefined" != typeof Uint8Array, r.nodebuffer = "undefined" != typeof Buffer, r.uint8array = "undefined" != typeof Uint8Array, "undefined" == typeof ArrayBuffer) r.blob = !1;
+				else {
+					var n = /* @__PURE__ */ new ArrayBuffer(0);
+					try {
+						r.blob = 0 === new Blob([n], { type: "application/zip" }).size;
+					} catch (e) {
+						try {
+							var i = new (self.BlobBuilder || self.WebKitBlobBuilder || self.MozBlobBuilder || self.MSBlobBuilder)();
+							i.append(n), r.blob = 0 === i.getBlob("application/zip").size;
+						} catch (e) {
+							r.blob = !1;
+						}
+					}
+				}
+				try {
+					r.nodestream = !!e("readable-stream").Readable;
+				} catch (e) {
+					r.nodestream = !1;
+				}
+			}, { "readable-stream": 16 }],
+			31: [function(e, t, s) {
+				"use strict";
+				for (var o = e("./utils"), h = e("./support"), r = e("./nodejsUtils"), n = e("./stream/GenericWorker"), u = new Array(256), i = 0; i < 256; i++) u[i] = 252 <= i ? 6 : 248 <= i ? 5 : 240 <= i ? 4 : 224 <= i ? 3 : 192 <= i ? 2 : 1;
+				u[254] = u[254] = 1;
+				function a() {
+					n.call(this, "utf-8 decode"), this.leftOver = null;
+				}
+				function l() {
+					n.call(this, "utf-8 encode");
+				}
+				s.utf8encode = function(e) {
+					return h.nodebuffer ? r.newBufferFrom(e, "utf-8") : function(e) {
+						var t, r, n, i, s, a = e.length, o = 0;
+						for (i = 0; i < a; i++) 55296 == (64512 & (r = e.charCodeAt(i))) && i + 1 < a && 56320 == (64512 & (n = e.charCodeAt(i + 1))) && (r = 65536 + (r - 55296 << 10) + (n - 56320), i++), o += r < 128 ? 1 : r < 2048 ? 2 : r < 65536 ? 3 : 4;
+						for (t = h.uint8array ? new Uint8Array(o) : new Array(o), i = s = 0; s < o; i++) 55296 == (64512 & (r = e.charCodeAt(i))) && i + 1 < a && 56320 == (64512 & (n = e.charCodeAt(i + 1))) && (r = 65536 + (r - 55296 << 10) + (n - 56320), i++), r < 128 ? t[s++] = r : (r < 2048 ? t[s++] = 192 | r >>> 6 : (r < 65536 ? t[s++] = 224 | r >>> 12 : (t[s++] = 240 | r >>> 18, t[s++] = 128 | r >>> 12 & 63), t[s++] = 128 | r >>> 6 & 63), t[s++] = 128 | 63 & r);
+						return t;
+					}(e);
+				}, s.utf8decode = function(e) {
+					return h.nodebuffer ? o.transformTo("nodebuffer", e).toString("utf-8") : function(e) {
+						var t, r, n, i, s = e.length, a = new Array(2 * s);
+						for (t = r = 0; t < s;) if ((n = e[t++]) < 128) a[r++] = n;
+						else if (4 < (i = u[n])) a[r++] = 65533, t += i - 1;
+						else {
+							for (n &= 2 === i ? 31 : 3 === i ? 15 : 7; 1 < i && t < s;) n = n << 6 | 63 & e[t++], i--;
+							1 < i ? a[r++] = 65533 : n < 65536 ? a[r++] = n : (n -= 65536, a[r++] = 55296 | n >> 10 & 1023, a[r++] = 56320 | 1023 & n);
+						}
+						return a.length !== r && (a.subarray ? a = a.subarray(0, r) : a.length = r), o.applyFromCharCode(a);
+					}(e = o.transformTo(h.uint8array ? "uint8array" : "array", e));
+				}, o.inherits(a, n), a.prototype.processChunk = function(e) {
+					var t = o.transformTo(h.uint8array ? "uint8array" : "array", e.data);
+					if (this.leftOver && this.leftOver.length) {
+						if (h.uint8array) {
+							var r = t;
+							(t = new Uint8Array(r.length + this.leftOver.length)).set(this.leftOver, 0), t.set(r, this.leftOver.length);
+						} else t = this.leftOver.concat(t);
+						this.leftOver = null;
+					}
+					var n = function(e, t) {
+						var r;
+						for ((t = t || e.length) > e.length && (t = e.length), r = t - 1; 0 <= r && 128 == (192 & e[r]);) r--;
+						return r < 0 ? t : 0 === r ? t : r + u[e[r]] > t ? r : t;
+					}(t), i = t;
+					n !== t.length && (h.uint8array ? (i = t.subarray(0, n), this.leftOver = t.subarray(n, t.length)) : (i = t.slice(0, n), this.leftOver = t.slice(n, t.length))), this.push({
+						data: s.utf8decode(i),
+						meta: e.meta
+					});
+				}, a.prototype.flush = function() {
+					this.leftOver && this.leftOver.length && (this.push({
+						data: s.utf8decode(this.leftOver),
+						meta: {}
+					}), this.leftOver = null);
+				}, s.Utf8DecodeWorker = a, o.inherits(l, n), l.prototype.processChunk = function(e) {
+					this.push({
+						data: s.utf8encode(e.data),
+						meta: e.meta
+					});
+				}, s.Utf8EncodeWorker = l;
+			}, {
+				"./nodejsUtils": 14,
+				"./stream/GenericWorker": 28,
+				"./support": 30,
+				"./utils": 32
+			}],
+			32: [function(e, t, a) {
+				"use strict";
+				var o = e("./support"), h = e("./base64"), r = e("./nodejsUtils"), u = e("./external");
+				function n(e) {
+					return e;
+				}
+				function l(e, t) {
+					for (var r = 0; r < e.length; ++r) t[r] = 255 & e.charCodeAt(r);
+					return t;
+				}
+				e("setimmediate"), a.newBlob = function(t, r) {
+					a.checkSupport("blob");
+					try {
+						return new Blob([t], { type: r });
+					} catch (e) {
+						try {
+							var n = new (self.BlobBuilder || self.WebKitBlobBuilder || self.MozBlobBuilder || self.MSBlobBuilder)();
+							return n.append(t), n.getBlob(r);
+						} catch (e) {
+							throw new Error("Bug : can't construct the Blob.");
+						}
+					}
+				};
+				var i = {
+					stringifyByChunk: function(e, t, r) {
+						var n = [], i = 0, s = e.length;
+						if (s <= r) return String.fromCharCode.apply(null, e);
+						for (; i < s;) "array" === t || "nodebuffer" === t ? n.push(String.fromCharCode.apply(null, e.slice(i, Math.min(i + r, s)))) : n.push(String.fromCharCode.apply(null, e.subarray(i, Math.min(i + r, s)))), i += r;
+						return n.join("");
+					},
+					stringifyByChar: function(e) {
+						for (var t = "", r = 0; r < e.length; r++) t += String.fromCharCode(e[r]);
+						return t;
+					},
+					applyCanBeUsed: {
+						uint8array: function() {
+							try {
+								return o.uint8array && 1 === String.fromCharCode.apply(null, /* @__PURE__ */ new Uint8Array(1)).length;
+							} catch (e) {
+								return !1;
+							}
+						}(),
+						nodebuffer: function() {
+							try {
+								return o.nodebuffer && 1 === String.fromCharCode.apply(null, r.allocBuffer(1)).length;
+							} catch (e) {
+								return !1;
+							}
+						}()
+					}
+				};
+				function s(e) {
+					var t = 65536, r = a.getTypeOf(e), n = !0;
+					if ("uint8array" === r ? n = i.applyCanBeUsed.uint8array : "nodebuffer" === r && (n = i.applyCanBeUsed.nodebuffer), n) for (; 1 < t;) try {
+						return i.stringifyByChunk(e, r, t);
+					} catch (e) {
+						t = Math.floor(t / 2);
+					}
+					return i.stringifyByChar(e);
+				}
+				function f(e, t) {
+					for (var r = 0; r < e.length; r++) t[r] = e[r];
+					return t;
+				}
+				a.applyFromCharCode = s;
+				var c = {};
+				c.string = {
+					string: n,
+					array: function(e) {
+						return l(e, new Array(e.length));
+					},
+					arraybuffer: function(e) {
+						return c.string.uint8array(e).buffer;
+					},
+					uint8array: function(e) {
+						return l(e, new Uint8Array(e.length));
+					},
+					nodebuffer: function(e) {
+						return l(e, r.allocBuffer(e.length));
+					}
+				}, c.array = {
+					string: s,
+					array: n,
+					arraybuffer: function(e) {
+						return new Uint8Array(e).buffer;
+					},
+					uint8array: function(e) {
+						return new Uint8Array(e);
+					},
+					nodebuffer: function(e) {
+						return r.newBufferFrom(e);
+					}
+				}, c.arraybuffer = {
+					string: function(e) {
+						return s(new Uint8Array(e));
+					},
+					array: function(e) {
+						return f(new Uint8Array(e), new Array(e.byteLength));
+					},
+					arraybuffer: n,
+					uint8array: function(e) {
+						return new Uint8Array(e);
+					},
+					nodebuffer: function(e) {
+						return r.newBufferFrom(new Uint8Array(e));
+					}
+				}, c.uint8array = {
+					string: s,
+					array: function(e) {
+						return f(e, new Array(e.length));
+					},
+					arraybuffer: function(e) {
+						return e.buffer;
+					},
+					uint8array: n,
+					nodebuffer: function(e) {
+						return r.newBufferFrom(e);
+					}
+				}, c.nodebuffer = {
+					string: s,
+					array: function(e) {
+						return f(e, new Array(e.length));
+					},
+					arraybuffer: function(e) {
+						return c.nodebuffer.uint8array(e).buffer;
+					},
+					uint8array: function(e) {
+						return f(e, new Uint8Array(e.length));
+					},
+					nodebuffer: n
+				}, a.transformTo = function(e, t) {
+					if (t = t || "", !e) return t;
+					a.checkSupport(e);
+					return c[a.getTypeOf(t)][e](t);
+				}, a.resolve = function(e) {
+					for (var t = e.split("/"), r = [], n = 0; n < t.length; n++) {
+						var i = t[n];
+						"." === i || "" === i && 0 !== n && n !== t.length - 1 || (".." === i ? r.pop() : r.push(i));
+					}
+					return r.join("/");
+				}, a.getTypeOf = function(e) {
+					if ("string" == typeof e) return "string";
+					var t = Object.prototype.toString.call(e);
+					return "[object Array]" === t ? "array" : o.nodebuffer && r.isBuffer(e) ? "nodebuffer" : o.uint8array && "[object Uint8Array]" === t ? "uint8array" : o.arraybuffer && "[object ArrayBuffer]" === t ? "arraybuffer" : void 0;
+				}, a.checkSupport = function(e) {
+					if (!o[e.toLowerCase()]) throw new Error(e + " is not supported by this platform");
+				}, a.MAX_VALUE_16BITS = 65535, a.MAX_VALUE_32BITS = -1, a.pretty = function(e) {
+					var t, r, n = "";
+					for (r = 0; r < (e || "").length; r++) n += "\\x" + ((t = e.charCodeAt(r)) < 16 ? "0" : "") + t.toString(16).toUpperCase();
+					return n;
+				}, a.delay = function(e, t, r) {
+					setImmediate(function() {
+						e.apply(r || null, t || []);
+					});
+				}, a.inherits = function(e, t) {
+					function r() {}
+					r.prototype = t.prototype, e.prototype = new r();
+				}, a.extend = function() {
+					var e, t, r = {};
+					for (e = 0; e < arguments.length; e++) for (t in arguments[e]) Object.prototype.hasOwnProperty.call(arguments[e], t) && void 0 === r[t] && (r[t] = arguments[e][t]);
+					return r;
+				}, a.prepareContent = function(r, e, n, i, s) {
+					return u.Promise.resolve(e).then(function(n) {
+						return o.blob && (n instanceof Blob || -1 !== ["[object File]", "[object Blob]"].indexOf(Object.prototype.toString.call(n))) ? void 0 !== Blob.prototype.arrayBuffer ? n.arrayBuffer() : "undefined" != typeof FileReader ? new u.Promise(function(t, r) {
+							var e = new FileReader();
+							e.onload = function(e) {
+								t(e.target.result);
+							}, e.onerror = function(e) {
+								r(e.target.error);
+							}, e.readAsArrayBuffer(n);
+						}) : u.Promise.reject(/* @__PURE__ */ new Error(r + " is a Blob, but we have no way of reading it.")) : n;
+					}).then(function(e) {
+						var t = a.getTypeOf(e);
+						return t ? ("arraybuffer" === t ? e = a.transformTo("uint8array", e) : "string" === t && (s ? e = h.decode(e) : n && !0 !== i && (e = function(e) {
+							return l(e, o.uint8array ? new Uint8Array(e.length) : new Array(e.length));
+						}(e))), e) : u.Promise.reject(/* @__PURE__ */ new Error("Can't read the data of '" + r + "'. Is it in a supported JavaScript type (String, Blob, ArrayBuffer, etc) ?"));
+					});
+				};
+			}, {
+				"./base64": 1,
+				"./external": 6,
+				"./nodejsUtils": 14,
+				"./support": 30,
+				setimmediate: 54
+			}],
+			33: [function(e, t, r) {
+				"use strict";
+				var n = e("./reader/readerFor"), i = e("./utils"), s = e("./signature"), a = e("./zipEntry"), o = e("./support");
+				function h(e) {
+					this.files = [], this.loadOptions = e;
+				}
+				h.prototype = {
+					checkSignature: function(e) {
+						if (!this.reader.readAndCheckSignature(e)) {
+							this.reader.index -= 4;
+							var t = this.reader.readString(4);
+							throw new Error("Corrupted zip or bug: unexpected signature (" + i.pretty(t) + ", expected " + i.pretty(e) + ")");
+						}
+					},
+					isSignature: function(e, t) {
+						var r = this.reader.index;
+						this.reader.setIndex(e);
+						var n = this.reader.readString(4) === t;
+						return this.reader.setIndex(r), n;
+					},
+					readBlockEndOfCentral: function() {
+						this.diskNumber = this.reader.readInt(2), this.diskWithCentralDirStart = this.reader.readInt(2), this.centralDirRecordsOnThisDisk = this.reader.readInt(2), this.centralDirRecords = this.reader.readInt(2), this.centralDirSize = this.reader.readInt(4), this.centralDirOffset = this.reader.readInt(4), this.zipCommentLength = this.reader.readInt(2);
+						var e = this.reader.readData(this.zipCommentLength), t = o.uint8array ? "uint8array" : "array", r = i.transformTo(t, e);
+						this.zipComment = this.loadOptions.decodeFileName(r);
+					},
+					readBlockZip64EndOfCentral: function() {
+						this.zip64EndOfCentralSize = this.reader.readInt(8), this.reader.skip(4), this.diskNumber = this.reader.readInt(4), this.diskWithCentralDirStart = this.reader.readInt(4), this.centralDirRecordsOnThisDisk = this.reader.readInt(8), this.centralDirRecords = this.reader.readInt(8), this.centralDirSize = this.reader.readInt(8), this.centralDirOffset = this.reader.readInt(8), this.zip64ExtensibleData = {};
+						for (var e, t, r, n = this.zip64EndOfCentralSize - 44; 0 < n;) e = this.reader.readInt(2), t = this.reader.readInt(4), r = this.reader.readData(t), this.zip64ExtensibleData[e] = {
+							id: e,
+							length: t,
+							value: r
+						};
+					},
+					readBlockZip64EndOfCentralLocator: function() {
+						if (this.diskWithZip64CentralDirStart = this.reader.readInt(4), this.relativeOffsetEndOfZip64CentralDir = this.reader.readInt(8), this.disksCount = this.reader.readInt(4), 1 < this.disksCount) throw new Error("Multi-volumes zip are not supported");
+					},
+					readLocalFiles: function() {
+						var e = 0, t;
+						for (; e < this.files.length; e++) t = this.files[e], this.reader.setIndex(t.localHeaderOffset), this.checkSignature(s.LOCAL_FILE_HEADER), t.readLocalPart(this.reader), t.handleUTF8(), t.processAttributes();
+					},
+					readCentralDir: function() {
+						var e;
+						for (this.reader.setIndex(this.centralDirOffset); this.reader.readAndCheckSignature(s.CENTRAL_FILE_HEADER);) (e = new a({ zip64: this.zip64 }, this.loadOptions)).readCentralPart(this.reader), this.files.push(e);
+						if (this.centralDirRecords !== this.files.length && 0 !== this.centralDirRecords && 0 === this.files.length) throw new Error("Corrupted zip or bug: expected " + this.centralDirRecords + " records in central dir, got " + this.files.length);
+					},
+					readEndOfCentral: function() {
+						var e = this.reader.lastIndexOfSignature(s.CENTRAL_DIRECTORY_END);
+						if (e < 0) throw !this.isSignature(0, s.LOCAL_FILE_HEADER) ? /* @__PURE__ */ new Error("Can't find end of central directory : is this a zip file ? If it is, see https://stuk.github.io/jszip/documentation/howto/read_zip.html") : /* @__PURE__ */ new Error("Corrupted zip: can't find end of central directory");
+						this.reader.setIndex(e);
+						var t = e;
+						if (this.checkSignature(s.CENTRAL_DIRECTORY_END), this.readBlockEndOfCentral(), this.diskNumber === i.MAX_VALUE_16BITS || this.diskWithCentralDirStart === i.MAX_VALUE_16BITS || this.centralDirRecordsOnThisDisk === i.MAX_VALUE_16BITS || this.centralDirRecords === i.MAX_VALUE_16BITS || this.centralDirSize === i.MAX_VALUE_32BITS || this.centralDirOffset === i.MAX_VALUE_32BITS) {
+							if (this.zip64 = !0, (e = this.reader.lastIndexOfSignature(s.ZIP64_CENTRAL_DIRECTORY_LOCATOR)) < 0) throw new Error("Corrupted zip: can't find the ZIP64 end of central directory locator");
+							if (this.reader.setIndex(e), this.checkSignature(s.ZIP64_CENTRAL_DIRECTORY_LOCATOR), this.readBlockZip64EndOfCentralLocator(), !this.isSignature(this.relativeOffsetEndOfZip64CentralDir, s.ZIP64_CENTRAL_DIRECTORY_END) && (this.relativeOffsetEndOfZip64CentralDir = this.reader.lastIndexOfSignature(s.ZIP64_CENTRAL_DIRECTORY_END), this.relativeOffsetEndOfZip64CentralDir < 0)) throw new Error("Corrupted zip: can't find the ZIP64 end of central directory");
+							this.reader.setIndex(this.relativeOffsetEndOfZip64CentralDir), this.checkSignature(s.ZIP64_CENTRAL_DIRECTORY_END), this.readBlockZip64EndOfCentral();
+						}
+						var r = this.centralDirOffset + this.centralDirSize;
+						this.zip64 && (r += 20, r += 12 + this.zip64EndOfCentralSize);
+						var n = t - r;
+						if (0 < n) this.isSignature(t, s.CENTRAL_FILE_HEADER) || (this.reader.zero = n);
+						else if (n < 0) throw new Error("Corrupted zip: missing " + Math.abs(n) + " bytes.");
+					},
+					prepareReader: function(e) {
+						this.reader = n(e);
+					},
+					load: function(e) {
+						this.prepareReader(e), this.readEndOfCentral(), this.readCentralDir(), this.readLocalFiles();
+					}
+				}, t.exports = h;
+			}, {
+				"./reader/readerFor": 22,
+				"./signature": 23,
+				"./support": 30,
+				"./utils": 32,
+				"./zipEntry": 34
+			}],
+			34: [function(e, t, r) {
+				"use strict";
+				var n = e("./reader/readerFor"), s = e("./utils"), i = e("./compressedObject"), a = e("./crc32"), o = e("./utf8"), h = e("./compressions"), u = e("./support");
+				function l(e, t) {
+					this.options = e, this.loadOptions = t;
+				}
+				l.prototype = {
+					isEncrypted: function() {
+						return 1 == (1 & this.bitFlag);
+					},
+					useUTF8: function() {
+						return 2048 == (2048 & this.bitFlag);
+					},
+					readLocalPart: function(e) {
+						var t, r;
+						if (e.skip(22), this.fileNameLength = e.readInt(2), r = e.readInt(2), this.fileName = e.readData(this.fileNameLength), e.skip(r), -1 === this.compressedSize || -1 === this.uncompressedSize) throw new Error("Bug or corrupted zip : didn't get enough information from the central directory (compressedSize === -1 || uncompressedSize === -1)");
+						if (null === (t = function(e) {
+							for (var t in h) if (Object.prototype.hasOwnProperty.call(h, t) && h[t].magic === e) return h[t];
+							return null;
+						}(this.compressionMethod))) throw new Error("Corrupted zip : compression " + s.pretty(this.compressionMethod) + " unknown (inner file : " + s.transformTo("string", this.fileName) + ")");
+						this.decompressed = new i(this.compressedSize, this.uncompressedSize, this.crc32, t, e.readData(this.compressedSize));
+					},
+					readCentralPart: function(e) {
+						this.versionMadeBy = e.readInt(2), e.skip(2), this.bitFlag = e.readInt(2), this.compressionMethod = e.readString(2), this.date = e.readDate(), this.crc32 = e.readInt(4), this.compressedSize = e.readInt(4), this.uncompressedSize = e.readInt(4);
+						var t = e.readInt(2);
+						if (this.extraFieldsLength = e.readInt(2), this.fileCommentLength = e.readInt(2), this.diskNumberStart = e.readInt(2), this.internalFileAttributes = e.readInt(2), this.externalFileAttributes = e.readInt(4), this.localHeaderOffset = e.readInt(4), this.isEncrypted()) throw new Error("Encrypted zip are not supported");
+						e.skip(t), this.readExtraFields(e), this.parseZIP64ExtraField(e), this.fileComment = e.readData(this.fileCommentLength);
+					},
+					processAttributes: function() {
+						this.unixPermissions = null, this.dosPermissions = null;
+						var e = this.versionMadeBy >> 8;
+						this.dir = !!(16 & this.externalFileAttributes), 0 == e && (this.dosPermissions = 63 & this.externalFileAttributes), 3 == e && (this.unixPermissions = this.externalFileAttributes >> 16 & 65535), this.dir || "/" !== this.fileNameStr.slice(-1) || (this.dir = !0);
+					},
+					parseZIP64ExtraField: function() {
+						if (this.extraFields[1]) {
+							var e = n(this.extraFields[1].value);
+							this.uncompressedSize === s.MAX_VALUE_32BITS && (this.uncompressedSize = e.readInt(8)), this.compressedSize === s.MAX_VALUE_32BITS && (this.compressedSize = e.readInt(8)), this.localHeaderOffset === s.MAX_VALUE_32BITS && (this.localHeaderOffset = e.readInt(8)), this.diskNumberStart === s.MAX_VALUE_32BITS && (this.diskNumberStart = e.readInt(4));
+						}
+					},
+					readExtraFields: function(e) {
+						var t, r, n, i = e.index + this.extraFieldsLength;
+						for (this.extraFields || (this.extraFields = {}); e.index + 4 < i;) t = e.readInt(2), r = e.readInt(2), n = e.readData(r), this.extraFields[t] = {
+							id: t,
+							length: r,
+							value: n
+						};
+						e.setIndex(i);
+					},
+					handleUTF8: function() {
+						var e = u.uint8array ? "uint8array" : "array";
+						if (this.useUTF8()) this.fileNameStr = o.utf8decode(this.fileName), this.fileCommentStr = o.utf8decode(this.fileComment);
+						else {
+							var t = this.findExtraFieldUnicodePath();
+							if (null !== t) this.fileNameStr = t;
+							else {
+								var r = s.transformTo(e, this.fileName);
+								this.fileNameStr = this.loadOptions.decodeFileName(r);
+							}
+							var n = this.findExtraFieldUnicodeComment();
+							if (null !== n) this.fileCommentStr = n;
+							else {
+								var i = s.transformTo(e, this.fileComment);
+								this.fileCommentStr = this.loadOptions.decodeFileName(i);
+							}
+						}
+					},
+					findExtraFieldUnicodePath: function() {
+						var e = this.extraFields[28789];
+						if (e) {
+							var t = n(e.value);
+							return 1 !== t.readInt(1) ? null : a(this.fileName) !== t.readInt(4) ? null : o.utf8decode(t.readData(e.length - 5));
+						}
+						return null;
+					},
+					findExtraFieldUnicodeComment: function() {
+						var e = this.extraFields[25461];
+						if (e) {
+							var t = n(e.value);
+							return 1 !== t.readInt(1) ? null : a(this.fileComment) !== t.readInt(4) ? null : o.utf8decode(t.readData(e.length - 5));
+						}
+						return null;
+					}
+				}, t.exports = l;
+			}, {
+				"./compressedObject": 2,
+				"./compressions": 3,
+				"./crc32": 4,
+				"./reader/readerFor": 22,
+				"./support": 30,
+				"./utf8": 31,
+				"./utils": 32
+			}],
+			35: [function(e, t, r) {
+				"use strict";
+				function n(e, t, r) {
+					this.name = e, this.dir = r.dir, this.date = r.date, this.comment = r.comment, this.unixPermissions = r.unixPermissions, this.dosPermissions = r.dosPermissions, this._data = t, this._dataBinary = r.binary, this.options = {
+						compression: r.compression,
+						compressionOptions: r.compressionOptions
+					};
+				}
+				var s = e("./stream/StreamHelper"), i = e("./stream/DataWorker"), a = e("./utf8"), o = e("./compressedObject"), h = e("./stream/GenericWorker");
+				n.prototype = {
+					internalStream: function(e) {
+						var t = null, r = "string";
+						try {
+							if (!e) throw new Error("No output type specified.");
+							var n = "string" === (r = e.toLowerCase()) || "text" === r;
+							"binarystring" !== r && "text" !== r || (r = "string"), t = this._decompressWorker();
+							var i = !this._dataBinary;
+							i && !n && (t = t.pipe(new a.Utf8EncodeWorker())), !i && n && (t = t.pipe(new a.Utf8DecodeWorker()));
+						} catch (e) {
+							(t = new h("error")).error(e);
+						}
+						return new s(t, r, "");
+					},
+					async: function(e, t) {
+						return this.internalStream(e).accumulate(t);
+					},
+					nodeStream: function(e, t) {
+						return this.internalStream(e || "nodebuffer").toNodejsStream(t);
+					},
+					_compressWorker: function(e, t) {
+						if (this._data instanceof o && this._data.compression.magic === e.magic) return this._data.getCompressedWorker();
+						var r = this._decompressWorker();
+						return this._dataBinary || (r = r.pipe(new a.Utf8EncodeWorker())), o.createWorkerFrom(r, e, t);
+					},
+					_decompressWorker: function() {
+						return this._data instanceof o ? this._data.getContentWorker() : this._data instanceof h ? this._data : new i(this._data);
+					}
+				};
+				for (var u = [
+					"asText",
+					"asBinary",
+					"asNodeBuffer",
+					"asUint8Array",
+					"asArrayBuffer"
+				], l = function() {
+					throw new Error("This method has been removed in JSZip 3.0, please check the upgrade guide.");
+				}, f = 0; f < u.length; f++) n.prototype[u[f]] = l;
+				t.exports = n;
+			}, {
+				"./compressedObject": 2,
+				"./stream/DataWorker": 27,
+				"./stream/GenericWorker": 28,
+				"./stream/StreamHelper": 29,
+				"./utf8": 31
+			}],
+			36: [function(e, l, t) {
+				(function(t) {
+					"use strict";
+					var r, n, e = t.MutationObserver || t.WebKitMutationObserver;
+					if (e) {
+						var i = 0, s = new e(u), a = t.document.createTextNode("");
+						s.observe(a, { characterData: !0 }), r = function() {
+							a.data = i = ++i % 2;
+						};
+					} else if (t.setImmediate || void 0 === t.MessageChannel) r = "document" in t && "onreadystatechange" in t.document.createElement("script") ? function() {
+						var e = t.document.createElement("script");
+						e.onreadystatechange = function() {
+							u(), e.onreadystatechange = null, e.parentNode.removeChild(e), e = null;
+						}, t.document.documentElement.appendChild(e);
+					} : function() {
+						setTimeout(u, 0);
+					};
+					else {
+						var o = new t.MessageChannel();
+						o.port1.onmessage = u, r = function() {
+							o.port2.postMessage(0);
+						};
+					}
+					var h = [];
+					function u() {
+						var e, t;
+						n = !0;
+						for (var r = h.length; r;) {
+							for (t = h, h = [], e = -1; ++e < r;) t[e]();
+							r = h.length;
+						}
+						n = !1;
+					}
+					l.exports = function(e) {
+						1 !== h.push(e) || n || r();
+					};
+				}).call(this, "undefined" != typeof global ? global : "undefined" != typeof self ? self : "undefined" != typeof window ? window : {});
+			}, {}],
+			37: [function(e, t, r) {
+				"use strict";
+				var i = e("immediate");
+				function u() {}
+				var l = {}, s = ["REJECTED"], a = ["FULFILLED"], n = ["PENDING"];
+				function o(e) {
+					if ("function" != typeof e) throw new TypeError("resolver must be a function");
+					this.state = n, this.queue = [], this.outcome = void 0, e !== u && d(this, e);
+				}
+				function h(e, t, r) {
+					this.promise = e, "function" == typeof t && (this.onFulfilled = t, this.callFulfilled = this.otherCallFulfilled), "function" == typeof r && (this.onRejected = r, this.callRejected = this.otherCallRejected);
+				}
+				function f(t, r, n) {
+					i(function() {
+						var e;
+						try {
+							e = r(n);
+						} catch (e) {
+							return l.reject(t, e);
+						}
+						e === t ? l.reject(t, /* @__PURE__ */ new TypeError("Cannot resolve promise with itself")) : l.resolve(t, e);
+					});
+				}
+				function c(e) {
+					var t = e && e.then;
+					if (e && ("object" == typeof e || "function" == typeof e) && "function" == typeof t) return function() {
+						t.apply(e, arguments);
+					};
+				}
+				function d(t, e) {
+					var r = !1;
+					function n(e) {
+						r || (r = !0, l.reject(t, e));
+					}
+					function i(e) {
+						r || (r = !0, l.resolve(t, e));
+					}
+					var s = p(function() {
+						e(i, n);
+					});
+					"error" === s.status && n(s.value);
+				}
+				function p(e, t) {
+					var r = {};
+					try {
+						r.value = e(t), r.status = "success";
+					} catch (e) {
+						r.status = "error", r.value = e;
+					}
+					return r;
+				}
+				(t.exports = o).prototype.finally = function(t) {
+					if ("function" != typeof t) return this;
+					var r = this.constructor;
+					return this.then(function(e) {
+						return r.resolve(t()).then(function() {
+							return e;
+						});
+					}, function(e) {
+						return r.resolve(t()).then(function() {
+							throw e;
+						});
+					});
+				}, o.prototype.catch = function(e) {
+					return this.then(null, e);
+				}, o.prototype.then = function(e, t) {
+					if ("function" != typeof e && this.state === a || "function" != typeof t && this.state === s) return this;
+					var r = new this.constructor(u);
+					this.state !== n ? f(r, this.state === a ? e : t, this.outcome) : this.queue.push(new h(r, e, t));
+					return r;
+				}, h.prototype.callFulfilled = function(e) {
+					l.resolve(this.promise, e);
+				}, h.prototype.otherCallFulfilled = function(e) {
+					f(this.promise, this.onFulfilled, e);
+				}, h.prototype.callRejected = function(e) {
+					l.reject(this.promise, e);
+				}, h.prototype.otherCallRejected = function(e) {
+					f(this.promise, this.onRejected, e);
+				}, l.resolve = function(e, t) {
+					var r = p(c, t);
+					if ("error" === r.status) return l.reject(e, r.value);
+					var n = r.value;
+					if (n) d(e, n);
+					else {
+						e.state = a, e.outcome = t;
+						for (var i = -1, s = e.queue.length; ++i < s;) e.queue[i].callFulfilled(t);
+					}
+					return e;
+				}, l.reject = function(e, t) {
+					e.state = s, e.outcome = t;
+					for (var r = -1, n = e.queue.length; ++r < n;) e.queue[r].callRejected(t);
+					return e;
+				}, o.resolve = function(e) {
+					if (e instanceof this) return e;
+					return l.resolve(new this(u), e);
+				}, o.reject = function(e) {
+					var t = new this(u);
+					return l.reject(t, e);
+				}, o.all = function(e) {
+					var r = this;
+					if ("[object Array]" !== Object.prototype.toString.call(e)) return this.reject(/* @__PURE__ */ new TypeError("must be an array"));
+					var n = e.length, i = !1;
+					if (!n) return this.resolve([]);
+					var s = new Array(n), a = 0, t = -1, o = new this(u);
+					for (; ++t < n;) h(e[t], t);
+					return o;
+					function h(e, t) {
+						r.resolve(e).then(function(e) {
+							s[t] = e, ++a !== n || i || (i = !0, l.resolve(o, s));
+						}, function(e) {
+							i || (i = !0, l.reject(o, e));
+						});
+					}
+				}, o.race = function(e) {
+					var t = this;
+					if ("[object Array]" !== Object.prototype.toString.call(e)) return this.reject(/* @__PURE__ */ new TypeError("must be an array"));
+					var r = e.length, n = !1;
+					if (!r) return this.resolve([]);
+					var i = -1, s = new this(u);
+					for (; ++i < r;) a = e[i], t.resolve(a).then(function(e) {
+						n || (n = !0, l.resolve(s, e));
+					}, function(e) {
+						n || (n = !0, l.reject(s, e));
+					});
+					var a;
+					return s;
+				};
+			}, { immediate: 36 }],
+			38: [function(e, t, r) {
+				"use strict";
+				var n = {};
+				(0, e("./lib/utils/common").assign)(n, e("./lib/deflate"), e("./lib/inflate"), e("./lib/zlib/constants")), t.exports = n;
+			}, {
+				"./lib/deflate": 39,
+				"./lib/inflate": 40,
+				"./lib/utils/common": 41,
+				"./lib/zlib/constants": 44
+			}],
+			39: [function(e, t, r) {
+				"use strict";
+				var a = e("./zlib/deflate"), o = e("./utils/common"), h = e("./utils/strings"), i = e("./zlib/messages"), s = e("./zlib/zstream"), u = Object.prototype.toString, l = 0, f = -1, c = 0, d = 8;
+				function p(e) {
+					if (!(this instanceof p)) return new p(e);
+					this.options = o.assign({
+						level: f,
+						method: d,
+						chunkSize: 16384,
+						windowBits: 15,
+						memLevel: 8,
+						strategy: c,
+						to: ""
+					}, e || {});
+					var t = this.options;
+					t.raw && 0 < t.windowBits ? t.windowBits = -t.windowBits : t.gzip && 0 < t.windowBits && t.windowBits < 16 && (t.windowBits += 16), this.err = 0, this.msg = "", this.ended = !1, this.chunks = [], this.strm = new s(), this.strm.avail_out = 0;
+					var r = a.deflateInit2(this.strm, t.level, t.method, t.windowBits, t.memLevel, t.strategy);
+					if (r !== l) throw new Error(i[r]);
+					if (t.header && a.deflateSetHeader(this.strm, t.header), t.dictionary) {
+						var n = "string" == typeof t.dictionary ? h.string2buf(t.dictionary) : "[object ArrayBuffer]" === u.call(t.dictionary) ? new Uint8Array(t.dictionary) : t.dictionary;
+						if ((r = a.deflateSetDictionary(this.strm, n)) !== l) throw new Error(i[r]);
+						this._dict_set = !0;
+					}
+				}
+				function n(e, t) {
+					var r = new p(t);
+					if (r.push(e, !0), r.err) throw r.msg || i[r.err];
+					return r.result;
+				}
+				p.prototype.push = function(e, t) {
+					var r, n, i = this.strm, s = this.options.chunkSize;
+					if (this.ended) return !1;
+					n = t === ~~t ? t : !0 === t ? 4 : 0, "string" == typeof e ? i.input = h.string2buf(e) : "[object ArrayBuffer]" === u.call(e) ? i.input = new Uint8Array(e) : i.input = e, i.next_in = 0, i.avail_in = i.input.length;
+					do {
+						if (0 === i.avail_out && (i.output = new o.Buf8(s), i.next_out = 0, i.avail_out = s), 1 !== (r = a.deflate(i, n)) && r !== l) return this.onEnd(r), !(this.ended = !0);
+						0 !== i.avail_out && (0 !== i.avail_in || 4 !== n && 2 !== n) || ("string" === this.options.to ? this.onData(h.buf2binstring(o.shrinkBuf(i.output, i.next_out))) : this.onData(o.shrinkBuf(i.output, i.next_out)));
+					} while ((0 < i.avail_in || 0 === i.avail_out) && 1 !== r);
+					return 4 === n ? (r = a.deflateEnd(this.strm), this.onEnd(r), this.ended = !0, r === l) : 2 !== n || (this.onEnd(l), !(i.avail_out = 0));
+				}, p.prototype.onData = function(e) {
+					this.chunks.push(e);
+				}, p.prototype.onEnd = function(e) {
+					e === l && ("string" === this.options.to ? this.result = this.chunks.join("") : this.result = o.flattenChunks(this.chunks)), this.chunks = [], this.err = e, this.msg = this.strm.msg;
+				}, r.Deflate = p, r.deflate = n, r.deflateRaw = function(e, t) {
+					return (t = t || {}).raw = !0, n(e, t);
+				}, r.gzip = function(e, t) {
+					return (t = t || {}).gzip = !0, n(e, t);
+				};
+			}, {
+				"./utils/common": 41,
+				"./utils/strings": 42,
+				"./zlib/deflate": 46,
+				"./zlib/messages": 51,
+				"./zlib/zstream": 53
+			}],
+			40: [function(e, t, r) {
+				"use strict";
+				var c = e("./zlib/inflate"), d = e("./utils/common"), p = e("./utils/strings"), m = e("./zlib/constants"), n = e("./zlib/messages"), i = e("./zlib/zstream"), s = e("./zlib/gzheader"), _ = Object.prototype.toString;
+				function a(e) {
+					if (!(this instanceof a)) return new a(e);
+					this.options = d.assign({
+						chunkSize: 16384,
+						windowBits: 0,
+						to: ""
+					}, e || {});
+					var t = this.options;
+					t.raw && 0 <= t.windowBits && t.windowBits < 16 && (t.windowBits = -t.windowBits, 0 === t.windowBits && (t.windowBits = -15)), !(0 <= t.windowBits && t.windowBits < 16) || e && e.windowBits || (t.windowBits += 32), 15 < t.windowBits && t.windowBits < 48 && 0 == (15 & t.windowBits) && (t.windowBits |= 15), this.err = 0, this.msg = "", this.ended = !1, this.chunks = [], this.strm = new i(), this.strm.avail_out = 0;
+					var r = c.inflateInit2(this.strm, t.windowBits);
+					if (r !== m.Z_OK) throw new Error(n[r]);
+					this.header = new s(), c.inflateGetHeader(this.strm, this.header);
+				}
+				function o(e, t) {
+					var r = new a(t);
+					if (r.push(e, !0), r.err) throw r.msg || n[r.err];
+					return r.result;
+				}
+				a.prototype.push = function(e, t) {
+					var r, n, i, s, a, o, h = this.strm, u = this.options.chunkSize, l = this.options.dictionary, f = !1;
+					if (this.ended) return !1;
+					n = t === ~~t ? t : !0 === t ? m.Z_FINISH : m.Z_NO_FLUSH, "string" == typeof e ? h.input = p.binstring2buf(e) : "[object ArrayBuffer]" === _.call(e) ? h.input = new Uint8Array(e) : h.input = e, h.next_in = 0, h.avail_in = h.input.length;
+					do {
+						if (0 === h.avail_out && (h.output = new d.Buf8(u), h.next_out = 0, h.avail_out = u), (r = c.inflate(h, m.Z_NO_FLUSH)) === m.Z_NEED_DICT && l && (o = "string" == typeof l ? p.string2buf(l) : "[object ArrayBuffer]" === _.call(l) ? new Uint8Array(l) : l, r = c.inflateSetDictionary(this.strm, o)), r === m.Z_BUF_ERROR && !0 === f && (r = m.Z_OK, f = !1), r !== m.Z_STREAM_END && r !== m.Z_OK) return this.onEnd(r), !(this.ended = !0);
+						h.next_out && (0 !== h.avail_out && r !== m.Z_STREAM_END && (0 !== h.avail_in || n !== m.Z_FINISH && n !== m.Z_SYNC_FLUSH) || ("string" === this.options.to ? (i = p.utf8border(h.output, h.next_out), s = h.next_out - i, a = p.buf2string(h.output, i), h.next_out = s, h.avail_out = u - s, s && d.arraySet(h.output, h.output, i, s, 0), this.onData(a)) : this.onData(d.shrinkBuf(h.output, h.next_out)))), 0 === h.avail_in && 0 === h.avail_out && (f = !0);
+					} while ((0 < h.avail_in || 0 === h.avail_out) && r !== m.Z_STREAM_END);
+					return r === m.Z_STREAM_END && (n = m.Z_FINISH), n === m.Z_FINISH ? (r = c.inflateEnd(this.strm), this.onEnd(r), this.ended = !0, r === m.Z_OK) : n !== m.Z_SYNC_FLUSH || (this.onEnd(m.Z_OK), !(h.avail_out = 0));
+				}, a.prototype.onData = function(e) {
+					this.chunks.push(e);
+				}, a.prototype.onEnd = function(e) {
+					e === m.Z_OK && ("string" === this.options.to ? this.result = this.chunks.join("") : this.result = d.flattenChunks(this.chunks)), this.chunks = [], this.err = e, this.msg = this.strm.msg;
+				}, r.Inflate = a, r.inflate = o, r.inflateRaw = function(e, t) {
+					return (t = t || {}).raw = !0, o(e, t);
+				}, r.ungzip = o;
+			}, {
+				"./utils/common": 41,
+				"./utils/strings": 42,
+				"./zlib/constants": 44,
+				"./zlib/gzheader": 47,
+				"./zlib/inflate": 49,
+				"./zlib/messages": 51,
+				"./zlib/zstream": 53
+			}],
+			41: [function(e, t, r) {
+				"use strict";
+				var n = "undefined" != typeof Uint8Array && "undefined" != typeof Uint16Array && "undefined" != typeof Int32Array;
+				r.assign = function(e) {
+					for (var t = Array.prototype.slice.call(arguments, 1); t.length;) {
+						var r = t.shift();
+						if (r) {
+							if ("object" != typeof r) throw new TypeError(r + "must be non-object");
+							for (var n in r) r.hasOwnProperty(n) && (e[n] = r[n]);
+						}
+					}
+					return e;
+				}, r.shrinkBuf = function(e, t) {
+					return e.length === t ? e : e.subarray ? e.subarray(0, t) : (e.length = t, e);
+				};
+				var i = {
+					arraySet: function(e, t, r, n, i) {
+						if (t.subarray && e.subarray) e.set(t.subarray(r, r + n), i);
+						else for (var s = 0; s < n; s++) e[i + s] = t[r + s];
+					},
+					flattenChunks: function(e) {
+						var t = n = 0, r = e.length, n, i, s, a;
+						for (; t < r; t++) n += e[t].length;
+						for (a = new Uint8Array(n), t = i = 0, r = e.length; t < r; t++) s = e[t], a.set(s, i), i += s.length;
+						return a;
+					}
+				}, s = {
+					arraySet: function(e, t, r, n, i) {
+						for (var s = 0; s < n; s++) e[i + s] = t[r + s];
+					},
+					flattenChunks: function(e) {
+						return [].concat.apply([], e);
+					}
+				};
+				r.setTyped = function(e) {
+					e ? (r.Buf8 = Uint8Array, r.Buf16 = Uint16Array, r.Buf32 = Int32Array, r.assign(r, i)) : (r.Buf8 = Array, r.Buf16 = Array, r.Buf32 = Array, r.assign(r, s));
+				}, r.setTyped(n);
+			}, {}],
+			42: [function(e, t, r) {
+				"use strict";
+				var h = e("./common"), i = !0, s = !0;
+				try {
+					String.fromCharCode.apply(null, [0]);
+				} catch (e) {
+					i = !1;
+				}
+				try {
+					String.fromCharCode.apply(null, /* @__PURE__ */ new Uint8Array(1));
+				} catch (e) {
+					s = !1;
+				}
+				for (var u = new h.Buf8(256), n = 0; n < 256; n++) u[n] = 252 <= n ? 6 : 248 <= n ? 5 : 240 <= n ? 4 : 224 <= n ? 3 : 192 <= n ? 2 : 1;
+				function l(e, t) {
+					if (t < 65537 && (e.subarray && s || !e.subarray && i)) return String.fromCharCode.apply(null, h.shrinkBuf(e, t));
+					for (var r = "", n = 0; n < t; n++) r += String.fromCharCode(e[n]);
+					return r;
+				}
+				u[254] = u[254] = 1, r.string2buf = function(e) {
+					var t, r, n, i, s, a = e.length, o = 0;
+					for (i = 0; i < a; i++) 55296 == (64512 & (r = e.charCodeAt(i))) && i + 1 < a && 56320 == (64512 & (n = e.charCodeAt(i + 1))) && (r = 65536 + (r - 55296 << 10) + (n - 56320), i++), o += r < 128 ? 1 : r < 2048 ? 2 : r < 65536 ? 3 : 4;
+					for (t = new h.Buf8(o), i = s = 0; s < o; i++) 55296 == (64512 & (r = e.charCodeAt(i))) && i + 1 < a && 56320 == (64512 & (n = e.charCodeAt(i + 1))) && (r = 65536 + (r - 55296 << 10) + (n - 56320), i++), r < 128 ? t[s++] = r : (r < 2048 ? t[s++] = 192 | r >>> 6 : (r < 65536 ? t[s++] = 224 | r >>> 12 : (t[s++] = 240 | r >>> 18, t[s++] = 128 | r >>> 12 & 63), t[s++] = 128 | r >>> 6 & 63), t[s++] = 128 | 63 & r);
+					return t;
+				}, r.buf2binstring = function(e) {
+					return l(e, e.length);
+				}, r.binstring2buf = function(e) {
+					for (var t = new h.Buf8(e.length), r = 0, n = t.length; r < n; r++) t[r] = e.charCodeAt(r);
+					return t;
+				}, r.buf2string = function(e, t) {
+					var r, n, i, s, a = t || e.length, o = new Array(2 * a);
+					for (r = n = 0; r < a;) if ((i = e[r++]) < 128) o[n++] = i;
+					else if (4 < (s = u[i])) o[n++] = 65533, r += s - 1;
+					else {
+						for (i &= 2 === s ? 31 : 3 === s ? 15 : 7; 1 < s && r < a;) i = i << 6 | 63 & e[r++], s--;
+						1 < s ? o[n++] = 65533 : i < 65536 ? o[n++] = i : (i -= 65536, o[n++] = 55296 | i >> 10 & 1023, o[n++] = 56320 | 1023 & i);
+					}
+					return l(o, n);
+				}, r.utf8border = function(e, t) {
+					var r;
+					for ((t = t || e.length) > e.length && (t = e.length), r = t - 1; 0 <= r && 128 == (192 & e[r]);) r--;
+					return r < 0 ? t : 0 === r ? t : r + u[e[r]] > t ? r : t;
+				};
+			}, { "./common": 41 }],
+			43: [function(e, t, r) {
+				"use strict";
+				t.exports = function(e, t, r, n) {
+					for (var i = 65535 & e | 0, s = e >>> 16 & 65535 | 0, a = 0; 0 !== r;) {
+						for (r -= a = 2e3 < r ? 2e3 : r; s = s + (i = i + t[n++] | 0) | 0, --a;);
+						i %= 65521, s %= 65521;
+					}
+					return i | s << 16 | 0;
+				};
+			}, {}],
+			44: [function(e, t, r) {
+				"use strict";
+				t.exports = {
+					Z_NO_FLUSH: 0,
+					Z_PARTIAL_FLUSH: 1,
+					Z_SYNC_FLUSH: 2,
+					Z_FULL_FLUSH: 3,
+					Z_FINISH: 4,
+					Z_BLOCK: 5,
+					Z_TREES: 6,
+					Z_OK: 0,
+					Z_STREAM_END: 1,
+					Z_NEED_DICT: 2,
+					Z_ERRNO: -1,
+					Z_STREAM_ERROR: -2,
+					Z_DATA_ERROR: -3,
+					Z_BUF_ERROR: -5,
+					Z_NO_COMPRESSION: 0,
+					Z_BEST_SPEED: 1,
+					Z_BEST_COMPRESSION: 9,
+					Z_DEFAULT_COMPRESSION: -1,
+					Z_FILTERED: 1,
+					Z_HUFFMAN_ONLY: 2,
+					Z_RLE: 3,
+					Z_FIXED: 4,
+					Z_DEFAULT_STRATEGY: 0,
+					Z_BINARY: 0,
+					Z_TEXT: 1,
+					Z_UNKNOWN: 2,
+					Z_DEFLATED: 8
+				};
+			}, {}],
+			45: [function(e, t, r) {
+				"use strict";
+				var o = function() {
+					for (var e, t = [], r = 0; r < 256; r++) {
+						e = r;
+						for (var n = 0; n < 8; n++) e = 1 & e ? 3988292384 ^ e >>> 1 : e >>> 1;
+						t[r] = e;
+					}
+					return t;
+				}();
+				t.exports = function(e, t, r, n) {
+					var i = o, s = n + r;
+					e ^= -1;
+					for (var a = n; a < s; a++) e = e >>> 8 ^ i[255 & (e ^ t[a])];
+					return -1 ^ e;
+				};
+			}, {}],
+			46: [function(e, t, r) {
+				"use strict";
+				var h, c = e("../utils/common"), u = e("./trees"), d = e("./adler32"), p = e("./crc32"), n = e("./messages"), l = 0, f = 4, m = 0, _ = -2, g = -1, b = 4, i = 2, v = 8, y = 9, s = 286, a = 30, o = 19, w = 2 * s + 1, k = 15, x = 3, S = 258, z = S + x + 1, C = 42, E = 113, A = 1, I = 2, O = 3, B = 4;
+				function R(e, t) {
+					return e.msg = n[t], t;
+				}
+				function T(e) {
+					return (e << 1) - (4 < e ? 9 : 0);
+				}
+				function D(e) {
+					for (var t = e.length; 0 <= --t;) e[t] = 0;
+				}
+				function F(e) {
+					var t = e.state, r = t.pending;
+					r > e.avail_out && (r = e.avail_out), 0 !== r && (c.arraySet(e.output, t.pending_buf, t.pending_out, r, e.next_out), e.next_out += r, t.pending_out += r, e.total_out += r, e.avail_out -= r, t.pending -= r, 0 === t.pending && (t.pending_out = 0));
+				}
+				function N(e, t) {
+					u._tr_flush_block(e, 0 <= e.block_start ? e.block_start : -1, e.strstart - e.block_start, t), e.block_start = e.strstart, F(e.strm);
+				}
+				function U(e, t) {
+					e.pending_buf[e.pending++] = t;
+				}
+				function P(e, t) {
+					e.pending_buf[e.pending++] = t >>> 8 & 255, e.pending_buf[e.pending++] = 255 & t;
+				}
+				function L(e, t) {
+					var r, n, i = e.max_chain_length, s = e.strstart, a = e.prev_length, o = e.nice_match, h = e.strstart > e.w_size - z ? e.strstart - (e.w_size - z) : 0, u = e.window, l = e.w_mask, f = e.prev, c = e.strstart + S, d = u[s + a - 1], p = u[s + a];
+					e.prev_length >= e.good_match && (i >>= 2), o > e.lookahead && (o = e.lookahead);
+					do
+						if (u[(r = t) + a] === p && u[r + a - 1] === d && u[r] === u[s] && u[++r] === u[s + 1]) {
+							s += 2, r++;
+							do							;
+while (u[++s] === u[++r] && u[++s] === u[++r] && u[++s] === u[++r] && u[++s] === u[++r] && u[++s] === u[++r] && u[++s] === u[++r] && u[++s] === u[++r] && u[++s] === u[++r] && s < c);
+							if (n = S - (c - s), s = c - S, a < n) {
+								if (e.match_start = t, o <= (a = n)) break;
+								d = u[s + a - 1], p = u[s + a];
+							}
+						}
+					while ((t = f[t & l]) > h && 0 != --i);
+					return a <= e.lookahead ? a : e.lookahead;
+				}
+				function j(e) {
+					var t, r, n, i, s, a, o, h, u, l, f = e.w_size;
+					do {
+						if (i = e.window_size - e.lookahead - e.strstart, e.strstart >= f + (f - z)) {
+							for (c.arraySet(e.window, e.window, f, f, 0), e.match_start -= f, e.strstart -= f, e.block_start -= f, t = r = e.hash_size; n = e.head[--t], e.head[t] = f <= n ? n - f : 0, --r;);
+							for (t = r = f; n = e.prev[--t], e.prev[t] = f <= n ? n - f : 0, --r;);
+							i += f;
+						}
+						if (0 === e.strm.avail_in) break;
+						if (a = e.strm, o = e.window, h = e.strstart + e.lookahead, u = i, l = void 0, l = a.avail_in, u < l && (l = u), r = 0 === l ? 0 : (a.avail_in -= l, c.arraySet(o, a.input, a.next_in, l, h), 1 === a.state.wrap ? a.adler = d(a.adler, o, l, h) : 2 === a.state.wrap && (a.adler = p(a.adler, o, l, h)), a.next_in += l, a.total_in += l, l), e.lookahead += r, e.lookahead + e.insert >= x) for (s = e.strstart - e.insert, e.ins_h = e.window[s], e.ins_h = (e.ins_h << e.hash_shift ^ e.window[s + 1]) & e.hash_mask; e.insert && (e.ins_h = (e.ins_h << e.hash_shift ^ e.window[s + x - 1]) & e.hash_mask, e.prev[s & e.w_mask] = e.head[e.ins_h], e.head[e.ins_h] = s, s++, e.insert--, !(e.lookahead + e.insert < x)););
+					} while (e.lookahead < z && 0 !== e.strm.avail_in);
+				}
+				function Z(e, t) {
+					for (var r, n;;) {
+						if (e.lookahead < z) {
+							if (j(e), e.lookahead < z && t === l) return A;
+							if (0 === e.lookahead) break;
+						}
+						if (r = 0, e.lookahead >= x && (e.ins_h = (e.ins_h << e.hash_shift ^ e.window[e.strstart + x - 1]) & e.hash_mask, r = e.prev[e.strstart & e.w_mask] = e.head[e.ins_h], e.head[e.ins_h] = e.strstart), 0 !== r && e.strstart - r <= e.w_size - z && (e.match_length = L(e, r)), e.match_length >= x) if (n = u._tr_tally(e, e.strstart - e.match_start, e.match_length - x), e.lookahead -= e.match_length, e.match_length <= e.max_lazy_match && e.lookahead >= x) {
+							for (e.match_length--; e.strstart++, e.ins_h = (e.ins_h << e.hash_shift ^ e.window[e.strstart + x - 1]) & e.hash_mask, r = e.prev[e.strstart & e.w_mask] = e.head[e.ins_h], e.head[e.ins_h] = e.strstart, 0 != --e.match_length;);
+							e.strstart++;
+						} else e.strstart += e.match_length, e.match_length = 0, e.ins_h = e.window[e.strstart], e.ins_h = (e.ins_h << e.hash_shift ^ e.window[e.strstart + 1]) & e.hash_mask;
+						else n = u._tr_tally(e, 0, e.window[e.strstart]), e.lookahead--, e.strstart++;
+						if (n && (N(e, !1), 0 === e.strm.avail_out)) return A;
+					}
+					return e.insert = e.strstart < x - 1 ? e.strstart : x - 1, t === f ? (N(e, !0), 0 === e.strm.avail_out ? O : B) : e.last_lit && (N(e, !1), 0 === e.strm.avail_out) ? A : I;
+				}
+				function W(e, t) {
+					for (var r, n, i;;) {
+						if (e.lookahead < z) {
+							if (j(e), e.lookahead < z && t === l) return A;
+							if (0 === e.lookahead) break;
+						}
+						if (r = 0, e.lookahead >= x && (e.ins_h = (e.ins_h << e.hash_shift ^ e.window[e.strstart + x - 1]) & e.hash_mask, r = e.prev[e.strstart & e.w_mask] = e.head[e.ins_h], e.head[e.ins_h] = e.strstart), e.prev_length = e.match_length, e.prev_match = e.match_start, e.match_length = x - 1, 0 !== r && e.prev_length < e.max_lazy_match && e.strstart - r <= e.w_size - z && (e.match_length = L(e, r), e.match_length <= 5 && (1 === e.strategy || e.match_length === x && 4096 < e.strstart - e.match_start) && (e.match_length = x - 1)), e.prev_length >= x && e.match_length <= e.prev_length) {
+							for (i = e.strstart + e.lookahead - x, n = u._tr_tally(e, e.strstart - 1 - e.prev_match, e.prev_length - x), e.lookahead -= e.prev_length - 1, e.prev_length -= 2; ++e.strstart <= i && (e.ins_h = (e.ins_h << e.hash_shift ^ e.window[e.strstart + x - 1]) & e.hash_mask, r = e.prev[e.strstart & e.w_mask] = e.head[e.ins_h], e.head[e.ins_h] = e.strstart), 0 != --e.prev_length;);
+							if (e.match_available = 0, e.match_length = x - 1, e.strstart++, n && (N(e, !1), 0 === e.strm.avail_out)) return A;
+						} else if (e.match_available) {
+							if ((n = u._tr_tally(e, 0, e.window[e.strstart - 1])) && N(e, !1), e.strstart++, e.lookahead--, 0 === e.strm.avail_out) return A;
+						} else e.match_available = 1, e.strstart++, e.lookahead--;
+					}
+					return e.match_available && (n = u._tr_tally(e, 0, e.window[e.strstart - 1]), e.match_available = 0), e.insert = e.strstart < x - 1 ? e.strstart : x - 1, t === f ? (N(e, !0), 0 === e.strm.avail_out ? O : B) : e.last_lit && (N(e, !1), 0 === e.strm.avail_out) ? A : I;
+				}
+				function M(e, t, r, n, i) {
+					this.good_length = e, this.max_lazy = t, this.nice_length = r, this.max_chain = n, this.func = i;
+				}
+				function H() {
+					this.strm = null, this.status = 0, this.pending_buf = null, this.pending_buf_size = 0, this.pending_out = 0, this.pending = 0, this.wrap = 0, this.gzhead = null, this.gzindex = 0, this.method = v, this.last_flush = -1, this.w_size = 0, this.w_bits = 0, this.w_mask = 0, this.window = null, this.window_size = 0, this.prev = null, this.head = null, this.ins_h = 0, this.hash_size = 0, this.hash_bits = 0, this.hash_mask = 0, this.hash_shift = 0, this.block_start = 0, this.match_length = 0, this.prev_match = 0, this.match_available = 0, this.strstart = 0, this.match_start = 0, this.lookahead = 0, this.prev_length = 0, this.max_chain_length = 0, this.max_lazy_match = 0, this.level = 0, this.strategy = 0, this.good_match = 0, this.nice_match = 0, this.dyn_ltree = new c.Buf16(2 * w), this.dyn_dtree = new c.Buf16(2 * (2 * a + 1)), this.bl_tree = new c.Buf16(2 * (2 * o + 1)), D(this.dyn_ltree), D(this.dyn_dtree), D(this.bl_tree), this.l_desc = null, this.d_desc = null, this.bl_desc = null, this.bl_count = new c.Buf16(k + 1), this.heap = new c.Buf16(2 * s + 1), D(this.heap), this.heap_len = 0, this.heap_max = 0, this.depth = new c.Buf16(2 * s + 1), D(this.depth), this.l_buf = 0, this.lit_bufsize = 0, this.last_lit = 0, this.d_buf = 0, this.opt_len = 0, this.static_len = 0, this.matches = 0, this.insert = 0, this.bi_buf = 0, this.bi_valid = 0;
+				}
+				function G(e) {
+					var t;
+					return e && e.state ? (e.total_in = e.total_out = 0, e.data_type = i, (t = e.state).pending = 0, t.pending_out = 0, t.wrap < 0 && (t.wrap = -t.wrap), t.status = t.wrap ? C : E, e.adler = 2 === t.wrap ? 0 : 1, t.last_flush = l, u._tr_init(t), m) : R(e, _);
+				}
+				function K(e) {
+					var t = G(e);
+					return t === m && function(e) {
+						e.window_size = 2 * e.w_size, D(e.head), e.max_lazy_match = h[e.level].max_lazy, e.good_match = h[e.level].good_length, e.nice_match = h[e.level].nice_length, e.max_chain_length = h[e.level].max_chain, e.strstart = 0, e.block_start = 0, e.lookahead = 0, e.insert = 0, e.match_length = e.prev_length = x - 1, e.match_available = 0, e.ins_h = 0;
+					}(e.state), t;
+				}
+				function Y(e, t, r, n, i, s) {
+					if (!e) return _;
+					var a = 1;
+					if (t === g && (t = 6), n < 0 ? (a = 0, n = -n) : 15 < n && (a = 2, n -= 16), i < 1 || y < i || r !== v || n < 8 || 15 < n || t < 0 || 9 < t || s < 0 || b < s) return R(e, _);
+					8 === n && (n = 9);
+					var o = new H();
+					return (e.state = o).strm = e, o.wrap = a, o.gzhead = null, o.w_bits = n, o.w_size = 1 << o.w_bits, o.w_mask = o.w_size - 1, o.hash_bits = i + 7, o.hash_size = 1 << o.hash_bits, o.hash_mask = o.hash_size - 1, o.hash_shift = ~~((o.hash_bits + x - 1) / x), o.window = new c.Buf8(2 * o.w_size), o.head = new c.Buf16(o.hash_size), o.prev = new c.Buf16(o.w_size), o.lit_bufsize = 1 << i + 6, o.pending_buf_size = 4 * o.lit_bufsize, o.pending_buf = new c.Buf8(o.pending_buf_size), o.d_buf = 1 * o.lit_bufsize, o.l_buf = 3 * o.lit_bufsize, o.level = t, o.strategy = s, o.method = r, K(e);
+				}
+				h = [
+					new M(0, 0, 0, 0, function(e, t) {
+						var r = 65535;
+						for (r > e.pending_buf_size - 5 && (r = e.pending_buf_size - 5);;) {
+							if (e.lookahead <= 1) {
+								if (j(e), 0 === e.lookahead && t === l) return A;
+								if (0 === e.lookahead) break;
+							}
+							e.strstart += e.lookahead, e.lookahead = 0;
+							var n = e.block_start + r;
+							if ((0 === e.strstart || e.strstart >= n) && (e.lookahead = e.strstart - n, e.strstart = n, N(e, !1), 0 === e.strm.avail_out)) return A;
+							if (e.strstart - e.block_start >= e.w_size - z && (N(e, !1), 0 === e.strm.avail_out)) return A;
+						}
+						return e.insert = 0, t === f ? (N(e, !0), 0 === e.strm.avail_out ? O : B) : (e.strstart > e.block_start && (N(e, !1), e.strm.avail_out), A);
+					}),
+					new M(4, 4, 8, 4, Z),
+					new M(4, 5, 16, 8, Z),
+					new M(4, 6, 32, 32, Z),
+					new M(4, 4, 16, 16, W),
+					new M(8, 16, 32, 32, W),
+					new M(8, 16, 128, 128, W),
+					new M(8, 32, 128, 256, W),
+					new M(32, 128, 258, 1024, W),
+					new M(32, 258, 258, 4096, W)
+				], r.deflateInit = function(e, t) {
+					return Y(e, t, v, 15, 8, 0);
+				}, r.deflateInit2 = Y, r.deflateReset = K, r.deflateResetKeep = G, r.deflateSetHeader = function(e, t) {
+					return e && e.state ? 2 !== e.state.wrap ? _ : (e.state.gzhead = t, m) : _;
+				}, r.deflate = function(e, t) {
+					var r, n, i, s;
+					if (!e || !e.state || 5 < t || t < 0) return e ? R(e, _) : _;
+					if (n = e.state, !e.output || !e.input && 0 !== e.avail_in || 666 === n.status && t !== f) return R(e, 0 === e.avail_out ? -5 : _);
+					if (n.strm = e, r = n.last_flush, n.last_flush = t, n.status === C) if (2 === n.wrap) e.adler = 0, U(n, 31), U(n, 139), U(n, 8), n.gzhead ? (U(n, (n.gzhead.text ? 1 : 0) + (n.gzhead.hcrc ? 2 : 0) + (n.gzhead.extra ? 4 : 0) + (n.gzhead.name ? 8 : 0) + (n.gzhead.comment ? 16 : 0)), U(n, 255 & n.gzhead.time), U(n, n.gzhead.time >> 8 & 255), U(n, n.gzhead.time >> 16 & 255), U(n, n.gzhead.time >> 24 & 255), U(n, 9 === n.level ? 2 : 2 <= n.strategy || n.level < 2 ? 4 : 0), U(n, 255 & n.gzhead.os), n.gzhead.extra && n.gzhead.extra.length && (U(n, 255 & n.gzhead.extra.length), U(n, n.gzhead.extra.length >> 8 & 255)), n.gzhead.hcrc && (e.adler = p(e.adler, n.pending_buf, n.pending, 0)), n.gzindex = 0, n.status = 69) : (U(n, 0), U(n, 0), U(n, 0), U(n, 0), U(n, 0), U(n, 9 === n.level ? 2 : 2 <= n.strategy || n.level < 2 ? 4 : 0), U(n, 3), n.status = E);
+					else {
+						var a = v + (n.w_bits - 8 << 4) << 8;
+						a |= (2 <= n.strategy || n.level < 2 ? 0 : n.level < 6 ? 1 : 6 === n.level ? 2 : 3) << 6, 0 !== n.strstart && (a |= 32), a += 31 - a % 31, n.status = E, P(n, a), 0 !== n.strstart && (P(n, e.adler >>> 16), P(n, 65535 & e.adler)), e.adler = 1;
+					}
+					if (69 === n.status) if (n.gzhead.extra) {
+						for (i = n.pending; n.gzindex < (65535 & n.gzhead.extra.length) && (n.pending !== n.pending_buf_size || (n.gzhead.hcrc && n.pending > i && (e.adler = p(e.adler, n.pending_buf, n.pending - i, i)), F(e), i = n.pending, n.pending !== n.pending_buf_size));) U(n, 255 & n.gzhead.extra[n.gzindex]), n.gzindex++;
+						n.gzhead.hcrc && n.pending > i && (e.adler = p(e.adler, n.pending_buf, n.pending - i, i)), n.gzindex === n.gzhead.extra.length && (n.gzindex = 0, n.status = 73);
+					} else n.status = 73;
+					if (73 === n.status) if (n.gzhead.name) {
+						i = n.pending;
+						do {
+							if (n.pending === n.pending_buf_size && (n.gzhead.hcrc && n.pending > i && (e.adler = p(e.adler, n.pending_buf, n.pending - i, i)), F(e), i = n.pending, n.pending === n.pending_buf_size)) {
+								s = 1;
+								break;
+							}
+							s = n.gzindex < n.gzhead.name.length ? 255 & n.gzhead.name.charCodeAt(n.gzindex++) : 0, U(n, s);
+						} while (0 !== s);
+						n.gzhead.hcrc && n.pending > i && (e.adler = p(e.adler, n.pending_buf, n.pending - i, i)), 0 === s && (n.gzindex = 0, n.status = 91);
+					} else n.status = 91;
+					if (91 === n.status) if (n.gzhead.comment) {
+						i = n.pending;
+						do {
+							if (n.pending === n.pending_buf_size && (n.gzhead.hcrc && n.pending > i && (e.adler = p(e.adler, n.pending_buf, n.pending - i, i)), F(e), i = n.pending, n.pending === n.pending_buf_size)) {
+								s = 1;
+								break;
+							}
+							s = n.gzindex < n.gzhead.comment.length ? 255 & n.gzhead.comment.charCodeAt(n.gzindex++) : 0, U(n, s);
+						} while (0 !== s);
+						n.gzhead.hcrc && n.pending > i && (e.adler = p(e.adler, n.pending_buf, n.pending - i, i)), 0 === s && (n.status = 103);
+					} else n.status = 103;
+					if (103 === n.status && (n.gzhead.hcrc ? (n.pending + 2 > n.pending_buf_size && F(e), n.pending + 2 <= n.pending_buf_size && (U(n, 255 & e.adler), U(n, e.adler >> 8 & 255), e.adler = 0, n.status = E)) : n.status = E), 0 !== n.pending) {
+						if (F(e), 0 === e.avail_out) return n.last_flush = -1, m;
+					} else if (0 === e.avail_in && T(t) <= T(r) && t !== f) return R(e, -5);
+					if (666 === n.status && 0 !== e.avail_in) return R(e, -5);
+					if (0 !== e.avail_in || 0 !== n.lookahead || t !== l && 666 !== n.status) {
+						var o = 2 === n.strategy ? function(e, t) {
+							for (var r;;) {
+								if (0 === e.lookahead && (j(e), 0 === e.lookahead)) {
+									if (t === l) return A;
+									break;
+								}
+								if (e.match_length = 0, r = u._tr_tally(e, 0, e.window[e.strstart]), e.lookahead--, e.strstart++, r && (N(e, !1), 0 === e.strm.avail_out)) return A;
+							}
+							return e.insert = 0, t === f ? (N(e, !0), 0 === e.strm.avail_out ? O : B) : e.last_lit && (N(e, !1), 0 === e.strm.avail_out) ? A : I;
+						}(n, t) : 3 === n.strategy ? function(e, t) {
+							for (var r, n, i, s, a = e.window;;) {
+								if (e.lookahead <= S) {
+									if (j(e), e.lookahead <= S && t === l) return A;
+									if (0 === e.lookahead) break;
+								}
+								if (e.match_length = 0, e.lookahead >= x && 0 < e.strstart && (n = a[i = e.strstart - 1]) === a[++i] && n === a[++i] && n === a[++i]) {
+									s = e.strstart + S;
+									do									;
+while (n === a[++i] && n === a[++i] && n === a[++i] && n === a[++i] && n === a[++i] && n === a[++i] && n === a[++i] && n === a[++i] && i < s);
+									e.match_length = S - (s - i), e.match_length > e.lookahead && (e.match_length = e.lookahead);
+								}
+								if (e.match_length >= x ? (r = u._tr_tally(e, 1, e.match_length - x), e.lookahead -= e.match_length, e.strstart += e.match_length, e.match_length = 0) : (r = u._tr_tally(e, 0, e.window[e.strstart]), e.lookahead--, e.strstart++), r && (N(e, !1), 0 === e.strm.avail_out)) return A;
+							}
+							return e.insert = 0, t === f ? (N(e, !0), 0 === e.strm.avail_out ? O : B) : e.last_lit && (N(e, !1), 0 === e.strm.avail_out) ? A : I;
+						}(n, t) : h[n.level].func(n, t);
+						if (o !== O && o !== B || (n.status = 666), o === A || o === O) return 0 === e.avail_out && (n.last_flush = -1), m;
+						if (o === I && (1 === t ? u._tr_align(n) : 5 !== t && (u._tr_stored_block(n, 0, 0, !1), 3 === t && (D(n.head), 0 === n.lookahead && (n.strstart = 0, n.block_start = 0, n.insert = 0))), F(e), 0 === e.avail_out)) return n.last_flush = -1, m;
+					}
+					return t !== f ? m : n.wrap <= 0 ? 1 : (2 === n.wrap ? (U(n, 255 & e.adler), U(n, e.adler >> 8 & 255), U(n, e.adler >> 16 & 255), U(n, e.adler >> 24 & 255), U(n, 255 & e.total_in), U(n, e.total_in >> 8 & 255), U(n, e.total_in >> 16 & 255), U(n, e.total_in >> 24 & 255)) : (P(n, e.adler >>> 16), P(n, 65535 & e.adler)), F(e), 0 < n.wrap && (n.wrap = -n.wrap), 0 !== n.pending ? m : 1);
+				}, r.deflateEnd = function(e) {
+					var t;
+					return e && e.state ? (t = e.state.status) !== C && 69 !== t && 73 !== t && 91 !== t && 103 !== t && t !== E && 666 !== t ? R(e, _) : (e.state = null, t === E ? R(e, -3) : m) : _;
+				}, r.deflateSetDictionary = function(e, t) {
+					var r, n, i, s, a, o, h, u, l = t.length;
+					if (!e || !e.state) return _;
+					if (2 === (s = (r = e.state).wrap) || 1 === s && r.status !== C || r.lookahead) return _;
+					for (1 === s && (e.adler = d(e.adler, t, l, 0)), r.wrap = 0, l >= r.w_size && (0 === s && (D(r.head), r.strstart = 0, r.block_start = 0, r.insert = 0), u = new c.Buf8(r.w_size), c.arraySet(u, t, l - r.w_size, r.w_size, 0), t = u, l = r.w_size), a = e.avail_in, o = e.next_in, h = e.input, e.avail_in = l, e.next_in = 0, e.input = t, j(r); r.lookahead >= x;) {
+						for (n = r.strstart, i = r.lookahead - (x - 1); r.ins_h = (r.ins_h << r.hash_shift ^ r.window[n + x - 1]) & r.hash_mask, r.prev[n & r.w_mask] = r.head[r.ins_h], r.head[r.ins_h] = n, n++, --i;);
+						r.strstart = n, r.lookahead = x - 1, j(r);
+					}
+					return r.strstart += r.lookahead, r.block_start = r.strstart, r.insert = r.lookahead, r.lookahead = 0, r.match_length = r.prev_length = x - 1, r.match_available = 0, e.next_in = o, e.input = h, e.avail_in = a, r.wrap = s, m;
+				}, r.deflateInfo = "pako deflate (from Nodeca project)";
+			}, {
+				"../utils/common": 41,
+				"./adler32": 43,
+				"./crc32": 45,
+				"./messages": 51,
+				"./trees": 52
+			}],
+			47: [function(e, t, r) {
+				"use strict";
+				t.exports = function() {
+					this.text = 0, this.time = 0, this.xflags = 0, this.os = 0, this.extra = null, this.extra_len = 0, this.name = "", this.comment = "", this.hcrc = 0, this.done = !1;
+				};
+			}, {}],
+			48: [function(e, t, r) {
+				"use strict";
+				t.exports = function(e, t) {
+					var r = e.state, n = e.next_in, i, s, a, o, h, u, l, f, c, d, p, m, _, g, b, v, y, w, k, x, S, z = e.input, C;
+					i = n + (e.avail_in - 5), s = e.next_out, C = e.output, a = s - (t - e.avail_out), o = s + (e.avail_out - 257), h = r.dmax, u = r.wsize, l = r.whave, f = r.wnext, c = r.window, d = r.hold, p = r.bits, m = r.lencode, _ = r.distcode, g = (1 << r.lenbits) - 1, b = (1 << r.distbits) - 1;
+					e: do {
+						p < 15 && (d += z[n++] << p, p += 8, d += z[n++] << p, p += 8), v = m[d & g];
+						t: for (;;) {
+							if (d >>>= y = v >>> 24, p -= y, 0 === (y = v >>> 16 & 255)) C[s++] = 65535 & v;
+							else {
+								if (!(16 & y)) {
+									if (0 == (64 & y)) {
+										v = m[(65535 & v) + (d & (1 << y) - 1)];
+										continue t;
+									}
+									if (32 & y) {
+										r.mode = 12;
+										break e;
+									}
+									e.msg = "invalid literal/length code", r.mode = 30;
+									break e;
+								}
+								w = 65535 & v, (y &= 15) && (p < y && (d += z[n++] << p, p += 8), w += d & (1 << y) - 1, d >>>= y, p -= y), p < 15 && (d += z[n++] << p, p += 8, d += z[n++] << p, p += 8), v = _[d & b];
+								r: for (;;) {
+									if (d >>>= y = v >>> 24, p -= y, !(16 & (y = v >>> 16 & 255))) {
+										if (0 == (64 & y)) {
+											v = _[(65535 & v) + (d & (1 << y) - 1)];
+											continue r;
+										}
+										e.msg = "invalid distance code", r.mode = 30;
+										break e;
+									}
+									if (k = 65535 & v, p < (y &= 15) && (d += z[n++] << p, (p += 8) < y && (d += z[n++] << p, p += 8)), h < (k += d & (1 << y) - 1)) {
+										e.msg = "invalid distance too far back", r.mode = 30;
+										break e;
+									}
+									if (d >>>= y, p -= y, (y = s - a) < k) {
+										if (l < (y = k - y) && r.sane) {
+											e.msg = "invalid distance too far back", r.mode = 30;
+											break e;
+										}
+										if (S = c, (x = 0) === f) {
+											if (x += u - y, y < w) {
+												for (w -= y; C[s++] = c[x++], --y;);
+												x = s - k, S = C;
+											}
+										} else if (f < y) {
+											if (x += u + f - y, (y -= f) < w) {
+												for (w -= y; C[s++] = c[x++], --y;);
+												if (x = 0, f < w) {
+													for (w -= y = f; C[s++] = c[x++], --y;);
+													x = s - k, S = C;
+												}
+											}
+										} else if (x += f - y, y < w) {
+											for (w -= y; C[s++] = c[x++], --y;);
+											x = s - k, S = C;
+										}
+										for (; 2 < w;) C[s++] = S[x++], C[s++] = S[x++], C[s++] = S[x++], w -= 3;
+										w && (C[s++] = S[x++], 1 < w && (C[s++] = S[x++]));
+									} else {
+										for (x = s - k; C[s++] = C[x++], C[s++] = C[x++], C[s++] = C[x++], 2 < (w -= 3););
+										w && (C[s++] = C[x++], 1 < w && (C[s++] = C[x++]));
+									}
+									break;
+								}
+							}
+							break;
+						}
+					} while (n < i && s < o);
+					n -= w = p >> 3, d &= (1 << (p -= w << 3)) - 1, e.next_in = n, e.next_out = s, e.avail_in = n < i ? i - n + 5 : 5 - (n - i), e.avail_out = s < o ? o - s + 257 : 257 - (s - o), r.hold = d, r.bits = p;
+				};
+			}, {}],
+			49: [function(e, t, r) {
+				"use strict";
+				var I = e("../utils/common"), O = e("./adler32"), B = e("./crc32"), R = e("./inffast"), T = e("./inftrees"), D = 1, F = 2, N = 0, U = -2, P = 1, n = 852, i = 592;
+				function L(e) {
+					return (e >>> 24 & 255) + (e >>> 8 & 65280) + ((65280 & e) << 8) + ((255 & e) << 24);
+				}
+				function s() {
+					this.mode = 0, this.last = !1, this.wrap = 0, this.havedict = !1, this.flags = 0, this.dmax = 0, this.check = 0, this.total = 0, this.head = null, this.wbits = 0, this.wsize = 0, this.whave = 0, this.wnext = 0, this.window = null, this.hold = 0, this.bits = 0, this.length = 0, this.offset = 0, this.extra = 0, this.lencode = null, this.distcode = null, this.lenbits = 0, this.distbits = 0, this.ncode = 0, this.nlen = 0, this.ndist = 0, this.have = 0, this.next = null, this.lens = new I.Buf16(320), this.work = new I.Buf16(288), this.lendyn = null, this.distdyn = null, this.sane = 0, this.back = 0, this.was = 0;
+				}
+				function a(e) {
+					var t;
+					return e && e.state ? (t = e.state, e.total_in = e.total_out = t.total = 0, e.msg = "", t.wrap && (e.adler = 1 & t.wrap), t.mode = P, t.last = 0, t.havedict = 0, t.dmax = 32768, t.head = null, t.hold = 0, t.bits = 0, t.lencode = t.lendyn = new I.Buf32(n), t.distcode = t.distdyn = new I.Buf32(i), t.sane = 1, t.back = -1, N) : U;
+				}
+				function o(e) {
+					var t;
+					return e && e.state ? ((t = e.state).wsize = 0, t.whave = 0, t.wnext = 0, a(e)) : U;
+				}
+				function h(e, t) {
+					var r, n;
+					return e && e.state ? (n = e.state, t < 0 ? (r = 0, t = -t) : (r = 1 + (t >> 4), t < 48 && (t &= 15)), t && (t < 8 || 15 < t) ? U : (null !== n.window && n.wbits !== t && (n.window = null), n.wrap = r, n.wbits = t, o(e))) : U;
+				}
+				function u(e, t) {
+					var r, n;
+					return e ? (n = new s(), (e.state = n).window = null, (r = h(e, t)) !== N && (e.state = null), r) : U;
+				}
+				var l, f, c = !0;
+				function j(e) {
+					if (c) {
+						var t;
+						for (l = new I.Buf32(512), f = new I.Buf32(32), t = 0; t < 144;) e.lens[t++] = 8;
+						for (; t < 256;) e.lens[t++] = 9;
+						for (; t < 280;) e.lens[t++] = 7;
+						for (; t < 288;) e.lens[t++] = 8;
+						for (T(D, e.lens, 0, 288, l, 0, e.work, { bits: 9 }), t = 0; t < 32;) e.lens[t++] = 5;
+						T(F, e.lens, 0, 32, f, 0, e.work, { bits: 5 }), c = !1;
+					}
+					e.lencode = l, e.lenbits = 9, e.distcode = f, e.distbits = 5;
+				}
+				function Z(e, t, r, n) {
+					var i, s = e.state;
+					return null === s.window && (s.wsize = 1 << s.wbits, s.wnext = 0, s.whave = 0, s.window = new I.Buf8(s.wsize)), n >= s.wsize ? (I.arraySet(s.window, t, r - s.wsize, s.wsize, 0), s.wnext = 0, s.whave = s.wsize) : (n < (i = s.wsize - s.wnext) && (i = n), I.arraySet(s.window, t, r - n, i, s.wnext), (n -= i) ? (I.arraySet(s.window, t, r - n, n, 0), s.wnext = n, s.whave = s.wsize) : (s.wnext += i, s.wnext === s.wsize && (s.wnext = 0), s.whave < s.wsize && (s.whave += i))), 0;
+				}
+				r.inflateReset = o, r.inflateReset2 = h, r.inflateResetKeep = a, r.inflateInit = function(e) {
+					return u(e, 15);
+				}, r.inflateInit2 = u, r.inflate = function(e, t) {
+					var r, n, i, s, a, o, h, u, l, f, c, d, p, m, _, g, b, v, y, w, k, x, S, z, C = 0, E = new I.Buf8(4), A = [
+						16,
+						17,
+						18,
+						0,
+						8,
+						7,
+						9,
+						6,
+						10,
+						5,
+						11,
+						4,
+						12,
+						3,
+						13,
+						2,
+						14,
+						1,
+						15
+					];
+					if (!e || !e.state || !e.output || !e.input && 0 !== e.avail_in) return U;
+					12 === (r = e.state).mode && (r.mode = 13), a = e.next_out, i = e.output, h = e.avail_out, s = e.next_in, n = e.input, o = e.avail_in, u = r.hold, l = r.bits, f = o, c = h, x = N;
+					e: for (;;) switch (r.mode) {
+						case P:
+							if (0 === r.wrap) {
+								r.mode = 13;
+								break;
+							}
+							for (; l < 16;) {
+								if (0 === o) break e;
+								o--, u += n[s++] << l, l += 8;
+							}
+							if (2 & r.wrap && 35615 === u) {
+								E[r.check = 0] = 255 & u, E[1] = u >>> 8 & 255, r.check = B(r.check, E, 2, 0), l = u = 0, r.mode = 2;
+								break;
+							}
+							if (r.flags = 0, r.head && (r.head.done = !1), !(1 & r.wrap) || (((255 & u) << 8) + (u >> 8)) % 31) {
+								e.msg = "incorrect header check", r.mode = 30;
+								break;
+							}
+							if (8 != (15 & u)) {
+								e.msg = "unknown compression method", r.mode = 30;
+								break;
+							}
+							if (l -= 4, k = 8 + (15 & (u >>>= 4)), 0 === r.wbits) r.wbits = k;
+							else if (k > r.wbits) {
+								e.msg = "invalid window size", r.mode = 30;
+								break;
+							}
+							r.dmax = 1 << k, e.adler = r.check = 1, r.mode = 512 & u ? 10 : 12, l = u = 0;
+							break;
+						case 2:
+							for (; l < 16;) {
+								if (0 === o) break e;
+								o--, u += n[s++] << l, l += 8;
+							}
+							if (r.flags = u, 8 != (255 & r.flags)) {
+								e.msg = "unknown compression method", r.mode = 30;
+								break;
+							}
+							if (57344 & r.flags) {
+								e.msg = "unknown header flags set", r.mode = 30;
+								break;
+							}
+							r.head && (r.head.text = u >> 8 & 1), 512 & r.flags && (E[0] = 255 & u, E[1] = u >>> 8 & 255, r.check = B(r.check, E, 2, 0)), l = u = 0, r.mode = 3;
+						case 3:
+							for (; l < 32;) {
+								if (0 === o) break e;
+								o--, u += n[s++] << l, l += 8;
+							}
+							r.head && (r.head.time = u), 512 & r.flags && (E[0] = 255 & u, E[1] = u >>> 8 & 255, E[2] = u >>> 16 & 255, E[3] = u >>> 24 & 255, r.check = B(r.check, E, 4, 0)), l = u = 0, r.mode = 4;
+						case 4:
+							for (; l < 16;) {
+								if (0 === o) break e;
+								o--, u += n[s++] << l, l += 8;
+							}
+							r.head && (r.head.xflags = 255 & u, r.head.os = u >> 8), 512 & r.flags && (E[0] = 255 & u, E[1] = u >>> 8 & 255, r.check = B(r.check, E, 2, 0)), l = u = 0, r.mode = 5;
+						case 5:
+							if (1024 & r.flags) {
+								for (; l < 16;) {
+									if (0 === o) break e;
+									o--, u += n[s++] << l, l += 8;
+								}
+								r.length = u, r.head && (r.head.extra_len = u), 512 & r.flags && (E[0] = 255 & u, E[1] = u >>> 8 & 255, r.check = B(r.check, E, 2, 0)), l = u = 0;
+							} else r.head && (r.head.extra = null);
+							r.mode = 6;
+						case 6:
+							if (1024 & r.flags && (o < (d = r.length) && (d = o), d && (r.head && (k = r.head.extra_len - r.length, r.head.extra || (r.head.extra = new Array(r.head.extra_len)), I.arraySet(r.head.extra, n, s, d, k)), 512 & r.flags && (r.check = B(r.check, n, d, s)), o -= d, s += d, r.length -= d), r.length)) break e;
+							r.length = 0, r.mode = 7;
+						case 7:
+							if (2048 & r.flags) {
+								if (0 === o) break e;
+								for (d = 0; k = n[s + d++], r.head && k && r.length < 65536 && (r.head.name += String.fromCharCode(k)), k && d < o;);
+								if (512 & r.flags && (r.check = B(r.check, n, d, s)), o -= d, s += d, k) break e;
+							} else r.head && (r.head.name = null);
+							r.length = 0, r.mode = 8;
+						case 8:
+							if (4096 & r.flags) {
+								if (0 === o) break e;
+								for (d = 0; k = n[s + d++], r.head && k && r.length < 65536 && (r.head.comment += String.fromCharCode(k)), k && d < o;);
+								if (512 & r.flags && (r.check = B(r.check, n, d, s)), o -= d, s += d, k) break e;
+							} else r.head && (r.head.comment = null);
+							r.mode = 9;
+						case 9:
+							if (512 & r.flags) {
+								for (; l < 16;) {
+									if (0 === o) break e;
+									o--, u += n[s++] << l, l += 8;
+								}
+								if (u !== (65535 & r.check)) {
+									e.msg = "header crc mismatch", r.mode = 30;
+									break;
+								}
+								l = u = 0;
+							}
+							r.head && (r.head.hcrc = r.flags >> 9 & 1, r.head.done = !0), e.adler = r.check = 0, r.mode = 12;
+							break;
+						case 10:
+							for (; l < 32;) {
+								if (0 === o) break e;
+								o--, u += n[s++] << l, l += 8;
+							}
+							e.adler = r.check = L(u), l = u = 0, r.mode = 11;
+						case 11:
+							if (0 === r.havedict) return e.next_out = a, e.avail_out = h, e.next_in = s, e.avail_in = o, r.hold = u, r.bits = l, 2;
+							e.adler = r.check = 1, r.mode = 12;
+						case 12: if (5 === t || 6 === t) break e;
+						case 13:
+							if (r.last) {
+								u >>>= 7 & l, l -= 7 & l, r.mode = 27;
+								break;
+							}
+							for (; l < 3;) {
+								if (0 === o) break e;
+								o--, u += n[s++] << l, l += 8;
+							}
+							switch (r.last = 1 & u, l -= 1, 3 & (u >>>= 1)) {
+								case 0:
+									r.mode = 14;
+									break;
+								case 1:
+									if (j(r), r.mode = 20, 6 !== t) break;
+									u >>>= 2, l -= 2;
+									break e;
+								case 2:
+									r.mode = 17;
+									break;
+								case 3: e.msg = "invalid block type", r.mode = 30;
+							}
+							u >>>= 2, l -= 2;
+							break;
+						case 14:
+							for (u >>>= 7 & l, l -= 7 & l; l < 32;) {
+								if (0 === o) break e;
+								o--, u += n[s++] << l, l += 8;
+							}
+							if ((65535 & u) != (u >>> 16 ^ 65535)) {
+								e.msg = "invalid stored block lengths", r.mode = 30;
+								break;
+							}
+							if (r.length = 65535 & u, l = u = 0, r.mode = 15, 6 === t) break e;
+						case 15: r.mode = 16;
+						case 16:
+							if (d = r.length) {
+								if (o < d && (d = o), h < d && (d = h), 0 === d) break e;
+								I.arraySet(i, n, s, d, a), o -= d, s += d, h -= d, a += d, r.length -= d;
+								break;
+							}
+							r.mode = 12;
+							break;
+						case 17:
+							for (; l < 14;) {
+								if (0 === o) break e;
+								o--, u += n[s++] << l, l += 8;
+							}
+							if (r.nlen = 257 + (31 & u), u >>>= 5, l -= 5, r.ndist = 1 + (31 & u), u >>>= 5, l -= 5, r.ncode = 4 + (15 & u), u >>>= 4, l -= 4, 286 < r.nlen || 30 < r.ndist) {
+								e.msg = "too many length or distance symbols", r.mode = 30;
+								break;
+							}
+							r.have = 0, r.mode = 18;
+						case 18:
+							for (; r.have < r.ncode;) {
+								for (; l < 3;) {
+									if (0 === o) break e;
+									o--, u += n[s++] << l, l += 8;
+								}
+								r.lens[A[r.have++]] = 7 & u, u >>>= 3, l -= 3;
+							}
+							for (; r.have < 19;) r.lens[A[r.have++]] = 0;
+							if (r.lencode = r.lendyn, r.lenbits = 7, S = { bits: r.lenbits }, x = T(0, r.lens, 0, 19, r.lencode, 0, r.work, S), r.lenbits = S.bits, x) {
+								e.msg = "invalid code lengths set", r.mode = 30;
+								break;
+							}
+							r.have = 0, r.mode = 19;
+						case 19:
+							for (; r.have < r.nlen + r.ndist;) {
+								for (; g = (C = r.lencode[u & (1 << r.lenbits) - 1]) >>> 16 & 255, b = 65535 & C, !((_ = C >>> 24) <= l);) {
+									if (0 === o) break e;
+									o--, u += n[s++] << l, l += 8;
+								}
+								if (b < 16) u >>>= _, l -= _, r.lens[r.have++] = b;
+								else {
+									if (16 === b) {
+										for (z = _ + 2; l < z;) {
+											if (0 === o) break e;
+											o--, u += n[s++] << l, l += 8;
+										}
+										if (u >>>= _, l -= _, 0 === r.have) {
+											e.msg = "invalid bit length repeat", r.mode = 30;
+											break;
+										}
+										k = r.lens[r.have - 1], d = 3 + (3 & u), u >>>= 2, l -= 2;
+									} else if (17 === b) {
+										for (z = _ + 3; l < z;) {
+											if (0 === o) break e;
+											o--, u += n[s++] << l, l += 8;
+										}
+										l -= _, k = 0, d = 3 + (7 & (u >>>= _)), u >>>= 3, l -= 3;
+									} else {
+										for (z = _ + 7; l < z;) {
+											if (0 === o) break e;
+											o--, u += n[s++] << l, l += 8;
+										}
+										l -= _, k = 0, d = 11 + (127 & (u >>>= _)), u >>>= 7, l -= 7;
+									}
+									if (r.have + d > r.nlen + r.ndist) {
+										e.msg = "invalid bit length repeat", r.mode = 30;
+										break;
+									}
+									for (; d--;) r.lens[r.have++] = k;
+								}
+							}
+							if (30 === r.mode) break;
+							if (0 === r.lens[256]) {
+								e.msg = "invalid code -- missing end-of-block", r.mode = 30;
+								break;
+							}
+							if (r.lenbits = 9, S = { bits: r.lenbits }, x = T(D, r.lens, 0, r.nlen, r.lencode, 0, r.work, S), r.lenbits = S.bits, x) {
+								e.msg = "invalid literal/lengths set", r.mode = 30;
+								break;
+							}
+							if (r.distbits = 6, r.distcode = r.distdyn, S = { bits: r.distbits }, x = T(F, r.lens, r.nlen, r.ndist, r.distcode, 0, r.work, S), r.distbits = S.bits, x) {
+								e.msg = "invalid distances set", r.mode = 30;
+								break;
+							}
+							if (r.mode = 20, 6 === t) break e;
+						case 20: r.mode = 21;
+						case 21:
+							if (6 <= o && 258 <= h) {
+								e.next_out = a, e.avail_out = h, e.next_in = s, e.avail_in = o, r.hold = u, r.bits = l, R(e, c), a = e.next_out, i = e.output, h = e.avail_out, s = e.next_in, n = e.input, o = e.avail_in, u = r.hold, l = r.bits, 12 === r.mode && (r.back = -1);
+								break;
+							}
+							for (r.back = 0; g = (C = r.lencode[u & (1 << r.lenbits) - 1]) >>> 16 & 255, b = 65535 & C, !((_ = C >>> 24) <= l);) {
+								if (0 === o) break e;
+								o--, u += n[s++] << l, l += 8;
+							}
+							if (g && 0 == (240 & g)) {
+								for (v = _, y = g, w = b; g = (C = r.lencode[w + ((u & (1 << v + y) - 1) >> v)]) >>> 16 & 255, b = 65535 & C, !(v + (_ = C >>> 24) <= l);) {
+									if (0 === o) break e;
+									o--, u += n[s++] << l, l += 8;
+								}
+								u >>>= v, l -= v, r.back += v;
+							}
+							if (u >>>= _, l -= _, r.back += _, r.length = b, 0 === g) {
+								r.mode = 26;
+								break;
+							}
+							if (32 & g) {
+								r.back = -1, r.mode = 12;
+								break;
+							}
+							if (64 & g) {
+								e.msg = "invalid literal/length code", r.mode = 30;
+								break;
+							}
+							r.extra = 15 & g, r.mode = 22;
+						case 22:
+							if (r.extra) {
+								for (z = r.extra; l < z;) {
+									if (0 === o) break e;
+									o--, u += n[s++] << l, l += 8;
+								}
+								r.length += u & (1 << r.extra) - 1, u >>>= r.extra, l -= r.extra, r.back += r.extra;
+							}
+							r.was = r.length, r.mode = 23;
+						case 23:
+							for (; g = (C = r.distcode[u & (1 << r.distbits) - 1]) >>> 16 & 255, b = 65535 & C, !((_ = C >>> 24) <= l);) {
+								if (0 === o) break e;
+								o--, u += n[s++] << l, l += 8;
+							}
+							if (0 == (240 & g)) {
+								for (v = _, y = g, w = b; g = (C = r.distcode[w + ((u & (1 << v + y) - 1) >> v)]) >>> 16 & 255, b = 65535 & C, !(v + (_ = C >>> 24) <= l);) {
+									if (0 === o) break e;
+									o--, u += n[s++] << l, l += 8;
+								}
+								u >>>= v, l -= v, r.back += v;
+							}
+							if (u >>>= _, l -= _, r.back += _, 64 & g) {
+								e.msg = "invalid distance code", r.mode = 30;
+								break;
+							}
+							r.offset = b, r.extra = 15 & g, r.mode = 24;
+						case 24:
+							if (r.extra) {
+								for (z = r.extra; l < z;) {
+									if (0 === o) break e;
+									o--, u += n[s++] << l, l += 8;
+								}
+								r.offset += u & (1 << r.extra) - 1, u >>>= r.extra, l -= r.extra, r.back += r.extra;
+							}
+							if (r.offset > r.dmax) {
+								e.msg = "invalid distance too far back", r.mode = 30;
+								break;
+							}
+							r.mode = 25;
+						case 25:
+							if (0 === h) break e;
+							if (d = c - h, r.offset > d) {
+								if ((d = r.offset - d) > r.whave && r.sane) {
+									e.msg = "invalid distance too far back", r.mode = 30;
+									break;
+								}
+								p = d > r.wnext ? (d -= r.wnext, r.wsize - d) : r.wnext - d, d > r.length && (d = r.length), m = r.window;
+							} else m = i, p = a - r.offset, d = r.length;
+							for (h < d && (d = h), h -= d, r.length -= d; i[a++] = m[p++], --d;);
+							0 === r.length && (r.mode = 21);
+							break;
+						case 26:
+							if (0 === h) break e;
+							i[a++] = r.length, h--, r.mode = 21;
+							break;
+						case 27:
+							if (r.wrap) {
+								for (; l < 32;) {
+									if (0 === o) break e;
+									o--, u |= n[s++] << l, l += 8;
+								}
+								if (c -= h, e.total_out += c, r.total += c, c && (e.adler = r.check = r.flags ? B(r.check, i, c, a - c) : O(r.check, i, c, a - c)), c = h, (r.flags ? u : L(u)) !== r.check) {
+									e.msg = "incorrect data check", r.mode = 30;
+									break;
+								}
+								l = u = 0;
+							}
+							r.mode = 28;
+						case 28:
+							if (r.wrap && r.flags) {
+								for (; l < 32;) {
+									if (0 === o) break e;
+									o--, u += n[s++] << l, l += 8;
+								}
+								if (u !== (4294967295 & r.total)) {
+									e.msg = "incorrect length check", r.mode = 30;
+									break;
+								}
+								l = u = 0;
+							}
+							r.mode = 29;
+						case 29:
+							x = 1;
+							break e;
+						case 30:
+							x = -3;
+							break e;
+						case 31: return -4;
+						default: return U;
+					}
+					return e.next_out = a, e.avail_out = h, e.next_in = s, e.avail_in = o, r.hold = u, r.bits = l, (r.wsize || c !== e.avail_out && r.mode < 30 && (r.mode < 27 || 4 !== t)) && Z(e, e.output, e.next_out, c - e.avail_out) ? (r.mode = 31, -4) : (f -= e.avail_in, c -= e.avail_out, e.total_in += f, e.total_out += c, r.total += c, r.wrap && c && (e.adler = r.check = r.flags ? B(r.check, i, c, e.next_out - c) : O(r.check, i, c, e.next_out - c)), e.data_type = r.bits + (r.last ? 64 : 0) + (12 === r.mode ? 128 : 0) + (20 === r.mode || 15 === r.mode ? 256 : 0), (0 == f && 0 === c || 4 === t) && x === N && (x = -5), x);
+				}, r.inflateEnd = function(e) {
+					if (!e || !e.state) return U;
+					var t = e.state;
+					return t.window && (t.window = null), e.state = null, N;
+				}, r.inflateGetHeader = function(e, t) {
+					var r;
+					return e && e.state ? 0 == (2 & (r = e.state).wrap) ? U : ((r.head = t).done = !1, N) : U;
+				}, r.inflateSetDictionary = function(e, t) {
+					var r, n = t.length;
+					return e && e.state ? 0 !== (r = e.state).wrap && 11 !== r.mode ? U : 11 === r.mode && O(1, t, n, 0) !== r.check ? -3 : Z(e, t, n, n) ? (r.mode = 31, -4) : (r.havedict = 1, N) : U;
+				}, r.inflateInfo = "pako inflate (from Nodeca project)";
+			}, {
+				"../utils/common": 41,
+				"./adler32": 43,
+				"./crc32": 45,
+				"./inffast": 48,
+				"./inftrees": 50
+			}],
+			50: [function(e, t, r) {
+				"use strict";
+				var D = e("../utils/common"), F = [
+					3,
+					4,
+					5,
+					6,
+					7,
+					8,
+					9,
+					10,
+					11,
+					13,
+					15,
+					17,
+					19,
+					23,
+					27,
+					31,
+					35,
+					43,
+					51,
+					59,
+					67,
+					83,
+					99,
+					115,
+					131,
+					163,
+					195,
+					227,
+					258,
+					0,
+					0
+				], N = [
+					16,
+					16,
+					16,
+					16,
+					16,
+					16,
+					16,
+					16,
+					17,
+					17,
+					17,
+					17,
+					18,
+					18,
+					18,
+					18,
+					19,
+					19,
+					19,
+					19,
+					20,
+					20,
+					20,
+					20,
+					21,
+					21,
+					21,
+					21,
+					16,
+					72,
+					78
+				], U = [
+					1,
+					2,
+					3,
+					4,
+					5,
+					7,
+					9,
+					13,
+					17,
+					25,
+					33,
+					49,
+					65,
+					97,
+					129,
+					193,
+					257,
+					385,
+					513,
+					769,
+					1025,
+					1537,
+					2049,
+					3073,
+					4097,
+					6145,
+					8193,
+					12289,
+					16385,
+					24577,
+					0,
+					0
+				], P = [
+					16,
+					16,
+					16,
+					16,
+					17,
+					17,
+					18,
+					18,
+					19,
+					19,
+					20,
+					20,
+					21,
+					21,
+					22,
+					22,
+					23,
+					23,
+					24,
+					24,
+					25,
+					25,
+					26,
+					26,
+					27,
+					27,
+					28,
+					28,
+					29,
+					29,
+					64,
+					64
+				];
+				t.exports = function(e, t, r, n, i, s, a, o) {
+					var h, u, l, f, c, d, p, m, _, g = o.bits, b = 0, v = 0, y = 0, w = 0, k = 0, x = 0, S = 0, z = 0, C = 0, E = 0, A = null, I = 0, O = new D.Buf16(16), B = new D.Buf16(16), R = null, T = 0;
+					for (b = 0; b <= 15; b++) O[b] = 0;
+					for (v = 0; v < n; v++) O[t[r + v]]++;
+					for (k = g, w = 15; 1 <= w && 0 === O[w]; w--);
+					if (w < k && (k = w), 0 === w) return i[s++] = 20971520, i[s++] = 20971520, o.bits = 1, 0;
+					for (y = 1; y < w && 0 === O[y]; y++);
+					for (k < y && (k = y), b = z = 1; b <= 15; b++) if (z <<= 1, (z -= O[b]) < 0) return -1;
+					if (0 < z && (0 === e || 1 !== w)) return -1;
+					for (B[1] = 0, b = 1; b < 15; b++) B[b + 1] = B[b] + O[b];
+					for (v = 0; v < n; v++) 0 !== t[r + v] && (a[B[t[r + v]]++] = v);
+					if (d = 0 === e ? (A = R = a, 19) : 1 === e ? (A = F, I -= 257, R = N, T -= 257, 256) : (A = U, R = P, -1), b = y, c = s, S = v = E = 0, l = -1, f = (C = 1 << (x = k)) - 1, 1 === e && 852 < C || 2 === e && 592 < C) return 1;
+					for (;;) {
+						for (p = b - S, _ = a[v] < d ? (m = 0, a[v]) : a[v] > d ? (m = R[T + a[v]], A[I + a[v]]) : (m = 96, 0), h = 1 << b - S, y = u = 1 << x; i[c + (E >> S) + (u -= h)] = p << 24 | m << 16 | _ | 0, 0 !== u;);
+						for (h = 1 << b - 1; E & h;) h >>= 1;
+						if (0 !== h ? (E &= h - 1, E += h) : E = 0, v++, 0 == --O[b]) {
+							if (b === w) break;
+							b = t[r + a[v]];
+						}
+						if (k < b && (E & f) !== l) {
+							for (0 === S && (S = k), c += y, z = 1 << (x = b - S); x + S < w && !((z -= O[x + S]) <= 0);) x++, z <<= 1;
+							if (C += 1 << x, 1 === e && 852 < C || 2 === e && 592 < C) return 1;
+							i[l = E & f] = k << 24 | x << 16 | c - s | 0;
+						}
+					}
+					return 0 !== E && (i[c + E] = b - S << 24 | 4194304), o.bits = k, 0;
+				};
+			}, { "../utils/common": 41 }],
+			51: [function(e, t, r) {
+				"use strict";
+				t.exports = {
+					2: "need dictionary",
+					1: "stream end",
+					0: "",
+					"-1": "file error",
+					"-2": "stream error",
+					"-3": "data error",
+					"-4": "insufficient memory",
+					"-5": "buffer error",
+					"-6": "incompatible version"
+				};
+			}, {}],
+			52: [function(e, t, r) {
+				"use strict";
+				var i = e("../utils/common"), o = 0, h = 1;
+				function n(e) {
+					for (var t = e.length; 0 <= --t;) e[t] = 0;
+				}
+				var s = 0, a = 29, u = 256, l = u + 1 + a, f = 30, c = 19, _ = 2 * l + 1, g = 15, d = 16, p = 7, m = 256, b = 16, v = 17, y = 18, w = [
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					1,
+					1,
+					1,
+					1,
+					2,
+					2,
+					2,
+					2,
+					3,
+					3,
+					3,
+					3,
+					4,
+					4,
+					4,
+					4,
+					5,
+					5,
+					5,
+					5,
+					0
+				], k = [
+					0,
+					0,
+					0,
+					0,
+					1,
+					1,
+					2,
+					2,
+					3,
+					3,
+					4,
+					4,
+					5,
+					5,
+					6,
+					6,
+					7,
+					7,
+					8,
+					8,
+					9,
+					9,
+					10,
+					10,
+					11,
+					11,
+					12,
+					12,
+					13,
+					13
+				], x = [
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					2,
+					3,
+					7
+				], S = [
+					16,
+					17,
+					18,
+					0,
+					8,
+					7,
+					9,
+					6,
+					10,
+					5,
+					11,
+					4,
+					12,
+					3,
+					13,
+					2,
+					14,
+					1,
+					15
+				], z = new Array(2 * (l + 2));
+				n(z);
+				var C = new Array(2 * f);
+				n(C);
+				var E = new Array(512);
+				n(E);
+				var A = new Array(256);
+				n(A);
+				var I = new Array(a);
+				n(I);
+				var O, B, R, T = new Array(f);
+				function D(e, t, r, n, i) {
+					this.static_tree = e, this.extra_bits = t, this.extra_base = r, this.elems = n, this.max_length = i, this.has_stree = e && e.length;
+				}
+				function F(e, t) {
+					this.dyn_tree = e, this.max_code = 0, this.stat_desc = t;
+				}
+				function N(e) {
+					return e < 256 ? E[e] : E[256 + (e >>> 7)];
+				}
+				function U(e, t) {
+					e.pending_buf[e.pending++] = 255 & t, e.pending_buf[e.pending++] = t >>> 8 & 255;
+				}
+				function P(e, t, r) {
+					e.bi_valid > d - r ? (e.bi_buf |= t << e.bi_valid & 65535, U(e, e.bi_buf), e.bi_buf = t >> d - e.bi_valid, e.bi_valid += r - d) : (e.bi_buf |= t << e.bi_valid & 65535, e.bi_valid += r);
+				}
+				function L(e, t, r) {
+					P(e, r[2 * t], r[2 * t + 1]);
+				}
+				function j(e, t) {
+					for (var r = 0; r |= 1 & e, e >>>= 1, r <<= 1, 0 < --t;);
+					return r >>> 1;
+				}
+				function Z(e, t, r) {
+					var n, i, s = new Array(g + 1), a = 0;
+					for (n = 1; n <= g; n++) s[n] = a = a + r[n - 1] << 1;
+					for (i = 0; i <= t; i++) {
+						var o = e[2 * i + 1];
+						0 !== o && (e[2 * i] = j(s[o]++, o));
+					}
+				}
+				function W(e) {
+					var t = 0;
+					for (; t < l; t++) e.dyn_ltree[2 * t] = 0;
+					for (t = 0; t < f; t++) e.dyn_dtree[2 * t] = 0;
+					for (t = 0; t < c; t++) e.bl_tree[2 * t] = 0;
+					e.dyn_ltree[2 * m] = 1, e.opt_len = e.static_len = 0, e.last_lit = e.matches = 0;
+				}
+				function M(e) {
+					8 < e.bi_valid ? U(e, e.bi_buf) : 0 < e.bi_valid && (e.pending_buf[e.pending++] = e.bi_buf), e.bi_buf = 0, e.bi_valid = 0;
+				}
+				function H(e, t, r, n) {
+					var i = 2 * t, s = 2 * r;
+					return e[i] < e[s] || e[i] === e[s] && n[t] <= n[r];
+				}
+				function G(e, t, r) {
+					for (var n = e.heap[r], i = r << 1; i <= e.heap_len && (i < e.heap_len && H(t, e.heap[i + 1], e.heap[i], e.depth) && i++, !H(t, n, e.heap[i], e.depth));) e.heap[r] = e.heap[i], r = i, i <<= 1;
+					e.heap[r] = n;
+				}
+				function K(e, t, r) {
+					var n, i, s, a, o = 0;
+					if (0 !== e.last_lit) for (; n = e.pending_buf[e.d_buf + 2 * o] << 8 | e.pending_buf[e.d_buf + 2 * o + 1], i = e.pending_buf[e.l_buf + o], o++, 0 === n ? L(e, i, t) : (L(e, (s = A[i]) + u + 1, t), 0 !== (a = w[s]) && P(e, i -= I[s], a), L(e, s = N(--n), r), 0 !== (a = k[s]) && P(e, n -= T[s], a)), o < e.last_lit;);
+					L(e, m, t);
+				}
+				function Y(e, t) {
+					var r, n, i, s = t.dyn_tree, a = t.stat_desc.static_tree, o = t.stat_desc.has_stree, h = t.stat_desc.elems, u = -1;
+					for (e.heap_len = 0, e.heap_max = _, r = 0; r < h; r++) 0 !== s[2 * r] ? (e.heap[++e.heap_len] = u = r, e.depth[r] = 0) : s[2 * r + 1] = 0;
+					for (; e.heap_len < 2;) s[2 * (i = e.heap[++e.heap_len] = u < 2 ? ++u : 0)] = 1, e.depth[i] = 0, e.opt_len--, o && (e.static_len -= a[2 * i + 1]);
+					for (t.max_code = u, r = e.heap_len >> 1; 1 <= r; r--) G(e, s, r);
+					for (i = h; r = e.heap[1], e.heap[1] = e.heap[e.heap_len--], G(e, s, 1), n = e.heap[1], e.heap[--e.heap_max] = r, e.heap[--e.heap_max] = n, s[2 * i] = s[2 * r] + s[2 * n], e.depth[i] = (e.depth[r] >= e.depth[n] ? e.depth[r] : e.depth[n]) + 1, s[2 * r + 1] = s[2 * n + 1] = i, e.heap[1] = i++, G(e, s, 1), 2 <= e.heap_len;);
+					e.heap[--e.heap_max] = e.heap[1], function(e, t) {
+						var r, n, i, s, a, o, h = t.dyn_tree, u = t.max_code, l = t.stat_desc.static_tree, f = t.stat_desc.has_stree, c = t.stat_desc.extra_bits, d = t.stat_desc.extra_base, p = t.stat_desc.max_length, m = 0;
+						for (s = 0; s <= g; s++) e.bl_count[s] = 0;
+						for (h[2 * e.heap[e.heap_max] + 1] = 0, r = e.heap_max + 1; r < _; r++) p < (s = h[2 * h[2 * (n = e.heap[r]) + 1] + 1] + 1) && (s = p, m++), h[2 * n + 1] = s, u < n || (e.bl_count[s]++, a = 0, d <= n && (a = c[n - d]), o = h[2 * n], e.opt_len += o * (s + a), f && (e.static_len += o * (l[2 * n + 1] + a)));
+						if (0 !== m) {
+							do {
+								for (s = p - 1; 0 === e.bl_count[s];) s--;
+								e.bl_count[s]--, e.bl_count[s + 1] += 2, e.bl_count[p]--, m -= 2;
+							} while (0 < m);
+							for (s = p; 0 !== s; s--) for (n = e.bl_count[s]; 0 !== n;) u < (i = e.heap[--r]) || (h[2 * i + 1] !== s && (e.opt_len += (s - h[2 * i + 1]) * h[2 * i], h[2 * i + 1] = s), n--);
+						}
+					}(e, t), Z(s, u, e.bl_count);
+				}
+				function X(e, t, r) {
+					var n, i, s = -1, a = t[1], o = 0, h = 7, u = 4;
+					for (0 === a && (h = 138, u = 3), t[2 * (r + 1) + 1] = 65535, n = 0; n <= r; n++) i = a, a = t[2 * (n + 1) + 1], ++o < h && i === a || (o < u ? e.bl_tree[2 * i] += o : 0 !== i ? (i !== s && e.bl_tree[2 * i]++, e.bl_tree[2 * b]++) : o <= 10 ? e.bl_tree[2 * v]++ : e.bl_tree[2 * y]++, s = i, u = (o = 0) === a ? (h = 138, 3) : i === a ? (h = 6, 3) : (h = 7, 4));
+				}
+				function V(e, t, r) {
+					var n, i, s = -1, a = t[1], o = 0, h = 7, u = 4;
+					for (0 === a && (h = 138, u = 3), n = 0; n <= r; n++) if (i = a, a = t[2 * (n + 1) + 1], !(++o < h && i === a)) {
+						if (o < u) for (; L(e, i, e.bl_tree), 0 != --o;);
+						else 0 !== i ? (i !== s && (L(e, i, e.bl_tree), o--), L(e, b, e.bl_tree), P(e, o - 3, 2)) : o <= 10 ? (L(e, v, e.bl_tree), P(e, o - 3, 3)) : (L(e, y, e.bl_tree), P(e, o - 11, 7));
+						s = i, u = (o = 0) === a ? (h = 138, 3) : i === a ? (h = 6, 3) : (h = 7, 4);
+					}
+				}
+				n(T);
+				var q = !1;
+				function J(e, t, r, n) {
+					P(e, (s << 1) + (n ? 1 : 0), 3), function(e, t, r, n) {
+						M(e), n && (U(e, r), U(e, ~r)), i.arraySet(e.pending_buf, e.window, t, r, e.pending), e.pending += r;
+					}(e, t, r, !0);
+				}
+				r._tr_init = function(e) {
+					q || (function() {
+						var e, t, r, n, i, s = new Array(g + 1);
+						for (n = r = 0; n < a - 1; n++) for (I[n] = r, e = 0; e < 1 << w[n]; e++) A[r++] = n;
+						for (A[r - 1] = n, n = i = 0; n < 16; n++) for (T[n] = i, e = 0; e < 1 << k[n]; e++) E[i++] = n;
+						for (i >>= 7; n < f; n++) for (T[n] = i << 7, e = 0; e < 1 << k[n] - 7; e++) E[256 + i++] = n;
+						for (t = 0; t <= g; t++) s[t] = 0;
+						for (e = 0; e <= 143;) z[2 * e + 1] = 8, e++, s[8]++;
+						for (; e <= 255;) z[2 * e + 1] = 9, e++, s[9]++;
+						for (; e <= 279;) z[2 * e + 1] = 7, e++, s[7]++;
+						for (; e <= 287;) z[2 * e + 1] = 8, e++, s[8]++;
+						for (Z(z, l + 1, s), e = 0; e < f; e++) C[2 * e + 1] = 5, C[2 * e] = j(e, 5);
+						O = new D(z, w, u + 1, l, g), B = new D(C, k, 0, f, g), R = new D(new Array(0), x, 0, c, p);
+					}(), q = !0), e.l_desc = new F(e.dyn_ltree, O), e.d_desc = new F(e.dyn_dtree, B), e.bl_desc = new F(e.bl_tree, R), e.bi_buf = 0, e.bi_valid = 0, W(e);
+				}, r._tr_stored_block = J, r._tr_flush_block = function(e, t, r, n) {
+					var i, s, a = 0;
+					0 < e.level ? (2 === e.strm.data_type && (e.strm.data_type = function(e) {
+						var t, r = 4093624447;
+						for (t = 0; t <= 31; t++, r >>>= 1) if (1 & r && 0 !== e.dyn_ltree[2 * t]) return o;
+						if (0 !== e.dyn_ltree[18] || 0 !== e.dyn_ltree[20] || 0 !== e.dyn_ltree[26]) return h;
+						for (t = 32; t < u; t++) if (0 !== e.dyn_ltree[2 * t]) return h;
+						return o;
+					}(e)), Y(e, e.l_desc), Y(e, e.d_desc), a = function(e) {
+						var t;
+						for (X(e, e.dyn_ltree, e.l_desc.max_code), X(e, e.dyn_dtree, e.d_desc.max_code), Y(e, e.bl_desc), t = c - 1; 3 <= t && 0 === e.bl_tree[2 * S[t] + 1]; t--);
+						return e.opt_len += 3 * (t + 1) + 5 + 5 + 4, t;
+					}(e), i = e.opt_len + 3 + 7 >>> 3, (s = e.static_len + 3 + 7 >>> 3) <= i && (i = s)) : i = s = r + 5, r + 4 <= i && -1 !== t ? J(e, t, r, n) : 4 === e.strategy || s === i ? (P(e, 2 + (n ? 1 : 0), 3), K(e, z, C)) : (P(e, 4 + (n ? 1 : 0), 3), function(e, t, r, n) {
+						var i;
+						for (P(e, t - 257, 5), P(e, r - 1, 5), P(e, n - 4, 4), i = 0; i < n; i++) P(e, e.bl_tree[2 * S[i] + 1], 3);
+						V(e, e.dyn_ltree, t - 1), V(e, e.dyn_dtree, r - 1);
+					}(e, e.l_desc.max_code + 1, e.d_desc.max_code + 1, a + 1), K(e, e.dyn_ltree, e.dyn_dtree)), W(e), n && M(e);
+				}, r._tr_tally = function(e, t, r) {
+					return e.pending_buf[e.d_buf + 2 * e.last_lit] = t >>> 8 & 255, e.pending_buf[e.d_buf + 2 * e.last_lit + 1] = 255 & t, e.pending_buf[e.l_buf + e.last_lit] = 255 & r, e.last_lit++, 0 === t ? e.dyn_ltree[2 * r]++ : (e.matches++, t--, e.dyn_ltree[2 * (A[r] + u + 1)]++, e.dyn_dtree[2 * N(t)]++), e.last_lit === e.lit_bufsize - 1;
+				}, r._tr_align = function(e) {
+					P(e, 2, 3), L(e, m, z), function(e) {
+						16 === e.bi_valid ? (U(e, e.bi_buf), e.bi_buf = 0, e.bi_valid = 0) : 8 <= e.bi_valid && (e.pending_buf[e.pending++] = 255 & e.bi_buf, e.bi_buf >>= 8, e.bi_valid -= 8);
+					}(e);
+				};
+			}, { "../utils/common": 41 }],
+			53: [function(e, t, r) {
+				"use strict";
+				t.exports = function() {
+					this.input = null, this.next_in = 0, this.avail_in = 0, this.total_in = 0, this.output = null, this.next_out = 0, this.avail_out = 0, this.total_out = 0, this.msg = "", this.state = null, this.data_type = 2, this.adler = 0;
+				};
+			}, {}],
+			54: [function(e, t, r) {
+				(function(e) {
+					(function(r, n) {
+						"use strict";
+						if (!r.setImmediate) {
+							var i, s, t, a, o = 1, h = {}, u = !1, l = r.document, e = Object.getPrototypeOf && Object.getPrototypeOf(r);
+							e = e && e.setTimeout ? e : r, i = "[object process]" === {}.toString.call(r.process) ? function(e) {
+								process.nextTick(function() {
+									c(e);
+								});
+							} : function() {
+								if (r.postMessage && !r.importScripts) {
+									var e = !0, t = r.onmessage;
+									return r.onmessage = function() {
+										e = !1;
+									}, r.postMessage("", "*"), r.onmessage = t, e;
+								}
+							}() ? (a = "setImmediate$" + Math.random() + "$", r.addEventListener ? r.addEventListener("message", d, !1) : r.attachEvent("onmessage", d), function(e) {
+								r.postMessage(a + e, "*");
+							}) : r.MessageChannel ? ((t = new MessageChannel()).port1.onmessage = function(e) {
+								c(e.data);
+							}, function(e) {
+								t.port2.postMessage(e);
+							}) : l && "onreadystatechange" in l.createElement("script") ? (s = l.documentElement, function(e) {
+								var t = l.createElement("script");
+								t.onreadystatechange = function() {
+									c(e), t.onreadystatechange = null, s.removeChild(t), t = null;
+								}, s.appendChild(t);
+							}) : function(e) {
+								setTimeout(c, 0, e);
+							}, e.setImmediate = function(e) {
+								"function" != typeof e && (e = new Function("" + e));
+								for (var t = new Array(arguments.length - 1), r = 0; r < t.length; r++) t[r] = arguments[r + 1];
+								return h[o] = {
+									callback: e,
+									args: t
+								}, i(o), o++;
+							}, e.clearImmediate = f;
+						}
+						function f(e) {
+							delete h[e];
+						}
+						function c(e) {
+							if (u) setTimeout(c, 0, e);
+							else {
+								var t = h[e];
+								if (t) {
+									u = !0;
+									try {
+										(function(e) {
+											var t = e.callback, r = e.args;
+											switch (r.length) {
+												case 0:
+													t();
+													break;
+												case 1:
+													t(r[0]);
+													break;
+												case 2:
+													t(r[0], r[1]);
+													break;
+												case 3:
+													t(r[0], r[1], r[2]);
+													break;
+												default: t.apply(n, r);
+											}
+										})(t);
+									} finally {
+										f(e), u = !1;
+									}
+								}
+							}
+						}
+						function d(e) {
+							e.source === r && "string" == typeof e.data && 0 === e.data.indexOf(a) && c(+e.data.slice(a.length));
+						}
+					})("undefined" == typeof self ? void 0 === e ? this : e : self);
+				}).call(this, "undefined" != typeof global ? global : "undefined" != typeof self ? self : "undefined" != typeof window ? window : {});
+			}, {}]
+		}, {}, [10])(10);
+	});
+}));
+
+//#endregion
+//#region src/resourcePacks.js
+var import_jszip_min = /* @__PURE__ */ __toESM(require_jszip_min());
+async function readResourcePack(data) {
+	let zip;
+	try {
+		zip = await import_jszip_min.default.loadAsync(data);
+	} catch {
+		throw Error("无法读取 ZIP 文件");
 	}
+	const roots = zip.file(/(^|\/)pack\.mcmeta$/);
+	const metadata = zip.file("pack.mcmeta") || (roots.length === 1 ? roots[0] : null);
+	if (!metadata) throw Error("材质包缺少 pack.mcmeta");
+	try {
+		const json = JSON.parse((await metadata.async("string")).trimStart());
+		if (!json.pack || typeof json.pack !== "object") throw Error();
+	} catch {
+		throw Error("pack.mcmeta 格式无效");
+	}
+	const prefix = metadata.name.slice(0, -11);
+	const root = prefix ? zip.folder(prefix) : zip;
+	if (!root.file(/^assets\/minecraft\//).length) throw Error("材质包没有可用的 Minecraft 资源");
+	return root;
 }
 
 //#endregion
@@ -50478,6 +50050,4095 @@ function setEntityHitboxesVisible(root, enabled) {
 			object.add(overlay);
 		}
 		if (overlay) overlay.visible = !!enabled && !record.bounds.invisible;
+	}
+}
+
+//#endregion
+//#region src/entityModel.js
+function cuboidFaces(c, texW, texH) {
+	const { u, v, x, y, z, dx, dy, dz, mirror } = c;
+	const [rx, ry, rz] = c.dil || [
+		0,
+		0,
+		0
+	];
+	let x0 = x - rx, y0 = y - ry, z0 = z - rz;
+	let x1 = x + dx + rx, y1 = y + dy + ry, z1 = z + dz + rz;
+	if (mirror) {
+		const t = x0;
+		x0 = x1;
+		x1 = t;
+	}
+	const V = {
+		v0: [
+			x0,
+			y0,
+			z0
+		],
+		v1: [
+			x1,
+			y0,
+			z0
+		],
+		v2: [
+			x1,
+			y1,
+			z0
+		],
+		v3: [
+			x0,
+			y1,
+			z0
+		],
+		v4: [
+			x0,
+			y0,
+			z1
+		],
+		v5: [
+			x1,
+			y0,
+			z1
+		],
+		v6: [
+			x1,
+			y1,
+			z1
+		],
+		v7: [
+			x0,
+			y1,
+			z1
+		]
+	};
+	const uN = u + dz, uE = u + dz + dx, uE2 = u + dz + dx + dx;
+	const uS = u + dz + dx + dz, uS2 = u + dz + dx + dz + dx;
+	const vT = v, vM = v + dz, vB = v + dz + dy;
+	const flatX = x0 === x1, flatY = y0 === y1, flatZ = z0 === z1;
+	const FACES = [
+		[
+			[
+				"v5",
+				"v4",
+				"v0",
+				"v1"
+			],
+			[
+				uN,
+				vT,
+				uE,
+				vM
+			],
+			[
+				0,
+				-1,
+				0
+			],
+			flatX || flatY || flatZ
+		],
+		[
+			[
+				"v2",
+				"v3",
+				"v7",
+				"v6"
+			],
+			[
+				uE,
+				vM,
+				uE2,
+				vT
+			],
+			[
+				0,
+				1,
+				0
+			],
+			flatX || flatZ
+		],
+		[
+			[
+				"v0",
+				"v4",
+				"v7",
+				"v3"
+			],
+			[
+				u,
+				vM,
+				uN,
+				vB
+			],
+			[
+				-1,
+				0,
+				0
+			],
+			flatX || flatY || flatZ
+		],
+		[
+			[
+				"v1",
+				"v0",
+				"v3",
+				"v2"
+			],
+			[
+				uN,
+				vM,
+				uE,
+				vB
+			],
+			[
+				0,
+				0,
+				-1
+			],
+			flatX || flatY || flatZ
+		],
+		[
+			[
+				"v5",
+				"v1",
+				"v2",
+				"v6"
+			],
+			[
+				uE,
+				vM,
+				uS,
+				vB
+			],
+			[
+				1,
+				0,
+				0
+			],
+			flatY || flatZ
+		],
+		[
+			[
+				"v4",
+				"v5",
+				"v6",
+				"v7"
+			],
+			[
+				uS,
+				vM,
+				uS2,
+				vB
+			],
+			[
+				0,
+				0,
+				1
+			],
+			flatX || flatY
+		]
+	];
+	if (flatY) FACES[1][1] = [
+		uN,
+		vM,
+		uE,
+		vT
+	];
+	if (flatZ) FACES[5][1] = [
+		uE,
+		vM,
+		uN,
+		vB
+	];
+	if (flatX) FACES[4][1] = [
+		uN,
+		vM,
+		u,
+		vB
+	];
+	const out = [];
+	for (const [idx, [u1, v1, u2, v2], dir, skip] of FACES) {
+		if (skip) continue;
+		const nuv = (uu, vv) => [uu / texW, vv / texH];
+		let pairs = [
+			[V[idx[0]], nuv(u2, v1)],
+			[V[idx[1]], nuv(u1, v1)],
+			[V[idx[2]], nuv(u1, v2)],
+			[V[idx[3]], nuv(u2, v2)]
+		];
+		let d = dir;
+		if (mirror && d[0] !== 0) d = [
+			-d[0],
+			d[1],
+			d[2]
+		];
+		if (mirror) pairs.reverse();
+		out.push({
+			verts: pairs.map((p) => p[0]),
+			uvs: pairs.map((p) => p[1]),
+			dir: d
+		});
+	}
+	return out;
+}
+function partRotation(rot) {
+	const [pitch, yaw, roll] = rot;
+	const cx = Math.cos(pitch), sx = Math.sin(pitch);
+	const cy = Math.cos(yaw), sy = Math.sin(yaw);
+	const cr = Math.cos(roll), sr = Math.sin(roll);
+	return ([x, y, z]) => {
+		const y1 = y * cx - z * sx, z1 = y * sx + z * cx;
+		const x2 = x * cy + z1 * sy, z2 = -x * sy + z1 * cy;
+		return [
+			x2 * cr - y1 * sr,
+			x2 * sr + y1 * cr,
+			z2
+		];
+	};
+}
+const add3 = (a, b) => [
+	a[0] + b[0],
+	a[1] + b[1],
+	a[2] + b[2]
+];
+function compileModel(model, includeParts = false) {
+	const { w, h, parts } = model;
+	const quads = [];
+	const walk = (node, toModel, toDir) => {
+		for (const name of Object.keys(node)) {
+			const p = node[name];
+			const rotate = partRotation(p.rot || [
+				0,
+				0,
+				0
+			]);
+			const pivot = p.pivot || [
+				0,
+				0,
+				0
+			];
+			const childToModel = (pt) => toModel(add3(pivot, rotate(pt)));
+			const childToDir = (d) => toDir(rotate(d));
+			for (const c of p.cuboids || []) for (const face of cuboidFaces(c, w, h)) {
+				const verts = face.verts.map(childToModel).map(([mx, my, mz]) => [
+					mx / 16,
+					(24 - my) / 16,
+					-mz / 16
+				]);
+				const nd = childToDir(face.dir);
+				const quad = {
+					verts,
+					uvs: face.uvs,
+					normal: [
+						nd[0],
+						-nd[1],
+						-nd[2]
+					]
+				};
+				if (includeParts) quad.part = p;
+				quads.push(quad);
+			}
+			walk(p.children || {}, childToModel, childToDir);
+		}
+	};
+	walk(parts, (p) => p, (d) => d);
+	return quads;
+}
+function quadsToEntityMesh(quads, mat) {
+	return new Mesh(quadsToEntityGeometry(quads), mat);
+}
+function quadsToEntityGeometry(quads) {
+	const n = quads.length;
+	const positions = new Float32Array(n * 12);
+	const uvs = new Float32Array(n * 8);
+	const normals = new Float32Array(n * 12);
+	const indices = new Uint32Array(n * 6);
+	for (let i = 0; i < n; i++) {
+		const q = quads[i];
+		for (let k = 0; k < 4; k++) {
+			positions[i * 12 + k * 3] = q.verts[k][0];
+			positions[i * 12 + k * 3 + 1] = q.verts[k][1];
+			positions[i * 12 + k * 3 + 2] = q.verts[k][2];
+			uvs[i * 8 + k * 2] = q.uvs[k][0];
+			uvs[i * 8 + k * 2 + 1] = q.uvs[k][1];
+			normals[i * 12 + k * 3] = q.normal[0];
+			normals[i * 12 + k * 3 + 1] = q.normal[1];
+			normals[i * 12 + k * 3 + 2] = q.normal[2];
+		}
+		const b = i * 4;
+		indices[i * 6] = b;
+		indices[i * 6 + 1] = b + 1;
+		indices[i * 6 + 2] = b + 2;
+		indices[i * 6 + 3] = b;
+		indices[i * 6 + 4] = b + 2;
+		indices[i * 6 + 5] = b + 3;
+	}
+	const geo = new BufferGeometry();
+	geo.setAttribute("position", new BufferAttribute(positions, 3));
+	geo.setAttribute("uv", new BufferAttribute(uvs, 2));
+	geo.setAttribute("normal", new BufferAttribute(normals, 3));
+	geo.setIndex(new BufferAttribute(indices, 1));
+	return geo;
+}
+const modelTemplates = /* @__PURE__ */ new Map();
+const MAX_MODEL_TEMPLATES = 128;
+const MAX_MODEL_BYTES = 8388608;
+let modelBytes = 0;
+function modelTemplate(model) {
+	const key = JSON.stringify([
+		model.w,
+		model.h,
+		model.parts
+	]);
+	let template = modelTemplates.get(key);
+	if (template) {
+		modelTemplates.delete(key);
+		modelTemplates.set(key, template);
+		return template;
+	}
+	const quads = compileModel(model, true);
+	const geometry = quadsToEntityGeometry(quads);
+	const indices = /* @__PURE__ */ new Map();
+	let boneIndex = 1;
+	const walk = (nodes) => {
+		for (const node of Object.values(nodes)) {
+			indices.set(node, boneIndex++);
+			walk(node.children || {});
+		}
+	};
+	walk(model.parts);
+	const skinIndices = new Uint16Array(quads.length * 16);
+	const skinWeights = new Float32Array(quads.length * 16);
+	for (let i = 0; i < quads.length; i++) for (let k = 0; k < 4; k++) {
+		skinIndices[i * 16 + k * 4] = indices.get(quads[i].part);
+		skinWeights[i * 16 + k * 4] = 1;
+	}
+	const bytes = key.length * 2 + geometry.index.array.byteLength + skinIndices.byteLength + skinWeights.byteLength + Object.values(geometry.attributes).reduce((sum, attribute) => sum + attribute.array.byteLength, 0);
+	template = {
+		geometry,
+		skinIndices,
+		skinWeights,
+		sphere: null,
+		bytes
+	};
+	if (bytes <= MAX_MODEL_BYTES) {
+		modelTemplates.set(key, template);
+		modelBytes += bytes;
+		while (modelTemplates.size > MAX_MODEL_TEMPLATES || modelBytes > MAX_MODEL_BYTES) {
+			const oldest = modelTemplates.keys().next().value;
+			modelBytes -= modelTemplates.get(oldest).bytes;
+			modelTemplates.delete(oldest);
+		}
+	}
+	return template;
+}
+function createEntityModelMesh(model, material) {
+	return new Mesh(modelTemplate(model).geometry.clone(), material);
+}
+var EntitySkeleton = class extends Skeleton {
+	constructor(bones) {
+		super(bones);
+		const indices = new Map(bones.map((bone, index) => [bone, index]));
+		this.parentIndices = bones.map((bone) => indices.get(bone.parent) ?? -1);
+		this.modelMatrices = bones.map(() => new Matrix4());
+		this.offsetMatrix = new Matrix4();
+	}
+	update() {
+		for (let i = 0; i < this.bones.length; i++) {
+			const matrix = this.modelMatrices[i].copy(this.bones[i].matrix);
+			const parent = this.parentIndices[i];
+			if (parent >= 0) matrix.premultiply(this.modelMatrices[parent]);
+			this.offsetMatrix.multiplyMatrices(matrix, this.boneInverses[i]).toArray(this.boneMatrices, i * 16);
+		}
+		if (this.boneTexture) this.boneTexture.needsUpdate = true;
+	}
+};
+var EntitySkinnedMesh = class extends SkinnedMesh {
+	applyBoneTransform(index, target) {
+		const boneIndex = this.geometry.attributes.skinIndex.getX(index);
+		target.applyMatrix4(this.skeleton.boneInverses[boneIndex]);
+		for (let bone = this.skeleton.bones[boneIndex]; bone && bone !== this; bone = bone.parent) target.applyMatrix4(bone.matrix);
+		return target;
+	}
+};
+function createEntityRig(model, material) {
+	const template = modelTemplate(model);
+	const geometry = template.geometry.clone();
+	const root = new Bone();
+	root.position.y = 24 / 16;
+	root.scale.set(1 / 16, -1 / 16, -1 / 16);
+	const bones = [root];
+	const parts = {};
+	const walk = (nodes, parent) => {
+		for (const [name, node] of Object.entries(nodes)) {
+			const bone = new Bone();
+			bone.name = name;
+			bone.position.fromArray(node.pivot || [
+				0,
+				0,
+				0
+			]);
+			bone.rotation.set(...node.rot || [
+				0,
+				0,
+				0
+			], "ZYX");
+			bone.userData.restPosition = bone.position.clone();
+			bone.userData.restRotation = bone.rotation.clone();
+			bones.push(bone);
+			parts[name] = bone;
+			parent.add(bone);
+			walk(node.children || {}, bone);
+		}
+	};
+	walk(model.parts, root);
+	geometry.setAttribute("skinIndex", new Uint16BufferAttribute(template.skinIndices, 4));
+	geometry.setAttribute("skinWeight", new Float32BufferAttribute(template.skinWeights, 4));
+	const mesh = new EntitySkinnedMesh(geometry, material);
+	mesh.bindMode = DetachedBindMode;
+	mesh.add(root);
+	mesh.bind(new EntitySkeleton(bones));
+	if (!template.sphere) {
+		mesh.computeBoundingSphere();
+		mesh.boundingSphere.radius += 1.5;
+		template.sphere = mesh.boundingSphere.clone();
+	} else mesh.boundingSphere = template.sphere.clone();
+	mesh.userData.parts = parts;
+	mesh.userData.resetPose = () => {
+		for (let i = 1; i < bones.length; i++) {
+			const bone = bones[i];
+			bone.position.copy(bone.userData.restPosition);
+			bone.rotation.copy(bone.userData.restRotation);
+			bone.scale.setScalar(1);
+		}
+	};
+	geometry.addEventListener("dispose", () => mesh.skeleton.dispose());
+	return mesh;
+}
+function sortTransparentFaces(mesh) {
+	const faces = Array.from({ length: mesh.geometry.index.count / 6 }, (_, index) => ({
+		index,
+		distance: 0
+	}));
+	const cameraPosition = new Vector3();
+	const center = new Vector3();
+	const opposite = new Vector3();
+	return (camera) => {
+		cameraPosition.setFromMatrixPosition(camera.matrixWorld);
+		for (const face of faces) {
+			mesh.getVertexPosition(face.index * 4, center);
+			mesh.getVertexPosition(face.index * 4 + 2, opposite);
+			center.add(opposite).multiplyScalar(.5).applyMatrix4(mesh.matrixWorld);
+			face.distance = center.distanceToSquared(cameraPosition);
+		}
+		faces.sort((a, b) => b.distance - a.distance || a.index - b.index);
+		const indices = mesh.geometry.index;
+		for (let i = 0; i < faces.length; i++) {
+			const b = faces[i].index * 4, offset = i * 6;
+			indices.array[offset] = b;
+			indices.array[offset + 1] = b + 1;
+			indices.array[offset + 2] = b + 2;
+			indices.array[offset + 3] = b;
+			indices.array[offset + 4] = b + 2;
+			indices.array[offset + 5] = b + 3;
+		}
+		indices.needsUpdate = true;
+	};
+}
+
+//#endregion
+//#region node_modules/three/examples/jsm/controls/OrbitControls.js
+/**
+* Fires when the camera has been transformed by the controls.
+*
+* @event OrbitControls#change
+* @type {Object}
+*/
+const _changeEvent = { type: "change" };
+/**
+* Fires when an interaction was initiated.
+*
+* @event OrbitControls#start
+* @type {Object}
+*/
+const _startEvent = { type: "start" };
+/**
+* Fires when an interaction has finished.
+*
+* @event OrbitControls#end
+* @type {Object}
+*/
+const _endEvent = { type: "end" };
+const _ray = new Ray();
+const _plane = new Plane();
+const _TILT_LIMIT = Math.cos(70 * MathUtils.DEG2RAD);
+const _v = new Vector3();
+const _twoPI = 2 * Math.PI;
+const _STATE = {
+	NONE: -1,
+	ROTATE: 0,
+	DOLLY: 1,
+	PAN: 2,
+	TOUCH_ROTATE: 3,
+	TOUCH_PAN: 4,
+	TOUCH_DOLLY_PAN: 5,
+	TOUCH_DOLLY_ROTATE: 6
+};
+const _EPS = 1e-6;
+/**
+* Orbit controls allow the camera to orbit around a target.
+*
+* OrbitControls performs orbiting, dollying (zooming), and panning. Unlike {@link TrackballControls},
+* it maintains the "up" direction `object.up` (+Y by default).
+*
+* - Orbit: Left mouse / touch: one-finger move.
+* - Zoom: Middle mouse, or mousewheel / touch: two-finger spread or squish.
+* - Pan: Right mouse, or left mouse + ctrl/meta/shiftKey, or arrow keys / touch: two-finger move.
+*
+* ```js
+* const controls = new OrbitControls( camera, renderer.domElement );
+*
+* // controls.update() must be called after any manual changes to the camera's transform
+* camera.position.set( 0, 20, 100 );
+* controls.update();
+*
+* function animate() {
+*
+* 	// required if controls.enableDamping or controls.autoRotate are set to true
+* 	controls.update();
+*
+* 	renderer.render( scene, camera );
+*
+* }
+* ```
+*
+* @augments Controls
+* @three_import import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+*/
+var OrbitControls = class extends Controls {
+	/**
+	* Constructs a new controls instance.
+	*
+	* @param {Object3D} object - The object that is managed by the controls.
+	* @param {?HTMLElement} domElement - The HTML element used for event listeners.
+	*/
+	constructor(object, domElement = null) {
+		super(object, domElement);
+		this.state = _STATE.NONE;
+		/**
+		* The focus point of the controls, the `object` orbits around this.
+		* It can be updated manually at any point to change the focus of the controls.
+		*
+		* @type {Vector3}
+		*/
+		this.target = new Vector3();
+		/**
+		* The focus point of the `minTargetRadius` and `maxTargetRadius` limits.
+		* It can be updated manually at any point to change the center of interest
+		* for the `target`.
+		*
+		* @type {Vector3}
+		*/
+		this.cursor = new Vector3();
+		/**
+		* How far you can dolly in (perspective camera only).
+		*
+		* @type {number}
+		* @default 0
+		*/
+		this.minDistance = 0;
+		/**
+		* How far you can dolly out (perspective camera only).
+		*
+		* @type {number}
+		* @default Infinity
+		*/
+		this.maxDistance = Infinity;
+		/**
+		* How far you can zoom in (orthographic camera only).
+		*
+		* @type {number}
+		* @default 0
+		*/
+		this.minZoom = 0;
+		/**
+		* How far you can zoom out (orthographic camera only).
+		*
+		* @type {number}
+		* @default Infinity
+		*/
+		this.maxZoom = Infinity;
+		/**
+		* How close you can get the target to the 3D `cursor`.
+		*
+		* @type {number}
+		* @default 0
+		*/
+		this.minTargetRadius = 0;
+		/**
+		* How far you can move the target from the 3D `cursor`.
+		*
+		* @type {number}
+		* @default Infinity
+		*/
+		this.maxTargetRadius = Infinity;
+		/**
+		* How far you can orbit vertically, lower limit. Range is `[0, Math.PI]` radians.
+		*
+		* @type {number}
+		* @default 0
+		*/
+		this.minPolarAngle = 0;
+		/**
+		* How far you can orbit vertically, upper limit. Range is `[0, Math.PI]` radians.
+		*
+		* @type {number}
+		* @default Math.PI
+		*/
+		this.maxPolarAngle = Math.PI;
+		/**
+		* How far you can orbit horizontally, lower limit. If set, the interval `[ min, max ]`
+		* must be a sub-interval of `[ - 2 PI, 2 PI ]`, with `( max - min < 2 PI )`.
+		*
+		* @type {number}
+		* @default -Infinity
+		*/
+		this.minAzimuthAngle = -Infinity;
+		/**
+		* How far you can orbit horizontally, upper limit. If set, the interval `[ min, max ]`
+		* must be a sub-interval of `[ - 2 PI, 2 PI ]`, with `( max - min < 2 PI )`.
+		*
+		* @type {number}
+		* @default -Infinity
+		*/
+		this.maxAzimuthAngle = Infinity;
+		/**
+		* Set to `true` to enable damping (inertia), which can be used to give a sense of weight
+		* to the controls. Note that if this is enabled, you must call `update()` in your animation
+		* loop.
+		*
+		* @type {boolean}
+		* @default false
+		*/
+		this.enableDamping = false;
+		/**
+		* The damping inertia used if `enableDamping` is set to `true`.
+		*
+		* Note that for this to work, you must call `update()` in your animation loop.
+		*
+		* @type {number}
+		* @default 0.05
+		*/
+		this.dampingFactor = .05;
+		/**
+		* Enable or disable zooming (dollying) of the camera.
+		*
+		* @type {boolean}
+		* @default true
+		*/
+		this.enableZoom = true;
+		/**
+		* Speed of zooming / dollying.
+		*
+		* @type {number}
+		* @default 1
+		*/
+		this.zoomSpeed = 1;
+		/**
+		* Enable or disable horizontal and vertical rotation of the camera.
+		*
+		* Note that it is possible to disable a single axis by setting the min and max of the
+		* `minPolarAngle` or `minAzimuthAngle` to the same value, which will cause the vertical
+		* or horizontal rotation to be fixed at that value.
+		*
+		* @type {boolean}
+		* @default true
+		*/
+		this.enableRotate = true;
+		/**
+		* Speed of rotation.
+		*
+		* @type {number}
+		* @default 1
+		*/
+		this.rotateSpeed = 1;
+		/**
+		* How fast to rotate the camera when the keyboard is used.
+		*
+		* @type {number}
+		* @default 1
+		*/
+		this.keyRotateSpeed = 1;
+		/**
+		* Enable or disable camera panning.
+		*
+		* @type {boolean}
+		* @default true
+		*/
+		this.enablePan = true;
+		/**
+		* Speed of panning.
+		*
+		* @type {number}
+		* @default 1
+		*/
+		this.panSpeed = 1;
+		/**
+		* Defines how the camera's position is translated when panning. If `true`, the camera pans
+		* in screen space. Otherwise, the camera pans in the plane orthogonal to the camera's up
+		* direction.
+		*
+		* @type {boolean}
+		* @default true
+		*/
+		this.screenSpacePanning = true;
+		/**
+		* How fast to pan the camera when the keyboard is used in
+		* pixels per keypress.
+		*
+		* @type {number}
+		* @default 7
+		*/
+		this.keyPanSpeed = 7;
+		/**
+		* Setting this property to `true` allows to zoom to the cursor's position.
+		*
+		* @type {boolean}
+		* @default false
+		*/
+		this.zoomToCursor = false;
+		/**
+		* Set to true to automatically rotate around the target
+		*
+		* Note that if this is enabled, you must call `update()` in your animation loop.
+		* If you want the auto-rotate speed to be independent of the frame rate (the refresh
+		* rate of the display), you must pass the time `deltaTime`, in seconds, to `update()`.
+		*
+		* @type {boolean}
+		* @default false
+		*/
+		this.autoRotate = false;
+		/**
+		* How fast to rotate around the target if `autoRotate` is `true`. The default  equates to 30 seconds
+		* per orbit at 60fps.
+		*
+		* Note that if `autoRotate` is enabled, you must call `update()` in your animation loop.
+		*
+		* @type {number}
+		* @default 2
+		*/
+		this.autoRotateSpeed = 2;
+		/**
+		* This object contains references to the keycodes for controlling camera panning.
+		*
+		* ```js
+		* controls.keys = {
+		* 	LEFT: 'ArrowLeft', //left arrow
+		* 	UP: 'ArrowUp', // up arrow
+		* 	RIGHT: 'ArrowRight', // right arrow
+		* 	BOTTOM: 'ArrowDown' // down arrow
+		* }
+		* ```
+		* @type {Object}
+		*/
+		this.keys = {
+			LEFT: "ArrowLeft",
+			UP: "ArrowUp",
+			RIGHT: "ArrowRight",
+			BOTTOM: "ArrowDown"
+		};
+		/**
+		* This object contains references to the mouse actions used by the controls.
+		*
+		* ```js
+		* controls.mouseButtons = {
+		* 	LEFT: THREE.MOUSE.ROTATE,
+		* 	MIDDLE: THREE.MOUSE.DOLLY,
+		* 	RIGHT: THREE.MOUSE.PAN
+		* }
+		* ```
+		* @type {Object}
+		*/
+		this.mouseButtons = {
+			LEFT: MOUSE.ROTATE,
+			MIDDLE: MOUSE.DOLLY,
+			RIGHT: MOUSE.PAN
+		};
+		/**
+		* This object contains references to the touch actions used by the controls.
+		*
+		* ```js
+		* controls.mouseButtons = {
+		* 	ONE: THREE.TOUCH.ROTATE,
+		* 	TWO: THREE.TOUCH.DOLLY_PAN
+		* }
+		* ```
+		* @type {Object}
+		*/
+		this.touches = {
+			ONE: TOUCH.ROTATE,
+			TWO: TOUCH.DOLLY_PAN
+		};
+		/**
+		* Used internally by `saveState()` and `reset()`.
+		*
+		* @type {Vector3}
+		*/
+		this.target0 = this.target.clone();
+		/**
+		* Used internally by `saveState()` and `reset()`.
+		*
+		* @type {Vector3}
+		*/
+		this.position0 = this.object.position.clone();
+		/**
+		* Used internally by `saveState()` and `reset()`.
+		*
+		* @type {number}
+		*/
+		this.zoom0 = this.object.zoom;
+		this._cursorStyle = "auto";
+		this._domElementKeyEvents = null;
+		this._lastPosition = new Vector3();
+		this._lastQuaternion = new Quaternion();
+		this._lastTargetPosition = new Vector3();
+		this._quat = new Quaternion().setFromUnitVectors(object.up, new Vector3(0, 1, 0));
+		this._quatInverse = this._quat.clone().invert();
+		this._spherical = new Spherical();
+		this._sphericalDelta = new Spherical();
+		this._scale = 1;
+		this._panOffset = new Vector3();
+		this._rotateStart = new Vector2();
+		this._rotateEnd = new Vector2();
+		this._rotateDelta = new Vector2();
+		this._panStart = new Vector2();
+		this._panEnd = new Vector2();
+		this._panDelta = new Vector2();
+		this._dollyStart = new Vector2();
+		this._dollyEnd = new Vector2();
+		this._dollyDelta = new Vector2();
+		this._dollyDirection = new Vector3();
+		this._mouse = new Vector2();
+		this._performCursorZoom = false;
+		this._pointers = [];
+		this._pointerPositions = {};
+		this._controlActive = false;
+		this._onPointerMove = onPointerMove.bind(this);
+		this._onPointerDown = onPointerDown.bind(this);
+		this._onPointerUp = onPointerUp.bind(this);
+		this._onContextMenu = onContextMenu.bind(this);
+		this._onMouseWheel = onMouseWheel.bind(this);
+		this._onKeyDown = onKeyDown.bind(this);
+		this._onTouchStart = onTouchStart.bind(this);
+		this._onTouchMove = onTouchMove.bind(this);
+		this._onMouseDown = onMouseDown.bind(this);
+		this._onMouseMove = onMouseMove.bind(this);
+		this._interceptControlDown = interceptControlDown.bind(this);
+		this._interceptControlUp = interceptControlUp.bind(this);
+		if (this.domElement !== null) this.connect(this.domElement);
+		this.update();
+	}
+	/**
+	* Defines the visual representation of the cursor.
+	*
+	* @type {('auto'|'grab')}
+	* @default 'auto'
+	*/
+	set cursorStyle(type) {
+		this._cursorStyle = type;
+		if (type === "grab") this.domElement.style.cursor = "grab";
+		else this.domElement.style.cursor = "auto";
+	}
+	get cursorStyle() {
+		return this._cursorStyle;
+	}
+	connect(element) {
+		super.connect(element);
+		this.domElement.addEventListener("pointerdown", this._onPointerDown);
+		this.domElement.addEventListener("pointercancel", this._onPointerUp);
+		this.domElement.addEventListener("contextmenu", this._onContextMenu);
+		this.domElement.addEventListener("wheel", this._onMouseWheel, { passive: false });
+		this.domElement.getRootNode().addEventListener("keydown", this._interceptControlDown, {
+			passive: true,
+			capture: true
+		});
+		this.domElement.style.touchAction = "none";
+	}
+	disconnect() {
+		this.state = _STATE.NONE;
+		this.domElement.removeEventListener("pointerdown", this._onPointerDown);
+		this.domElement.ownerDocument.removeEventListener("pointermove", this._onPointerMove);
+		this.domElement.ownerDocument.removeEventListener("pointerup", this._onPointerUp);
+		this.domElement.removeEventListener("pointercancel", this._onPointerUp);
+		this.domElement.removeEventListener("wheel", this._onMouseWheel);
+		this.domElement.removeEventListener("contextmenu", this._onContextMenu);
+		this.stopListenToKeyEvents();
+		const document = this.domElement.getRootNode();
+		document.removeEventListener("keydown", this._interceptControlDown, { capture: true });
+		document.removeEventListener("keyup", this._interceptControlUp, { capture: true });
+		this._controlActive = false;
+		this._pointers.length = 0;
+		this._pointerPositions = {};
+		this.domElement.style.touchAction = "";
+		this.domElement.style.cursor = "auto";
+	}
+	dispose() {
+		this.disconnect();
+	}
+	/**
+	* Get the current vertical rotation, in radians.
+	*
+	* @return {number} The current vertical rotation, in radians.
+	*/
+	getPolarAngle() {
+		return this._spherical.phi;
+	}
+	/**
+	* Get the current horizontal rotation, in radians.
+	*
+	* @return {number} The current horizontal rotation, in radians.
+	*/
+	getAzimuthalAngle() {
+		return this._spherical.theta;
+	}
+	/**
+	* Returns the distance from the camera to the target.
+	*
+	* @return {number} The distance from the camera to the target.
+	*/
+	getDistance() {
+		return this.object.position.distanceTo(this.target);
+	}
+	/**
+	* Adds key event listeners to the given DOM element.
+	* `window` is a recommended argument for using this method.
+	*
+	* @param {HTMLElement} domElement - The DOM element
+	*/
+	listenToKeyEvents(domElement) {
+		domElement.addEventListener("keydown", this._onKeyDown);
+		this._domElementKeyEvents = domElement;
+	}
+	/**
+	* Removes the key event listener previously defined with `listenToKeyEvents()`.
+	*/
+	stopListenToKeyEvents() {
+		if (this._domElementKeyEvents !== null) {
+			this._domElementKeyEvents.removeEventListener("keydown", this._onKeyDown);
+			this._domElementKeyEvents = null;
+		}
+	}
+	/**
+	* Save the current state of the controls. This can later be recovered with `reset()`.
+	*/
+	saveState() {
+		this.target0.copy(this.target);
+		this.position0.copy(this.object.position);
+		this.zoom0 = this.object.zoom;
+	}
+	/**
+	* Reset the controls to their state from either the last time the `saveState()`
+	* was called, or the initial state.
+	*/
+	reset() {
+		this.target.copy(this.target0);
+		this.object.position.copy(this.position0);
+		this.object.zoom = this.zoom0;
+		this.object.updateProjectionMatrix();
+		this.dispatchEvent(_changeEvent);
+		this.update();
+		this.state = _STATE.NONE;
+	}
+	/**
+	* Programmatically pan the camera.
+	*
+	* @param {number} deltaX - The horizontal pan amount in pixels.
+	* @param {number} deltaY - The vertical pan amount in pixels.
+	*/
+	pan(deltaX, deltaY) {
+		this._pan(deltaX, deltaY);
+		this.update();
+	}
+	/**
+	* Programmatically dolly in (zoom in for perspective camera).
+	*
+	* @param {number} dollyScale - The dolly scale factor.
+	*/
+	dollyIn(dollyScale) {
+		this._dollyIn(dollyScale);
+		this.update();
+	}
+	/**
+	* Programmatically dolly out (zoom out for perspective camera).
+	*
+	* @param {number} dollyScale - The dolly scale factor.
+	*/
+	dollyOut(dollyScale) {
+		this._dollyOut(dollyScale);
+		this.update();
+	}
+	/**
+	* Programmatically rotate the camera left (around the vertical axis).
+	*
+	* @param {number} angle - The rotation angle in radians.
+	*/
+	rotateLeft(angle) {
+		this._rotateLeft(angle);
+		this.update();
+	}
+	/**
+	* Programmatically rotate the camera up (around the horizontal axis).
+	*
+	* @param {number} angle - The rotation angle in radians.
+	*/
+	rotateUp(angle) {
+		this._rotateUp(angle);
+		this.update();
+	}
+	update(deltaTime = null) {
+		const position = this.object.position;
+		_v.copy(position).sub(this.target);
+		_v.applyQuaternion(this._quat);
+		this._spherical.setFromVector3(_v);
+		if (this.autoRotate && this.state === _STATE.NONE) this._rotateLeft(this._getAutoRotationAngle(deltaTime));
+		if (this.enableDamping) {
+			this._spherical.theta += this._sphericalDelta.theta * this.dampingFactor;
+			this._spherical.phi += this._sphericalDelta.phi * this.dampingFactor;
+		} else {
+			this._spherical.theta += this._sphericalDelta.theta;
+			this._spherical.phi += this._sphericalDelta.phi;
+		}
+		let min = this.minAzimuthAngle;
+		let max = this.maxAzimuthAngle;
+		if (isFinite(min) && isFinite(max)) {
+			if (min < -Math.PI) min += _twoPI;
+			else if (min > Math.PI) min -= _twoPI;
+			if (max < -Math.PI) max += _twoPI;
+			else if (max > Math.PI) max -= _twoPI;
+			if (min <= max) this._spherical.theta = Math.max(min, Math.min(max, this._spherical.theta));
+			else this._spherical.theta = this._spherical.theta > (min + max) / 2 ? Math.max(min, this._spherical.theta) : Math.min(max, this._spherical.theta);
+		}
+		this._spherical.phi = Math.max(this.minPolarAngle, Math.min(this.maxPolarAngle, this._spherical.phi));
+		this._spherical.makeSafe();
+		if (this.enableDamping === true) this.target.addScaledVector(this._panOffset, this.dampingFactor);
+		else this.target.add(this._panOffset);
+		this.target.sub(this.cursor);
+		this.target.clampLength(this.minTargetRadius, this.maxTargetRadius);
+		this.target.add(this.cursor);
+		let zoomChanged = false;
+		if (this.zoomToCursor && this._performCursorZoom || this.object.isOrthographicCamera) this._spherical.radius = this._clampDistance(this._spherical.radius);
+		else {
+			const prevRadius = this._spherical.radius;
+			this._spherical.radius = this._clampDistance(this._spherical.radius * this._scale);
+			zoomChanged = prevRadius != this._spherical.radius;
+		}
+		_v.setFromSpherical(this._spherical);
+		_v.applyQuaternion(this._quatInverse);
+		position.copy(this.target).add(_v);
+		this.object.lookAt(this.target);
+		if (this.enableDamping === true) {
+			this._sphericalDelta.theta *= 1 - this.dampingFactor;
+			this._sphericalDelta.phi *= 1 - this.dampingFactor;
+			this._panOffset.multiplyScalar(1 - this.dampingFactor);
+		} else {
+			this._sphericalDelta.set(0, 0, 0);
+			this._panOffset.set(0, 0, 0);
+		}
+		if (this.zoomToCursor && this._performCursorZoom) {
+			let newRadius = null;
+			if (this.object.isPerspectiveCamera) {
+				const prevRadius = _v.length();
+				newRadius = this._clampDistance(prevRadius * this._scale);
+				const radiusDelta = prevRadius - newRadius;
+				this.object.position.addScaledVector(this._dollyDirection, radiusDelta);
+				this.object.updateMatrixWorld();
+				zoomChanged = !!radiusDelta;
+			} else if (this.object.isOrthographicCamera) {
+				const mouseBefore = new Vector3(this._mouse.x, this._mouse.y, 0);
+				mouseBefore.unproject(this.object);
+				const prevZoom = this.object.zoom;
+				this.object.zoom = Math.max(this.minZoom, Math.min(this.maxZoom, this.object.zoom / this._scale));
+				this.object.updateProjectionMatrix();
+				zoomChanged = prevZoom !== this.object.zoom;
+				const mouseAfter = new Vector3(this._mouse.x, this._mouse.y, 0);
+				mouseAfter.unproject(this.object);
+				this.object.position.sub(mouseAfter).add(mouseBefore);
+				this.object.updateMatrixWorld();
+				newRadius = _v.length();
+			} else {
+				console.warn("WARNING: OrbitControls.js encountered an unknown camera type - zoom to cursor disabled.");
+				this.zoomToCursor = false;
+			}
+			if (newRadius !== null) {
+				if (this.screenSpacePanning) this.target.set(0, 0, -1).transformDirection(this.object.matrix).multiplyScalar(newRadius).add(this.object.position);
+				else {
+					_ray.origin.copy(this.object.position);
+					_ray.direction.set(0, 0, -1).transformDirection(this.object.matrix);
+					if (Math.abs(this.object.up.dot(_ray.direction)) < _TILT_LIMIT) this.object.lookAt(this.target);
+					else {
+						_plane.setFromNormalAndCoplanarPoint(this.object.up, this.target);
+						_ray.intersectPlane(_plane, this.target);
+					}
+				}
+			}
+		} else if (this.object.isOrthographicCamera) {
+			const prevZoom = this.object.zoom;
+			this.object.zoom = Math.max(this.minZoom, Math.min(this.maxZoom, this.object.zoom / this._scale));
+			if (prevZoom !== this.object.zoom) {
+				this.object.updateProjectionMatrix();
+				zoomChanged = true;
+			}
+		}
+		this._scale = 1;
+		this._performCursorZoom = false;
+		if (zoomChanged || this._lastPosition.distanceToSquared(this.object.position) > _EPS || 8 * (1 - this._lastQuaternion.dot(this.object.quaternion)) > _EPS || this._lastTargetPosition.distanceToSquared(this.target) > _EPS) {
+			this.dispatchEvent(_changeEvent);
+			this._lastPosition.copy(this.object.position);
+			this._lastQuaternion.copy(this.object.quaternion);
+			this._lastTargetPosition.copy(this.target);
+			return true;
+		}
+		return false;
+	}
+	_getAutoRotationAngle(deltaTime) {
+		if (deltaTime !== null) return _twoPI / 60 * this.autoRotateSpeed * deltaTime;
+		else return _twoPI / 60 / 60 * this.autoRotateSpeed;
+	}
+	_getZoomScale(delta) {
+		const normalizedDelta = Math.abs(delta * .01);
+		return Math.pow(.95, this.zoomSpeed * normalizedDelta);
+	}
+	_rotateLeft(angle) {
+		this._sphericalDelta.theta -= angle;
+	}
+	_rotateUp(angle) {
+		this._sphericalDelta.phi -= angle;
+	}
+	_panLeft(distance, objectMatrix) {
+		_v.setFromMatrixColumn(objectMatrix, 0);
+		_v.multiplyScalar(-distance);
+		this._panOffset.add(_v);
+	}
+	_panUp(distance, objectMatrix) {
+		if (this.screenSpacePanning === true) _v.setFromMatrixColumn(objectMatrix, 1);
+		else {
+			_v.setFromMatrixColumn(objectMatrix, 0);
+			_v.crossVectors(this.object.up, _v);
+		}
+		_v.multiplyScalar(distance);
+		this._panOffset.add(_v);
+	}
+	_pan(deltaX, deltaY) {
+		const element = this.domElement;
+		if (this.object.isPerspectiveCamera) {
+			const position = this.object.position;
+			_v.copy(position).sub(this.target);
+			let targetDistance = _v.length();
+			targetDistance *= Math.tan(this.object.fov / 2 * Math.PI / 180);
+			this._panLeft(2 * deltaX * targetDistance / element.clientHeight, this.object.matrix);
+			this._panUp(2 * deltaY * targetDistance / element.clientHeight, this.object.matrix);
+		} else if (this.object.isOrthographicCamera) {
+			this._panLeft(deltaX * (this.object.right - this.object.left) / this.object.zoom / element.clientWidth, this.object.matrix);
+			this._panUp(deltaY * (this.object.top - this.object.bottom) / this.object.zoom / element.clientHeight, this.object.matrix);
+		} else {
+			console.warn("WARNING: OrbitControls.js encountered an unknown camera type - pan disabled.");
+			this.enablePan = false;
+		}
+	}
+	_dollyOut(dollyScale) {
+		if (this.object.isPerspectiveCamera || this.object.isOrthographicCamera) this._scale /= dollyScale;
+		else {
+			console.warn("WARNING: OrbitControls.js encountered an unknown camera type - dolly/zoom disabled.");
+			this.enableZoom = false;
+		}
+	}
+	_dollyIn(dollyScale) {
+		if (this.object.isPerspectiveCamera || this.object.isOrthographicCamera) this._scale *= dollyScale;
+		else {
+			console.warn("WARNING: OrbitControls.js encountered an unknown camera type - dolly/zoom disabled.");
+			this.enableZoom = false;
+		}
+	}
+	_updateZoomParameters(x, y) {
+		if (!this.zoomToCursor) return;
+		this._performCursorZoom = true;
+		const rect = this.domElement.getBoundingClientRect();
+		const dx = x - rect.left;
+		const dy = y - rect.top;
+		const w = rect.width;
+		const h = rect.height;
+		this._mouse.x = dx / w * 2 - 1;
+		this._mouse.y = -(dy / h) * 2 + 1;
+		this._dollyDirection.set(this._mouse.x, this._mouse.y, 1).unproject(this.object).sub(this.object.position).normalize();
+	}
+	_clampDistance(dist) {
+		return Math.max(this.minDistance, Math.min(this.maxDistance, dist));
+	}
+	_handleMouseDownRotate(event) {
+		this._rotateStart.set(event.clientX, event.clientY);
+	}
+	_handleMouseDownDolly(event) {
+		this._updateZoomParameters(event.clientX, event.clientX);
+		this._dollyStart.set(event.clientX, event.clientY);
+	}
+	_handleMouseDownPan(event) {
+		this._panStart.set(event.clientX, event.clientY);
+	}
+	_handleMouseMoveRotate(event) {
+		this._rotateEnd.set(event.clientX, event.clientY);
+		this._rotateDelta.subVectors(this._rotateEnd, this._rotateStart).multiplyScalar(this.rotateSpeed);
+		const element = this.domElement;
+		this._rotateLeft(_twoPI * this._rotateDelta.x / element.clientHeight);
+		this._rotateUp(_twoPI * this._rotateDelta.y / element.clientHeight);
+		this._rotateStart.copy(this._rotateEnd);
+		this.update();
+	}
+	_handleMouseMoveDolly(event) {
+		this._dollyEnd.set(event.clientX, event.clientY);
+		this._dollyDelta.subVectors(this._dollyEnd, this._dollyStart);
+		if (this._dollyDelta.y > 0) this._dollyOut(this._getZoomScale(this._dollyDelta.y));
+		else if (this._dollyDelta.y < 0) this._dollyIn(this._getZoomScale(this._dollyDelta.y));
+		this._dollyStart.copy(this._dollyEnd);
+		this.update();
+	}
+	_handleMouseMovePan(event) {
+		this._panEnd.set(event.clientX, event.clientY);
+		this._panDelta.subVectors(this._panEnd, this._panStart).multiplyScalar(this.panSpeed);
+		this._pan(this._panDelta.x, this._panDelta.y);
+		this._panStart.copy(this._panEnd);
+		this.update();
+	}
+	_handleMouseWheel(event) {
+		this._updateZoomParameters(event.clientX, event.clientY);
+		if (event.deltaY < 0) this._dollyIn(this._getZoomScale(event.deltaY));
+		else if (event.deltaY > 0) this._dollyOut(this._getZoomScale(event.deltaY));
+		this.update();
+	}
+	_handleKeyDown(event) {
+		let needsUpdate = false;
+		switch (event.code) {
+			case this.keys.UP:
+				if (event.ctrlKey || event.metaKey || event.shiftKey) {
+					if (this.enableRotate) this._rotateUp(_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
+				} else if (this.enablePan) this._pan(0, this.keyPanSpeed);
+				needsUpdate = true;
+				break;
+			case this.keys.BOTTOM:
+				if (event.ctrlKey || event.metaKey || event.shiftKey) {
+					if (this.enableRotate) this._rotateUp(-_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
+				} else if (this.enablePan) this._pan(0, -this.keyPanSpeed);
+				needsUpdate = true;
+				break;
+			case this.keys.LEFT:
+				if (event.ctrlKey || event.metaKey || event.shiftKey) {
+					if (this.enableRotate) this._rotateLeft(_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
+				} else if (this.enablePan) this._pan(this.keyPanSpeed, 0);
+				needsUpdate = true;
+				break;
+			case this.keys.RIGHT:
+				if (event.ctrlKey || event.metaKey || event.shiftKey) {
+					if (this.enableRotate) this._rotateLeft(-_twoPI * this.keyRotateSpeed / this.domElement.clientHeight);
+				} else if (this.enablePan) this._pan(-this.keyPanSpeed, 0);
+				needsUpdate = true;
+		}
+		if (needsUpdate) {
+			event.preventDefault();
+			this.update();
+		}
+	}
+	_handleTouchStartRotate(event) {
+		if (this._pointers.length === 1) this._rotateStart.set(event.pageX, event.pageY);
+		else {
+			const position = this._getSecondPointerPosition(event);
+			const x = .5 * (event.pageX + position.x);
+			const y = .5 * (event.pageY + position.y);
+			this._rotateStart.set(x, y);
+		}
+	}
+	_handleTouchStartPan(event) {
+		if (this._pointers.length === 1) this._panStart.set(event.pageX, event.pageY);
+		else {
+			const position = this._getSecondPointerPosition(event);
+			const x = .5 * (event.pageX + position.x);
+			const y = .5 * (event.pageY + position.y);
+			this._panStart.set(x, y);
+		}
+	}
+	_handleTouchStartDolly(event) {
+		const position = this._getSecondPointerPosition(event);
+		const dx = event.pageX - position.x;
+		const dy = event.pageY - position.y;
+		const distance = Math.sqrt(dx * dx + dy * dy);
+		this._dollyStart.set(0, distance);
+	}
+	_handleTouchStartDollyPan(event) {
+		if (this.enableZoom) this._handleTouchStartDolly(event);
+		if (this.enablePan) this._handleTouchStartPan(event);
+	}
+	_handleTouchStartDollyRotate(event) {
+		if (this.enableZoom) this._handleTouchStartDolly(event);
+		if (this.enableRotate) this._handleTouchStartRotate(event);
+	}
+	_handleTouchMoveRotate(event) {
+		if (this._pointers.length == 1) this._rotateEnd.set(event.pageX, event.pageY);
+		else {
+			const position = this._getSecondPointerPosition(event);
+			const x = .5 * (event.pageX + position.x);
+			const y = .5 * (event.pageY + position.y);
+			this._rotateEnd.set(x, y);
+		}
+		this._rotateDelta.subVectors(this._rotateEnd, this._rotateStart).multiplyScalar(this.rotateSpeed);
+		const element = this.domElement;
+		this._rotateLeft(_twoPI * this._rotateDelta.x / element.clientHeight);
+		this._rotateUp(_twoPI * this._rotateDelta.y / element.clientHeight);
+		this._rotateStart.copy(this._rotateEnd);
+	}
+	_handleTouchMovePan(event) {
+		if (this._pointers.length === 1) this._panEnd.set(event.pageX, event.pageY);
+		else {
+			const position = this._getSecondPointerPosition(event);
+			const x = .5 * (event.pageX + position.x);
+			const y = .5 * (event.pageY + position.y);
+			this._panEnd.set(x, y);
+		}
+		this._panDelta.subVectors(this._panEnd, this._panStart).multiplyScalar(this.panSpeed);
+		this._pan(this._panDelta.x, this._panDelta.y);
+		this._panStart.copy(this._panEnd);
+	}
+	_handleTouchMoveDolly(event) {
+		const position = this._getSecondPointerPosition(event);
+		const dx = event.pageX - position.x;
+		const dy = event.pageY - position.y;
+		const distance = Math.sqrt(dx * dx + dy * dy);
+		this._dollyEnd.set(0, distance);
+		this._dollyDelta.set(0, Math.pow(this._dollyEnd.y / this._dollyStart.y, this.zoomSpeed));
+		this._dollyOut(this._dollyDelta.y);
+		this._dollyStart.copy(this._dollyEnd);
+		const centerX = (event.pageX + position.x) * .5;
+		const centerY = (event.pageY + position.y) * .5;
+		this._updateZoomParameters(centerX, centerY);
+	}
+	_handleTouchMoveDollyPan(event) {
+		if (this.enableZoom) this._handleTouchMoveDolly(event);
+		if (this.enablePan) this._handleTouchMovePan(event);
+	}
+	_handleTouchMoveDollyRotate(event) {
+		if (this.enableZoom) this._handleTouchMoveDolly(event);
+		if (this.enableRotate) this._handleTouchMoveRotate(event);
+	}
+	_addPointer(event) {
+		this._pointers.push(event.pointerId);
+	}
+	_removePointer(event) {
+		delete this._pointerPositions[event.pointerId];
+		for (let i = 0; i < this._pointers.length; i++) if (this._pointers[i] == event.pointerId) {
+			this._pointers.splice(i, 1);
+			return;
+		}
+	}
+	_isTrackingPointer(event) {
+		for (let i = 0; i < this._pointers.length; i++) if (this._pointers[i] == event.pointerId) return true;
+		return false;
+	}
+	_trackPointer(event) {
+		let position = this._pointerPositions[event.pointerId];
+		if (position === void 0) {
+			position = new Vector2();
+			this._pointerPositions[event.pointerId] = position;
+		}
+		position.set(event.pageX, event.pageY);
+	}
+	_getSecondPointerPosition(event) {
+		const pointerId = event.pointerId === this._pointers[0] ? this._pointers[1] : this._pointers[0];
+		return this._pointerPositions[pointerId];
+	}
+	_customWheelEvent(event) {
+		const mode = event.deltaMode;
+		const newEvent = {
+			clientX: event.clientX,
+			clientY: event.clientY,
+			deltaY: event.deltaY
+		};
+		switch (mode) {
+			case 1:
+				newEvent.deltaY *= 16;
+				break;
+			case 2: newEvent.deltaY *= 100;
+		}
+		if (event.ctrlKey && !this._controlActive) newEvent.deltaY *= 10;
+		return newEvent;
+	}
+};
+function onPointerDown(event) {
+	if (this.enabled === false) return;
+	if (this._pointers.length === 0) {
+		this.domElement.setPointerCapture(event.pointerId);
+		this.domElement.ownerDocument.addEventListener("pointermove", this._onPointerMove);
+		this.domElement.ownerDocument.addEventListener("pointerup", this._onPointerUp);
+	}
+	if (this._isTrackingPointer(event)) return;
+	this._addPointer(event);
+	if (event.pointerType === "touch") this._onTouchStart(event);
+	else this._onMouseDown(event);
+	if (this._cursorStyle === "grab") this.domElement.style.cursor = "grabbing";
+}
+function onPointerMove(event) {
+	if (this.enabled === false) return;
+	if (event.pointerType === "touch") this._onTouchMove(event);
+	else this._onMouseMove(event);
+}
+function onPointerUp(event) {
+	this._removePointer(event);
+	switch (this._pointers.length) {
+		case 0:
+			this.domElement.releasePointerCapture(event.pointerId);
+			this.domElement.ownerDocument.removeEventListener("pointermove", this._onPointerMove);
+			this.domElement.ownerDocument.removeEventListener("pointerup", this._onPointerUp);
+			this.dispatchEvent(_endEvent);
+			this.state = _STATE.NONE;
+			if (this._cursorStyle === "grab") this.domElement.style.cursor = "grab";
+			break;
+		case 1:
+			const pointerId = this._pointers[0];
+			const position = this._pointerPositions[pointerId];
+			this._onTouchStart({
+				pointerId,
+				pageX: position.x,
+				pageY: position.y
+			});
+	}
+}
+function onMouseDown(event) {
+	let mouseAction;
+	switch (event.button) {
+		case 0:
+			mouseAction = this.mouseButtons.LEFT;
+			break;
+		case 1:
+			mouseAction = this.mouseButtons.MIDDLE;
+			break;
+		case 2:
+			mouseAction = this.mouseButtons.RIGHT;
+			break;
+		default: mouseAction = -1;
+	}
+	switch (mouseAction) {
+		case MOUSE.DOLLY:
+			if (this.enableZoom === false) return;
+			this._handleMouseDownDolly(event);
+			this.state = _STATE.DOLLY;
+			break;
+		case MOUSE.ROTATE:
+			if (event.ctrlKey || event.metaKey || event.shiftKey) {
+				if (this.enablePan === false) return;
+				this._handleMouseDownPan(event);
+				this.state = _STATE.PAN;
+			} else {
+				if (this.enableRotate === false) return;
+				this._handleMouseDownRotate(event);
+				this.state = _STATE.ROTATE;
+			}
+			break;
+		case MOUSE.PAN:
+			if (event.ctrlKey || event.metaKey || event.shiftKey) {
+				if (this.enableRotate === false) return;
+				this._handleMouseDownRotate(event);
+				this.state = _STATE.ROTATE;
+			} else {
+				if (this.enablePan === false) return;
+				this._handleMouseDownPan(event);
+				this.state = _STATE.PAN;
+			}
+			break;
+		default: this.state = _STATE.NONE;
+	}
+	if (this.state !== _STATE.NONE) this.dispatchEvent(_startEvent);
+}
+function onMouseMove(event) {
+	switch (this.state) {
+		case _STATE.ROTATE:
+			if (this.enableRotate === false) return;
+			this._handleMouseMoveRotate(event);
+			break;
+		case _STATE.DOLLY:
+			if (this.enableZoom === false) return;
+			this._handleMouseMoveDolly(event);
+			break;
+		case _STATE.PAN:
+			if (this.enablePan === false) return;
+			this._handleMouseMovePan(event);
+	}
+}
+function onMouseWheel(event) {
+	if (this.enabled === false || this.enableZoom === false || this.state !== _STATE.NONE) return;
+	event.preventDefault();
+	this.dispatchEvent(_startEvent);
+	this._handleMouseWheel(this._customWheelEvent(event));
+	this.dispatchEvent(_endEvent);
+}
+function onKeyDown(event) {
+	if (this.enabled === false) return;
+	this._handleKeyDown(event);
+}
+function onTouchStart(event) {
+	this._trackPointer(event);
+	switch (this._pointers.length) {
+		case 1:
+			switch (this.touches.ONE) {
+				case TOUCH.ROTATE:
+					if (this.enableRotate === false) return;
+					this._handleTouchStartRotate(event);
+					this.state = _STATE.TOUCH_ROTATE;
+					break;
+				case TOUCH.PAN:
+					if (this.enablePan === false) return;
+					this._handleTouchStartPan(event);
+					this.state = _STATE.TOUCH_PAN;
+					break;
+				default: this.state = _STATE.NONE;
+			}
+			break;
+		case 2:
+			switch (this.touches.TWO) {
+				case TOUCH.DOLLY_PAN:
+					if (this.enableZoom === false && this.enablePan === false) return;
+					this._handleTouchStartDollyPan(event);
+					this.state = _STATE.TOUCH_DOLLY_PAN;
+					break;
+				case TOUCH.DOLLY_ROTATE:
+					if (this.enableZoom === false && this.enableRotate === false) return;
+					this._handleTouchStartDollyRotate(event);
+					this.state = _STATE.TOUCH_DOLLY_ROTATE;
+					break;
+				default: this.state = _STATE.NONE;
+			}
+			break;
+		default: this.state = _STATE.NONE;
+	}
+	if (this.state !== _STATE.NONE) this.dispatchEvent(_startEvent);
+}
+function onTouchMove(event) {
+	this._trackPointer(event);
+	switch (this.state) {
+		case _STATE.TOUCH_ROTATE:
+			if (this.enableRotate === false) return;
+			this._handleTouchMoveRotate(event);
+			this.update();
+			break;
+		case _STATE.TOUCH_PAN:
+			if (this.enablePan === false) return;
+			this._handleTouchMovePan(event);
+			this.update();
+			break;
+		case _STATE.TOUCH_DOLLY_PAN:
+			if (this.enableZoom === false && this.enablePan === false) return;
+			this._handleTouchMoveDollyPan(event);
+			this.update();
+			break;
+		case _STATE.TOUCH_DOLLY_ROTATE:
+			if (this.enableZoom === false && this.enableRotate === false) return;
+			this._handleTouchMoveDollyRotate(event);
+			this.update();
+			break;
+		default: this.state = _STATE.NONE;
+	}
+}
+function onContextMenu(event) {
+	if (this.enabled === false) return;
+	event.preventDefault();
+}
+function interceptControlDown(event) {
+	if (event.key === "Control") {
+		this._controlActive = true;
+		this.domElement.getRootNode().addEventListener("keyup", this._interceptControlUp, {
+			passive: true,
+			capture: true
+		});
+	}
+}
+function interceptControlUp(event) {
+	if (event.key === "Control") {
+		this._controlActive = false;
+		this.domElement.getRootNode().removeEventListener("keyup", this._interceptControlUp, {
+			passive: true,
+			capture: true
+		});
+	}
+}
+
+//#endregion
+//#region src/fluidFlowBlocks.js
+const FLUID_FLOW_BLOCKS = /* @__PURE__ */ new Set([
+	"acacia_door",
+	"acacia_fence",
+	"acacia_fence_gate",
+	"acacia_hanging_sign",
+	"acacia_leaves",
+	"acacia_log",
+	"acacia_planks",
+	"acacia_pressure_plate",
+	"acacia_shelf",
+	"acacia_sign",
+	"acacia_slab",
+	"acacia_stairs",
+	"acacia_trapdoor",
+	"acacia_wall_hanging_sign",
+	"acacia_wall_sign",
+	"acacia_wood",
+	"amethyst_block",
+	"amethyst_cluster",
+	"ancient_debris",
+	"andesite",
+	"andesite_slab",
+	"andesite_stairs",
+	"andesite_wall",
+	"anvil",
+	"azalea_leaves",
+	"bamboo",
+	"bamboo_block",
+	"bamboo_door",
+	"bamboo_fence",
+	"bamboo_fence_gate",
+	"bamboo_hanging_sign",
+	"bamboo_mosaic",
+	"bamboo_mosaic_slab",
+	"bamboo_mosaic_stairs",
+	"bamboo_planks",
+	"bamboo_pressure_plate",
+	"bamboo_shelf",
+	"bamboo_sign",
+	"bamboo_slab",
+	"bamboo_stairs",
+	"bamboo_trapdoor",
+	"bamboo_wall_hanging_sign",
+	"bamboo_wall_sign",
+	"barrel",
+	"barrier",
+	"basalt",
+	"beacon",
+	"bedrock",
+	"bee_nest",
+	"beehive",
+	"bell",
+	"birch_door",
+	"birch_fence",
+	"birch_fence_gate",
+	"birch_hanging_sign",
+	"birch_leaves",
+	"birch_log",
+	"birch_planks",
+	"birch_pressure_plate",
+	"birch_shelf",
+	"birch_sign",
+	"birch_slab",
+	"birch_stairs",
+	"birch_trapdoor",
+	"birch_wall_hanging_sign",
+	"birch_wall_sign",
+	"birch_wood",
+	"black_banner",
+	"black_bed",
+	"black_candle_cake",
+	"black_concrete",
+	"black_concrete_powder",
+	"black_concrete_slab",
+	"black_concrete_stairs",
+	"black_glazed_terracotta",
+	"black_shulker_box",
+	"black_stained_glass",
+	"black_stained_glass_pane",
+	"black_terracotta",
+	"black_wall_banner",
+	"black_wool",
+	"black_wool_slab",
+	"black_wool_stairs",
+	"blackstone",
+	"blackstone_slab",
+	"blackstone_stairs",
+	"blackstone_wall",
+	"blast_furnace",
+	"blue_banner",
+	"blue_bed",
+	"blue_candle_cake",
+	"blue_concrete",
+	"blue_concrete_powder",
+	"blue_concrete_slab",
+	"blue_concrete_stairs",
+	"blue_glazed_terracotta",
+	"blue_ice",
+	"blue_shulker_box",
+	"blue_stained_glass",
+	"blue_stained_glass_pane",
+	"blue_terracotta",
+	"blue_wall_banner",
+	"blue_wool",
+	"blue_wool_slab",
+	"blue_wool_stairs",
+	"bone_block",
+	"bookshelf",
+	"brain_coral_block",
+	"brewing_stand",
+	"brick_slab",
+	"brick_stairs",
+	"brick_wall",
+	"bricks",
+	"brown_banner",
+	"brown_bed",
+	"brown_candle_cake",
+	"brown_concrete",
+	"brown_concrete_powder",
+	"brown_concrete_slab",
+	"brown_concrete_stairs",
+	"brown_glazed_terracotta",
+	"brown_mushroom_block",
+	"brown_shulker_box",
+	"brown_stained_glass",
+	"brown_stained_glass_pane",
+	"brown_terracotta",
+	"brown_wall_banner",
+	"brown_wool",
+	"brown_wool_slab",
+	"brown_wool_stairs",
+	"bubble_coral_block",
+	"budding_amethyst",
+	"cactus",
+	"cake",
+	"calcite",
+	"calibrated_sculk_sensor",
+	"campfire",
+	"candle_cake",
+	"cartography_table",
+	"carved_pumpkin",
+	"cauldron",
+	"chain_command_block",
+	"cherry_door",
+	"cherry_fence",
+	"cherry_fence_gate",
+	"cherry_hanging_sign",
+	"cherry_leaves",
+	"cherry_log",
+	"cherry_planks",
+	"cherry_pressure_plate",
+	"cherry_shelf",
+	"cherry_sign",
+	"cherry_slab",
+	"cherry_stairs",
+	"cherry_trapdoor",
+	"cherry_wall_hanging_sign",
+	"cherry_wall_sign",
+	"cherry_wood",
+	"chest",
+	"chipped_anvil",
+	"chiseled_bookshelf",
+	"chiseled_cinnabar",
+	"chiseled_copper",
+	"chiseled_deepslate",
+	"chiseled_nether_bricks",
+	"chiseled_polished_blackstone",
+	"chiseled_quartz_block",
+	"chiseled_red_sandstone",
+	"chiseled_resin_bricks",
+	"chiseled_sandstone",
+	"chiseled_stone_bricks",
+	"chiseled_sulfur",
+	"chiseled_tuff",
+	"chiseled_tuff_bricks",
+	"cinnabar",
+	"cinnabar_brick_slab",
+	"cinnabar_brick_stairs",
+	"cinnabar_brick_wall",
+	"cinnabar_bricks",
+	"cinnabar_slab",
+	"cinnabar_stairs",
+	"cinnabar_wall",
+	"clay",
+	"coal_block",
+	"coal_ore",
+	"coarse_dirt",
+	"cobbled_deepslate",
+	"cobbled_deepslate_slab",
+	"cobbled_deepslate_stairs",
+	"cobbled_deepslate_wall",
+	"cobblestone",
+	"cobblestone_slab",
+	"cobblestone_stairs",
+	"cobblestone_wall",
+	"command_block",
+	"composter",
+	"conduit",
+	"copper_bars",
+	"copper_block",
+	"copper_bulb",
+	"copper_chain",
+	"copper_chest",
+	"copper_door",
+	"copper_grate",
+	"copper_lantern",
+	"copper_ore",
+	"copper_trapdoor",
+	"cracked_deepslate_bricks",
+	"cracked_deepslate_tiles",
+	"cracked_nether_bricks",
+	"cracked_polished_blackstone_bricks",
+	"cracked_stone_bricks",
+	"crafter",
+	"crafting_table",
+	"creaking_heart",
+	"crimson_door",
+	"crimson_fence",
+	"crimson_fence_gate",
+	"crimson_hanging_sign",
+	"crimson_hyphae",
+	"crimson_nylium",
+	"crimson_planks",
+	"crimson_pressure_plate",
+	"crimson_shelf",
+	"crimson_sign",
+	"crimson_slab",
+	"crimson_stairs",
+	"crimson_stem",
+	"crimson_trapdoor",
+	"crimson_wall_hanging_sign",
+	"crimson_wall_sign",
+	"crying_obsidian",
+	"cut_copper",
+	"cut_copper_slab",
+	"cut_copper_stairs",
+	"cut_red_sandstone",
+	"cut_red_sandstone_slab",
+	"cut_sandstone",
+	"cut_sandstone_slab",
+	"cyan_banner",
+	"cyan_bed",
+	"cyan_candle_cake",
+	"cyan_concrete",
+	"cyan_concrete_powder",
+	"cyan_concrete_slab",
+	"cyan_concrete_stairs",
+	"cyan_glazed_terracotta",
+	"cyan_shulker_box",
+	"cyan_stained_glass",
+	"cyan_stained_glass_pane",
+	"cyan_terracotta",
+	"cyan_wall_banner",
+	"cyan_wool",
+	"cyan_wool_slab",
+	"cyan_wool_stairs",
+	"damaged_anvil",
+	"dark_oak_door",
+	"dark_oak_fence",
+	"dark_oak_fence_gate",
+	"dark_oak_hanging_sign",
+	"dark_oak_leaves",
+	"dark_oak_log",
+	"dark_oak_planks",
+	"dark_oak_pressure_plate",
+	"dark_oak_shelf",
+	"dark_oak_sign",
+	"dark_oak_slab",
+	"dark_oak_stairs",
+	"dark_oak_trapdoor",
+	"dark_oak_wall_hanging_sign",
+	"dark_oak_wall_sign",
+	"dark_oak_wood",
+	"dark_prismarine",
+	"dark_prismarine_slab",
+	"dark_prismarine_stairs",
+	"daylight_detector",
+	"dead_brain_coral",
+	"dead_brain_coral_block",
+	"dead_brain_coral_fan",
+	"dead_brain_coral_wall_fan",
+	"dead_bubble_coral",
+	"dead_bubble_coral_block",
+	"dead_bubble_coral_fan",
+	"dead_bubble_coral_wall_fan",
+	"dead_fire_coral",
+	"dead_fire_coral_block",
+	"dead_fire_coral_fan",
+	"dead_fire_coral_wall_fan",
+	"dead_horn_coral",
+	"dead_horn_coral_block",
+	"dead_horn_coral_fan",
+	"dead_horn_coral_wall_fan",
+	"dead_tube_coral",
+	"dead_tube_coral_block",
+	"dead_tube_coral_fan",
+	"dead_tube_coral_wall_fan",
+	"decorated_pot",
+	"deepslate",
+	"deepslate_brick_slab",
+	"deepslate_brick_stairs",
+	"deepslate_brick_wall",
+	"deepslate_bricks",
+	"deepslate_coal_ore",
+	"deepslate_copper_ore",
+	"deepslate_diamond_ore",
+	"deepslate_emerald_ore",
+	"deepslate_gold_ore",
+	"deepslate_iron_ore",
+	"deepslate_lapis_ore",
+	"deepslate_redstone_ore",
+	"deepslate_tile_slab",
+	"deepslate_tile_stairs",
+	"deepslate_tile_wall",
+	"deepslate_tiles",
+	"diamond_block",
+	"diamond_ore",
+	"diorite",
+	"diorite_slab",
+	"diorite_stairs",
+	"diorite_wall",
+	"dirt",
+	"dirt_path",
+	"dispenser",
+	"dragon_egg",
+	"dried_ghast",
+	"dried_kelp_block",
+	"dripstone_block",
+	"dropper",
+	"emerald_block",
+	"emerald_ore",
+	"enchanting_table",
+	"end_portal_frame",
+	"end_stone",
+	"end_stone_brick_slab",
+	"end_stone_brick_stairs",
+	"end_stone_brick_wall",
+	"end_stone_bricks",
+	"ender_chest",
+	"exposed_chiseled_copper",
+	"exposed_copper",
+	"exposed_copper_bars",
+	"exposed_copper_bulb",
+	"exposed_copper_chain",
+	"exposed_copper_chest",
+	"exposed_copper_door",
+	"exposed_copper_grate",
+	"exposed_copper_lantern",
+	"exposed_copper_trapdoor",
+	"exposed_cut_copper",
+	"exposed_cut_copper_slab",
+	"exposed_cut_copper_stairs",
+	"exposed_lightning_rod",
+	"farmland",
+	"fire_coral_block",
+	"fletching_table",
+	"flowering_azalea_leaves",
+	"frosted_ice",
+	"furnace",
+	"gilded_blackstone",
+	"glass",
+	"glass_pane",
+	"glowstone",
+	"gold_block",
+	"gold_ore",
+	"granite",
+	"granite_slab",
+	"granite_stairs",
+	"granite_wall",
+	"grass_block",
+	"gravel",
+	"gray_banner",
+	"gray_bed",
+	"gray_candle_cake",
+	"gray_concrete",
+	"gray_concrete_powder",
+	"gray_concrete_slab",
+	"gray_concrete_stairs",
+	"gray_glazed_terracotta",
+	"gray_shulker_box",
+	"gray_stained_glass",
+	"gray_stained_glass_pane",
+	"gray_terracotta",
+	"gray_wall_banner",
+	"gray_wool",
+	"gray_wool_slab",
+	"gray_wool_stairs",
+	"green_banner",
+	"green_bed",
+	"green_candle_cake",
+	"green_concrete",
+	"green_concrete_powder",
+	"green_concrete_slab",
+	"green_concrete_stairs",
+	"green_glazed_terracotta",
+	"green_shulker_box",
+	"green_stained_glass",
+	"green_stained_glass_pane",
+	"green_terracotta",
+	"green_wall_banner",
+	"green_wool",
+	"green_wool_slab",
+	"green_wool_stairs",
+	"grindstone",
+	"hay_block",
+	"heavy_weighted_pressure_plate",
+	"honey_block",
+	"honeycomb_block",
+	"hopper",
+	"horn_coral_block",
+	"ice",
+	"infested_chiseled_stone_bricks",
+	"infested_cobblestone",
+	"infested_cracked_stone_bricks",
+	"infested_deepslate",
+	"infested_mossy_stone_bricks",
+	"infested_stone",
+	"infested_stone_bricks",
+	"iron_bars",
+	"iron_block",
+	"iron_chain",
+	"iron_door",
+	"iron_ore",
+	"iron_trapdoor",
+	"jack_o_lantern",
+	"jigsaw",
+	"jukebox",
+	"jungle_door",
+	"jungle_fence",
+	"jungle_fence_gate",
+	"jungle_hanging_sign",
+	"jungle_leaves",
+	"jungle_log",
+	"jungle_planks",
+	"jungle_pressure_plate",
+	"jungle_shelf",
+	"jungle_sign",
+	"jungle_slab",
+	"jungle_stairs",
+	"jungle_trapdoor",
+	"jungle_wall_hanging_sign",
+	"jungle_wall_sign",
+	"jungle_wood",
+	"lantern",
+	"lapis_block",
+	"lapis_ore",
+	"large_amethyst_bud",
+	"lava_cauldron",
+	"lectern",
+	"light_blue_banner",
+	"light_blue_bed",
+	"light_blue_candle_cake",
+	"light_blue_concrete",
+	"light_blue_concrete_powder",
+	"light_blue_concrete_slab",
+	"light_blue_concrete_stairs",
+	"light_blue_glazed_terracotta",
+	"light_blue_shulker_box",
+	"light_blue_stained_glass",
+	"light_blue_stained_glass_pane",
+	"light_blue_terracotta",
+	"light_blue_wall_banner",
+	"light_blue_wool",
+	"light_blue_wool_slab",
+	"light_blue_wool_stairs",
+	"light_gray_banner",
+	"light_gray_bed",
+	"light_gray_candle_cake",
+	"light_gray_concrete",
+	"light_gray_concrete_powder",
+	"light_gray_concrete_slab",
+	"light_gray_concrete_stairs",
+	"light_gray_glazed_terracotta",
+	"light_gray_shulker_box",
+	"light_gray_stained_glass",
+	"light_gray_stained_glass_pane",
+	"light_gray_terracotta",
+	"light_gray_wall_banner",
+	"light_gray_wool",
+	"light_gray_wool_slab",
+	"light_gray_wool_stairs",
+	"light_weighted_pressure_plate",
+	"lightning_rod",
+	"lime_banner",
+	"lime_bed",
+	"lime_candle_cake",
+	"lime_concrete",
+	"lime_concrete_powder",
+	"lime_concrete_slab",
+	"lime_concrete_stairs",
+	"lime_glazed_terracotta",
+	"lime_shulker_box",
+	"lime_stained_glass",
+	"lime_stained_glass_pane",
+	"lime_terracotta",
+	"lime_wall_banner",
+	"lime_wool",
+	"lime_wool_slab",
+	"lime_wool_stairs",
+	"lodestone",
+	"loom",
+	"magenta_banner",
+	"magenta_bed",
+	"magenta_candle_cake",
+	"magenta_concrete",
+	"magenta_concrete_powder",
+	"magenta_concrete_slab",
+	"magenta_concrete_stairs",
+	"magenta_glazed_terracotta",
+	"magenta_shulker_box",
+	"magenta_stained_glass",
+	"magenta_stained_glass_pane",
+	"magenta_terracotta",
+	"magenta_wall_banner",
+	"magenta_wool",
+	"magenta_wool_slab",
+	"magenta_wool_stairs",
+	"magma_block",
+	"mangrove_door",
+	"mangrove_fence",
+	"mangrove_fence_gate",
+	"mangrove_hanging_sign",
+	"mangrove_leaves",
+	"mangrove_log",
+	"mangrove_planks",
+	"mangrove_pressure_plate",
+	"mangrove_roots",
+	"mangrove_shelf",
+	"mangrove_sign",
+	"mangrove_slab",
+	"mangrove_stairs",
+	"mangrove_trapdoor",
+	"mangrove_wall_hanging_sign",
+	"mangrove_wall_sign",
+	"mangrove_wood",
+	"medium_amethyst_bud",
+	"melon",
+	"moss_block",
+	"mossy_cobblestone",
+	"mossy_cobblestone_slab",
+	"mossy_cobblestone_stairs",
+	"mossy_cobblestone_wall",
+	"mossy_stone_brick_slab",
+	"mossy_stone_brick_stairs",
+	"mossy_stone_brick_wall",
+	"mossy_stone_bricks",
+	"moving_piston",
+	"mud",
+	"mud_brick_slab",
+	"mud_brick_stairs",
+	"mud_brick_wall",
+	"mud_bricks",
+	"muddy_mangrove_roots",
+	"mushroom_stem",
+	"mycelium",
+	"nether_brick_fence",
+	"nether_brick_slab",
+	"nether_brick_stairs",
+	"nether_brick_wall",
+	"nether_bricks",
+	"nether_gold_ore",
+	"nether_quartz_ore",
+	"nether_wart_block",
+	"netherite_block",
+	"netherrack",
+	"note_block",
+	"oak_door",
+	"oak_fence",
+	"oak_fence_gate",
+	"oak_hanging_sign",
+	"oak_leaves",
+	"oak_log",
+	"oak_planks",
+	"oak_pressure_plate",
+	"oak_shelf",
+	"oak_sign",
+	"oak_slab",
+	"oak_stairs",
+	"oak_trapdoor",
+	"oak_wall_hanging_sign",
+	"oak_wall_sign",
+	"oak_wood",
+	"observer",
+	"obsidian",
+	"ochre_froglight",
+	"orange_banner",
+	"orange_bed",
+	"orange_candle_cake",
+	"orange_concrete",
+	"orange_concrete_powder",
+	"orange_concrete_slab",
+	"orange_concrete_stairs",
+	"orange_glazed_terracotta",
+	"orange_poplar_leaves",
+	"orange_shulker_box",
+	"orange_stained_glass",
+	"orange_stained_glass_pane",
+	"orange_terracotta",
+	"orange_wall_banner",
+	"orange_wool",
+	"orange_wool_slab",
+	"orange_wool_stairs",
+	"oxidized_chiseled_copper",
+	"oxidized_copper",
+	"oxidized_copper_bars",
+	"oxidized_copper_bulb",
+	"oxidized_copper_chain",
+	"oxidized_copper_chest",
+	"oxidized_copper_door",
+	"oxidized_copper_grate",
+	"oxidized_copper_lantern",
+	"oxidized_copper_trapdoor",
+	"oxidized_cut_copper",
+	"oxidized_cut_copper_slab",
+	"oxidized_cut_copper_stairs",
+	"oxidized_lightning_rod",
+	"packed_ice",
+	"packed_mud",
+	"pale_moss_block",
+	"pale_oak_door",
+	"pale_oak_fence",
+	"pale_oak_fence_gate",
+	"pale_oak_hanging_sign",
+	"pale_oak_leaves",
+	"pale_oak_log",
+	"pale_oak_planks",
+	"pale_oak_pressure_plate",
+	"pale_oak_shelf",
+	"pale_oak_sign",
+	"pale_oak_slab",
+	"pale_oak_stairs",
+	"pale_oak_trapdoor",
+	"pale_oak_wall_hanging_sign",
+	"pale_oak_wall_sign",
+	"pale_oak_wood",
+	"pearlescent_froglight",
+	"petrified_oak_slab",
+	"pink_banner",
+	"pink_bed",
+	"pink_candle_cake",
+	"pink_concrete",
+	"pink_concrete_powder",
+	"pink_concrete_slab",
+	"pink_concrete_stairs",
+	"pink_glazed_terracotta",
+	"pink_shulker_box",
+	"pink_stained_glass",
+	"pink_stained_glass_pane",
+	"pink_terracotta",
+	"pink_wall_banner",
+	"pink_wool",
+	"pink_wool_slab",
+	"pink_wool_stairs",
+	"piston",
+	"piston_head",
+	"podzol",
+	"pointed_dripstone",
+	"polished_andesite",
+	"polished_andesite_slab",
+	"polished_andesite_stairs",
+	"polished_basalt",
+	"polished_blackstone",
+	"polished_blackstone_brick_slab",
+	"polished_blackstone_brick_stairs",
+	"polished_blackstone_brick_wall",
+	"polished_blackstone_bricks",
+	"polished_blackstone_pressure_plate",
+	"polished_blackstone_slab",
+	"polished_blackstone_stairs",
+	"polished_blackstone_wall",
+	"polished_cinnabar",
+	"polished_cinnabar_slab",
+	"polished_cinnabar_stairs",
+	"polished_cinnabar_wall",
+	"polished_deepslate",
+	"polished_deepslate_slab",
+	"polished_deepslate_stairs",
+	"polished_deepslate_wall",
+	"polished_diorite",
+	"polished_diorite_slab",
+	"polished_diorite_stairs",
+	"polished_granite",
+	"polished_granite_slab",
+	"polished_granite_stairs",
+	"polished_sulfur",
+	"polished_sulfur_slab",
+	"polished_sulfur_stairs",
+	"polished_sulfur_wall",
+	"polished_tuff",
+	"polished_tuff_slab",
+	"polished_tuff_stairs",
+	"polished_tuff_wall",
+	"poplar_door",
+	"poplar_fence",
+	"poplar_fence_gate",
+	"poplar_hanging_sign",
+	"poplar_log",
+	"poplar_planks",
+	"poplar_pressure_plate",
+	"poplar_shelf",
+	"poplar_sign",
+	"poplar_slab",
+	"poplar_stairs",
+	"poplar_trapdoor",
+	"poplar_wall_hanging_sign",
+	"poplar_wall_sign",
+	"poplar_wood",
+	"potent_sulfur",
+	"powder_snow_cauldron",
+	"prismarine",
+	"prismarine_brick_slab",
+	"prismarine_brick_stairs",
+	"prismarine_bricks",
+	"prismarine_slab",
+	"prismarine_stairs",
+	"prismarine_wall",
+	"pumpkin",
+	"purple_banner",
+	"purple_bed",
+	"purple_candle_cake",
+	"purple_concrete",
+	"purple_concrete_powder",
+	"purple_concrete_slab",
+	"purple_concrete_stairs",
+	"purple_glazed_terracotta",
+	"purple_shulker_box",
+	"purple_stained_glass",
+	"purple_stained_glass_pane",
+	"purple_terracotta",
+	"purple_wall_banner",
+	"purple_wool",
+	"purple_wool_slab",
+	"purple_wool_stairs",
+	"purpur_block",
+	"purpur_pillar",
+	"purpur_slab",
+	"purpur_stairs",
+	"quartz_block",
+	"quartz_bricks",
+	"quartz_pillar",
+	"quartz_slab",
+	"quartz_stairs",
+	"raw_copper_block",
+	"raw_gold_block",
+	"raw_iron_block",
+	"red_banner",
+	"red_bed",
+	"red_candle_cake",
+	"red_concrete",
+	"red_concrete_powder",
+	"red_concrete_slab",
+	"red_concrete_stairs",
+	"red_glazed_terracotta",
+	"red_mushroom_block",
+	"red_nether_brick_slab",
+	"red_nether_brick_stairs",
+	"red_nether_brick_wall",
+	"red_nether_bricks",
+	"red_poplar_leaves",
+	"red_sand",
+	"red_sandstone",
+	"red_sandstone_slab",
+	"red_sandstone_stairs",
+	"red_sandstone_wall",
+	"red_shulker_box",
+	"red_stained_glass",
+	"red_stained_glass_pane",
+	"red_terracotta",
+	"red_wall_banner",
+	"red_wool",
+	"red_wool_slab",
+	"red_wool_stairs",
+	"redstone_block",
+	"redstone_lamp",
+	"redstone_ore",
+	"reinforced_deepslate",
+	"repeating_command_block",
+	"resin_block",
+	"resin_brick_slab",
+	"resin_brick_stairs",
+	"resin_brick_wall",
+	"resin_bricks",
+	"respawn_anchor",
+	"rooted_dirt",
+	"sand",
+	"sandstone",
+	"sandstone_slab",
+	"sandstone_stairs",
+	"sandstone_wall",
+	"sculk",
+	"sculk_catalyst",
+	"sculk_sensor",
+	"sculk_shrieker",
+	"sculk_vein",
+	"sea_lantern",
+	"shroomlight",
+	"shulker_box",
+	"slime_block",
+	"small_amethyst_bud",
+	"smithing_table",
+	"smoker",
+	"smooth_basalt",
+	"smooth_quartz",
+	"smooth_quartz_slab",
+	"smooth_quartz_stairs",
+	"smooth_red_sandstone",
+	"smooth_red_sandstone_slab",
+	"smooth_red_sandstone_stairs",
+	"smooth_sandstone",
+	"smooth_sandstone_slab",
+	"smooth_sandstone_stairs",
+	"smooth_stone",
+	"smooth_stone_slab",
+	"sniffer_egg",
+	"snow_block",
+	"soul_campfire",
+	"soul_lantern",
+	"soul_sand",
+	"soul_soil",
+	"spawner",
+	"sponge",
+	"spruce_door",
+	"spruce_fence",
+	"spruce_fence_gate",
+	"spruce_hanging_sign",
+	"spruce_leaves",
+	"spruce_log",
+	"spruce_planks",
+	"spruce_pressure_plate",
+	"spruce_shelf",
+	"spruce_sign",
+	"spruce_slab",
+	"spruce_stairs",
+	"spruce_trapdoor",
+	"spruce_wall_hanging_sign",
+	"spruce_wall_sign",
+	"spruce_wood",
+	"sticky_piston",
+	"stone",
+	"stone_brick_slab",
+	"stone_brick_stairs",
+	"stone_brick_wall",
+	"stone_bricks",
+	"stone_pressure_plate",
+	"stone_slab",
+	"stone_stairs",
+	"stonecutter",
+	"straw_bed",
+	"stripped_acacia_log",
+	"stripped_acacia_wood",
+	"stripped_bamboo_block",
+	"stripped_birch_log",
+	"stripped_birch_wood",
+	"stripped_cherry_log",
+	"stripped_cherry_wood",
+	"stripped_crimson_hyphae",
+	"stripped_crimson_stem",
+	"stripped_dark_oak_log",
+	"stripped_dark_oak_wood",
+	"stripped_jungle_log",
+	"stripped_jungle_wood",
+	"stripped_mangrove_log",
+	"stripped_mangrove_wood",
+	"stripped_oak_log",
+	"stripped_oak_wood",
+	"stripped_pale_oak_log",
+	"stripped_pale_oak_wood",
+	"stripped_poplar_log",
+	"stripped_poplar_wood",
+	"stripped_spruce_log",
+	"stripped_spruce_wood",
+	"stripped_warped_hyphae",
+	"stripped_warped_stem",
+	"structure_block",
+	"sulfur",
+	"sulfur_brick_slab",
+	"sulfur_brick_stairs",
+	"sulfur_brick_wall",
+	"sulfur_bricks",
+	"sulfur_slab",
+	"sulfur_spike",
+	"sulfur_stairs",
+	"sulfur_wall",
+	"suspicious_gravel",
+	"suspicious_sand",
+	"target",
+	"terracotta",
+	"test_block",
+	"test_instance_block",
+	"tinted_glass",
+	"tnt",
+	"trapped_chest",
+	"trial_spawner",
+	"tube_coral_block",
+	"tuff",
+	"tuff_brick_slab",
+	"tuff_brick_stairs",
+	"tuff_brick_wall",
+	"tuff_bricks",
+	"tuff_slab",
+	"tuff_stairs",
+	"tuff_wall",
+	"turtle_egg",
+	"vault",
+	"verdant_froglight",
+	"warped_door",
+	"warped_fence",
+	"warped_fence_gate",
+	"warped_hanging_sign",
+	"warped_hyphae",
+	"warped_nylium",
+	"warped_planks",
+	"warped_pressure_plate",
+	"warped_shelf",
+	"warped_sign",
+	"warped_slab",
+	"warped_stairs",
+	"warped_stem",
+	"warped_trapdoor",
+	"warped_wall_hanging_sign",
+	"warped_wall_sign",
+	"warped_wart_block",
+	"water_cauldron",
+	"waxed_chiseled_copper",
+	"waxed_copper_bars",
+	"waxed_copper_block",
+	"waxed_copper_bulb",
+	"waxed_copper_chain",
+	"waxed_copper_chest",
+	"waxed_copper_door",
+	"waxed_copper_grate",
+	"waxed_copper_lantern",
+	"waxed_copper_trapdoor",
+	"waxed_cut_copper",
+	"waxed_cut_copper_slab",
+	"waxed_cut_copper_stairs",
+	"waxed_exposed_chiseled_copper",
+	"waxed_exposed_copper",
+	"waxed_exposed_copper_bars",
+	"waxed_exposed_copper_bulb",
+	"waxed_exposed_copper_chain",
+	"waxed_exposed_copper_chest",
+	"waxed_exposed_copper_door",
+	"waxed_exposed_copper_grate",
+	"waxed_exposed_copper_lantern",
+	"waxed_exposed_copper_trapdoor",
+	"waxed_exposed_cut_copper",
+	"waxed_exposed_cut_copper_slab",
+	"waxed_exposed_cut_copper_stairs",
+	"waxed_exposed_lightning_rod",
+	"waxed_lightning_rod",
+	"waxed_oxidized_chiseled_copper",
+	"waxed_oxidized_copper",
+	"waxed_oxidized_copper_bars",
+	"waxed_oxidized_copper_bulb",
+	"waxed_oxidized_copper_chain",
+	"waxed_oxidized_copper_chest",
+	"waxed_oxidized_copper_door",
+	"waxed_oxidized_copper_grate",
+	"waxed_oxidized_copper_lantern",
+	"waxed_oxidized_copper_trapdoor",
+	"waxed_oxidized_cut_copper",
+	"waxed_oxidized_cut_copper_slab",
+	"waxed_oxidized_cut_copper_stairs",
+	"waxed_oxidized_lightning_rod",
+	"waxed_weathered_chiseled_copper",
+	"waxed_weathered_copper",
+	"waxed_weathered_copper_bars",
+	"waxed_weathered_copper_bulb",
+	"waxed_weathered_copper_chain",
+	"waxed_weathered_copper_chest",
+	"waxed_weathered_copper_door",
+	"waxed_weathered_copper_grate",
+	"waxed_weathered_copper_lantern",
+	"waxed_weathered_copper_trapdoor",
+	"waxed_weathered_cut_copper",
+	"waxed_weathered_cut_copper_slab",
+	"waxed_weathered_cut_copper_stairs",
+	"waxed_weathered_lightning_rod",
+	"weathered_chiseled_copper",
+	"weathered_copper",
+	"weathered_copper_bars",
+	"weathered_copper_bulb",
+	"weathered_copper_chain",
+	"weathered_copper_chest",
+	"weathered_copper_door",
+	"weathered_copper_grate",
+	"weathered_copper_lantern",
+	"weathered_copper_trapdoor",
+	"weathered_cut_copper",
+	"weathered_cut_copper_slab",
+	"weathered_cut_copper_stairs",
+	"weathered_lightning_rod",
+	"wet_sponge",
+	"white_banner",
+	"white_bed",
+	"white_candle_cake",
+	"white_concrete",
+	"white_concrete_powder",
+	"white_concrete_slab",
+	"white_concrete_stairs",
+	"white_glazed_terracotta",
+	"white_shulker_box",
+	"white_stained_glass",
+	"white_stained_glass_pane",
+	"white_terracotta",
+	"white_wall_banner",
+	"white_wool",
+	"white_wool_slab",
+	"white_wool_stairs",
+	"yellow_banner",
+	"yellow_bed",
+	"yellow_candle_cake",
+	"yellow_concrete",
+	"yellow_concrete_powder",
+	"yellow_concrete_slab",
+	"yellow_concrete_stairs",
+	"yellow_glazed_terracotta",
+	"yellow_poplar_leaves",
+	"yellow_shulker_box",
+	"yellow_stained_glass",
+	"yellow_stained_glass_pane",
+	"yellow_terracotta",
+	"yellow_wall_banner",
+	"yellow_wool",
+	"yellow_wool_slab",
+	"yellow_wool_stairs"
+]);
+
+//#endregion
+//#region src/compactFaceData.js
+const FACE_BATCH_SIZE = 4096;
+const MAX_COMPACT_TEMPLATES = 262144;
+const bits = /* @__PURE__ */ new Uint32Array(1);
+const floats = new Float32Array(bits.buffer);
+function nextFloat(value, up) {
+	if (value === 0) return up ? 2 ** -149 : -(2 ** -149);
+	floats[0] = value;
+	bits[0] += value > 0 === up ? 1 : -1;
+	return floats[0];
+}
+function canCompactFaces(bounds, key) {
+	return !key.startsWith("special/") && !key.endsWith("|translucent") && key !== "particle/bubble" && !/^block\/(water|lava)_(still|flow|overlay)$/.test(key) && bounds.width * bounds.depth <= 2 ** 32 && [
+		[bounds.minX, bounds.width],
+		[bounds.minY, bounds.height],
+		[bounds.minZ, bounds.depth]
+	].every(([min, size]) => Number.isInteger(min) && Number.isInteger(size) && Math.abs(min) <= 2 ** 24 && Math.abs(min + size) <= 2 ** 24);
+}
+var CompactFaceData = class {
+	constructor(count, bounds, { recordCapacity = count } = {}) {
+		this.isCompactFaceData = true;
+		this.count = count;
+		this.bounds = bounds;
+		this.cursor = 0;
+		this.cells = new Uint32Array(recordCapacity);
+		this.templateIds = new Uint32Array(recordCapacity);
+		this.cellYs = bounds.width * bounds.height * bounds.depth > 2 ** 32 ? new Uint32Array(recordCapacity) : null;
+		this.templates = [];
+		this.lookup = /* @__PURE__ */ new Map();
+		this.quads = /* @__PURE__ */ new WeakMap();
+		this.cellBounds = new Float64Array(Math.ceil(count / FACE_BATCH_SIZE) * 6);
+		this.faceBounds = new Float32Array(this.cellBounds.length);
+		for (let i = 0; i < this.cellBounds.length; i += 6) this.cellBounds.set([
+			Infinity,
+			Infinity,
+			Infinity,
+			-Infinity,
+			-Infinity,
+			-Infinity
+		], i);
+		this.faceBounds.set(this.cellBounds);
+		this.modelMin = [
+			Infinity,
+			Infinity,
+			Infinity
+		];
+		this.modelMax = [
+			-Infinity,
+			-Infinity,
+			-Infinity
+		];
+		this.worldBounds = new Float64Array([
+			Infinity,
+			Infinity,
+			Infinity,
+			-Infinity,
+			-Infinity,
+			-Infinity
+		]);
+		this.variants = 0;
+		this.absolute = 0;
+		this.offset = /* @__PURE__ */ new Float64Array(3);
+	}
+	intern(values) {
+		const key = values.join(",");
+		let id = this.lookup.get(key);
+		if (id === void 0) {
+			id = this.templates.length;
+			if (id >= MAX_COMPACT_TEMPLATES) throw Object.assign(/* @__PURE__ */ new Error("Too many distinct compact face templates"), {
+				code: "FILE_TOO_LARGE",
+				reason: "geometry"
+			});
+			this.lookup.set(key, id);
+			this.templates.push(values);
+		}
+		return id;
+	}
+	forQuad(quad) {
+		let record = this.quads.get(quad);
+		if (record) return record;
+		const values = /* @__PURE__ */ new Float32Array(32);
+		const quadBounds = new Float64Array([
+			Infinity,
+			Infinity,
+			Infinity,
+			-Infinity,
+			-Infinity,
+			-Infinity
+		]);
+		for (let v = 0; v < 4; v++) {
+			for (let a = 0; a < 3; a++) {
+				const original = quad.verts[v][a], anchor = Math.round(original);
+				values[v * 8 + a] = original - anchor;
+				values[v * 8 + 4 + a] = anchor;
+				quadBounds[a] = Math.min(quadBounds[a], original);
+				quadBounds[a + 3] = Math.max(quadBounds[a + 3], original);
+			}
+			values[v * 8 + 3] = quad.uvs[v][0];
+			values[v * 8 + 7] = quad.uvs[v][1];
+		}
+		for (let a = 0; a < 3; a++) {
+			this.modelMin[a] = Math.min(this.modelMin[a], quadBounds[a]);
+			this.modelMax[a] = Math.max(this.modelMax[a], quadBounds[a + 3]);
+		}
+		const b = this.bounds, minima = [
+			b.minX,
+			b.minY,
+			b.minZ
+		], sizes = [
+			b.width,
+			b.height,
+			b.depth
+		];
+		const anchored = quad.verts.every((vertex) => vertex.every((value, a) => Math.abs(Math.round(value)) < 2 ** 31 - 2 ** 24));
+		const precise = anchored && quad.verts.every((vertex) => vertex.every((value, a) => Math.fround(value) === value && Math.abs(minima[a] + Math.round(value)) <= 2 ** 24 && Math.abs(minima[a] + sizes[a] + Math.round(value)) <= 2 ** 24));
+		record = {
+			values,
+			quadBounds,
+			id: this.intern(values),
+			precise,
+			anchored
+		};
+		this.quads.set(quad, record);
+		return record;
+	}
+	write(quad, x, y, z, key) {
+		const record = this.forQuad(quad), offset = this.offset;
+		offset[0] = x;
+		offset[1] = y;
+		offset[2] = z;
+		let values = record.values, changed = false, absolute = !record.anchored;
+		for (let v = 0; v < 4 && !absolute && !record.precise; v++) for (let a = 0; a < 3; a++) {
+			const i = v * 8 + a, world = offset[a] + values[i + 4];
+			const expected = Math.fround(offset[a] + quad.verts[v][a]);
+			const actual = Math.fround(Math.fround(world) + values[i]);
+			if (actual === expected) continue;
+			const adjusted = nextFloat(values[i], expected > actual);
+			if (Math.fround(Math.fround(world) + adjusted) !== expected) {
+				absolute = true;
+				break;
+			}
+			if (!changed) {
+				values = values.slice();
+				changed = true;
+			}
+			values[i] = adjusted;
+		}
+		let id = record.id;
+		if (absolute) {
+			values = record.values.slice();
+			for (let v = 0; v < 4; v++) for (let a = 0; a < 3; a++) {
+				values[v * 8 + a] = offset[a] + quad.verts[v][a];
+				values[v * 8 + 4 + a] = 0;
+			}
+			id = (this.intern(values) | 2147483648) >>> 0;
+			this.absolute++;
+		} else if (changed) {
+			id = this.intern(values);
+			this.variants++;
+		}
+		const cursor = this.cursor++, batch = Math.floor(cursor / FACE_BATCH_SIZE) * 6;
+		const recordIndex = cursor - (this.recordBase || 0);
+		if (this.cellYs) {
+			this.cells[recordIndex] = key % (this.bounds.width * this.bounds.depth);
+			this.cellYs[recordIndex] = y - this.bounds.minY;
+		} else this.cells[recordIndex] = key;
+		this.templateIds[recordIndex] = id;
+		for (let a = 0; a < 3; a++) {
+			this.cellBounds[batch + a] = Math.min(this.cellBounds[batch + a], offset[a]);
+			this.cellBounds[batch + 3 + a] = Math.max(this.cellBounds[batch + 3 + a], offset[a]);
+			const min = Math.fround(offset[a] + record.quadBounds[a]), max = Math.fround(offset[a] + record.quadBounds[a + 3]);
+			this.worldBounds[a] = Math.min(this.worldBounds[a], min);
+			this.worldBounds[a + 3] = Math.max(this.worldBounds[a + 3], max);
+			this.faceBounds[batch + a] = Math.min(this.faceBounds[batch + a], min);
+			this.faceBounds[batch + a + 3] = Math.max(this.faceBounds[batch + a + 3], max);
+		}
+	}
+	finish() {
+		if (this.cursor !== this.count) throw new Error("Compact face count mismatch");
+		this.templateCount = this.templates.length;
+		const texels = this.templateCount * 8;
+		this.textureWidth = Math.min(1024, 2 ** Math.ceil(Math.log2(Math.max(8, texels))));
+		this.textureHeight = Math.ceil(texels / this.textureWidth);
+		if (this.textureHeight > 2048) throw Object.assign(/* @__PURE__ */ new Error("Too many distinct compact face templates"), {
+			code: "FILE_TOO_LARGE",
+			reason: "geometry"
+		});
+		this.templateData = new Float32Array(this.textureWidth * this.textureHeight * 4);
+		this.templates.forEach((values, i) => this.templateData.set(values, i * 32));
+		this.templates = this.lookup = this.quads = null;
+		return this;
+	}
+};
+function compactFaceKey(data, face) {
+	return data.cells[face] + (data.cellYs ? data.cellYs[face] * data.bounds.width * data.bounds.depth : 0);
+}
+function readCompactFace(data, face, positions, uvs) {
+	const key = compactFaceKey(data, face), b = data.bounds, raw = data.templateIds[face], id = raw & 2147483647;
+	const offset = raw & 2147483648 ? [
+		0,
+		0,
+		0
+	] : [
+		key % b.width + b.minX,
+		Math.floor(key / (b.width * b.depth)) + b.minY,
+		Math.floor(key / b.width) % b.depth + b.minZ
+	];
+	for (let v = 0; v < 4; v++) {
+		const base = id * 32 + v * 8;
+		for (let a = 0; a < 3; a++) positions[v * 3 + a] = Math.fround(offset[a] + data.templateData[base + 4 + a]) + data.templateData[base + a];
+		uvs[v * 2] = data.templateData[base + 3];
+		uvs[v * 2 + 1] = data.templateData[base + 7];
+	}
+}
+
+//#endregion
+//#region src/geometryBudget.js
+const MAX_GEOMETRY_BYTES = 6 * 1024 ** 3;
+const MAX_ARRAY_BYTES = 2 ** 31 - 1;
+function geometryLimit(bytes, maxBytes = MAX_GEOMETRY_BYTES) {
+	if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || maxBytes > MAX_GEOMETRY_BYTES) throw new RangeError("Invalid geometry budget");
+	if (!Number.isSafeInteger(bytes) || bytes > maxBytes) throw Object.assign(/* @__PURE__ */ new Error("Visible geometry exceeds the memory budget"), {
+		code: "FILE_TOO_LARGE",
+		reason: "geometry",
+		bytes,
+		maxBytes
+	});
+	return bytes;
+}
+function estimateGeometryBytes(counts, bounds, options = {}) {
+	options ??= {};
+	let bytes = 0;
+	const wide = bounds.width * bounds.height * bounds.depth > 2 ** 32;
+	for (const [key, count] of counts) {
+		const compact = options.compactFaces && canCompactFaces(bounds, key);
+		if ((compact ? count * 4 : key === "particle/bubble" ? count * 12 : count * 48) > MAX_ARRAY_BYTES) geometryLimit(MAX_GEOMETRY_BYTES + 1, options.maxGeometryBytes);
+		bytes += compact ? count * (wide ? 12 : 8) + Math.ceil(count / FACE_BATCH_SIZE) * 72 + 72 : key === "particle/bubble" ? count * 12 : count * (80 + (count * 4 < 65536 ? 12 : 24) + (options.trackBlocks ? wide ? 8 : 4 : 0));
+	}
+	return geometryLimit(bytes, options.maxGeometryBytes);
+}
+
+//#endregion
+//#region src/loadingTask.js
+function throwIfAborted(signal) {
+	if (signal?.aborted) throw Object.assign(/* @__PURE__ */ new Error("Loading cancelled"), {
+		name: "AbortError",
+		code: "ABORT_ERR"
+	});
+}
+function withAbort(promise, signal) {
+	if (!signal) return promise;
+	return new Promise((resolve, reject) => {
+		const cleanup = () => signal.removeEventListener("abort", abort);
+		const abort = () => {
+			cleanup();
+			reject(Object.assign(/* @__PURE__ */ new Error("Loading cancelled"), {
+				name: "AbortError",
+				code: "ABORT_ERR"
+			}));
+		};
+		Promise.resolve(promise).then((value) => {
+			cleanup();
+			resolve(value);
+		}, (error) => {
+			cleanup();
+			reject(error);
+		});
+		if (signal.aborted) abort();
+		else signal.addEventListener("abort", abort, { once: true });
+	});
+}
+
+//#endregion
+//#region src/geometryStream.js
+const MAX_GEOMETRY_BATCH_BYTES = 32 * 1024 ** 2;
+const SLAB_BYTES = 262144;
+const STREAM_STATE = Symbol("geometryStreamState");
+const TYPES = {
+	Float32Array,
+	Float64Array,
+	Uint16Array,
+	Uint32Array
+};
+const align = (value, size) => Math.ceil(value / size) * size;
+const fail = (message) => Object.assign(new Error(message), {
+	code: "WORKER_PROTOCOL",
+	reason: "geometry-stream"
+});
+function validateGeometryStream(options) {
+	const bytes = options.batchBytes ?? MAX_GEOMETRY_BATCH_BYTES;
+	if (!Number.isSafeInteger(bytes) || bytes < 1024 || bytes > MAX_GEOMETRY_BATCH_BYTES) throw new RangeError("Invalid geometry staging budget");
+	if (typeof options.onLayout !== "function" || typeof options.onBatch !== "function") throw new TypeError("Geometry streaming requires layout and batch consumers");
+	return bytes;
+}
+function fieldsFor(kind, count, bounds, trackBlocks) {
+	const field = (name, type, stride) => ({
+		name,
+		type,
+		stride,
+		length: count * stride
+	});
+	const wide = bounds.width * bounds.height * bounds.depth > 2 ** 32;
+	if (kind === "compact") return [
+		field("cells", "Uint32Array", 1),
+		field("templateIds", "Uint32Array", 1),
+		...wide ? [field("cellYs", "Uint32Array", 1)] : []
+	];
+	if (kind === "points") return [field("positions", "Float32Array", 3)];
+	return [
+		field("positions", "Float32Array", 12),
+		field("uvs", "Float32Array", 8),
+		field("indices", count * 4 < 65536 ? "Uint16Array" : "Uint32Array", 6),
+		...trackBlocks ? [field("blockKeys", wide ? "Float64Array" : "Uint32Array", 1)] : []
+	];
+}
+function segmentSize(fields, count) {
+	let bytes = 0;
+	for (const field of fields) {
+		const size = TYPES[field.type].BYTES_PER_ELEMENT;
+		bytes = align(bytes, size) + count * field.stride * size;
+	}
+	return bytes;
+}
+var GeometryStream = class {
+	constructor(counts, bounds, options, emitted, geometryBytes) {
+		const batchBytes = validateGeometryStream(options);
+		this.options = options;
+		this.bounds = bounds;
+		this.geometryBytes = geometryBytes;
+		this.emitted = emitted;
+		this.slabBytes = Math.min(SLAB_BYTES, batchBytes);
+		this.maxSlabs = Math.floor(batchBytes / this.slabBytes);
+		this.createdSlabs = 0;
+		this.free = [];
+		this.pending = [];
+		this.active = /* @__PURE__ */ new Set();
+		this.batchCount = 0;
+		this.groups = /* @__PURE__ */ new Map();
+		this.states = [];
+		const specs = [];
+		for (const [key, count] of counts) {
+			const kind = options.compactFaces && canCompactFaces(bounds, key) ? "compact" : key === "particle/bubble" ? "points" : "quads";
+			const buffers = fieldsFor(kind, count, bounds, options.trackBlocks);
+			const spec = {
+				groupIndex: specs.length,
+				key,
+				kind,
+				count,
+				buffers
+			};
+			specs.push(spec);
+			const recordBytes = buffers.reduce((bytes, field) => bytes + field.stride * TYPES[field.type].BYTES_PER_ELEMENT, 0);
+			let capacity = Math.min(count, Math.floor(this.slabBytes / recordBytes));
+			while (segmentSize(buffers, capacity) > this.slabBytes) capacity--;
+			if (!capacity) throw new RangeError("Geometry staging buffer cannot fit a record");
+			const group = kind === "compact" ? new CompactFaceData(count, bounds, { recordCapacity: 0 }) : kind === "points" ? {
+				positions: null,
+				v: 0
+			} : {
+				positions: null,
+				uvs: null,
+				indices: null,
+				v: 0,
+				f: 0
+			};
+			const state = {
+				spec,
+				group,
+				capacity,
+				start: 0,
+				next: 0,
+				slab: null
+			};
+			group.recordLimit = 0;
+			group[STREAM_STATE] = state;
+			this.groups.set(key, group);
+			this.states.push(state);
+		}
+		this.layout = {
+			version: 1,
+			bounds,
+			emitted,
+			geometryBytes,
+			groups: specs
+		};
+	}
+	async start() {
+		throwIfAborted(this.options.signal);
+		await withAbort(this.options.onLayout(this.layout), this.options.signal);
+		throwIfAborted(this.options.signal);
+	}
+	used(state) {
+		return state.spec.kind === "compact" ? state.group.cursor - state.start : state.group.v / (state.spec.kind === "points" ? 3 : 4);
+	}
+	retire(state) {
+		if (!state.slab) return;
+		const count = this.used(state), buffers = {};
+		for (const field of state.spec.buffers) {
+			buffers[field.name] = state.group[field.name].subarray(0, count * field.stride);
+			state.group[field.name] = null;
+		}
+		if (count) this.pending.push({
+			slab: state.slab,
+			part: {
+				groupIndex: state.spec.groupIndex,
+				start: state.start,
+				count,
+				buffers
+			}
+		});
+		else this.free.push(state.slab);
+		state.next = state.start + count;
+		state.slab = null;
+		this.active.delete(state);
+		state.group.recordLimit = 0;
+	}
+	prepare(group) {
+		const state = group[STREAM_STATE];
+		if (state.slab && this.used(state) < state.capacity) return true;
+		this.retire(state);
+		if (state.next >= state.spec.count) throw new Error("Streamed geometry exceeded its counted records");
+		let slab = this.free.pop();
+		if (!slab) {
+			if (this.createdSlabs === this.maxSlabs) return false;
+			slab = {
+				slabId: this.createdSlabs++,
+				buffer: new ArrayBuffer(this.slabBytes)
+			};
+		}
+		state.slab = slab;
+		state.start = state.next;
+		let offset = 0;
+		for (const field of state.spec.buffers) {
+			const Type = TYPES[field.type];
+			offset = align(offset, Type.BYTES_PER_ELEMENT);
+			group[field.name] = new Type(slab.buffer, offset, state.capacity * field.stride);
+			offset += group[field.name].byteLength;
+		}
+		if (state.spec.kind === "compact") group.recordBase = state.start;
+		else {
+			group.v = 0;
+			if (state.spec.kind === "quads") {
+				group.f = 0;
+				group.vertexBase = state.start * 4;
+			}
+		}
+		group.recordLimit = state.spec.kind === "compact" ? state.start + state.capacity : state.capacity * (state.spec.kind === "points" ? 3 : 4);
+		this.active.add(state);
+		return true;
+	}
+	async flushFor(group) {
+		await this.flush();
+		if (!this.prepare(group)) throw new Error("Geometry staging buffer was not returned");
+	}
+	async flush() {
+		throwIfAborted(this.options.signal);
+		for (const state of this.active) this.retire(state);
+		if (!this.pending.length) return;
+		const records = this.pending;
+		this.pending = [];
+		const expected = new Map(records.map(({ slab }) => [slab.slabId, slab]));
+		const batch = {
+			parts: records.map((record) => record.part),
+			slabs: records.map(({ slab }) => ({
+				slabId: slab.slabId,
+				buffer: slab.buffer
+			}))
+		};
+		const reply = await withAbort(this.options.onBatch(batch), this.options.signal);
+		throwIfAborted(this.options.signal);
+		if (!Array.isArray(reply?.slabs) || reply.slabs.length !== expected.size) throw fail("Missing recycled geometry slabs");
+		const seen = /* @__PURE__ */ new Set(), buffers = /* @__PURE__ */ new Set();
+		for (const returned of reply.slabs) {
+			if (!expected.get(returned?.slabId) || seen.has(returned.slabId) || !(returned.buffer instanceof ArrayBuffer) || returned.buffer.byteLength !== this.slabBytes || buffers.has(returned.buffer)) throw fail("Invalid recycled geometry slab");
+			seen.add(returned.slabId);
+			buffers.add(returned.buffer);
+		}
+		for (const returned of reply.slabs) {
+			const slab = expected.get(returned.slabId);
+			slab.buffer = returned.buffer;
+			this.free.push(slab);
+		}
+		this.batchCount++;
+	}
+	async finish() {
+		await this.flush();
+		const tails = [];
+		for (const state of this.states) {
+			throwIfAborted(this.options.signal);
+			const { spec, group } = state;
+			if (state.next !== spec.count) throw new Error("Streamed geometry count mismatch");
+			let metadata;
+			if (spec.kind === "compact") {
+				group.finish();
+				this.geometryBytes = geometryLimit(this.geometryBytes + group.templateData.byteLength, this.options.maxGeometryBytes);
+				const body = new Set(spec.buffers.map((field) => field.name));
+				metadata = Object.fromEntries(Object.entries(group).filter(([name]) => !body.has(name) && name !== "recordBase" && name !== "recordLimit"));
+			} else metadata = spec.kind === "points" ? { v: spec.count * 3 } : {
+				v: spec.count * 4,
+				f: spec.count * 6
+			};
+			tails.push({
+				groupIndex: spec.groupIndex,
+				metadata
+			});
+		}
+		this.free = [];
+		return {
+			streamed: true,
+			version: 1,
+			emitted: this.emitted,
+			geometryBytes: this.geometryBytes,
+			batchCount: this.batchCount,
+			tails
+		};
+	}
+	dispose() {
+		for (const state of this.active) {
+			for (const field of state.spec.buffers) state.group[field.name] = null;
+			state.slab = null;
+		}
+		this.active.clear();
+		this.pending = [];
+		this.free = [];
+	}
+};
+
+//#endregion
+//#region src/cullMaskCache.js
+const MAX_CACHE_BYTES = 67108864;
+const PAGE_MASKS = 65536;
+const MAX_CACHE_PAGES = 65536;
+var CullMaskCache = class {
+	constructor(maxBytes = MAX_CACHE_BYTES, { maxPages = MAX_CACHE_PAGES } = {}) {
+		if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || maxBytes > MAX_CACHE_BYTES) throw new RangeError("Invalid cull cache budget");
+		if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > MAX_CACHE_PAGES) throw new RangeError("Invalid cull cache page limit");
+		this.maxBytes = maxBytes;
+		this.maxPages = maxPages;
+		this.bytes = 0;
+		this.peakBytes = 0;
+		this.pages = [];
+		this.raw = null;
+		this.used = 0;
+		this.runs = 0;
+		this.previous = -1;
+		this.recording = maxBytes > 0;
+		this.length = 0;
+		this.readCount = 0;
+		this.pageIndex = 0;
+		this.offset = 0;
+		this.remaining = 0;
+		this.mask = 0;
+	}
+	append(mask) {
+		if (!this.recording) return;
+		if (!this.raw) {
+			const size = Math.min(PAGE_MASKS, this.maxBytes - this.bytes);
+			if (!size) {
+				this.recording = false;
+				return;
+			}
+			this.raw = new Uint8Array(size);
+			this.peakBytes = Math.max(this.peakBytes, this.bytes + size);
+		}
+		this.raw[this.used++] = mask;
+		this.length++;
+		if (mask !== this.previous) {
+			this.previous = mask;
+			this.runs++;
+		}
+		if (this.used === this.raw.length) this.seal();
+	}
+	seal() {
+		if (!this.used) return;
+		const compressedBytes = this.runs * 4;
+		if (compressedBytes < this.used && this.bytes + this.raw.byteLength + compressedBytes <= this.maxBytes) {
+			const data = new Uint32Array(this.runs);
+			this.peakBytes = Math.max(this.peakBytes, this.bytes + this.raw.byteLength + data.byteLength);
+			let start = 0, cursor = 0;
+			for (let i = 1; i <= this.used; i++) if (i === this.used || this.raw[i] !== this.raw[start]) {
+				data[cursor++] = i - start << 6 | this.raw[start];
+				start = i;
+			}
+			this.pages.push({
+				data,
+				length: this.used,
+				rle: true
+			});
+			this.bytes += data.byteLength;
+			if (this.bytes + this.raw.byteLength > this.maxBytes) this.raw = null;
+		} else {
+			this.pages.push({
+				data: this.raw,
+				length: this.used,
+				rle: false
+			});
+			this.bytes += this.raw.byteLength;
+			this.raw = null;
+		}
+		this.used = this.runs = 0;
+		this.previous = -1;
+		if (this.pages.length >= this.maxPages) {
+			this.recording = false;
+			this.raw = null;
+		}
+	}
+	finish() {
+		this.seal();
+		this.raw = null;
+		this.recording = false;
+	}
+	read() {
+		if (this.readCount >= this.length) return void 0;
+		let page = this.pages[this.pageIndex];
+		if (this.offset >= page.length) {
+			this.bytes -= page.data.byteLength;
+			this.pages[this.pageIndex++] = null;
+			this.offset = 0;
+			this.word = 0;
+			this.remaining = 0;
+			page = this.pages[this.pageIndex];
+		}
+		this.readCount++;
+		this.offset++;
+		if (!page.rle) return page.data[this.offset - 1];
+		if (!this.remaining) {
+			const entry = page.data[this.word || 0];
+			this.word = (this.word || 0) + 1;
+			this.remaining = entry >>> 6;
+			this.mask = entry & 63;
+		}
+		this.remaining--;
+		return this.mask;
+	}
+	dispose() {
+		this.pages = [];
+		this.raw = null;
+		this.bytes = 0;
+		this.recording = false;
+		this.length = this.readCount = this.used = this.remaining = 0;
+	}
+};
+
+//#endregion
+//#region src/geometry.js
+const SKIP_BLOCKS = /* @__PURE__ */ new Set([
+	"air",
+	"cave_air",
+	"void_air",
+	"structure_void",
+	"barrier",
+	"light"
+]);
+function shortName$1(name) {
+	return (name || "").replace(/^minecraft:/, "");
+}
+function isSkipBlock(name) {
+	return SKIP_BLOCKS.has(shortName$1(name));
+}
+function isLayeredTranslucentBlock(name) {
+	return ["slime_block", "honey_block"].includes(shortName$1(name));
+}
+function isTransparent(name) {
+	const n = shortName$1(name);
+	return n.endsWith("_leaves") || n.includes("glass") || n === "ice" || n === "water" || n === "lava" || n === "bubble_column" || n.endsWith("_grate") || n.endsWith("_bars") || n === "chain" || n.endsWith("_chain") || n === "tripwire" || n.endsWith("_roots") || isLayeredTranslucentBlock(n);
+}
+function isOverlayBlock(name) {
+	const n = shortName$1(name);
+	return n.endsWith("_leaves") || n === "glass" || n.endsWith("_stained_glass") || n === "tinted_glass" || n === "ice" || n === "frosted_ice" || n === "slime_block" || n === "honey_block";
+}
+function isRedstoneDustTex(texKey) {
+	return /(redstone_dust_dot|redstone_dust_line0|redstone_dust_line1)$/.test(texKey);
+}
+function fluidHeight(level) {
+	const l = Number(level) || 0;
+	return l <= 0 || l >= 8 ? 8 / 9 : (8 - l) / 9;
+}
+const ALWAYS_WATERLOGGED = /* @__PURE__ */ new Set([
+	"seagrass",
+	"tall_seagrass",
+	"kelp",
+	"kelp_plant"
+]);
+function fluidOfEntry(paletteEntry) {
+	const n = shortName$1(paletteEntry.name);
+	const props = paletteEntry.properties || {};
+	if (n === "water") return {
+		kind: "water",
+		level: Number(props.level) || 0,
+		waterlogged: false
+	};
+	if (n === "lava") return {
+		kind: "lava",
+		level: Number(props.level) || 0,
+		waterlogged: false
+	};
+	if (n === "bubble_column") return {
+		kind: "water",
+		level: 0,
+		waterlogged: false,
+		bubble: true
+	};
+	const wl = props.waterlogged;
+	if (wl === true || wl === "true" || wl === 1 || wl === "1") return {
+		kind: "water",
+		level: 0,
+		waterlogged: true
+	};
+	if (ALWAYS_WATERLOGGED.has(n)) return {
+		kind: "water",
+		level: 0,
+		waterlogged: true
+	};
+	return null;
+}
+function yieldThread$2() {
+	return new Promise((r) => setTimeout(r, 0));
+}
+function faceCulled(blocks, occludes, hideSame, q, lx, lz, ly, gi, grid, visible, cardinalGetAt) {
+	if (!q.cullface) return false;
+	const cf = q.cullface;
+	const nx = lx + cf[0];
+	const ny = ly + cf[1];
+	const nz = lz + cf[2];
+	if (nx < 0 || nx >= grid.W || ny < 0 || ny >= grid.H || nz < 0 || nz >= grid.D) return false;
+	if (visible && !visible(nx, ny, nz)) return false;
+	const ngi = cardinalGetAt ? cardinalGetAt(nx, ny, nz) : blocks.get(nx + nz * grid.W + ny * grid.strideY);
+	return ngi !== void 0 && (occludes[ngi] || hideSame[gi] && hideSame[ngi] === hideSame[gi]);
+}
+function faceKey(palette, gi, q) {
+	if (isLayeredTranslucentBlock(palette[gi].name)) return q.texKey + "|translucent";
+	if (isRedstoneDustTex(q.texKey)) return q.texKey + "|p" + (Number(palette[gi].properties?.power) || 0);
+	return q.texKey;
+}
+const FULL_BIT = {
+	"0,1,0": 1,
+	"0,-1,0": 2,
+	"0,0,-1": 4,
+	"0,0,1": 8,
+	"-1,0,0": 16,
+	"1,0,0": 32
+};
+function fullFaceMask(quads) {
+	if (!quads) return 0;
+	let mask = 0;
+	for (const q of quads) {
+		const nk = q.normal.map((v) => Math.round(v)).join(",");
+		const bit = FULL_BIT[nk];
+		if (!bit) continue;
+		let ax, b1, b2;
+		if (nk === "1,0,0" || nk === "-1,0,0") {
+			ax = 0;
+			b1 = 1;
+			b2 = 2;
+		} else if (nk === "0,1,0" || nk === "0,-1,0") {
+			ax = 1;
+			b1 = 0;
+			b2 = 2;
+		} else {
+			ax = 2;
+			b1 = 0;
+			b2 = 1;
+		}
+		const av = Math.round(q.verts[0][ax] * 16);
+		if (av !== 0 && av !== 16) continue;
+		let full = true;
+		for (const v of q.verts) if (Math.round(v[ax] * 16) !== av) {
+			full = false;
+			break;
+		}
+		if (!full) continue;
+		const b1min = Math.min(...q.verts.map((v) => v[b1]));
+		const b1max = Math.max(...q.verts.map((v) => v[b1]));
+		const b2min = Math.min(...q.verts.map((v) => v[b2]));
+		const b2max = Math.max(...q.verts.map((v) => v[b2]));
+		if (b1min > .001 || b1max < .999 || b2min > .001 || b2max < .999) continue;
+		mask |= bit;
+	}
+	return mask;
+}
+function flowAngle(palette, fluidOf, blocks, lx, lz, ly, gi, grid, kind, visible) {
+	const selfH = fluidHeight(fluidOf[gi].level);
+	let vx = 0;
+	let vz = 0;
+	const get = (dx, dy, dz) => {
+		const nx = lx + dx;
+		const ny = ly + dy;
+		const nz = lz + dz;
+		if (nx < 0 || nx >= grid.W || ny < 0 || ny >= grid.H || nz < 0 || nz >= grid.D) return void 0;
+		if (visible && !visible(nx, ny, nz)) return void 0;
+		return blocks.get(nx + nz * grid.W + ny * grid.strideY);
+	};
+	for (const [dx, dz] of [
+		[0, -1],
+		[0, 1],
+		[-1, 0],
+		[1, 0]
+	]) {
+		const ngi = get(dx, 0, dz);
+		const nfo = ngi === void 0 ? null : fluidOf[ngi];
+		if (nfo && nfo.kind !== kind) continue;
+		let diff = 0;
+		if (nfo) {
+			if (fluidHeight(nfo.level) > 0) diff = selfH - fluidHeight(nfo.level);
+		} else if (ngi === void 0 || !FLUID_FLOW_BLOCKS.has(shortName$1(palette[ngi].name))) {
+			const bgi = get(dx, -1, dz);
+			const bfo = bgi === void 0 ? null : fluidOf[bgi];
+			if (bfo && bfo.kind === kind && fluidHeight(bfo.level) > 0) diff = selfH - (fluidHeight(bfo.level) - 8 / 9);
+		}
+		if (diff !== 0) {
+			vx += dx * diff;
+			vz += dz * diff;
+		}
+	}
+	if (vx === 0 && vz === 0) return null;
+	return Math.atan2(vz, vx);
+}
+function bubbleScatter(lx, ly, lz) {
+	let h = lx * 374761393 + ly * 668265263 + lz * 1442695041 >>> 0;
+	const rnd = () => {
+		h = h * 1664525 + 1013904223 >>> 0;
+		return h / 4294967296;
+	};
+	const out = [];
+	const n = 4 + h % 3;
+	for (let i = 0; i < n; i++) out.push([
+		.38 + rnd() * .24,
+		.05 + rnd() * .9,
+		.38 + rnd() * .24
+	]);
+	return out;
+}
+function emitFluidFaces(palette, blocks, fluidOf, lx, lz, ly, x, y, z, gi, grid, selfMask, visible, record) {
+	const info = fluidOf[gi];
+	const kind = info.kind;
+	const isLava = kind === "lava";
+	const stillTex = isLava ? "block/lava_still" : "block/water_still";
+	const flowTex = isLava ? "block/lava_flow" : "block/water_flow";
+	const get = (dx, dy, dz) => {
+		const nx = lx + dx;
+		const ny = ly + dy;
+		const nz = lz + dz;
+		if (nx < 0 || nx >= grid.W || ny < 0 || ny >= grid.H || nz < 0 || nz >= grid.D) return void 0;
+		if (visible && !visible(nx, ny, nz)) return void 0;
+		return blocks.get(nx + nz * grid.W + ny * grid.strideY);
+	};
+	const giName = (gi2) => gi2 === void 0 ? "" : shortName$1(palette[gi2].name);
+	const isFluid = (gi2) => gi2 !== void 0 && !!fluidOf[gi2] && fluidOf[gi2].kind === kind;
+	const isFullSolid = (gi2) => gi2 !== void 0 && !!palette[gi2].baked && palette[gi2].baked.fullCube && !fluidOf[gi2] && !giName(gi2).endsWith("_leaves");
+	const isHeightSolid = (gi2) => isFullSolid(gi2) || gi2 !== void 0 && !fluidOf[gi2] && (giName(gi2).endsWith("_slab") || giName(gi2).endsWith("_stairs"));
+	const isCullingSolid = (gi2) => isFullSolid(gi2) && !isTransparent(palette[gi2].name);
+	const fluidH = (dx, dy, dz) => {
+		const ngi = get(dx, dy, dz);
+		if (ngi === void 0) return 0;
+		const nfo = fluidOf[ngi];
+		if (nfo && nfo.kind === kind) {
+			if (isFluid(get(dx, dy + 1, dz))) return 1;
+			return fluidHeight(nfo.level);
+		}
+		return isHeightSolid(ngi) ? -1 : 0;
+	};
+	const self = fluidH(0, 0, 0);
+	const corner = (dx, dz) => {
+		const a = fluidH(dx, 0, 0);
+		const b = fluidH(0, 0, dz);
+		if (a >= 1 || b >= 1) return 1;
+		let sum = 0;
+		let cnt = 0;
+		const add = (h) => {
+			if (h >= .8) {
+				sum += h * 10;
+				cnt += 10;
+			} else if (h >= 0) {
+				sum += h;
+				cnt += 1;
+			}
+		};
+		if (a > 0 || b > 0) {
+			const f = fluidH(dx, 0, dz);
+			if (f >= 1) return 1;
+			add(f);
+		}
+		add(self);
+		add(a);
+		add(b);
+		return sum / cnt;
+	};
+	let h00, h10, h01, h11;
+	if (self >= 1) h00 = h10 = h01 = h11 = 1;
+	else {
+		h00 = corner(-1, -1);
+		h10 = corner(1, -1);
+		h01 = corner(-1, 1);
+		h11 = corner(1, 1);
+	}
+	const above = get(0, 1, 0);
+	const below = get(0, -1, 0);
+	const aboveFluid = isFluid(above);
+	const bottomShown = !isFluid(below) && !isCullingSolid(below) && !(selfMask & 2);
+	const w = bottomShown ? .001 : 0;
+	const minCorner = Math.min(h00, h10, h01, h11);
+	const topShown = !aboveFluid && !(isCullingSolid(above) && minCorner >= 1) && !(selfMask & 1);
+	let count = 0;
+	if (topShown) {
+		const previewFlow = palette[gi].properties?.preview_flow;
+		const angle = previewFlow && previewFlow !== "auto" ? {
+			north: -Math.PI / 2,
+			south: Math.PI / 2,
+			east: 0,
+			west: Math.PI,
+			northeast: -Math.PI / 4,
+			southeast: Math.PI / 4,
+			southwest: Math.PI * .75,
+			northwest: -Math.PI * .75
+		}[previewFlow] ?? null : flowAngle(palette, fluidOf, blocks, lx, lz, ly, gi, grid, kind, visible);
+		let topTex = stillTex;
+		let topUVs = [
+			[0, 1],
+			[1, 1],
+			[0, 0],
+			[1, 0]
+		];
+		if (angle !== null) {
+			topTex = flowTex;
+			const af = angle - Math.PI / 2;
+			const ag = Math.sin(af) * .25;
+			const ah = Math.cos(af) * .25;
+			topUVs = [
+				[.5 - ah + ag, .5 + ah + ag],
+				[.5 + ah + ag, .5 + ah - ag],
+				[.5 - ah - ag, .5 - ah + ag],
+				[.5 + ah - ag, .5 - ah - ag]
+			];
+		}
+		record(topTex, [
+			[
+				x,
+				y + h01 - .001,
+				z + 1
+			],
+			[
+				x + 1,
+				y + h11 - .001,
+				z + 1
+			],
+			[
+				x,
+				y + h00 - .001,
+				z
+			],
+			[
+				x + 1,
+				y + h10 - .001,
+				z
+			]
+		], topUVs);
+		count++;
+	}
+	if (bottomShown) {
+		record(stillTex, [
+			[
+				x + 1,
+				y + w,
+				z + 1
+			],
+			[
+				x,
+				y + w,
+				z + 1
+			],
+			[
+				x + 1,
+				y + w,
+				z
+			],
+			[
+				x,
+				y + w,
+				z
+			]
+		], [
+			[0, 1],
+			[1, 1],
+			[0, 0],
+			[1, 0]
+		]);
+		count++;
+	}
+	const side = (dx, dz) => get(dx, 0, dz);
+	const overlayTex = isLava ? null : "block/water_overlay";
+	const emitSide = (dx, dz, bit, pos, uv) => {
+		const ngi = side(dx, dz);
+		if (isFluid(ngi) || isCullingSolid(ngi) || selfMask & bit) return;
+		record(overlayTex && isOverlayBlock(giName(ngi)) ? overlayTex : flowTex, pos, uv);
+		count++;
+	};
+	emitSide(0, -1, 4, [
+		[
+			x + 1,
+			y + w,
+			z
+		],
+		[
+			x,
+			y + w,
+			z
+		],
+		[
+			x + 1,
+			y + h10,
+			z
+		],
+		[
+			x,
+			y + h00,
+			z
+		]
+	], [
+		[0, 1],
+		[1, 1],
+		[0, 0],
+		[1, 0]
+	]);
+	emitSide(0, 1, 8, [
+		[
+			x,
+			y + w,
+			z + 1
+		],
+		[
+			x + 1,
+			y + w,
+			z + 1
+		],
+		[
+			x,
+			y + h01,
+			z + 1
+		],
+		[
+			x + 1,
+			y + h11,
+			z + 1
+		]
+	], [
+		[0, 1],
+		[1, 1],
+		[0, 0],
+		[1, 0]
+	]);
+	emitSide(-1, 0, 16, [
+		[
+			x,
+			y + h00,
+			z
+		],
+		[
+			x,
+			y + w,
+			z
+		],
+		[
+			x,
+			y + h01,
+			z + 1
+		],
+		[
+			x,
+			y + w,
+			z + 1
+		]
+	], [
+		[0, 0],
+		[0, 1],
+		[1, 0],
+		[1, 1]
+	]);
+	emitSide(1, 0, 32, [
+		[
+			x + 1,
+			y + h11,
+			z + 1
+		],
+		[
+			x + 1,
+			y + w,
+			z + 1
+		],
+		[
+			x + 1,
+			y + h10,
+			z
+		],
+		[
+			x + 1,
+			y + w,
+			z
+		]
+	], [
+		[0, 0],
+		[0, 1],
+		[1, 0],
+		[1, 1]
+	]);
+	if (info.bubble) for (const [bx, by, bz] of bubbleScatter(lx, ly, lz)) {
+		record("particle/bubble", [
+			x + bx,
+			y + by,
+			z + bz
+		]);
+		count++;
+	}
+	return count;
+}
+function writeFace(g, verts, uvs, ox, oy, oz, blockKey) {
+	const v = g.v;
+	const p = g.positions;
+	const u = g.uvs;
+	const ix = g.indices;
+	const f = g.f;
+	if (g.blockKeys) g.blockKeys[v / 4] = blockKey;
+	for (let k = 0; k < 4; k++) {
+		p[(v + k) * 3] = ox + verts[k][0];
+		p[(v + k) * 3 + 1] = oy + verts[k][1];
+		p[(v + k) * 3 + 2] = oz + verts[k][2];
+		u[(v + k) * 2] = uvs[k][0];
+		u[(v + k) * 2 + 1] = uvs[k][1];
+	}
+	const base = v + (g.vertexBase || 0);
+	ix[f] = base;
+	ix[f + 1] = base + 1;
+	ix[f + 2] = base + 2;
+	ix[f + 3] = base + 2;
+	ix[f + 4] = base + 1;
+	ix[f + 5] = base + 3;
+	g.v = v + 4;
+	g.f = f + 6;
+}
+async function buildFaceGroups(palette, blocks, bounds, onProgress, filter, options) {
+	return buildFaceGroupsInternal(palette, blocks, bounds, onProgress, filter, options, false);
+}
+async function buildFaceGroupsInternal(palette, blocks, bounds, onProgress, filter, options, streaming) {
+	throwIfAborted(options?.signal);
+	const yieldWork = options?.yieldTask || yieldThread$2;
+	const grid = {
+		W: bounds.width,
+		D: bounds.depth,
+		H: bounds.height,
+		strideY: bounds.width * bounds.depth
+	};
+	const minX = bounds.minX;
+	const minY = bounds.minY;
+	const minZ = bounds.minZ;
+	const visible = filter ? (lx, ly, lz) => filter(lx + minX, ly + minY, lz + minZ, ly) : null;
+	const renderable = new Uint8Array(palette.length);
+	const occludes = new Uint8Array(palette.length);
+	const hideSame = new Uint32Array(palette.length), sameBlockGroups = /* @__PURE__ */ new Map();
+	const quadsByPalette = new Array(palette.length);
+	const groupKeysByPalette = new Array(palette.length);
+	for (let i = 0; i < palette.length; i++) {
+		const name = palette[i].name;
+		const baked = palette[i].baked;
+		const sn = shortName$1(name);
+		if (sn === "player_head" || sn === "player_wall_head") {
+			quadsByPalette[i] = null;
+			hideSame[i] = 0;
+			continue;
+		}
+		if (baked && baked.quads && baked.quads.length && !isSkipBlock(name)) {
+			renderable[i] = 1;
+			occludes[i] = baked.fullCube && !isTransparent(name) ? 1 : 0;
+			quadsByPalette[i] = baked.quads;
+			groupKeysByPalette[i] = baked.quads.map((q) => {
+				const key = faceKey(palette, i, q);
+				return options?.includeGroup && !options.includeGroup(key) ? null : key;
+			});
+		} else quadsByPalette[i] = null;
+		if (sn.includes("glass") || sn.endsWith("_leaves") || isLayeredTranslucentBlock(sn)) {
+			if (!sameBlockGroups.has(sn)) sameBlockGroups.set(sn, i + 1);
+			hideSame[i] = sameBlockGroups.get(sn);
+		}
+	}
+	const fluidOf = palette.map(fluidOfEntry);
+	const selfMasks = palette.map((p) => {
+		const fo = fluidOfEntry(p);
+		if (!fo || !fo.waterlogged || isTransparent(p.name)) return 0;
+		return fullFaceMask(p.baked ? p.baked.quads : null);
+	});
+	const registry = /* @__PURE__ */ new Map(), orderedCounters = [];
+	const counterFor = (key) => {
+		let counter = registry.get(key);
+		if (!counter) {
+			counter = {
+				key,
+				count: 0
+			};
+			registry.set(key, counter);
+		}
+		return counter;
+	};
+	const counterRefs = groupKeysByPalette.map((keys) => keys?.map((key) => key === null ? null : counterFor(key)));
+	const addCount = (counter, amount) => {
+		if (!counter.count) orderedCounters.push(counter);
+		counter.count += amount;
+		emitted += amount;
+	};
+	const cardinalBit = (cf) => {
+		if (!cf) return 0;
+		if (cf[0] === 0 && cf[2] === 0 && (cf[1] === -1 || cf[1] === 1)) return cf[1] === 1 ? 1 : 2;
+		if (cf[0] === 0 && cf[1] === 0 && (cf[2] === -1 || cf[2] === 1)) return cf[2] === -1 ? 4 : 8;
+		if (cf[1] === 0 && cf[2] === 0 && (cf[0] === -1 || cf[0] === 1)) return cf[0] === -1 ? 16 : 32;
+		return 64;
+	};
+	const compiled = quadsByPalette.map((quads, gi) => {
+		if (!quads) return null;
+		const bits = quads.map((q) => cardinalBit(q.cullface)), directions = [];
+		let seen = 0, unknown = false;
+		for (let qi = 0; qi < quads.length; qi++) {
+			if (!counterRefs[gi][qi]) continue;
+			const bit = bits[qi];
+			if (bit === 64) unknown = true;
+			else if (bit && !(seen & bit)) {
+				directions.push({
+					bit,
+					quad: quads[qi]
+				});
+				seen |= bit;
+			}
+		}
+		return {
+			bits,
+			directions,
+			plans: unknown ? null : new Array(64)
+		};
+	});
+	const cardinalGetAt = typeof blocks.getAt === "function" && !blocks.onlyRegion ? blocks.getAt.bind(blocks) : null;
+	const hiddenMask = (info, lx, lz, ly, gi) => {
+		let mask = 0;
+		for (const { bit, quad } of info.directions) if (faceCulled(blocks, occludes, hideSame, quad, lx, lz, ly, gi, grid, visible, cardinalGetAt)) mask |= bit;
+		return mask;
+	};
+	const planFor = (gi, mask) => {
+		const info = compiled[gi];
+		let plan = info.plans[mask];
+		if (!plan) {
+			const seen = /* @__PURE__ */ new Map();
+			for (let qi = 0; qi < counterRefs[gi].length; qi++) {
+				const counter = counterRefs[gi][qi];
+				if (counter && !(info.bits[qi] & mask)) seen.set(counter, (seen.get(counter) || 0) + 1);
+			}
+			plan = [...seen].map(([counter, count]) => ({
+				counter,
+				count
+			}));
+			info.plans[mask] = plan;
+		}
+		return plan;
+	};
+	const cullCache = new CullMaskCache(options?.cullCacheBytes);
+	const keys = options?.keys;
+	const entries = keys && keys !== blocks.keyView ? function* () {
+		for (const key of keys) {
+			const gi = blocks.get(key);
+			if (gi !== void 0) yield [key, gi];
+		}
+	} : () => blocks;
+	const total = keys ? keys.length ?? keys.size ?? blocks.size : blocks.size;
+	let emitted = 0;
+	const report = (phase, completed) => {
+		throwIfAborted(options?.signal);
+		const stageFraction = total ? completed / total : 1;
+		const fraction = phase === "count" ? stageFraction * .5 : .5 + stageFraction * .5;
+		onProgress?.(fraction);
+		options?.onStage?.({
+			phase,
+			fraction,
+			stageFraction,
+			completed,
+			total
+		});
+	};
+	let n = 0;
+	let stream = null;
+	try {
+		report("count", 0);
+		for (const [key, gi] of entries()) {
+			if ((++n & 65535) === 0) {
+				report("count", n);
+				await yieldWork();
+				throwIfAborted(options?.signal);
+			}
+			const lx = key % grid.W;
+			const lz = Math.floor(key / grid.W) % grid.D;
+			const ly = Math.floor(key / grid.strideY);
+			const x = lx + minX;
+			const y = ly + minY;
+			const z = lz + minZ;
+			if (filter && !filter(x, y, z, ly)) continue;
+			const finfo = fluidOf[gi];
+			if (finfo) {
+				emitFluidFaces(palette, blocks, fluidOf, lx, lz, ly, x, y, z, gi, grid, selfMasks[gi], visible, (texKey) => {
+					if (options?.includeGroup && !options.includeGroup(texKey)) return;
+					addCount(counterFor(texKey), 1);
+				});
+				if (!finfo.waterlogged) continue;
+			}
+			if (!renderable[gi]) continue;
+			const info = compiled[gi], mask = hiddenMask(info, lx, lz, ly, gi);
+			if (info.directions.length) cullCache.append(mask);
+			if (info.plans) for (const { counter, count } of planFor(gi, mask)) addCount(counter, count);
+			else {
+				const quads = quadsByPalette[gi], refs = counterRefs[gi];
+				for (let qi = 0; qi < quads.length; qi++) {
+					const counter = refs[qi], bit = info.bits[qi];
+					if (!counter || (bit === 64 ? faceCulled(blocks, occludes, hideSame, quads[qi], lx, lz, ly, gi, grid, visible) : bit & mask)) continue;
+					addCount(counter, 1);
+				}
+			}
+		}
+		cullCache.finish();
+		const counts = new Map(orderedCounters.map((counter) => [counter.key, counter.count]));
+		report("count", total);
+		let geometryBytes = estimateGeometryBytes(counts, bounds, options);
+		options?.onStage?.({
+			phase: "allocate",
+			fraction: .5,
+			bytes: geometryBytes,
+			groups: [...counts].map(([key, count]) => ({
+				key,
+				count,
+				compact: !!options?.compactFaces && canCompactFaces(bounds, key)
+			}))
+		});
+		throwIfAborted(options?.signal);
+		stream = streaming ? new GeometryStream(counts, bounds, options, emitted, geometryBytes) : null;
+		const groups = stream ? stream.groups : /* @__PURE__ */ new Map();
+		if (stream) await stream.start();
+		else for (const [gKey, count] of counts) {
+			if (options?.compactFaces && canCompactFaces(bounds, gKey)) {
+				groups.set(gKey, new CompactFaceData(count, bounds));
+				continue;
+			}
+			groups.set(gKey, gKey === "particle/bubble" ? {
+				positions: new Float32Array(count * 3),
+				v: 0
+			} : {
+				positions: new Float32Array(count * 12),
+				uvs: new Float32Array(count * 8),
+				indices: count * 4 < 65536 ? new Uint16Array(count * 6) : new Uint32Array(count * 6),
+				...options?.trackBlocks ? { blockKeys: bounds.width * bounds.height * bounds.depth <= 2 ** 32 ? new Uint32Array(count) : new Float64Array(count) } : {},
+				v: 0,
+				f: 0
+			});
+		}
+		const groupsByPalette = groupKeysByPalette.map((keys) => keys?.map((key) => groups.get(key)));
+		n = 0;
+		report("fill", 0);
+		for (const [key, gi] of entries()) {
+			if ((++n & 65535) === 0) {
+				report("fill", n);
+				await yieldWork();
+				throwIfAborted(options?.signal);
+			}
+			const lx = key % grid.W;
+			const lz = Math.floor(key / grid.W) % grid.D;
+			const ly = Math.floor(key / grid.strideY);
+			const x = lx + minX;
+			const y = ly + minY;
+			const z = lz + minZ;
+			if (filter && !filter(x, y, z, ly)) continue;
+			const finfo = fluidOf[gi];
+			if (finfo) {
+				const pendingFluid = stream ? [] : null;
+				emitFluidFaces(palette, blocks, fluidOf, lx, lz, ly, x, y, z, gi, grid, selfMasks[gi], visible, (texKey, pos, uvs) => {
+					const g = groups.get(texKey);
+					if (!g) return;
+					if (pendingFluid) {
+						pendingFluid.push({
+							g,
+							texKey,
+							pos,
+							uvs
+						});
+						return;
+					}
+					if (texKey === "particle/bubble") {
+						g.positions[g.v] = pos[0];
+						g.positions[g.v + 1] = pos[1];
+						g.positions[g.v + 2] = pos[2];
+						g.v += 3;
+					} else writeFace(g, pos, uvs, 0, 0, 0, key);
+				});
+				if (pendingFluid) for (const { g, texKey, pos, uvs } of pendingFluid) {
+					if (g.v >= g.recordLimit && !stream.prepare(g)) await stream.flushFor(g);
+					if (texKey === "particle/bubble") {
+						g.positions[g.v] = pos[0];
+						g.positions[g.v + 1] = pos[1];
+						g.positions[g.v + 2] = pos[2];
+						g.v += 3;
+					} else writeFace(g, pos, uvs, 0, 0, 0, key);
+				}
+				if (!finfo.waterlogged) continue;
+			}
+			if (!renderable[gi]) continue;
+			const quads = quadsByPalette[gi], info = compiled[gi];
+			let mask = info.directions.length ? cullCache.read() : 0;
+			if (mask === void 0) mask = hiddenMask(info, lx, lz, ly, gi);
+			const faceGroups = groupsByPalette[gi];
+			for (let qi = 0; qi < quads.length; qi++) {
+				const q = quads[qi];
+				if (!faceGroups[qi]) continue;
+				const bit = info.bits[qi];
+				if (bit === 64 ? faceCulled(blocks, occludes, hideSame, q, lx, lz, ly, gi, grid, visible) : bit & mask) continue;
+				const group = faceGroups[qi];
+				if (group.isCompactFaceData) {
+					if (stream && group.cursor >= group.recordLimit && !stream.prepare(group)) await stream.flushFor(group);
+					group.write(q, x, y, z, key);
+				} else {
+					if (stream && group.v >= group.recordLimit && !stream.prepare(group)) await stream.flushFor(group);
+					writeFace(group, q.verts, q.uvs, x, y, z, key);
+				}
+			}
+		}
+		if (stream) {
+			const result = await stream.finish();
+			report("fill", total);
+			return result;
+		}
+		for (const group of groups.values()) if (group.isCompactFaceData) {
+			throwIfAborted(options?.signal);
+			group.finish();
+			geometryBytes = geometryLimit(geometryBytes + group.templateData.byteLength, options?.maxGeometryBytes);
+		}
+		report("fill", total);
+		return {
+			groups,
+			emitted,
+			geometryBytes
+		};
+	} finally {
+		stream?.dispose();
+		cullCache.dispose();
 	}
 }
 
@@ -78554,498 +82215,6 @@ function applyIdlePose(parts, id, state, age) {
 }
 
 //#endregion
-//#region src/entityModel.js
-function cuboidFaces(c, texW, texH) {
-	const { u, v, x, y, z, dx, dy, dz, mirror } = c;
-	const [rx, ry, rz] = c.dil || [
-		0,
-		0,
-		0
-	];
-	let x0 = x - rx, y0 = y - ry, z0 = z - rz;
-	let x1 = x + dx + rx, y1 = y + dy + ry, z1 = z + dz + rz;
-	if (mirror) {
-		const t = x0;
-		x0 = x1;
-		x1 = t;
-	}
-	const V = {
-		v0: [
-			x0,
-			y0,
-			z0
-		],
-		v1: [
-			x1,
-			y0,
-			z0
-		],
-		v2: [
-			x1,
-			y1,
-			z0
-		],
-		v3: [
-			x0,
-			y1,
-			z0
-		],
-		v4: [
-			x0,
-			y0,
-			z1
-		],
-		v5: [
-			x1,
-			y0,
-			z1
-		],
-		v6: [
-			x1,
-			y1,
-			z1
-		],
-		v7: [
-			x0,
-			y1,
-			z1
-		]
-	};
-	const uN = u + dz, uE = u + dz + dx, uE2 = u + dz + dx + dx;
-	const uS = u + dz + dx + dz, uS2 = u + dz + dx + dz + dx;
-	const vT = v, vM = v + dz, vB = v + dz + dy;
-	const flatX = x0 === x1, flatY = y0 === y1, flatZ = z0 === z1;
-	const FACES = [
-		[
-			[
-				"v5",
-				"v4",
-				"v0",
-				"v1"
-			],
-			[
-				uN,
-				vT,
-				uE,
-				vM
-			],
-			[
-				0,
-				-1,
-				0
-			],
-			flatX || flatY || flatZ
-		],
-		[
-			[
-				"v2",
-				"v3",
-				"v7",
-				"v6"
-			],
-			[
-				uE,
-				vM,
-				uE2,
-				vT
-			],
-			[
-				0,
-				1,
-				0
-			],
-			flatX || flatZ
-		],
-		[
-			[
-				"v0",
-				"v4",
-				"v7",
-				"v3"
-			],
-			[
-				u,
-				vM,
-				uN,
-				vB
-			],
-			[
-				-1,
-				0,
-				0
-			],
-			flatX || flatY || flatZ
-		],
-		[
-			[
-				"v1",
-				"v0",
-				"v3",
-				"v2"
-			],
-			[
-				uN,
-				vM,
-				uE,
-				vB
-			],
-			[
-				0,
-				0,
-				-1
-			],
-			flatX || flatY || flatZ
-		],
-		[
-			[
-				"v5",
-				"v1",
-				"v2",
-				"v6"
-			],
-			[
-				uE,
-				vM,
-				uS,
-				vB
-			],
-			[
-				1,
-				0,
-				0
-			],
-			flatY || flatZ
-		],
-		[
-			[
-				"v4",
-				"v5",
-				"v6",
-				"v7"
-			],
-			[
-				uS,
-				vM,
-				uS2,
-				vB
-			],
-			[
-				0,
-				0,
-				1
-			],
-			flatX || flatY
-		]
-	];
-	if (flatY) FACES[1][1] = [
-		uN,
-		vM,
-		uE,
-		vT
-	];
-	if (flatZ) FACES[5][1] = [
-		uE,
-		vM,
-		uN,
-		vB
-	];
-	if (flatX) FACES[4][1] = [
-		uN,
-		vM,
-		u,
-		vB
-	];
-	const out = [];
-	for (const [idx, [u1, v1, u2, v2], dir, skip] of FACES) {
-		if (skip) continue;
-		const nuv = (uu, vv) => [uu / texW, vv / texH];
-		let pairs = [
-			[V[idx[0]], nuv(u2, v1)],
-			[V[idx[1]], nuv(u1, v1)],
-			[V[idx[2]], nuv(u1, v2)],
-			[V[idx[3]], nuv(u2, v2)]
-		];
-		let d = dir;
-		if (mirror && d[0] !== 0) d = [
-			-d[0],
-			d[1],
-			d[2]
-		];
-		if (mirror) pairs.reverse();
-		out.push({
-			verts: pairs.map((p) => p[0]),
-			uvs: pairs.map((p) => p[1]),
-			dir: d
-		});
-	}
-	return out;
-}
-function partRotation(rot) {
-	const [pitch, yaw, roll] = rot;
-	const cx = Math.cos(pitch), sx = Math.sin(pitch);
-	const cy = Math.cos(yaw), sy = Math.sin(yaw);
-	const cr = Math.cos(roll), sr = Math.sin(roll);
-	return ([x, y, z]) => {
-		const y1 = y * cx - z * sx, z1 = y * sx + z * cx;
-		const x2 = x * cy + z1 * sy, z2 = -x * sy + z1 * cy;
-		return [
-			x2 * cr - y1 * sr,
-			x2 * sr + y1 * cr,
-			z2
-		];
-	};
-}
-const add3 = (a, b) => [
-	a[0] + b[0],
-	a[1] + b[1],
-	a[2] + b[2]
-];
-function compileModel(model, includeParts = false) {
-	const { w, h, parts } = model;
-	const quads = [];
-	const walk = (node, toModel, toDir) => {
-		for (const name of Object.keys(node)) {
-			const p = node[name];
-			const rotate = partRotation(p.rot || [
-				0,
-				0,
-				0
-			]);
-			const pivot = p.pivot || [
-				0,
-				0,
-				0
-			];
-			const childToModel = (pt) => toModel(add3(pivot, rotate(pt)));
-			const childToDir = (d) => toDir(rotate(d));
-			for (const c of p.cuboids || []) for (const face of cuboidFaces(c, w, h)) {
-				const verts = face.verts.map(childToModel).map(([mx, my, mz]) => [
-					mx / 16,
-					(24 - my) / 16,
-					-mz / 16
-				]);
-				const nd = childToDir(face.dir);
-				const quad = {
-					verts,
-					uvs: face.uvs,
-					normal: [
-						nd[0],
-						-nd[1],
-						-nd[2]
-					]
-				};
-				if (includeParts) quad.part = p;
-				quads.push(quad);
-			}
-			walk(p.children || {}, childToModel, childToDir);
-		}
-	};
-	walk(parts, (p) => p, (d) => d);
-	return quads;
-}
-function quadsToEntityMesh(quads, mat) {
-	return new Mesh(quadsToEntityGeometry(quads), mat);
-}
-function quadsToEntityGeometry(quads) {
-	const n = quads.length;
-	const positions = new Float32Array(n * 12);
-	const uvs = new Float32Array(n * 8);
-	const normals = new Float32Array(n * 12);
-	const indices = new Uint32Array(n * 6);
-	for (let i = 0; i < n; i++) {
-		const q = quads[i];
-		for (let k = 0; k < 4; k++) {
-			positions[i * 12 + k * 3] = q.verts[k][0];
-			positions[i * 12 + k * 3 + 1] = q.verts[k][1];
-			positions[i * 12 + k * 3 + 2] = q.verts[k][2];
-			uvs[i * 8 + k * 2] = q.uvs[k][0];
-			uvs[i * 8 + k * 2 + 1] = q.uvs[k][1];
-			normals[i * 12 + k * 3] = q.normal[0];
-			normals[i * 12 + k * 3 + 1] = q.normal[1];
-			normals[i * 12 + k * 3 + 2] = q.normal[2];
-		}
-		const b = i * 4;
-		indices[i * 6] = b;
-		indices[i * 6 + 1] = b + 1;
-		indices[i * 6 + 2] = b + 2;
-		indices[i * 6 + 3] = b;
-		indices[i * 6 + 4] = b + 2;
-		indices[i * 6 + 5] = b + 3;
-	}
-	const geo = new BufferGeometry();
-	geo.setAttribute("position", new BufferAttribute(positions, 3));
-	geo.setAttribute("uv", new BufferAttribute(uvs, 2));
-	geo.setAttribute("normal", new BufferAttribute(normals, 3));
-	geo.setIndex(new BufferAttribute(indices, 1));
-	return geo;
-}
-const modelTemplates = /* @__PURE__ */ new Map();
-const MAX_MODEL_TEMPLATES = 128;
-const MAX_MODEL_BYTES = 8388608;
-let modelBytes = 0;
-function modelTemplate(model) {
-	const key = JSON.stringify([
-		model.w,
-		model.h,
-		model.parts
-	]);
-	let template = modelTemplates.get(key);
-	if (template) {
-		modelTemplates.delete(key);
-		modelTemplates.set(key, template);
-		return template;
-	}
-	const quads = compileModel(model, true);
-	const geometry = quadsToEntityGeometry(quads);
-	const indices = /* @__PURE__ */ new Map();
-	let boneIndex = 1;
-	const walk = (nodes) => {
-		for (const node of Object.values(nodes)) {
-			indices.set(node, boneIndex++);
-			walk(node.children || {});
-		}
-	};
-	walk(model.parts);
-	const skinIndices = new Uint16Array(quads.length * 16);
-	const skinWeights = new Float32Array(quads.length * 16);
-	for (let i = 0; i < quads.length; i++) for (let k = 0; k < 4; k++) {
-		skinIndices[i * 16 + k * 4] = indices.get(quads[i].part);
-		skinWeights[i * 16 + k * 4] = 1;
-	}
-	const bytes = key.length * 2 + geometry.index.array.byteLength + skinIndices.byteLength + skinWeights.byteLength + Object.values(geometry.attributes).reduce((sum, attribute) => sum + attribute.array.byteLength, 0);
-	template = {
-		geometry,
-		skinIndices,
-		skinWeights,
-		sphere: null,
-		bytes
-	};
-	if (bytes <= MAX_MODEL_BYTES) {
-		modelTemplates.set(key, template);
-		modelBytes += bytes;
-		while (modelTemplates.size > MAX_MODEL_TEMPLATES || modelBytes > MAX_MODEL_BYTES) {
-			const oldest = modelTemplates.keys().next().value;
-			modelBytes -= modelTemplates.get(oldest).bytes;
-			modelTemplates.delete(oldest);
-		}
-	}
-	return template;
-}
-function createEntityModelMesh(model, material) {
-	return new Mesh(modelTemplate(model).geometry.clone(), material);
-}
-var EntitySkeleton = class extends Skeleton {
-	constructor(bones) {
-		super(bones);
-		const indices = new Map(bones.map((bone, index) => [bone, index]));
-		this.parentIndices = bones.map((bone) => indices.get(bone.parent) ?? -1);
-		this.modelMatrices = bones.map(() => new Matrix4());
-		this.offsetMatrix = new Matrix4();
-	}
-	update() {
-		for (let i = 0; i < this.bones.length; i++) {
-			const matrix = this.modelMatrices[i].copy(this.bones[i].matrix);
-			const parent = this.parentIndices[i];
-			if (parent >= 0) matrix.premultiply(this.modelMatrices[parent]);
-			this.offsetMatrix.multiplyMatrices(matrix, this.boneInverses[i]).toArray(this.boneMatrices, i * 16);
-		}
-		if (this.boneTexture) this.boneTexture.needsUpdate = true;
-	}
-};
-var EntitySkinnedMesh = class extends SkinnedMesh {
-	applyBoneTransform(index, target) {
-		const boneIndex = this.geometry.attributes.skinIndex.getX(index);
-		target.applyMatrix4(this.skeleton.boneInverses[boneIndex]);
-		for (let bone = this.skeleton.bones[boneIndex]; bone && bone !== this; bone = bone.parent) target.applyMatrix4(bone.matrix);
-		return target;
-	}
-};
-function createEntityRig(model, material) {
-	const template = modelTemplate(model);
-	const geometry = template.geometry.clone();
-	const root = new Bone();
-	root.position.y = 24 / 16;
-	root.scale.set(1 / 16, -1 / 16, -1 / 16);
-	const bones = [root];
-	const parts = {};
-	const walk = (nodes, parent) => {
-		for (const [name, node] of Object.entries(nodes)) {
-			const bone = new Bone();
-			bone.name = name;
-			bone.position.fromArray(node.pivot || [
-				0,
-				0,
-				0
-			]);
-			bone.rotation.set(...node.rot || [
-				0,
-				0,
-				0
-			], "ZYX");
-			bone.userData.restPosition = bone.position.clone();
-			bone.userData.restRotation = bone.rotation.clone();
-			bones.push(bone);
-			parts[name] = bone;
-			parent.add(bone);
-			walk(node.children || {}, bone);
-		}
-	};
-	walk(model.parts, root);
-	geometry.setAttribute("skinIndex", new Uint16BufferAttribute(template.skinIndices, 4));
-	geometry.setAttribute("skinWeight", new Float32BufferAttribute(template.skinWeights, 4));
-	const mesh = new EntitySkinnedMesh(geometry, material);
-	mesh.bindMode = DetachedBindMode;
-	mesh.add(root);
-	mesh.bind(new EntitySkeleton(bones));
-	if (!template.sphere) {
-		mesh.computeBoundingSphere();
-		mesh.boundingSphere.radius += 1.5;
-		template.sphere = mesh.boundingSphere.clone();
-	} else mesh.boundingSphere = template.sphere.clone();
-	mesh.userData.parts = parts;
-	mesh.userData.resetPose = () => {
-		for (let i = 1; i < bones.length; i++) {
-			const bone = bones[i];
-			bone.position.copy(bone.userData.restPosition);
-			bone.rotation.copy(bone.userData.restRotation);
-			bone.scale.setScalar(1);
-		}
-	};
-	geometry.addEventListener("dispose", () => mesh.skeleton.dispose());
-	return mesh;
-}
-function sortTransparentFaces(mesh) {
-	const faces = Array.from({ length: mesh.geometry.index.count / 6 }, (_, index) => ({
-		index,
-		distance: 0
-	}));
-	const cameraPosition = new Vector3();
-	const center = new Vector3();
-	const opposite = new Vector3();
-	return (camera) => {
-		cameraPosition.setFromMatrixPosition(camera.matrixWorld);
-		for (const face of faces) {
-			mesh.getVertexPosition(face.index * 4, center);
-			mesh.getVertexPosition(face.index * 4 + 2, opposite);
-			center.add(opposite).multiplyScalar(.5).applyMatrix4(mesh.matrixWorld);
-			face.distance = center.distanceToSquared(cameraPosition);
-		}
-		faces.sort((a, b) => b.distance - a.distance || a.index - b.index);
-		const indices = mesh.geometry.index;
-		for (let i = 0; i < faces.length; i++) {
-			const b = faces[i].index * 4, offset = i * 6;
-			indices.array[offset] = b;
-			indices.array[offset + 1] = b + 1;
-			indices.array[offset + 2] = b + 2;
-			indices.array[offset + 3] = b;
-			indices.array[offset + 4] = b + 2;
-			indices.array[offset + 5] = b + 3;
-		}
-		indices.needsUpdate = true;
-	};
-}
-
-//#endregion
 //#region src/cushion.js
 const CUSHION_COLORS = [
 	"white",
@@ -85085,7 +88254,7 @@ function resolveItemModelDef(def, out = [], context = "fixed", item = {}) {
 async function buildEntityMesh(entity, assets, data, ancestors = /* @__PURE__ */ new Set()) {
 	if (ancestors.size >= 32 || ancestors.has(entity.nbt)) return null;
 	const next = new Set(ancestors).add(entity.nbt);
-	const model = await buildSingleEntityMesh(entity, assets, data);
+	const model = await buildSingleEntityMesh(entity, assets, data) ?? hitboxAnchor(entity);
 	if (!model) return null;
 	const passengers = Array.isArray(entity.nbt?.Passengers) ? entity.nbt.Passengers.filter((p) => p && typeof p.id === "string") : [];
 	if (!passengers.length) return registerEntityHitbox(model, entity);
@@ -86377,6 +89546,12 @@ async function buildBoat(entity, id, assets) {
 	group.position.set(x, y, z);
 	group.rotation.y = -((yaw + 90) * Math.PI) / 180;
 	return group;
+}
+function hitboxAnchor(entity) {
+	if (!getEntityHitbox(entity)) return null;
+	const anchor = new Group();
+	anchor.position.fromArray(entity.pos);
+	return anchor;
 }
 
 //#endregion
@@ -96140,7 +99315,20 @@ async function parseLitematica(buffer, onProgress, options) {
 //#endregion
 //#region ../Gudu.blog/gudu.blog/scripts/mc-renderer-entry.mjs
 const archive = new URL("../../assets/minecraft/vanilla-resources/vanilla.json", import.meta.url);
+const packURL = new URL("../../assets/minecraft/resource-packs/xk-redstone-display-26.3.0.zip", import.meta.url);
 let catalogRequest;
+let packRequest;
+function loadDefaultPack() {
+	if (!packRequest) packRequest = fetch(packURL).then(async (response) => {
+		if (!response.ok) throw new Error("无法读取 XK 红石材质包（HTTP " + response.status + "）。");
+		return readResourcePack(await response.arrayBuffer());
+	}).catch((error) => {
+		packRequest = void 0;
+		console.warn("XK 红石材质包加载失败，本次预览使用原版材质。", error);
+		return null;
+	});
+	return packRequest;
+}
 function loadCatalog() {
 	if (!catalogRequest) catalogRequest = fetch(archive).then(async (response) => {
 		if (!response.ok) throw new Error("无法读取原版模型和贴图（HTTP " + response.status + "）。");
@@ -96154,14 +99342,27 @@ function loadCatalog() {
 	return catalogRequest;
 }
 var AssetProvider = class extends AssetProvider$1 {
-	ready() {
-		return loadCatalog();
+	#pack = loadDefaultPack();
+	async ready() {
+		const [catalog] = await Promise.all([loadCatalog(), this.#pack]);
+		return catalog;
 	}
 	async _getJSON(path) {
+		const entry = (await this.#pack)?.file("assets/minecraft/" + path);
+		if (entry) return parseResourceJSON(await entry.async("string"), path);
 		const { json } = await loadCatalog();
 		return Object.hasOwn(json, path) ? json[path] : null;
 	}
 	async _getTexture(key) {
+		const pack = await this.#pack;
+		const path = "assets/minecraft/textures/" + key + ".png";
+		const entry = pack?.file(path);
+		if (entry) {
+			const metadata = pack.file(path + ".mcmeta");
+			const animation = metadata ? JSON.parse((await metadata.async("string")).trimStart()).animation || false : null;
+			const bytes = await entry.async("uint8array");
+			return textureFromBlob(new Blob([bytes], { type: "image/png" }), animation);
+		}
 		const { json, png } = await loadCatalog();
 		if (!Object.hasOwn(png, key)) return null;
 		const text = atob(png[key]);
@@ -96169,6 +99370,131 @@ var AssetProvider = class extends AssetProvider$1 {
 		const metadata = json["textures/" + key + ".png.mcmeta"];
 		const animation = metadata ? metadata.animation || false : null;
 		return textureFromBlob(new Blob([bytes], { type: "image/png" }), animation);
+	}
+	async getRecordedSkin(hash, png) {
+		return this._cachedTexture("recorded-player/" + hash, async () => {
+			const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
+			const texture = await textureFromBlob(new Blob([bytes], { type: "image/png" }), false);
+			try {
+				const source = texture.image;
+				if (source.width !== 64 || source.height !== 64 && source.height !== 32) {
+					texture.dispose();
+					return null;
+				}
+				const canvas = document.createElement("canvas");
+				canvas.width = canvas.height = 64;
+				const ctx = canvas.getContext("2d");
+				ctx.drawImage(source, 0, 0);
+				const image = ctx.getImageData(0, 0, 64, 64);
+				const rgba = image.data, legacy = source.height === 32;
+				if (legacy) for (const [sx, sy, dx, dy, height] of [
+					[
+						4,
+						16,
+						20,
+						48,
+						4
+					],
+					[
+						8,
+						16,
+						24,
+						48,
+						4
+					],
+					[
+						0,
+						20,
+						24,
+						52,
+						12
+					],
+					[
+						4,
+						20,
+						20,
+						52,
+						12
+					],
+					[
+						8,
+						20,
+						16,
+						52,
+						12
+					],
+					[
+						12,
+						20,
+						28,
+						52,
+						12
+					],
+					[
+						44,
+						16,
+						36,
+						48,
+						4
+					],
+					[
+						48,
+						16,
+						40,
+						48,
+						4
+					],
+					[
+						40,
+						20,
+						40,
+						52,
+						12
+					],
+					[
+						44,
+						20,
+						36,
+						52,
+						12
+					],
+					[
+						48,
+						20,
+						32,
+						52,
+						12
+					],
+					[
+						52,
+						20,
+						44,
+						52,
+						12
+					]
+				]) for (let y = 0; y < height; y++) for (let x = 0; x < 4; x++) {
+					const from = ((sy + y) * 64 + sx + 3 - x) * 4;
+					rgba.set(rgba.subarray(from, from + 4), ((dy + y) * 64 + dx + x) * 4);
+				}
+				function alpha(x0, y0, x1, y1, value, onlyWhenOpaque = false) {
+					if (onlyWhenOpaque) {
+						for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (rgba[(y * 64 + x) * 4 + 3] < 128) return;
+					}
+					for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) rgba[(y * 64 + x) * 4 + 3] = value;
+				}
+				alpha(0, 0, 32, 16, 255);
+				if (legacy) alpha(32, 0, 64, 32, 0, true);
+				alpha(0, 16, 64, 32, 255);
+				alpha(16, 48, 48, 64, 255);
+				ctx.putImageData(image, 0, 0);
+				texture.image = canvas;
+				texture.needsUpdate = true;
+				return texture;
+			} catch (error) {
+				texture.dispose();
+				throw error;
+			}
+		});
 	}
 	async getExternalTexture(source) {
 		if (typeof source === "string" && source.trim() && URL.canParse(source, document.baseURI)) {
@@ -96187,4 +99513,4 @@ var AssetProvider = class extends AssetProvider$1 {
 };
 
 //#endregion
-export { AssetProvider, BlockModelResolver, Renderer, extractBanners, extractDecoratedPots, extractPlayerHeads, extractSigns, extractStatues, parseLitematica };
+export { AssetProvider, BlockModelResolver, DoubleSide, Group, MeshLambertMaterial, Renderer, makeOverlay as createEntityHitboxLines, createEntityRig, extractBanners, extractDecoratedPots, extractPlayerHeads, extractSigns, extractStatues, getEntityHitbox, parseLitematica };

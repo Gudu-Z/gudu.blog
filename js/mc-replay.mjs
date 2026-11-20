@@ -37,7 +37,7 @@ export function validateScene(scene) {
   if (scene.poster !== undefined) requireField(poster(scene.poster), 'poster');
   if (isStatic) {
     requireField(asset(scene.schematic, /\.(?:litematic|litematica|nbt)$/i), 'schematic');
-    requireField(['blocks', 'events', 'palette', 'pistons'].every(field => scene[field] === undefined), '静态投影不能包含回放数据');
+    requireField(['blocks', 'events', 'palette', 'pistons', 'players', 'entities', 'skins'].every(field => scene[field] === undefined), '静态投影不能包含回放数据');
   } else {
     requireField(vector(scene.origin), 'origin');
     if (scene.tickRange !== undefined) {
@@ -52,6 +52,35 @@ export function validateScene(scene) {
     const validPiston = value => object(value) && validIndex(value.state) && integer(value.direction)
       && value.direction >= 0 && value.direction <= 5 && typeof value.extending === 'boolean'
       && typeof value.source === 'boolean' && Number.isFinite(value.progress) && value.progress >= 0 && value.progress <= 1;
+    const actorKinds = new Map();
+    const validId = value => typeof value === 'string' && id.test(value);
+    function register(actorId, kind) {
+      requireField(!actorKinds.has(actorId) || actorKinds.get(actorId) === kind, '实体 ID 重复');
+      actorKinds.set(actorId, kind);
+    }
+    const validPose = p => object(p) && validId(p.id) && p.removed === undefined
+      && vector(p.pos, Number.isFinite) && Number.isFinite(p.yaw) && Number.isFinite(p.pitch)
+      && (p.nbt === undefined || object(p.nbt));
+    const validEntity = p => validPose(p) && typeof p.type === 'string' && /^[a-z0-9_.-]+:[a-z0-9_./-]+$/.test(p.type);
+    const skinHash = /^[a-f0-9]{64}$/;
+    const validPlayer = p => validPose(p)
+      && (p.model === undefined || ['wide', 'slim'].includes(p.model))
+      && (p.skin === undefined || (typeof p.skin === 'string' && skinHash.test(p.skin)));
+    for (const [field, check] of [['players', validPlayer], ['entities', validEntity]]) {
+      if (scene[field] === undefined) continue;
+      requireField(Array.isArray(scene[field]), field);
+      for (const actor of scene[field]) {
+        requireField(check(actor) && !actorKinds.has(actor.id), field);
+        register(actor.id, field);
+      }
+    }
+    if (scene.skins !== undefined) {
+      requireField(object(scene.skins), 'skins');
+      for (const [hash, png] of Object.entries(scene.skins)) {
+        requireField(skinHash.test(hash) && typeof png === 'string' && png.length <= 1398104
+          && png.length % 4 === 0 && png.startsWith('iVBORw0KGgo') && /^[a-zA-Z0-9+/]+={0,2}$/.test(png), 'skins');
+      }
+    }
     const checkCells = (cells, field, validValue) => {
       requireField(Array.isArray(cells), field);
       const occupied = new Set();
@@ -74,6 +103,13 @@ export function validateScene(scene) {
         if (event[field] !== undefined) requireField(event.pos && validIndex(event[field]), `events[${i}].${field}`);
       }
       if (event.piston !== undefined) requireField(event.pos && (event.piston === null || validPiston(event.piston)), `events[${i}].piston`);
+      for (const [field, kind, check] of [['player', 'players', validPlayer], ['entity', 'entities', validEntity]]) {
+        const actor = event[field];
+        if (actor === undefined) continue;
+        requireField(check(actor) || (object(actor) && validId(actor.id) && actor.removed === true), `events[${i}].${field}`);
+        register(actor.id, kind);
+      }
+      if (event.actorId !== undefined) requireField(validId(event.actorId), `events[${i}].actorId`);
       if (event.parent !== undefined) requireField(integer(event.parent) && event.parent >= 0 && event.parent < i, `events[${i}].parent`);
       if (event.detail !== undefined) requireField(typeof event.detail === 'string', `events[${i}].detail`);
     }
@@ -102,9 +138,11 @@ function cellMap(cells) {
 function stateTrack(initial, empty) {
   const current = new Map(initial);
   const history = new Map();
+  const keysByStep = [];
   function record(key, step, value) {
     if (!history.has(key)) history.set(key, []);
     history.get(key).push({ step, value });
+    keysByStep[step] = key;
   }
   function restore(key, step) {
     const versions = history.get(key);
@@ -120,7 +158,34 @@ function stateTrack(initial, empty) {
     current.set(key, value);
     return true;
   }
-  return { current, history, record, restore };
+  function seek(from, to) {
+    let keys = history.keys();
+    if (Math.abs(to - from) < history.size) {
+      const crossed = new Set();
+      for (let step = Math.min(from, to) + 1; step <= Math.max(from, to); step++) {
+        if (keysByStep[step] !== undefined) crossed.add(keysByStep[step]);
+      }
+      keys = crossed;
+    }
+    let changed = false;
+    for (const key of keys) {
+      if (restore(key, to)) changed = true;
+    }
+    return changed;
+  }
+  return { current, record, seek };
+}
+
+// Older exports stored poses only on movement and omitted the actor on idle ticks.
+export function eventTarget(replay, event) {
+  if (!event?.type.startsWith('entity')) return { block: event?.pos };
+  let actorId = event.actorId ?? event.player?.id ?? event.entity?.id;
+  if (!actorId && event.detail === 'minecraft:player' && event.pos) {
+    const matches = [...replay.players.values()].filter(player =>
+      player.pos.every((n, axis) => Math.floor(n) === event.pos[axis]));
+    if (matches.length === 1) actorId = matches[0].id;
+  }
+  return { actorId };
 }
 
 export function createReplay(scene) {
@@ -129,38 +194,33 @@ export function createReplay(scene) {
   for (const [key, state] of base) if (state === air) base.delete(key);
   const blocks = stateTrack(base, value => value === undefined || value === air);
   const pistons = stateTrack(cellMap(scene.pistons ?? []), value => value == null);
-  const changes = [];
+  const players = stateTrack(new Map((scene.players ?? []).map(p => [p.id, p])), value => value == null);
+  const entities = stateTrack(new Map((scene.entities ?? []).map(e => [e.id, e])), value => value == null);
   for (const [i, event] of scene.events.entries()) {
+    if (event.entity) entities.record(event.entity.id, i + 1, event.entity.removed ? null : event.entity);
+    if (event.player) players.record(event.player.id, i + 1, event.player.removed ? null : event.player);
     if (event.after === undefined && event.piston === undefined) continue;
     const key = positionKey(event.pos);
     if (event.after !== undefined) blocks.record(key, i + 1, event.after);
     if (event.piston !== undefined) pistons.record(key, i + 1, event.piston);
-    changes[i] = key;
   }
-  let step = 0, revision = 0;
+  let step = 0, revision = 0, playerRevision = 0, entityRevision = 0;
   return {
-    blocks: blocks.current, pistons: pistons.current,
+    blocks: blocks.current, pistons: pistons.current, players: players.current, entities: entities.current,
+    get entityRevision() { return entityRevision; },
+    get playerRevision() { return playerRevision; },
     get step() { return step; },
     get revision() { return revision; },
     get event() { return step ? scene.events[step - 1] : null; },
     seek(target) {
       requireField(integer(target) && target >= 0 && target <= scene.events.length, '回放步数');
-      let changed = false;
-      const distance = Math.abs(target - step);
-      let affected;
-      if (distance <= blocks.history.size + pistons.history.size) {
-        affected = new Set();
-        for (let i = Math.min(step, target); i < Math.max(step, target); i++) {
-          if (changes[i] !== undefined) affected.add(changes[i]);
-        }
-      }
-      for (const track of [blocks, pistons]) {
-        for (const key of affected ?? track.history.keys()) {
-          if (track.history.has(key) && track.restore(key, target)) changed = true;
-        }
-      }
+      if (step === target) return;
+      const blocksChanged = blocks.seek(step, target);
+      const pistonsChanged = pistons.seek(step, target);
+      if (blocksChanged || pistonsChanged) revision++;
+      if (players.seek(step, target)) playerRevision++;
+      if (entities.seek(step, target)) entityRevision++;
       step = target;
-      if (changed) revision++;
     },
   };
 }

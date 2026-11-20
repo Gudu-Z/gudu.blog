@@ -1,7 +1,7 @@
 import { gunzipSync } from 'node:zlib';
 
-// Java edition NBT has a named root tag and big-endian numbers. Bulk arrays
-// (UUIDs, inventory data, piston resolver lists) aren't used by this exporter.
+// Java edition NBT has a named root tag and big-endian numbers. Only four-int
+// entity and game-profile UUID arrays are needed to associate recorded players.
 export function readRecordingNbt(bytes) {
   const limit = 256 * 1024 * 1024;
   const buffer = bytes[0] === 0x1f && bytes[1] === 0x8b
@@ -31,7 +31,7 @@ export function readRecordingNbt(bytes) {
     }
     return value;
   }
-  function value(type, depth) {
+  function value(type, depth, key) {
     if (depth > 512) throw Error('NBT 嵌套深度超过限制。');
     switch (type) {
       case 1: return buffer.readInt8(take(1));
@@ -46,6 +46,9 @@ export function readRecordingNbt(bytes) {
       case 7: case 11: case 12: {
         const count = buffer.readInt32BE(take(4));
         const width = type === 7 ? 1 : type === 11 ? 4 : 8;
+        if (type === 11 && count === 4 && (key === 'UUID' || key === 'id')) {
+          return Array.from({ length: 4 }, () => buffer.readInt32BE(take(4)));
+        }
         take(count * width);
         return undefined;
       }
@@ -62,7 +65,7 @@ export function readRecordingNbt(bytes) {
         const object = Object.create(null);
         for (let tag = buffer[take(1)]; tag !== 0; tag = buffer[take(1)]) {
           const key = string();
-          object[key] = value(tag, depth + 1);
+          object[key] = value(tag, depth + 1, key);
         }
         return object;
       }
