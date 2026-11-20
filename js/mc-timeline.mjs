@@ -557,6 +557,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     baseStamp = performance.now();
     playing = true;
     showPlaying(true);
+    list.setPlaying(true);
     options.onPlaying?.(true);
     frame = requestAnimationFrame(animate);
   });
@@ -668,6 +669,14 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     const due = playbackCursor(axis, phases, time, mode, clock);
     // Starting mid-phase at a bookmark must never rewind to the phase entry.
     if (due.step > cursor.step || (clock === 'tick' && due.step === cursor.step && !sameCursor(cursor, due))) present(due);
+    // Between two stops the tree's cursor and the scrubber move on at the
+    // replay's own pace, so neither waits at a stop and then jumps.
+    const ahead = adjacentCursor(axis, phases, cursor, mode, 1);
+    const from = timeFor(cursor, axis, phases, mode, clock), to = timeFor(ahead, axis, phases, mode, clock);
+    const fraction = to > from ? Math.max(0, Math.min(1, (time - from) / (to - from))) : 0;
+    list.follow(cursor.step, cursor.offset, ahead.step, ahead.offset, fraction);
+    const at = timeFor(cursor, axis, phases, mode);
+    slider.value = String(axis.origin + at + (timeFor(ahead, axis, phases, mode) - at) * fraction);
     if (time >= duration()) stop();
     else if (playing) frame = requestAnimationFrame(animate);
   }
@@ -680,6 +689,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     cancelAnimationFrame(frame);
     tallest = 0;
     inspect.style.minHeight = '';
+    if (was) list.setPlaying(false);
     if (was) options.onPlaying?.(false);
   }
 

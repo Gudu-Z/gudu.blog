@@ -181,7 +181,12 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
   const measure = document.createElement('div');
   measure.className = 'mc-row-measure';
   measure.setAttribute('aria-hidden', 'true');
-  track.append(measure, windowRows);
+  // The current row's marker, a band with the axis triangle, beneath the rows.
+  const cursorMark = document.createElement('div');
+  cursorMark.className = 'mc-list-cursor';
+  cursorMark.setAttribute('aria-hidden', 'true');
+  cursorMark.hidden = true;
+  track.append(measure, cursorMark, windowRows);
   element.append(track);
   // When the reader scrolls the current row out of view, a pill at that edge
   // leads back to it. It sits outside the listbox, in a frame around it.
@@ -206,9 +211,9 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
   let mode, rows, shapes, active = -1, currentOffset = 0, lastStep, requested = -1;
   let rowHeight = 32, height = 0, rangeStart = -1, rangeEnd = -1, frame = 0;
   let anchorTop = null, anchorFirst = 0;
-  // The glide toward the current row (see scrollToFirst below).
+  // The current row's cursor, in rows, and its glide (see centreOnCursor).
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
-  let glide = 0, glideAt = 0, glideTo = 0, glideFirst = 0, glideTime = 0;
+  let cursorAt = -1, cursorGoal = -1, following = true, playing = false, glide = 0, glideTime = 0;
   // Each level is a starting point for what is open: every event at 事件; at
   // 阶段 the ticks and the events that hold the phase rows (a tick's 维度刻);
   // nothing at 游戏刻. A double-click flips one row's next level against that,
@@ -353,9 +358,10 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
     // points) leaves the window; the pill then names its tick.
     const middle = active + 0.5;
     const away = active < 0 || !viewport ? 0 : middle < firstVisible ? -1 : middle > firstVisible + viewport / rowHeight ? 1 : 0;
-    // Not while the list glides toward the current row anyway.
+    // Not while the cursor glides toward it anyway.
     back.hidden = !away || Boolean(glide);
-    if (away) {
+    cursorMark.hidden = cursorAt < 0 || active < 0;
+    if (!cursorMark.hidden) cursorMark.style.transform = 'translateY(' + (element.scrollTop + (cursorAt - .5 - firstVisible) * rowHeight) + 'px)';    if (away) {
       back.dataset.edge = away < 0 ? 'top' : 'bottom';
       back.textContent = (away < 0 ? '↑' : '↓') + ' 当前 · 第 ' + rows.rowAt(active).tick + ' 刻';
     }
@@ -365,83 +371,78 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
     rowHeight = measure.getBoundingClientRect().height || rowHeight;
     height = Math.min(4_000_000, (rows?.length ?? 0) * rowHeight);
     track.style.height = height + 'px';
+    cursorMark.style.height = rowHeight + 'px';
   }
 
-  // Keep a row in view. With `centre`, the current row holds the middle of
-  // the window as the replay moves on: from the top of the list it walks
-  // down to the middle, stays there while the list scrolls under it, and
-  // walks on to the bottom once the list can scroll no further. A row the
-  // reader picks in the list itself is only kept in view, so it does not run
-  // off from under the pointer.
-  function reveal(index, centre = false) {
+  // Keep a row in view, scrolling as little as possible.
+  function reveal(index) {
     const {viewport, firstVisible, logicalMax, physicalMax} = geometry();
     if (!viewport || !logicalMax || index < 0) return;
     const rowsInView = viewport / rowHeight;
     let first = firstVisible;
-    if (centre) first = Math.max(0, Math.min(logicalMax, index + .5 - rowsInView / 2));
-    else if (index < first) first = index;
+    if (index < first) first = index;
     else if (index + 1 > first + rowsInView) first = index + 1 - rowsInView;
-    if (first !== (glide ? glideFirst : firstVisible)) scrollToFirst(first, logicalMax, physicalMax);
+    if (first !== firstVisible) scrollToFirst(first, logicalMax, physicalMax);
   }
-
-  // The list glides to each new position instead of jumping, and keeps
-  // gliding toward the next one as the replay moves on, so playback scrolls
-  // it in one continuous motion. The reader's own wheel, touch or scrollbar
-  // stops it; with reduced motion it jumps as before.
-  function settle(top, first) {
-    element.scrollTop = top;
+  function scrollToFirst(first, logicalMax, physicalMax) {
+    element.scrollTop = first / logicalMax * physicalMax;
     // A browser may round scrollTop. Keep subpixel targets exact until the
     // next physical scroll, particularly for very large empty tick ranges.
     anchorTop = element.scrollTop;
     anchorFirst = first;
   }
+
+  // The current row's marker is a cursor of its own (.mc-list-cursor) at a
+  // position in rows that moves continuously, and while it is followed the
+  // list scrolls so that the cursor keeps the middle of the window, held
+  // inside the list's ends. So the cursor walks down from the top, holds the
+  // middle while the rows flow under it, and walks on to the bottom at the
+  // end, and nowhere does it jump back and forth as rows come and go.
+  // - Playing, the replay moves it every frame (follow), from the current
+  //   stop's row toward the next stop's at the replay's own pace.
+  // - A step, the scrubber or a new level glide it to the new row.
+  // - A row picked in the list takes it at once, and the list stays put.
+  // The reader's own wheel, touch or scrollbar stops the following.
+  function centreOnCursor() {
+    const {viewport, firstVisible, logicalMax, physicalMax} = geometry();
+    if (!viewport || !logicalMax || cursorAt < 0) return;
+    const first = Math.max(0, Math.min(logicalMax, cursorAt - viewport / rowHeight / 2));
+    if (Math.abs(first - firstVisible) > 1e-4) scrollToFirst(first, logicalMax, physicalMax);
+  }
   function stopGlide() {
     if (glide) cancelAnimationFrame(glide);
     glide = 0;
   }
-  // An exponential approach: about a quarter of the way in each 16ms frame,
-  // 95% within a fifth of a second, turning smoothly toward a target that
-  // moves on before it is reached. It never trails by more than about a
-  // third of the window, so a fast replay cannot carry the current row out
-  // of sight: a long leap closes that much at once and glides the rest.
+  // An exponential approach, 95% of the way within a fifth of a second.
   function glideStep(now) {
     const elapsed = Math.min(64, now - glideTime);
     glideTime = now;
-    const limit = element.clientHeight * .35;
-    if (Math.abs(glideTo - glideAt) > limit) glideAt = glideTo - Math.sign(glideTo - glideAt) * limit;
-    glideAt += (glideTo - glideAt) * (1 - Math.exp(-elapsed / 60));
-    if (Math.abs(glideTo - glideAt) < .5) {
+    cursorAt += (cursorGoal - cursorAt) * (1 - Math.exp(-elapsed / 60));
+    if (Math.abs(cursorGoal - cursorAt) < .005) {
+      cursorAt = cursorGoal;
       glide = 0;
-      settle(glideTo, glideFirst);
-    } else {
-      element.scrollTop = glideAt;
-      glide = requestAnimationFrame(glideStep);
-    }
+    } else glide = requestAnimationFrame(glideStep);
+    if (following) centreOnCursor();
     draw();
   }
-  function scrollToFirst(first, logicalMax, physicalMax) {
-    const top = first / logicalMax * physicalMax;
-    glideFirst = first;
-    if (reduceMotion.matches) {
+  function moveCursor(goal, smooth) {
+    cursorGoal = goal;
+    if (!smooth || reduceMotion.matches || cursorAt < 0) {
       stopGlide();
-      settle(top, first);
+      cursorAt = goal;
       return;
     }
-    glideTo = top;
+    // A long leap closes all but a third of the window at once.
+    const limit = element.clientHeight / rowHeight * .35;
+    if (Math.abs(goal - cursorAt) > limit) cursorAt = goal - Math.sign(goal - cursorAt) * limit;
     if (!glide) {
-      glideAt = element.scrollTop;
       glideTime = performance.now();
       glide = requestAnimationFrame(glideStep);
     }
-    // Close a long leap's excess now, before the list is drawn for the new
-    // current row, rather than a frame later.
-    const limit = element.clientHeight * .35;
-    if (Math.abs(glideTo - glideAt) > limit) {
-      glideAt = glideTo - Math.sign(glideTo - glideAt) * limit;
-      element.scrollTop = glideAt;
-    }
   }
-  for (const type of ['wheel', 'touchstart', 'pointerdown']) element.addEventListener(type, stopGlide, {passive: true});
+  for (const type of ['wheel', 'touchstart', 'pointerdown']) {
+    element.addEventListener(type, () => { following = false; }, {passive: true});
+  }
 
   function sync(step, {offset = 0, mode: nextMode = 'event'} = {}) {
     const changed = mode !== nextMode;
@@ -454,12 +455,42 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
     if (requested >= 0) index = requested;
     else if (!changed && step === lastStep && offset === currentOffset) index = active;
     lastStep = step;
-    // `requested` marks a row picked in the list; anything else (playback,
-    // the step buttons, the scrubber, a new level) centres the current row.
-    if (changed || active !== index) reveal(index, requested < 0);
+    const moved = changed || active !== index;
     active = index;
-    currentOffset = offset;
+    currentOffset = offset;    if (moved && requested >= 0) {
+      following = false;
+      moveCursor(index + .5, false);
+      reveal(index);
+    } else if (moved && !playing) {
+      // A new level renumbers the rows, so the cursor starts over there.
+      following = true;
+      moveCursor(index + .5, !changed);
+      centreOnCursor();
+    }
     draw();
+  }
+
+  // While the replay plays it reports, every frame, the stop it is at, the
+  // next stop, and how far it has come between them.
+  function follow(step, offset, nextStep, nextOffset, fraction) {
+    if (!rows) return;
+    const from = rows.selectedRow(step, offset), to = rows.selectedRow(nextStep, nextOffset);
+    if (from < 0) return;
+    stopGlide();
+    following = true;
+    // With reduced motion the cursor keeps to the current row, stop by stop.
+    const between = reduceMotion.matches || to < 0 ? 0 : Math.max(0, Math.min(1, fraction));    cursorAt = cursorGoal = from + .5 + (to - from) * between;
+    centreOnCursor();
+    draw();
+  }
+  function setPlaying(value) {
+    playing = value;
+    // Stopped between two rows, the cursor settles on the current one.
+    if (!value && active >= 0) {
+      moveCursor(active + .5, following);
+      if (following) centreOnCursor();
+      draw();
+    }
   }
 
   function activate(index) {
@@ -483,6 +514,8 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
     overrides.set(key, !isOpen(key));
     rebuild();
     if (current) active = rows.rowOf(current.step ?? 0, current.offset);
+    // The rows are renumbered; the cursor stays on the current row.
+    if (active >= 0) moveCursor(active + .5, false);
     draw();
   }
 
@@ -522,16 +555,22 @@ export function mountEventList(scene, selectStep, {label, position, groups, dept
   let viewportHeight = 0;
   const resize = new ResizeObserver(() => {
     size();
-    if (rangeStart < 0 || !element.scrollTop || element.clientHeight !== viewportHeight) reveal(active);
+    if (rangeStart < 0 || !element.scrollTop || element.clientHeight !== viewportHeight) {
+      if (following) centreOnCursor();
+      else reveal(active);
+    }
     viewportHeight = element.clientHeight;
     draw();
   });
   resize.observe(element);
   resize.observe(measure);
   back.addEventListener('click', () => {
-    reveal(active, true);
+    following = true;
+    moveCursor(active + .5, false);
+    centreOnCursor();
     draw();
     element.focus({preventScroll: true});
   });
-  return {element: frameElement, sync, destroy() { resize.disconnect(); cancelAnimationFrame(frame); }};
+  return {element: frameElement, sync, follow, setPlaying,
+    destroy() { resize.disconnect(); cancelAnimationFrame(frame); stopGlide(); }};
 }

@@ -647,9 +647,25 @@
 .mc-event-list button[aria-current="step"] {
   --mc-row-tick: var(--red);
   color: var(--paper);
-  background-color: color-mix(in srgb, var(--red) 7%, transparent);
 }
-.mc-event-list button[aria-current="step"]::before {
+/* The current row's marker, a faint band with the orange triangle at the
+   axis, is a cursor of its own beneath the rows (js/mc-event-list.mjs). It
+   moves continuously, so in playback it holds the middle of the list while
+   the rows flow under it, instead of hopping from row to row. */
+.mc-list-cursor {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  background-color: color-mix(in srgb, var(--red) 7%, transparent);
+  pointer-events: none;
+}
+/* The script places the rows' window, the cursor and the pinned station
+   together every frame. Reduced motion gives every element a near-zero
+   transition (css/style.css), which would show each a frame late on its
+   own and set them out of step. */
+.mc-list-window, .mc-list-cursor, .mc-list-pin { transition-property: none; }
+.mc-list-cursor::before {
   content: "";
   position: absolute;
   top: 50%;
