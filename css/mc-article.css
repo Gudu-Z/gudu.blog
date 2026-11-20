@@ -13,8 +13,9 @@
   margin: 60px 0 52px;
   min-width: 0;
   scroll-margin-top: 2rem;
-  /* The black glass of what floats over the 3D view: the tree's sheet and the
-     controls, and, denser as it sits on the blocks, the event card. */
+  /* The replay's black glass (white by day): the whole replay's ground, the
+     controls floating in it, and, denser as it sits on the blocks, the event
+     card. */
   --mc-glass: light-dark(rgb(255 255 255 / 62%), rgb(0 0 0 / 55%));
   --mc-glass-dense: light-dark(rgb(255 255 255 / 82%), rgb(0 0 0 / 72%));
 }
@@ -30,6 +31,9 @@
   display: grid;
   min-width: 0;
   border: 1px solid var(--rule);
+  /* The whole replay sits on one sheet of the glass, unblurred, so the
+     article's stars still show through it, dimmed. */
+  background: var(--mc-glass);
 }
 .mc-scene [data-mc-view]::after { content: ""; position: absolute; inset: -6px; z-index: 3; pointer-events: none; background: var(--registration); }
 .mc-stage {
