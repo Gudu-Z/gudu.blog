@@ -179,6 +179,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
     linear-gradient(90deg, var(--red) 0 24px, var(--rule) 24px) 0 2px / 100% 1px no-repeat,
     linear-gradient(var(--red) 0 0) 0 0 / 1px 5px no-repeat,
     linear-gradient(var(--rule-strong) 0 0) 100% 0 / 1px 5px no-repeat;
+  /* The article's side rails: two 1px lines, the inner one brighter, this far
+     clear of the text; the outer one stands 3px beyond it. */
+  --rail-gap: 32px;
+  --rail-inner: light-dark(rgb(25 31 36 / 30%), rgb(205 213 220 / 30%));
+  --rail-outer: light-dark(rgb(24 28 32 / 11%), rgb(210 216 222 / 11%));
+  /* Between the rails, a faint veil of the replay's glass: black by night,
+     white by day. A replay's own sheet lightens by just as much
+     (css/mc-article.css), so the two together stay as dark as before. */
+  --veil-night: 0.25;
+  --veil-day: 0.3;
+  --article-veil: light-dark(rgb(255 255 255 / var(--veil-day)), rgb(0 0 0 / var(--veil-night)));
   /* The root paints the page colour, so the opening sky can sit beneath the body. */
   background: transparent;
 }
@@ -192,7 +203,44 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .article-back > span { color: var(--red); font-family: var(--mono); transition: transform 180ms ease; }
 .article-back:hover { color: var(--paper); }
 .article-back:hover > span { transform: translateX(-3px); }
-.article-header { margin-bottom: 76px; }
+.article-header { --header-gap: 76px; position: relative; margin-bottom: var(--header-gap); }
+/* Two double rails frame the article from the title to the end mark, with
+   the faint veil (--article-veil) between them. The header draws its stretch
+   down through its bottom margin, the layout on to the end of the body, each
+   as one box behind the text. Each rail is a 1px inner line, the brighter
+   one, --rail-gap clear of the text, and a 1px outer line 3px beyond it.
+   They end as the calibration lines do: the left rail starts in orange with
+   a short tick turning inward, and both rails close with an inward tick. The
+   contents stay outside, past the right rail (--toc-space below). Phones
+   keep the full width. */
+.article-header::before, .article-layout::before { content: ""; position: absolute; z-index: -1; left: calc(-5px - var(--rail-gap)); pointer-events: none; }
+.article-header::before {
+  top: 0;
+  bottom: calc(-1 * var(--header-gap));
+  right: calc(-5px - var(--rail-gap));
+  background:
+    linear-gradient(var(--red) 0 0) 4px 0 / 6px 1px no-repeat,
+    linear-gradient(var(--red) 0 0) 4px 0 / 1px 24px no-repeat,
+    linear-gradient(var(--rule-strong) 0 0) right 4px top / 6px 1px no-repeat,
+    linear-gradient(var(--rail-inner) 0 0) 4px 0 / 1px 100% no-repeat,
+    linear-gradient(var(--rail-outer) 0 0) 0 0 / 1px 100% no-repeat,
+    linear-gradient(var(--rail-inner) 0 0) right 4px top / 1px 100% no-repeat,
+    linear-gradient(var(--rail-outer) 0 0) right 0 top / 1px 100% no-repeat,
+    linear-gradient(var(--article-veil) 0 0) 5px 0 / calc(100% - 10px) 100% no-repeat;
+}
+.article-layout::before {
+  top: 0;
+  bottom: 0;
+  right: calc(var(--toc-space, 0px) - 5px - var(--rail-gap));
+  background:
+    linear-gradient(var(--rule-strong) 0 0) 4px 100% / 6px 1px no-repeat,
+    linear-gradient(var(--rule-strong) 0 0) right 4px bottom / 6px 1px no-repeat,
+    linear-gradient(var(--rail-inner) 0 0) 4px 0 / 1px 100% no-repeat,
+    linear-gradient(var(--rail-outer) 0 0) 0 0 / 1px 100% no-repeat,
+    linear-gradient(var(--rail-inner) 0 0) right 4px top / 1px 100% no-repeat,
+    linear-gradient(var(--rail-outer) 0 0) right 0 top / 1px 100% no-repeat,
+    linear-gradient(var(--article-veil) 0 0) 5px 0 / calc(100% - 10px) 100% no-repeat;
+}
 /* The title ends on the chapters' orange square. */
 .article-title { margin: 0 0 44px; font-family: inherit; font-size: clamp(34px, 4.1vw, 56px); line-height: 1.25; letter-spacing: 0.02em; font-weight: 600; overflow-wrap: anywhere; text-wrap: balance; }
 .article-title::after { content: ""; display: inline-block; width: 0.17em; height: 0.17em; margin-left: 0.12em; background: var(--red); }
@@ -213,7 +261,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .article-category:hover { color: var(--red); }
 .article-tags { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 0; list-style: none; }
 .demo-notice { margin: 24px 0 0; line-height: 1.8; padding: 12px; }
-.article-layout { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.article-layout { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
 .article-body { counter-reset: section figure; min-width: 0; color: light-dark(#1d232a, #c6ced7); font-size: 17px; line-height: 1.9; letter-spacing: 0.02em; overflow-wrap: anywhere; }
 .article-body > * { margin-inline: 0; }
 .article-body > :first-child, .article-body > h2:first-child, .article-section:first-child h2 { margin-top: 0; }
@@ -355,12 +403,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 @media (width > 900px) {
   .article-shell:has(> .article-layout > .article-toc) {
     --toc-width: clamp(100px, 11vw, 210px);
-    --toc-gap: clamp(12px, 1.5vw, 32px);
+    /* The contents are not part of the article: its right rail stands in this
+       gap, reaching --rail-gap + 4px out from the text, and the contents
+       start 32px past it. */
+    --toc-gap: calc(var(--rail-gap) + 36px);
     --toc-space: calc(var(--toc-width) + var(--toc-gap));
     --layout-width: calc(var(--article-width) + var(--toc-space));
-    width: min(98%, var(--layout-width));
-    /* Preserve the former left edge while the right gutter can fit the contents. */
-    margin-inline-start: clamp(1%, max(7.5%, calc((100% - 1080px) / 2)), calc(99% - var(--layout-width)));
+    --rail-room: calc(var(--rail-gap) + 20px);
+    width: min(100% - var(--rail-room) - 24px, var(--layout-width));
+    /* Preserve the former left edge while the right gutter can fit the
+       contents; the left keeps room for the left rail, the right 24px. */
+    margin-inline-start: clamp(var(--rail-room), max(7.5%, calc((100% - 1080px) / 2)), calc(100% - 24px - var(--layout-width)));
   }
   .article-layout:has(> .article-toc) {
     grid-template-columns: minmax(0, 1fr) var(--toc-width);
@@ -388,6 +441,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 }
 @media (max-width: 720px) {
   html { scroll-padding-top: 28px; }
+  /* No rails and no veil, so a replay's sheet keeps its full glass. */
+  .article-page { --veil-night: 0; --veil-day: 0; }
+  :is(.article-header, .article-layout)::before { display: none; }
   .site-header { height: 64px; padding-inline: 7%; }
   .site-header .brand-logo { width: 48px; height: 48px; }
   .site-footer .brand-logo { width: 44px; height: 44px; }
@@ -448,7 +504,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
   .archive-category { display: none; }
   .article-shell { width: 86%; padding-top: 22px; }
   .article-back { margin-bottom: 30px; }
-  .article-header { margin-bottom: 44px; }
+  .article-header { --header-gap: 44px; }
   .article-title { margin-bottom: 30px; font-size: 32px; }
   .article-deck { margin: -12px 0 30px; font-size: 15px; }
   /* Two fields to a row; the ticks follow the one remaining boundary. */

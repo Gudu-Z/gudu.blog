@@ -16,8 +16,17 @@
   /* The replay's black glass (white by day): the whole replay's ground, the
      controls floating in it, and, denser as it sits on the blocks, the event
      card. */
-  --mc-glass: light-dark(rgb(255 255 255 / 62%), rgb(0 0 0 / 55%));
+  --mc-glass-day: 0.62;
+  --mc-glass-night: 0.55;
+  --mc-glass: light-dark(rgb(255 255 255 / var(--mc-glass-day)), rgb(0 0 0 / var(--mc-glass-night)));
   --mc-glass-dense: light-dark(rgb(255 255 255 / 82%), rgb(0 0 0 / 72%));
+  /* The replay's own sheet. In an article it lies on the article's veil
+     (--veil-day and --veil-night in css/blog.css), so it lets through what
+     the veil took: (1 − veil)(1 − sheet) = 1 − glass, and the two together
+     are exactly as dark as the glass. With no veil it is the glass. */
+  --mc-ground: light-dark(
+    rgb(255 255 255 / calc(1 - (1 - var(--mc-glass-day)) / (1 - var(--veil-day, 0)))),
+    rgb(0 0 0 / calc(1 - (1 - var(--mc-glass-night)) / (1 - var(--veil-night, 0)))));
   /* Each kind of event keeps one colour (eventKind in js/mc-event-list.mjs):
      on the 3D view's marks, the event tree's marks, the legend and the card.
      Six hues about 55 degrees apart, at one lightness per theme; game events
@@ -46,7 +55,7 @@
   border: 1px solid var(--rule);
   /* The whole replay sits on one sheet of the glass, unblurred, so the
      article's stars still show through it, dimmed. */
-  background: var(--mc-glass);
+  background: var(--mc-ground);
 }
 .mc-scene [data-mc-view]::after { content: ""; position: absolute; inset: -6px; z-index: 3; pointer-events: none; background: var(--registration); }
 .mc-stage {

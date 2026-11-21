@@ -126,7 +126,7 @@ function documentHead({ title, description, canonical, prefix, noindex = false, 
     <script src="${prefix}js/site-theme.js?v=20261030-day-mode"></script>
     <script src="${prefix}js/theme-jets.js?v=20261118-beam" defer></script>
     <link rel="stylesheet" href="${prefix}css/style.css?v=20261118-beam" />
-    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261119-sky" />`.replace(/[ \t]+$/gm, '');
+    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261121-veil" />`.replace(/[ \t]+$/gm, '');
 }
 
 function renderArticle(post, index, posts, commentsConfig) {
@@ -159,7 +159,7 @@ ${generated}
 ${structuredData}
     <script src="../js/particle-sky.js?v=20261121-fill" defer></script>
     <script src="../js/article-sky.js?v=20261121-orbit" defer></script>
-    <script src="../js/article.js?v=20261118-article" defer></script>${post.hasScenes ? '\n    <link rel="stylesheet" href="../css/mc-article.css?v=20261121-cursor" />\n    <script type="module" src="../js/mc-article.mjs"></script>' : ''}
+    <script src="../js/article.js?v=20261118-article" defer></script>${post.hasScenes ? '\n    <link rel="stylesheet" href="../css/mc-article.css?v=20261121-veil" />\n    <script type="module" src="../js/mc-article.mjs"></script>' : ''}
     ${comments.head}
   </head>
   <body class="article-page">
