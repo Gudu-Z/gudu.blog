@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { buildBlog } from './build-blog.mjs';
+import { articleFontDirectory, syncArticleFonts } from './article-fonts.mjs';
 
 const expectedCategories = [
   { name: 'Minecraft', slug: 'minecraft' },
@@ -175,6 +176,49 @@ await test('check mode is read-only, and rebuilding removes stale generated page
     assert.equal(await read('posts/manual.html'), '<h1>Keep this hand-written page</h1>');
     assert.deepEqual(await readdir(join(root, 'posts')), ['manual.html']);
     await buildBlog({ root, checkOnly: true });
+  });
+});
+
+await test('each article loads Noto Sans SC cuts of its own words: the title in Black, the prose in Regular and SemiBold', async () => {
+  await fixture(async ({ root, read }) => {
+    const made = [];
+    const cut = async (characters, weight) => { made.push(`${weight}:${characters}`); return Buffer.from(`${weight}:${characters}`); };
+    const sorted = text => [...new Set(text)].sort((a, b) => a.codePointAt(0) - b.codePointAt(0)).join('');
+    const directory = join(root, articleFontDirectory);
+    const note = title => writeFile(join(root, 'content', 'posts', 'note.md'), `---\ntitle: ${title}\ndate: 2026-10-14\ncategory: Minecraft\n---\n\n正文 Text 一段，**加粗**。\n\n## 小节\n\n\`\`\`js\n// 代码里的字\n\`\`\`\n`, 'utf8');
+    const named = fonts => Object.fromEntries(fonts.map(font => [font.path.match(/-(title|body|bold)-/)[1], font.path]));
+
+    await note('红石 Red 红石');
+    let { fonts } = await buildBlog({ root });
+    let paths = named(fonts);
+    assert.deepEqual(Object.keys(paths), ['title', 'body', 'bold']);
+    for (const path of Object.values(paths)) assert.match(path, /^assets\/fonts\/articles\/note-(title|body|bold)-[0-9a-f]{10}\.woff2$/);
+    const html = await read('posts/note.html');
+    for (const path of Object.values(paths)) assert.ok(html.includes(`<link rel="preload" href="../${path}" as="font" type="font/woff2" crossorigin />`));
+    assert.ok(html.includes(`@font-face { font-family: "Gudu Title"; src: url("../${paths.title}") format("woff2"); font-weight: 900; font-display: block; }`));
+    assert.ok(html.includes(`@font-face { font-family: "Gudu Body"; src: url("../${paths.body}") format("woff2"); font-weight: 400; font-display: swap; }`));
+    assert.ok(html.includes(`@font-face { font-family: "Gudu Body"; src: url("../${paths.bold}") format("woff2"); font-weight: 600 700; font-display: swap; }`));
+
+    await assert.rejects(syncArticleFonts({ root, fonts, checkOnly: true, cut }), /note-title-/);
+    await syncArticleFonts({ root, fonts, cut });
+    // The title keeps every character; the prose keeps Han and CJK punctuation
+    // from the text, headings and closing line, but nothing from code.
+    assert.deepEqual(made, ['900: Rde石红', `400:${sorted('正文一段，加粗。小节本文完谢你的阅读')}`, `600:${sorted('加粗小节')}`]);
+    assert.equal(await readFile(join(root, paths.body), 'utf8'), made[1]);
+    await syncArticleFonts({ root, fonts, checkOnly: true, cut });
+    await syncArticleFonts({ root, fonts, cut });
+    assert.equal(made.length, 3, 'Unchanged words keep their cuts.');
+
+    await writeFile(join(directory, 'hand-made.woff2'), 'keep', 'utf8');
+    await note('红石矿车');
+    ({ fonts } = await buildBlog({ root }));
+    const renamed = named(fonts);
+    assert.notEqual(renamed.title, paths.title);
+    assert.equal(renamed.body, paths.body, 'A new title leaves the prose cuts alone.');
+    await assert.rejects(syncArticleFonts({ root, fonts, checkOnly: true, cut }), /note-title-/);
+    await syncArticleFonts({ root, fonts, cut });
+    assert.deepEqual(made.slice(3), ['900: 石矿红车']);
+    assert.deepEqual((await readdir(directory)).sort(), ['hand-made.woff2', ...Object.values(renamed).map(path => path.split('/').pop())].sort());
   });
 });
 

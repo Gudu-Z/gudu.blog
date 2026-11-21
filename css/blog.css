@@ -190,6 +190,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
   --veil-night: 0.25;
   --veil-day: 0.3;
   --article-veil: light-dark(rgb(255 255 255 / var(--veil-day)), rgb(0 0 0 / var(--veil-night)));
+  /* The prose is set in Source Han Sans (Noto Sans SC), cut per article by
+     scripts/article-fonts.mjs. The cut holds only Han and CJK punctuation, so
+     Latin stays in the UI face; it stands ahead of the Apple system face,
+     whose own cascade would otherwise take the Han. */
+  --article-sans: "Segoe UI Variable Text", "Segoe UI", "Gudu Body", -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   /* The root paints the page colour, so the opening sky can sit beneath the body. */
   background: transparent;
 }
@@ -215,7 +220,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
    keep the full width. */
 .article-header::before, .article-layout::before { content: ""; position: absolute; z-index: -1; left: calc(-5px - var(--rail-gap)); pointer-events: none; }
 .article-header::before {
-  top: 0;
+  /* The frame clears the title, as it clears the text at either side. */
+  top: calc(-1 * var(--rail-gap));
   bottom: calc(-1 * var(--header-gap));
   right: calc(-5px - var(--rail-gap));
   background:
@@ -230,7 +236,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 }
 .article-layout::before {
   top: 0;
-  bottom: 0;
+  /* …and the end mark below. */
+  bottom: calc(-1 * var(--rail-gap));
   right: calc(var(--toc-space, 0px) - 5px - var(--rail-gap));
   background:
     linear-gradient(var(--rule-strong) 0 0) 4px 100% / 6px 1px no-repeat,
@@ -242,9 +249,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
     linear-gradient(var(--article-veil) 0 0) 5px 0 / calc(100% - 10px) 100% no-repeat;
 }
 /* The title ends on the chapters' orange square. */
-.article-title { margin: 0 0 44px; font-family: inherit; font-size: clamp(34px, 4.1vw, 56px); line-height: 1.25; letter-spacing: 0.02em; font-weight: 600; overflow-wrap: anywhere; text-wrap: balance; }
+/* Noto Sans SC Black, cut per article by scripts/article-fonts.mjs. If the cut
+   fails to load, the system face stands in at its boldest. */
+.article-title { margin: 0 0 44px; font-family: "Gudu Title", var(--ui-sans); font-size: clamp(34px, 4.1vw, 56px); line-height: 1.25; letter-spacing: 0.02em; font-weight: 900; overflow-wrap: anywhere; text-wrap: balance; }
 .article-title::after { content: ""; display: inline-block; width: 0.17em; height: 0.17em; margin-left: 0.12em; background: var(--red); }
-.article-deck { max-width: 720px; margin: -20px 0 44px; color: var(--muted); font-size: 17px; line-height: 1.9; }
+.article-deck { max-width: 720px; margin: -20px 0 44px; color: var(--muted); font-family: var(--article-sans); font-size: 17px; line-height: 1.9; }
 /* The facts form a strip of four fields under a calibration rule, with a
    tick over each field boundary. */
 .article-facts { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; padding-top: 5px; border-bottom: 1px solid var(--rule); }
@@ -262,7 +271,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .article-tags { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 0; list-style: none; }
 .demo-notice { margin: 24px 0 0; line-height: 1.8; padding: 12px; }
 .article-layout { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
-.article-body { counter-reset: section figure; min-width: 0; color: light-dark(#1d232a, #c6ced7); font-size: 17px; line-height: 1.9; letter-spacing: 0.02em; overflow-wrap: anywhere; }
+.article-body { counter-reset: section figure; min-width: 0; color: light-dark(#1d232a, #c6ced7); font-family: var(--article-sans); font-size: 17px; line-height: 1.9; letter-spacing: 0.02em; overflow-wrap: anywhere; }
+/* Words that scripts write keep the UI face: they are not in the cut. A
+   replay's caption is the author's own, so it stays in the prose face. */
+.article-body :is(.mc-scene, .code-copy, .article-tools) { font-family: var(--ui-sans); }
+.article-body .mc-scene > figcaption { font-family: var(--article-sans); }
 .article-body > * { margin-inline: 0; }
 .article-body > :first-child, .article-body > h2:first-child, .article-section:first-child h2 { margin-top: 0; }
 .article-body p { margin-block: 0 1.35em; }
@@ -270,7 +283,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .article-body > p:first-child { color: var(--paper); font-size: 19px; line-height: 1.85; margin-block-end: 1.5em; }
 .article-body h2 { position: relative; counter-increment: section; margin-block: 84px 22px; color: var(--paper); font-size: 26px; font-weight: 600; line-height: 1.5; letter-spacing: 0.02em; scroll-margin-top: 40px; }
 .article-body h2::before { content: counter(section, decimal-leading-zero); display: block; margin-bottom: 6px; color: var(--red); font: 12px/1.5 var(--mono); letter-spacing: 0.1em; }
+/* The left rail reaches each section number with a short orange tick. */
+.article-body h2::after { content: ""; position: absolute; top: 9px; left: calc(-1 * var(--rail-gap)); width: calc(var(--rail-gap) - 10px); height: 1px; background: var(--red); pointer-events: none; }
 .article-body h3 { position: relative; margin-block: 48px 14px; color: var(--paper); font-size: 19px; line-height: 1.6; letter-spacing: 0.02em; }
+/* A quiet mono mark hangs in the gutter, so the heading keeps the text's edge. */
+.article-body h3::before { content: "//" / ""; position: absolute; top: 0; right: calc(100% + 10px); color: var(--code-name); font: 13px/30px var(--mono); letter-spacing: 0.04em; white-space: nowrap; pointer-events: none; }
 .article-body :is(h3, h4, h5, h6) { scroll-margin-top: 40px; }
 .article-body :is(h4, h5, h6) { margin-block: 32px 12px; color: var(--paper); font-size: 17px; }
 .article-body strong { color: var(--paper); font-weight: 600; }
@@ -334,6 +351,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .copy-status:empty { display: none; }
 /* The neighbours are two panels; an end with no article is a dashed outline. */
 .article-pagination { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 44px; }
+/* The frame closes --rail-gap below the end mark; the pagination keeps its
+   44px beyond that. */
+@media (width > 720px) { .article-pagination { margin-top: calc(44px + var(--rail-gap)); } }
 .article-pagination > * { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 14px; min-height: 108px; padding: 20px 24px 22px; background: var(--registration), var(--surface); box-shadow: inset 0 0 0 1px var(--hairline); line-height: 1.7; }
 .article-pagination > * > span:first-child { color: var(--label); font-size: 12px; letter-spacing: 0.04em; }
 .article-pagination b { color: var(--red); font-weight: 400; margin-inline: 0 8px; transition: transform 180ms ease; display: inline-block; }
@@ -444,6 +464,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
   /* No rails and no veil, so a replay's sheet keeps its full glass. */
   .article-page { --veil-night: 0; --veil-day: 0; }
   :is(.article-header, .article-layout)::before { display: none; }
+  /* The gutter marks belong to the rails. */
+  .article-body h2::after, .article-body h3::before { display: none; }
   .site-header { height: 64px; padding-inline: 7%; }
   .site-header .brand-logo { width: 48px; height: 48px; }
   .site-footer .brand-logo { width: 44px; height: 44px; }
