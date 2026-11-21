@@ -1,8 +1,10 @@
-/* The article page's sky: the home page's XYZ particle stars
- * (js/particle-sky.js), seen through the hero's camera without the black hole
- * and drifting at the hero's speed, over the still stars of js/star-sky.js.
- * The sky is fixed behind the page, so scrolling moves only the article. It pauses in a hidden tab, and under
- * reduced motion it holds the opening sky still.
+/* The article page's sky: XYZ particle stars (js/particle-sky.js), every one
+ * of them, seen through the hero's camera without the black hole. Beside the
+ * hero's stars it draws the dense, faint fill population, and its observer
+ * circles a point just ahead, so the far stars sweep past fastest and the near
+ * ones lag. The sky is fixed behind the page, so scrolling moves only the
+ * article. It pauses in a hidden tab, and under reduced motion it holds the
+ * opening sky still.
  */
 (() => {
   'use strict';
@@ -43,7 +45,10 @@
       uv = u_starInset + uv * (1.0 - 2.0 * u_starInset);
       vec3 radiance = 1.0 - exp(-texture2D(u_starSky, uv).rgb * 1.25);
       float peak = max(radiance.r, max(radiance.g, radiance.b));
-      gl_FragColor = vec4(mix(radiance, peak - radiance, u_day), peak * u_gain);
+      // A light star over the night ground shows by roughly its peak squared,
+      // a dark one over the day ground by its peak alone, so faint stars would
+      // crowd the day sky; a steeper day curve keeps the two skies alike.
+      gl_FragColor = vec4(mix(radiance, peak - radiance, u_day), mix(peak, pow(peak, 1.6), u_day) * u_gain);
     }
   `;
 
@@ -87,7 +92,7 @@
 
   let sky, screen, triangle;
   try {
-    sky = new window.ParticleSky(owner);
+    sky = new window.ParticleSky(owner, { fill: 48000, orbit: true });
     screen = owner.program(screenSource);
     triangle = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, triangle);

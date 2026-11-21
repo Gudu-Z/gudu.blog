@@ -157,14 +157,13 @@ ${generated}
   <head>
     ${documentHead({ title: `${post.title} · Gudu 的个人博客`, description: post.excerpt, canonical: postURL(post), prefix: '../', noindex: post.demo, article: post })}
 ${structuredData}
-    <script src="../js/star-sky.js?v=20261113-polish" defer></script>
-    <script src="../js/particle-sky.js?v=20261020-original-stars" defer></script>
-    <script src="../js/article-sky.js?v=20261118-sky" defer></script>
+    <script src="../js/particle-sky.js?v=20261121-fill" defer></script>
+    <script src="../js/article-sky.js?v=20261121-orbit" defer></script>
     <script src="../js/article.js?v=20261118-article" defer></script>${post.hasScenes ? '\n    <link rel="stylesheet" href="../css/mc-article.css?v=20261121-cursor" />\n    <script type="module" src="../js/mc-article.mjs"></script>' : ''}
     ${comments.head}
   </head>
   <body class="article-page">
-    <div class="article-sky" aria-hidden="true"><canvas data-star-sky></canvas><canvas data-particle-sky></canvas></div>
+    <div class="article-sky" aria-hidden="true"><canvas data-particle-sky></canvas></div>
     <div class="reading-progress" aria-hidden="true" hidden><span data-reading-progress></span></div>
     ${siteHeader('../')}
     <main class="article-shell" id="main-content" tabindex="-1">

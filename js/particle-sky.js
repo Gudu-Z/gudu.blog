@@ -11,6 +11,7 @@
     attribute vec4 a_style;
     attribute float a_wrap;
     uniform vec3 u_observer;
+    uniform vec2 u_sweep;
     uniform vec2 u_chart;
     uniform float u_maxPoint;
     varying vec2 v_coreSigma;
@@ -19,6 +20,9 @@
     #define PI 3.14159265359
     void main() {
       vec3 p = a_position - u_observer;
+      // An orbiting observer also turns, which carries each star across the
+      // view by its depth's share: far stars sweep past, near ones lag.
+      p.xy -= u_sweep * abs(a_position.z);
       // Recycle individual stars in a large volume, fading to zero on both
       // sides of each boundary. Time itself never resets or jumps backward.
       p.xy = mod(p.xy + 1600.0, 3200.0) - 1600.0;
@@ -69,10 +73,21 @@
     }
   `;
 
+  // The orbit's centre lies this far ahead of the observer, nearer than any
+  // star, so every star moves the same way and the farthest move fastest.
+  const ORBIT_CENTRE = 100;
+  // Scales the fill population so that, star for star, it shows about as many
+  // stars at each brightness as the still stars of js/star-sky.js did.
+  const FILL_GAIN = 7;
+
   class ParticleSky {
-    constructor(owner) {
+    // `fill`: how many stars of the dense, faint population to add (see fill()).
+    // `orbit`: circle a point just ahead instead of translating (see render()).
+    constructor(owner, { fill = 0, orbit = false } = {}) {
       this.owner = owner;
       this.gl = owner.gl;
+      this.fillCount = fill;
+      this.orbit = orbit;
       this.program = owner.program(fragment, vertex);
     }
 
@@ -104,6 +119,45 @@
       return data;
     }
 
+    // The dense, faint stars that make up most of the sky, as the 2D still
+    // stars of js/star-sky.js once did: mostly far away, and as bright on
+    // screen as those were whatever their depth (their luminosity grows with
+    // the square of their distance). Their clusters follow the same pattern.
+    // Stars ahead never reach the chart's seam behind the observer, so only
+    // those behind carry seam copies.
+    static fill(count) {
+      let state = 0x2f6b3c95;
+      const random = () => {
+        state ^= state << 13; state ^= state >>> 17; state ^= state << 5;
+        return (state >>> 0) / 4294967296;
+      };
+      const stars = [];
+      for (let i = 0; i < count; i++) {
+        const x = (random() * 2 - 1) * 1600;
+        const y = (random() * 2 - 1) * 1600;
+        const z = (random() < 0.5 ? -1 : 1) * (120 + 1380 * random());
+        const bright = random();
+        // A long tail of brightness: mostly faint stars and a few bright ones,
+        // the brightest a little larger, so their light spreads instead of
+        // clipping in the 8-bit atlas (larger still, they read as smudges by day).
+        const radius = 0.14 + 0.16 * bright ** 2 + 0.45 * bright ** 8;
+        const group = 0.5 + 0.5 * Math.sin(x * 0.006 + Math.sin(z * 0.005)) * Math.cos(y * 0.007);
+        const shown = (0.05 + bright ** 5) * (0.25 + 0.75 * group);
+        const luminosity = FILL_GAIN * shown * (z / 1000) ** 2 / (radius / 0.3) ** 2;
+        stars.push([x, y, z, radius, luminosity, random(), 0]);
+      }
+      const vertices = stars.reduce((sum, star) => sum + (star[2] < 0 ? 1 : 3), 0);
+      const data = new Float32Array(vertices * 8);
+      let offset = 0;
+      for (const star of stars) {
+        for (const wrap of star[2] < 0 ? [0] : [-1, 0, 1]) {
+          data.set([...star, wrap], offset);
+          offset += 8;
+        }
+      }
+      return data;
+    }
+
     initialize() {
       const gl = this.gl;
       const resolution = this.owner.nextWidth <= 900 ? 1024 : 2048;
@@ -124,7 +178,11 @@
       if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
         throw new Error('Particle sky framebuffer unavailable.');
       }
-      const data = ParticleSky.geometry();
+      const stars = ParticleSky.geometry();
+      const fill = this.fillCount ? ParticleSky.fill(this.fillCount) : new Float32Array(0);
+      const data = new Float32Array(stars.length + fill.length);
+      data.set(stars);
+      data.set(fill, stars.length);
       this.count = data.length / 8;
       this.buffer = gl.createBuffer();
       this.owner.resources.push({ type: 'buffer', value: this.buffer });
@@ -151,8 +209,19 @@
       // Whole-volume translations are equivalent under per-star wrapping;
       // bound the uniform to retain subpixel precision during long visits.
       const travel = (time - 12) * 1.50;
-      gl.uniform3f(uniforms.u_observer, (travel * 0.75) % 3200 + x * 2.1,
-        (travel * 0.50) % 3200 + y * 1.5, 0);
+      if (this.orbit) {
+        // Orbiting a point ORBIT_CENTRE ahead: the observer slides and turns
+        // to keep facing it, so a star at depth z drifts by (z / centre - 1)
+        // times the slide. The farthest stars sweep past at the turn's own
+        // rate, about a fifth of a degree a second, and the nearest at a third of that.
+        const slide = travel * 0.25;
+        gl.uniform3f(uniforms.u_observer, -(slide * 0.75) % 3200 + x * 2.1, -(slide * 0.50) % 3200 + y * 1.5, 0);
+        gl.uniform2f(uniforms.u_sweep, slide * 0.75 / ORBIT_CENTRE, slide * 0.50 / ORBIT_CENTRE);
+      } else {
+        gl.uniform3f(uniforms.u_observer, (travel * 0.75) % 3200 + x * 2.1,
+          (travel * 0.50) % 3200 + y * 1.5, 0);
+        gl.uniform2f(uniforms.u_sweep, 0, 0);
+      }
       gl.uniform2f(uniforms.u_chart, this.size, this.inset);
       gl.uniform1f(uniforms.u_maxPoint, this.maxPoint);
       gl.enable(gl.BLEND);
