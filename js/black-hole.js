@@ -1232,7 +1232,7 @@
         const programs = [theme.scene, theme.composite];
         if (style !== 'ink') {
           theme.bloom = this.program(bloomSource);
-          theme.particleSky = new window.ParticleSky(this);
+          theme.particleSky = new window.ParticleSky(this, { orbit: true });
           programs.push(theme.bloom, theme.particleSky.program);
         }
         return await this.finishPrograms(programs, generation) ? theme : null;

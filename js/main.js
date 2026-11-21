@@ -4,6 +4,7 @@
   const stage = document.querySelector('#hero-stage') || hero;
   const stars = document.querySelector('#starfield');
   const context = stars.getContext('2d');
+  const gpuStars = document.querySelector('#starfield-gpu');
   const blackHoleCanvas = document.querySelector('#black-hole-canvas');
   const sphereSwitch = document.querySelector('.black-hole-switch');
   const blackHoleTheme = window.BlackHoleTheme;
@@ -46,7 +47,15 @@
   let activeSince = null;
   let width = 0;
   let height = 0;
+  let catalogue = [];
   let starList = [];
+  let starField;
+  let fieldNeedsResize = true;
+  let sceneContextLost = false;
+  // The unmodified catalogue is phase zero. Ink or a lost context holds the
+  // last painted phase until a live minimal sky takes over at the same place.
+  let driftTime = 0;
+  let driftEpoch = null;
   let starFrame = null;
   let starAnchor = null;
   let starQuiet = null;
@@ -125,7 +134,10 @@
         renderer.setDay?.(isDay() ? 1 : 0);
         blackHole = renderer;
         renderer.onRestore = () => {
-          if (!pageActive || document.hidden || blackHole !== renderer) return;
+          if (blackHole !== renderer) return;
+          sceneContextLost = false;
+          starAnchor = null;
+          if (!pageActive || document.hidden) return;
           resolveCompiled(true);
           draw();
           start();
@@ -217,10 +229,12 @@
     // behind the scene. The shader adds the few stars it bends around the
     // hole on top of them.
     if (dimensionsChanged) {
-      starList = window.StarSky?.stars(width, height) ?? [];
+      catalogue = window.StarSky?.stars(width, height) ?? [];
+      starList = driftEpoch === null && driftTime > 0 ? frozenStars() : catalogue;
       starFrame = null;
     }
-    starAnchor = null;
+    fieldNeedsResize = true;
+    if (dimensionsChanged || (blackHole?.ready && !blackHole.lost)) starAnchor = null;
     // A bright point among the clock's digits would read as punctuation, so
     // the sky dims around that one line. Offsets ignore the line's parallax
     // and entrance transforms.
@@ -240,8 +254,9 @@
 
   // The page entrance magnifies the sky about its camera's fixed point.
   function starZoom() {
-    if (!(introAmount > 0) || !blackHole?.ready || blackHole.lost) return 1;
+    if (!(introAmount > 0)) return 1;
     if (!starAnchor) {
+      if (!blackHole?.ready || blackHole.lost || sceneContextLost) return 1;
       const view = blackHole.introView?.(1);
       if (!view) return 1;
       const box = stage.getBoundingClientRect();
@@ -306,8 +321,59 @@
     }
   }
 
-  function drawParallax() {
-    drawStars();
+  function frozenStars() {
+    return window.StarField.freezeCatalogue(catalogue, width, height, driftTime);
+  }
+
+  function drawSky(time) {
+    if (gpuStars && window.StarField && blackHoleStyle === 'minimal' && !sceneContextLost && !blackHole?.lost) {
+      if (fieldNeedsResize || starField === undefined) {
+        fieldNeedsResize = false;
+        try {
+          if (starField === undefined) starField = new window.StarField(gpuStars);
+          starField?.resize(width, height, Math.min(devicePixelRatio || 1, 2), catalogue);
+        } catch (error) {
+          starField = null;
+          console.warn('Using the 2D star field.', error);
+        }
+      }
+      if (starField) {
+        const epoch = driftEpoch ?? time - driftTime;
+        const phase = time - epoch;
+        const day = isDay();
+        if (starField.render({
+          zoom: starZoom(), anchorX: starAnchor?.x ?? 0, anchorY: starAnchor?.y ?? 0,
+          pointerX: pointer.x, pointerY: pointer.y, amount: introAmount, introMoving,
+          quiet: starQuiet, time: phase, day, fade: day ? 1 - 0.6 * chapterProgress : 1,
+        })) {
+          if (driftEpoch === null) {
+            // Reduced motion gives all properties a brief transition. A lost
+            // canvas needs an atomic visibility swap, even on a paused frame.
+            stars.style.transitionProperty = gpuStars.style.transitionProperty = 'none';
+            stars.style.visibility = 'hidden';
+            gpuStars.style.visibility = 'visible';
+          }
+          driftEpoch = epoch;
+          driftTime = phase;
+          return;
+        }
+      }
+    }
+    if (driftEpoch !== null) {
+      // Bake the orbit once, before the 2D camera transform. The original
+      // drawStars continues to paint this frozen sky on pointer/theme changes.
+      starList = frozenStars();
+      starFrame = null;
+      starField?.resetHistory();
+      driftEpoch = null;
+      drawStars();
+      stars.style.visibility = 'visible';
+      gpuStars.style.visibility = 'hidden';
+    } else drawStars();
+  }
+
+  function drawParallax(time) {
+    drawSky(time);
     if (pointer.x !== layerX || pointer.y !== layerY) {
       layerX = pointer.x;
       layerY = pointer.y;
@@ -318,14 +384,14 @@
     }
   }
 
-  function draw() {
+  function draw(time = sceneTime()) {
     clearTimeout(drawTimer);
     drawTimer = 0;
     if (!pageActive || document.hidden) return false;
     if (shouldHoldScene()) { holdScene(); return false; }
-    drawParallax();
+    drawParallax(time);
     blackHole?.setIntro?.(introAmount);
-    const submitted = blackHole?.render(sceneTime(), pointer.x, -pointer.y, chapterProgress, entranceGlow);
+    const submitted = blackHole?.render(time, pointer.x, -pointer.y, chapterProgress, entranceGlow);
     if (submitted === true) drawnFrames++;
     if (submitted === true && !sceneSettled) {
       firstFrameSubmitted = true;
@@ -394,8 +460,6 @@
       pointer.x = pointer.targetX;
       pointer.y = pointer.targetY;
     }
-    // Lightweight layers follow the display even when the GPU is occupied.
-    drawParallax();
     const requestedInterval = animated
       ? blackHole.getFrameInterval?.((!settled || introMoving) && chapterProgress === 0) ?? blackHole.frameInterval : 1000 / 60;
     const frameInterval = Number.isFinite(requestedInterval) && requestedInterval > 0
@@ -410,7 +474,7 @@
         if (animated) blackHole.sampleFrame(timestamp);
         lastRender += Math.max(1, Math.floor((timestamp - lastRender + 1) / frameInterval)) * frameInterval;
       }
-    }
+    } else drawParallax(sceneTime()); // Keep the sky and pointer layers at display cadence.
     // Rendering may slow under GPU load, but the active scene clock keeps time.
     if (animated || !settled) frame = requestAnimationFrame(tick);
     else lastTime = 0;
@@ -595,7 +659,21 @@
   // A late web font changes the heading's quiet zone without resizing the hero.
   const heading = document.querySelector('.hero-heading');
   if (heading) sceneResize.observe(heading);
-  blackHoleCanvas?.addEventListener('webglcontextlost', () => { stop(); settleScene(false); drawStars(); });
+  gpuStars?.addEventListener('webglcontextlost', event => {
+    event.preventDefault();
+    starField = null;
+    if (pageActive && !document.hidden) drawSky(sceneTime());
+  });
+  gpuStars?.addEventListener('webglcontextrestored', () => {
+    starField = undefined;
+    if (pageActive && !document.hidden) drawSky(sceneTime());
+  });
+  blackHoleCanvas?.addEventListener('webglcontextlost', () => {
+    sceneContextLost = true;
+    stop();
+    settleScene(false);
+    if (pageActive && !document.hidden) drawSky(sceneTime());
+  });
   window.addEventListener('pagehide', event => {
     // pagehide can precede visibilitychange. Gate every late completion before
     // retiring the renderer, while preserving it for BFCache.

@@ -26,10 +26,11 @@
     <link rel="stylesheet" href="./css/chapters-vertical.css?v=20261113-polish" />
     <link rel="stylesheet" href="./css/cursor.css?v=20261101-day-mode" />
     <script src="./js/ink-splatter.js?v=20261020-camera-preserved" defer></script>
-    <script src="./js/particle-sky.js?v=20261020-original-stars" defer></script>
-    <script src="./js/black-hole.js?v=20261118-beam" defer></script>
+    <script src="./js/particle-sky.js?v=20261121-orbit" defer></script>
+    <script src="./js/black-hole.js?v=20261121-orbit" defer></script>
     <script src="./js/star-sky.js?v=20261113-polish" defer></script>
-    <script src="./js/main.js?v=20261118-beam" defer></script>
+    <script src="./js/star-field.js?v=20261121-orbit" defer></script>
+    <script src="./js/main.js?v=20261121-orbit" defer></script>
     <script src="./js/intro.js?v=20261113-polish" defer></script>
     <script src="./js/theme-jets.js?v=20261118-beam" defer></script>
     <script src="./js/posts-data.js?v=20261118-article" defer></script>
@@ -136,6 +137,7 @@
       <section class="hero" id="home" aria-labelledby="hero-title">
         <div class="hero-stage" id="hero-stage">
         <canvas class="starfield" id="starfield" aria-hidden="true"></canvas>
+        <canvas class="starfield" id="starfield-gpu" aria-hidden="true" style="visibility: hidden"></canvas>
         <div class="space-grid" aria-hidden="true"></div>
 
         <div class="hero-composition">

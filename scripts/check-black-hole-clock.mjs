@@ -8,6 +8,8 @@ const source = [
   await readFile(new URL('../js/star-sky.js', import.meta.url), 'utf8'),
   await readFile(new URL('../js/main.js', import.meta.url), 'utf8'),
 ].join('\n');
+const fieldWindow = {};
+runInNewContext(await readFile(new URL('../js/star-field.js', import.meta.url), 'utf8'), { window: fieldWindow });
 
 function eventTarget(extra = {}) {
   const listeners = new Map();
@@ -31,7 +33,7 @@ function classes(initial = []) {
 // Execute the real main.js against controlled browser events and a monotonic
 // clock. Assertions observe the time and camera passed to the renderer.
 function browser({ reduced = false, loading = false, deferInk = false, deferReady = false, unavailable = false,
-  clockBox = null } = {}) {
+  clockBox = null, gpuStars = false } = {}) {
   let now = 0;
   let sequence = 0;
   let renderCost = 0;
@@ -47,6 +49,8 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
   const renderers = [];
   const samples = [];
   const polls = [];
+  const fieldFrames = [];
+  let catalogue;
   const work = { canvasClears: 0, canvasResizes: 0, starDraws: 0, starStreaks: 0, layerWrites: 0 };
   const media = {
     '(prefers-reduced-motion: reduce)': eventTarget({ matches: reduced }),
@@ -69,12 +73,14 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
   };
   let starWidth = 0, starHeight = 0;
   const stars = {
+    style: {},
     getContext: () => context,
     get width() { return starWidth; },
     set width(value) { starWidth = value; work.canvasResizes++; },
     get height() { return starHeight; },
     set height(value) { starHeight = value; work.canvasResizes++; },
   };
+  const fieldCanvas = eventTarget({ style: { visibility: 'hidden' } });
   const clockParts = [{ textContent: '' }, { textContent: '' }];
   const clock = {
     querySelector: name => clockParts[name === '[data-clock-date]' ? 0 : 1],
@@ -88,12 +94,27 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
   }));
   const sphere = { hidden: false };
   const nodes = { '.hero': hero, '#starfield': stars, '#black-hole-canvas': canvas, '#local-time': clock, '.black-hole-switch': sphere };
+  if (gpuStars) nodes['#starfield-gpu'] = fieldCanvas;
   const document = eventTarget({
     hidden: false,
     documentElement: { dataset: {}, classList: classes(loading ? ['is-loading', 'has-site-intro'] : []) },
     querySelector: name => nodes[name], querySelectorAll: () => layers,
   });
   const window = eventTarget({
+    StarField: gpuStars && class {
+      static freezeCatalogue = fieldWindow.StarField.freezeCatalogue;
+      constructor() {
+        this.lost = false;
+        fieldCanvas.addEventListener('webglcontextlost', () => { this.lost = true; });
+      }
+      resize(_width, _height, _dpr, list) { catalogue = list; }
+      resetHistory() {}
+      render(state) {
+        if (this.lost) return false;
+        fieldFrames.push({ ...state, at: now });
+        return true;
+      }
+    },
     SiteLoader: { ready({ scene }) { preparation = scene; } },
     BlackHoleTheme: { apply: style => style || nextStyle, resolve: () => nextStyle },
     BlackHole: class {
@@ -159,6 +180,7 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
   }
   return {
     attempts, renders, layers, renderers, samples, polls, work, starColors, sphere, root: document.documentElement,
+    fieldFrames, fieldCanvas, stars, get catalogue() { return catalogue; },
     hero,
     get scene() { return window.SiteBlackHole; },
     // Keyed by size and color, which no two points share, so one star can be
@@ -204,7 +226,9 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
     interaction(time, active, kind = 'content') { at(time); window.emit('site:interaction', { detail: { active, kind } }); },
     finishIntro(time) { at(time); hero.emit('animationend', { animationName: 'title-period-enter' }); setupRenderer(); },
     theme(time, style) { at(time); nextStyle = style; window.emit('popstate'); },
-    lose(time) { at(time); canvas.emit('webglcontextlost'); },
+    lose(time) { at(time); canvas.emit('webglcontextlost', { preventDefault() {} }); },
+    loseField(time) { at(time); fieldCanvas.emit('webglcontextlost', { preventDefault() {} }); },
+    restoreField(time) { at(time); fieldCanvas.emit('webglcontextrestored'); },
     restore(time, target = renderer) { at(time); target.ready = true; target.lost = false; target.onRestore(); },
     queuedTimers() { return [...timers.values()].map(timer => timer.callback); },
     queuedDrawTasks() { return [...timers.values()].filter(timer => timer.callback.name === 'retryDraw').map(timer => timer.callback); },
@@ -222,6 +246,81 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
 function phase(actual, expected) {
   assert.ok(Math.abs(actual - expected) < 1e-9, `expected orbital time ${expected}, got ${actual}`);
 }
+
+await test('GPU stars share the hero clock, including paused, hidden and reduced-motion frames', () => {
+  const site = browser({ gpuStars: true, reduced: true, clockBox: { left: 60, top: 200, width: 240, height: 40 } });
+  const field = () => site.fieldFrames.at(-1);
+  phase(field().time, 0);
+  assert.notEqual(site.fieldCanvas.style.visibility, 'hidden');
+  assert.equal(site.stars.style.visibility, 'hidden');
+  assert.equal(site.catalogue.length, 123);
+  site.motion(1000, false);
+  site.scene.intro(0.6, true);
+  site.move(1100);
+  for (const time of [1200, 1300, 1400]) {
+    site.frame(time);
+    phase(field().time, site.last.time - 12);
+    assert.equal(site.fieldFrames.filter(frame => frame.at === time).length, 1,
+      'a second paint on the same tick would replace the one-frame trails');
+  }
+  assert.equal(field().introMoving, true);
+  phase(field().zoom, 1.8 ** 0.6);
+  assert.deepEqual([field().anchorX, field().anchorY], [-674, -326]);
+  assert.deepEqual([field().pointerX, field().pointerY], [site.last.x, -site.last.y]);
+  assert.deepEqual({ ...field().quiet }, { left: 60, top: 200, width: 240, height: 40 });
+  site.motion(1400, true);
+  site.root.dataset.theme = 'light';
+  site.page(5000, 'site:chapter', { detail: { progress: 1 } });
+  phase(field().time, 0.4);
+  assert.equal(field().day, true);
+  assert.equal(field().fade, 0.4);
+  assert.equal(site.pendingFrames, 0);
+  site.motion(6000, false);
+  site.frame(6200);
+  phase(field().time, 0.6);
+  site.page(6200, 'pagehide', { persisted: true });
+  site.page(30000, 'pageshow', { persisted: true });
+  site.frame(30200);
+  phase(field().time, 0.8);
+  assert.equal(site.pendingFrames, 1);
+});
+
+await test('ink and either lost context retain the last GPU star positions and resume there', () => {
+  // Follow one well-inside star in CSS pixels in both backends. At these short
+  // active times it never reaches a wrap boundary.
+  function point(star, seconds) {
+    const distance = 0.0069 * 480 * (1 - 0.7 * (star.depth - 0.04) / 0.4) * seconds;
+    return { x: star.x - 0.832 * distance, y: star.y + 0.555 * distance };
+  }
+  for (const path of ['ink', 'field loss', 'black-hole loss']) {
+    const site = browser({ gpuStars: true });
+    site.frame(5000);
+    const radius = site.catalogue.find(star => star.x > 100 && star.x < 500 && star.y > 100 && star.y < 350).radius;
+    const gpuPoint = () => point(site.catalogue.find(star => star.radius === radius), site.fieldFrames.at(-1).time);
+    const stillPoint = () => [...site.sky.values()].find(star => star.radius === radius);
+    const last = gpuPoint();
+    if (path === 'ink') site.theme(5000, 'ink');
+    else if (path === 'field loss') site.loseField(5000);
+    else site.lose(5000);
+    assert.equal(site.fieldCanvas.style.visibility, 'hidden', path);
+    assert.notEqual(site.stars.style.visibility, 'hidden', path);
+    const count = site.fieldFrames.length;
+    site.frame(20000);
+    const frozen = stillPoint();
+    assert.ok(frozen, path);
+    assert.ok(Math.hypot(frozen.x - last.x, frozen.y - last.y) < 0.001, `${path}: fallback keeps the displayed star`);
+    assert.equal(site.fieldFrames.length, count, path);
+    if (path === 'ink') site.theme(20000, 'minimal');
+    else if (path === 'field loss') site.restoreField(20000);
+    else site.restore(20000);
+    assert.notEqual(site.fieldCanvas.style.visibility, 'hidden', path);
+    assert.equal(site.stars.style.visibility, 'hidden', path);
+    const resumed = gpuPoint();
+    assert.ok(Math.hypot(resumed.x - last.x, resumed.y - last.y) < 0.001, `${path}: GPU resumes at the frozen star`);
+    site.frame(21000);
+    assert.ok(gpuPoint().x < last.x && gpuPoint().y > last.y, path);
+  }
+});
 
 await test('fast, slow and uneven rAF schedules reach the same orbital phase', () => {
   const schedules = [
