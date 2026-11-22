@@ -265,11 +265,19 @@ await test('the ruler axis turns the frame into a caliper on its landing hairlin
   site.track.style.setProperty('--chapter-hover-x', '');
   site.move(site.axis, 500, 846);
   site.advance(16);
+  const [[gliding]] = site.corners();
+  assert.ok(gliding > 495 && gliding < 774, 'a frame that takes the caliper glides into it instead of jumping');
+  site.advance(112);
   assert.deepEqual(site.corners()[0], [495, 835], 'entering without a preview, the caliper marks the mouse on the axis');
+  site.move(site.axis, 520, 846);
+  site.advance(16);
+  assert.deepEqual(site.corners()[0], [515, 835], 'once it has glided in, the caliper follows in the same frame');
 
   site.move(site.handle, 239, 842);
   site.advance(16);
   assert.deepEqual([site.has('is-grip'), site.has('is-axis')], [true, false]);
+  assert.ok(site.corners()[0][0] > 230, 'the grip glides in from the caliper');
+  site.advance(112);
   assert.deepEqual(site.corners(), [[230, 832], [249, 832], [230, 854], [249, 854]], 'the frame clears the triangle above the 2px stem');
   site.marker.rect = { left: 300, top: 840, width: 2, height: 10 };
   site.move(site.marker, 301, 842);

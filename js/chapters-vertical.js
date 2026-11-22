@@ -20,6 +20,10 @@
   const links = [...nav.querySelectorAll('[data-chapter-link]')];
   const heroText = [...stage.querySelectorAll('.hero-heading')];
   const labels = chapters.map((chapter, index) => links[index]?.querySelector('.chapter-station-title')?.textContent.trim() || chapter.id);
+  // The tape's ticks are marks under the lens (js/ruler-lens.js): eight to a
+  // station and a longer one at its middle. The lens rides on the cursor, so
+  // the ticks swell as the tape slides under it.
+  const tapeLens = window.RulerLens ? window.RulerLens.create(links, { axis: 'y', kind: (j, count) => (j === count / 2 ? 'mid' : '') }) : null;
   const journalIndex = sections.findIndex(section => section.id === 'journal');
   const filterList = document.querySelector('.journal-toolbar > .filter-list');
   const filterToolbar = filterList?.parentElement;
@@ -448,6 +452,7 @@
     nav.style.setProperty('--chapter-position', coordinate.toFixed(4));
     nav.style.setProperty('--site-progress', (coordinate / Math.max(1, chapters.length - 1)).toFixed(4));
     tape.style.setProperty('--chapter-marker-y', px(markerY));
+    tapeLens?.paint(null, markerY, nav.classList.contains('is-scrubbing') || nav.classList.contains('is-chapter-moving'));
     const index = content ? 1 + Math.round(coordinate) : 0;
     nav.style.setProperty('--chapter-active-index', String(Math.max(0, index - 1)));
     if (index !== current) {
@@ -773,6 +778,7 @@
     interacted = false;
     root.classList.add('has-chapters', 'has-vertical-chapters');
     marker.setAttribute('aria-orientation', 'vertical');
+    tapeLens?.build(8);
     for (const element of units) {
       element.classList.remove(...leftoverClasses);
       element.classList.add('chapter-reveal-unit', 'has-chapter-reveal');
@@ -847,6 +853,7 @@
     for (const chapter of chapters) chapter.style.removeProperty('--vertical-scroll-margin');
     for (const name of ['--tape-cell', '--tape-shift', '--chapter-position', '--site-progress', '--chapter-active-index']) nav.style.removeProperty(name);
     tape.style.removeProperty('--chapter-marker-y');
+    tapeLens?.destroy();
     for (const [element, inert] of inertStates) if (inert) element.inert = false;
     inertStates.clear();
     nav.classList.remove('is-scrubbing', 'is-chapter-moving', 'is-moving-back');

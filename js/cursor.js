@@ -15,6 +15,9 @@
   // so a locked frame re-reads its target for this long after the last movement.
   const settleTime = 400;
   const scrollRest = 120;
+  // A frame that takes the ruler's shape glides into it, its lag shrinking to
+  // nothing over this long, before it sticks to the ruler without lag.
+  const morphTime = 120;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
   const layer = document.createElement('div');
@@ -43,6 +46,7 @@
   let scrollTimer = 0;
   let animation = 0;
   let lastFrame = 0;
+  let morphStart = -Infinity;
 
   function setStyle(element, name, value) {
     let values = styleValues.get(element);
@@ -105,6 +109,7 @@
       if (target) measure();
     }
     if (!changed) return;
+    morphStart = performance.now();
     layer.classList.toggle('is-locked', kind === 'target');
     layer.classList.toggle('is-field', kind === 'field');
     layer.classList.toggle('is-axis', kind === 'axis');
@@ -146,10 +151,16 @@
     const refreshing = kind !== 'point' && (dragging || now - lastMove < settleTime);
     if (refreshing) measure();
     const next = goal();
-    // The frame trails the point slightly and opens onto targets a little slower;
-    // on the ruler it sticks to the hairline and the dragged cursor without lag.
-    const snap = motion.matches || !frame || kind === 'axis' || kind === 'grip';
-    const ease = snap ? 1 : 1 - Math.exp(-elapsed / (kind === 'point' ? 50 : 80));
+    // The frame trails the point slightly and opens onto targets a little slower.
+    // On the ruler it glides into its caliper or grip, then sticks to the
+    // hairline and the dragged cursor without lag. A frame that appears does so
+    // in place, with nothing to glide from.
+    const ruler = kind === 'axis' || kind === 'grip';
+    if (!frame) morphStart = -Infinity;
+    const morph = clamp((now - morphStart) / morphTime, 0, 1);
+    const snap = motion.matches || !frame || (ruler && morph === 1);
+    const lag = kind === 'point' ? 50 : ruler ? 36 * (1 - morph) : 80;
+    const ease = snap ? 1 : 1 - Math.exp(-elapsed / lag);
     frame ||= { ...next };
     let moving = false;
     for (const side of ['l', 't', 'r', 'b']) {

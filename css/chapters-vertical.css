@@ -248,16 +248,32 @@ html.has-vertical-chapters .home-page .chapter-progress-links {
   grid-template-columns: 1fr;
   grid-template-rows: repeat(4, minmax(0, 1fr));
 }
-/* Each cell draws its stretch of the axis, eight fine ticks and a longer one
-   at its middle; the last cell closes the tape with an end stem. */
+/* Each cell draws its stretch of the axis; its eight fine ticks and the
+   longer one at its middle are marks under the lens (js/ruler-lens.js),
+   which rides on the cursor: ticks passing under it lengthen towards the
+   screen edge, brighten, and show finer graduations between them. The last
+   cell closes the tape with an end stem. */
 html.has-vertical-chapters .home-page .chapter-progress-links a {
-  --tape-cell-marks:
-    linear-gradient(var(--tape-line), var(--tape-line)) var(--tape-axis) 0 / 1px 100% no-repeat,
-    linear-gradient(var(--tape-tick-mid), var(--tape-tick-mid)) calc(var(--tape-axis) + 1px) 50% / 6px 1px no-repeat,
-    repeating-linear-gradient(180deg, var(--tape-tick) 0 1px, transparent 1px 12.5%) calc(var(--tape-axis) + 1px) 0 / 3px 100% no-repeat;
+  --tape-cell-marks: linear-gradient(var(--tape-line), var(--tape-line)) var(--tape-axis) 0 / 1px 100% no-repeat;
   background: var(--tape-cell-marks);
   backface-visibility: hidden;
 }
+html.has-vertical-chapters .home-page .chapter-progress-response { display: none; }
+html.has-vertical-chapters .home-page .chapter-progress-links .ruler-marks { display: block; position: absolute; inset: 0; pointer-events: none; }
+html.has-vertical-chapters .home-page .chapter-progress-links .ruler-marks > i {
+  --tick: var(--tape-tick);
+  position: absolute;
+  left: calc(var(--tape-axis) + 1px);
+  width: 3px;
+  height: 1px;
+  margin-top: -0.5px;
+  background: color-mix(in srgb, light-dark(#111111, #ececec) calc(var(--z, 0) * 85%), var(--tick));
+  transform-origin: left;
+  transform: scaleX(calc(1 + var(--z, 0) * var(--reach, 2.6)));
+  transition: transform 110ms ease, background-color 110ms ease;
+}
+html.has-vertical-chapters .home-page .chapter-progress-links .ruler-marks > i.mid { --tick: var(--tape-tick-mid); width: 6px; --reach: 1.6; }
+html.has-vertical-chapters .home-page .chapter-progress-links .ruler-marks > i.micro { --tick: transparent; width: 2px; --reach: 2.2; opacity: calc((var(--z, 0) - 0.12) * 1.6); }
 html.has-vertical-chapters .home-page .chapter-progress-links a:last-child {
   background: linear-gradient(var(--tape-stem), var(--tape-stem)) calc(var(--tape-axis) - 4px) 100% / 13px 1px no-repeat, var(--tape-cell-marks);
 }

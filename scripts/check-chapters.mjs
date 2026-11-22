@@ -2969,16 +2969,25 @@ await test('the outer half-cells of the horizontal axis clamp to the first and l
   }
 });
 
-await test('axis clicks and drag releases within a tenth of a cell settle on that chapter while farther points stay exact', () => {
+await test('axis clicks land where the magnetic preview shows, and drag releases within a tenth of a cell settle on that chapter', () => {
   for (const reduced of [false, true]) {
     const site = browser({ reduced, url: 'https://gudu.blog/#about' });
     const point = position => site.rulerLeft + (position + 0.5) * site.rulerWidth / 4;
     const top = position => site.destination('about') + site.step * position;
-    for (const [pressed, expected] of [[1.08, 1], [1.92, 2], [2.89, 2.89], [1.12, 1.12]]) {
+    const preview = () => parseFloat(site.progressTrack.style.getPropertyValue('--chapter-hover-x')) / (site.rulerWidth / 4) - 0.5;
+    // A center holds the mark within a fortieth of a cell and draws it in out to an eighth.
+    for (const [pressed, expected] of [[1.02, 1], [1.98, 2], [1.08, 'drawn'], [2.93, 'drawn'], [1.13, 1.13], [2.6, 2.6]]) {
+      markerPointer(site, 'pointermove', point(pressed), { target: site.progressRail, buttons: 0 });
+      const shown = preview();
+      if (expected === 'drawn') {
+        const station = Math.round(pressed);
+        assert.ok(Math.sign(shown - station) === Math.sign(pressed - station) && Math.abs(shown - station) < Math.abs(pressed - station) - 0.01,
+          `the preview at ${pressed} is drawn towards ${station} without reaching it`);
+      } else assert.ok(Math.abs(shown - expected) < 1e-4, `the preview at ${pressed} shows ${expected}`);
       markerPointer(site, 'pointerdown', point(pressed), { target: site.progressRail });
       markerPointer(site, 'pointerup', point(pressed), { target: site.progressRail });
       site.advance(1600);
-      assert.ok(Math.abs(site.top - top(expected)) < 1e-6, `a click at ${pressed} lands on ${expected}`);
+      assert.ok(Math.abs((site.top - top(0)) / site.step - shown) < 1e-4, `a click at ${pressed} lands where its preview showed`);
       assert.equal(site.pendingFrames, 0);
     }
     site.jump(top(1.2));
@@ -2998,6 +3007,28 @@ await test('axis clicks and drag releases within a tenth of a cell settle on tha
   }
 });
 
+await test('the axis preview is drawn into a chapter center and let go again without a jump', () => {
+  const site = browser({ url: 'https://gudu.blog/#about' });
+  const cell = site.rulerWidth / 4;
+  const shown = position => {
+    markerPointer(site, 'pointermove', site.rulerLeft + (position + 0.5) * cell, { target: site.progressRail, buttons: 0 });
+    return parseFloat(site.progressTrack.style.getPropertyValue('--chapter-hover-x'));
+  };
+  const step = 0.002;
+  let previous = shown(0.8);
+  let held = 0;
+  for (let position = 0.8 + step; position <= 1.2 + 1e-9; position += step) {
+    const next = shown(position);
+    const moved = next - previous;
+    assert.ok(moved >= -1e-3, `the mark never runs back at ${position.toFixed(3)}`);
+    assert.ok(moved <= 1.75 * step * cell + 1e-3, `the mark never leaps ahead at ${position.toFixed(3)}`);
+    if (moved < 1e-3) held++;
+    previous = next;
+  }
+  assert.ok(held >= 20 && held <= 30, `the center holds the mark for about a twentieth of a cell (${held} steps)`);
+  assert.ok(Math.abs(shown(0.7) - 1.2 * cell) < 0.001 && Math.abs(shown(1.3) - 1.8 * cell) < 0.001, 'beyond its reach the mark is the pointer');
+});
+
 await test('hovering the axis previews the settled landing point and its station, and follows the moving ruler', () => {
   const site = browser({ url: 'https://gudu.blog/#about' });
   const point = position => site.rulerLeft + (position + 0.5) * site.rulerWidth / 4;
@@ -3009,8 +3040,8 @@ await test('hovering the axis previews the settled landing point and its station
   hover(2.37);
   assert.ok(Math.abs(hoverX() - 2.87 * site.rulerWidth / 4) < 0.001, 'the hairline sits on the exact landing point');
   assert.deepEqual(targets(), [site.navLinks[2]]);
-  hover(0.93);
-  assert.ok(Math.abs(hoverX() - 1.5 * site.rulerWidth / 4) < 0.001, 'near a center the preview shows the settled point');
+  hover(0.98);
+  assert.ok(Math.abs(hoverX() - 1.5 * site.rulerWidth / 4) < 0.001, 'right by a center the preview rests on it');
   assert.deepEqual(targets(), [site.navLinks[1]]);
   hover(-0.4);
   assert.ok(Math.abs(hoverX() - 0.5 * site.rulerWidth / 4) < 0.001, 'an outer half-cell previews the first chapter center');

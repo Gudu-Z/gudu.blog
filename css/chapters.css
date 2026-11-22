@@ -1224,15 +1224,50 @@ html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scale
   height: 9px;
   pointer-events: none;
 }
-/* Each segment repeats the ruler's marks for its quarter: the axis, fine and
-   middle ticks, and a longer tick at its station and its middle. */
+/* Each segment draws its quarter of the axis; its ticks are marks laid by
+   js/ruler-lens.js: fine ticks (16, 24 or 32 to a station, as the screen
+   width cuts them), a middle tick every quarter, and a longer one at the
+   station and at its middle. */
 html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scales > span {
   position: relative;
-  background:
-    linear-gradient(light-dark(#3e3e3e43, #aaaaaa43), light-dark(#3e3e3e43, #aaaaaa43)) left 0 bottom 2px / 100% 1px no-repeat,
-    repeating-linear-gradient(90deg, light-dark(#4e4e4e2e, #9898982e) 0 1px, transparent 1px calc(var(--chapter-tick-step) * 4)) left bottom / 100% 3px no-repeat,
-    repeating-linear-gradient(90deg, light-dark(#45454548, #a2a2a248) 0 1px, transparent 1px calc(var(--chapter-tick-mid-step) * 4)) left bottom / 100% 5px no-repeat,
-    repeating-linear-gradient(90deg, light-dark(#34343466, #b7b7b766) 0 1px, transparent 1px 50%) left bottom / 100% 8px no-repeat;
+  background: linear-gradient(light-dark(#3e3e3e43, #aaaaaa43), light-dark(#3e3e3e43, #aaaaaa43)) left 0 bottom 2px / 100% 1px no-repeat;
+}
+/* The ruler as an instrument. Under the lens, near the pointer and a little
+   around the cursor, the ticks lengthen across the axis and brighten, and
+   finer graduations appear between them, three to a gap. A station pointed
+   at sends a wave through its ticks. The old masked tick response and the
+   hover hairline give way to the lens and the probe. */
+.home-page .ruler-marks { display: none; }
+html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-response,
+html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-rail::before { display: none; }
+html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scales .ruler-marks { display: block; position: absolute; inset: 0; pointer-events: none; }
+html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scales .ruler-marks > i {
+  --tick: light-dark(#4e4e4e2e, #9898982e);
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 3px;
+  margin-left: -0.5px;
+  background: color-mix(in srgb, light-dark(#111111, #ececec) calc(var(--z, 0) * 85%), var(--tick));
+  transform-origin: 50% calc(100% - 2.5px);
+  transform: scaleY(calc(1 + var(--z, 0) * var(--reach, 3.4)));
+  transition: transform 110ms ease, background-color 110ms ease;
+}
+html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scales .ruler-marks > i.mid { --tick: light-dark(#45454548, #a2a2a248); height: 5px; --reach: 2.8; }
+html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scales .ruler-marks > i.major { --tick: light-dark(#34343466, #b7b7b766); height: 8px; --reach: 2; }
+html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scales .ruler-marks > i.micro { --tick: transparent; bottom: 1px; height: 3px; --reach: 2.2; opacity: calc((var(--z, 0) - 0.12) * 1.6); }
+html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scales .is-ruler-wave > .ruler-marks > i { animation: chapter-ruler-wave 620ms cubic-bezier(0.3, 0.7, 0.3, 1) calc(var(--j) * 11ms) both; }
+@keyframes chapter-ruler-wave {
+  0%, 100% { scale: 1 1; }
+  38% { scale: 1 2.6; }
+}
+/* The probe: a hairline across the axis where a click lands, or on the
+   dragged cursor, and above it the station, its name and how far along. */
+.home-page .chapter-progress-probe { position: absolute; bottom: -10px; width: 1px; height: 26px; margin-left: -0.5px; background: light-dark(#121212, #f1f1f1); opacity: 0.9; pointer-events: none; }
+.home-page .chapter-progress-probe > output { position: absolute; bottom: calc(100% + 34px); left: 50%; translate: -50% 0; padding: 3px 7px; color: light-dark(#121212, #f1f1f1); font: 10px/1.3 "Consolas", "SFMono-Regular", monospace; letter-spacing: 0.08em; white-space: nowrap; background: light-dark(rgb(255 255 255 / 72%), rgb(0 0 0 / 55%)); box-shadow: inset 0 0 0 1px light-dark(#0000001f, #ffffff1f); }
+.home-page .chapter-progress-probe > output > b { margin: 0 6px; font-family: var(--ui-sans); font-weight: 400; letter-spacing: 0.04em; }
+@media (prefers-reduced-motion: reduce) {
+  html.has-chapters .home-page .ruler-marks > i { transition: none; }
 }
 /* The closing stem at the far right. */
 html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scales > span:last-child::after {

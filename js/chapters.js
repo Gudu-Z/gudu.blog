@@ -19,6 +19,15 @@
   const progressScan = document.querySelector('.chapter-progress-scan');
   const progressMarker = document.querySelector('.chapter-progress-marker');
   const links = [...document.querySelectorAll('[data-chapter-link]')];
+  // Each station's quarter of the ruler carries its ticks as marks under a
+  // lens (js/ruler-lens.js): ticks per station as css/chapters.css cuts them.
+  const scaleCells = [...document.querySelectorAll('.chapter-progress-scales > span')];
+  const rulerLens = window.RulerLens && scaleCells.length ? window.RulerLens.create(scaleCells, {
+    axis: 'x',
+    kind: (j, count) => (j === 0 || j === count / 2 ? 'major' : j % (count / 4) === 0 ? 'mid' : ''),
+  }) : null;
+  // The widths at which css/chapters.css cuts the ruler finer.
+  const ticksPerStation = () => (window.innerWidth >= 2400 ? 32 : window.innerWidth >= 1728 ? 24 : 16);
   const heroText = [...stage.querySelectorAll('.hero-heading')];
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
   const mouseMotion = matchMedia('(hover: hover) and (pointer: fine)');
@@ -72,6 +81,10 @@
   let railSeek = null;
   let railTarget = null;
   let railHoverX = null;
+  // Places along the flat ruler, in pixels, for the lens and its probe.
+  let hoverOffset = null;
+  let cursorOffset = null;
+  let keyboardCursor = false;
   let lastSliderValue = null;
   let lastRevealX = null;
   let lastRevealTime = 0;
@@ -136,8 +149,25 @@
     return chapterStops[index] + (coordinate - index) * Math.max(1, chapterStops[index + 1] - chapterStops[index]);
   }
 
-  // Axis presses and releases within a tenth of a ruler cell of a chapter
-  // center settle on that center; anywhere else keeps the exact point.
+  // Hovering and clicking the axis are drawn to a chapter center like a magnet.
+  // Within a fortieth of a cell the mark rests on the center; out to an eighth
+  // it eases back to the pointer's own place on a cubic that leaves the center
+  // at rest and meets the pointer at its pace, so the mark never jumps, in
+  // place or in speed. A click lands where the mark shows.
+  const magnetCore = 0.025;
+  const magnetReach = 0.125;
+  function magnetCoordinate(coordinate) {
+    const clamped = clamp(coordinate, 0, chapters.length - 1);
+    const station = Math.round(clamped);
+    const away = Math.abs(clamped - station);
+    if (away >= magnetReach) return clamped;
+    if (away <= magnetCore) return station;
+    const s = (away - magnetCore) / (magnetReach - magnetCore);
+    return station + Math.sign(clamped - station) * s * s * (2 * magnetReach + magnetCore - (magnetReach + magnetCore) * s);
+  }
+
+  // A dragged cursor let go within a tenth of a cell of a chapter center
+  // glides onto it; anywhere else it stays where it was let go.
   const stationSnap = 0.1;
   function settleCoordinate(coordinate) {
     const clamped = clamp(coordinate, 0, chapters.length - 1);
@@ -565,6 +595,8 @@
     const markerX = `${markerOffset.toFixed(3)}px`;
     setStyle(progressMarker, '--chapter-marker-x', markerX);
     setStyle(progressTrack, '--chapter-marker-x', markerX);
+    cursorOffset = markerOffset;
+    paintLens();
     // The cursor and the ticks it lights turn with the fold they are on.
     setFold(progressMarker, foldAt(markerOffset));
     setFold(progressResponse, foldAt(markerOffset));
@@ -619,6 +651,8 @@
     progressTrackLeft = (ruler?.left || 0) - pointerNavX;
     progressTrackWidth = ruler?.width || 0;
     measureFolds(ruler);
+    // A resize across the widths the CSS cuts finer recuts the lens's marks.
+    rulerLens?.build(ticksPerStation());
     paintRailHover();
     for (const group of revealGroups) {
       setClass(group.chapter, 'is-chapter-scrollable', group.scrollable);
@@ -841,6 +875,7 @@
     scrub = null;
     targetY = smoothY = y();
     setClass(progressNav, 'is-scrubbing', false);
+    paintLens();
     if (progressMarker?.hasPointerCapture?.(drag.pointerId)) progressMarker.releasePointerCapture(drag.pointerId);
     // The press only borrowed focus for Escape. Returning it keeps PageDown,
     // Space and the arrows moving the page, unless the slider already had focus.
@@ -848,7 +883,8 @@
     noteIdleActivity();
     if (canCommit) {
       const reached = drag.dragging ? coordinateAt(y() - entry) : drag.startPosition;
-      const settled = settleCoordinate(reached);
+      // A click lands where its preview showed; a drag glides onto a center it was let go near.
+      const settled = drag.dragging ? settleCoordinate(reached) : magnetCoordinate(reached);
       if (!drag.dragging || settled !== reached) { seekRail(entry + offsetAt(settled)); return; }
     }
     setInteraction(null);
@@ -1053,14 +1089,16 @@
     return { x: centerX + (hinge - centerX + reach) * scale, drop: (axisY - centerY) * (scale - 1) };
   }
 
-  // Hovering the axis previews where a click lands, already settled near a
+  // Hovering the axis previews where a click lands, drawn towards a nearby
   // chapter center. Parallax frames and remeasurement redraw it, so the mark
   // stays under a still mouse while the ruler moves; geometry stays cached.
   function paintRailHover() {
     if (railHoverX === null || scrub || !progressTrackWidth) return;
-    const coordinate = settleCoordinate((unfold(railHoverX - pointerNavX) - progressTrackLeft) / progressTrackWidth * chapters.length - 0.5);
+    const coordinate = magnetCoordinate((unfold(railHoverX - pointerNavX) - progressTrackLeft) / progressTrackWidth * chapters.length - 0.5);
     const offset = (coordinate + 0.5) * progressTrackWidth / chapters.length;
     setStyle(progressTrack, '--chapter-hover-x', `${offset.toFixed(3)}px`);
+    hoverOffset = offset;
+    paintLens();
     // Where the mark shows on a folded station, for the focus-frame cursor.
     const view = onFold(progressTrackLeft + offset);
     setStyle(progressTrack, '--chapter-hover-view-x', `${(view.x - progressTrackLeft).toFixed(3)}px`);
@@ -1069,8 +1107,45 @@
     setRailTarget(links[Math.round(coordinate)] || null);
   }
 
+  // The lens swells the ticks near the pointer and around the cursor, more
+  // while the cursor travels. The probe, a hairline with a readout, shows
+  // where a click lands; while the cursor is dragged, or moved from the
+  // keyboard, it rides on the cursor instead. It lives in the station it is
+  // over, so it folds with that station.
+  const rulerProbe = rulerLens ? makeProbe() : null;
+  function makeProbe() {
+    const probe = document.createElement('b');
+    probe.className = 'chapter-progress-probe';
+    probe.setAttribute('aria-hidden', 'true');
+    probe.innerHTML = '<output><span></span><b></b><span></span></output>';
+    return probe;
+  }
+  function paintLens() {
+    if (!rulerLens || verticalMode) return;
+    const travelling = Boolean(scrub) || progressNav?.classList.contains('is-chapter-moving');
+    rulerLens.paint(scrub ? null : hoverOffset, cursorOffset, travelling);
+    const at = scrub?.dragging || keyboardCursor ? cursorOffset : hoverOffset;
+    if (at === null || !progressTrackWidth) {
+      rulerProbe.remove();
+      return;
+    }
+    const cellWidth = progressTrackWidth / chapters.length;
+    const cell = clamp(Math.floor(at / cellWidth), 0, chapters.length - 1);
+    if (rulerProbe.parentElement !== scaleCells[cell]) scaleCells[cell].append(rulerProbe);
+    rulerProbe.style.left = `${((at - cell * cellWidth) / cellWidth * 100).toFixed(3)}%`;
+    // The readout counts as the slider does: 0% at the first station's centre.
+    const coordinate = clamp(at / cellWidth - 0.5, 0, chapters.length - 1);
+    const index = Math.round(coordinate);
+    const [number, title, share] = rulerProbe.firstChild.children;
+    number.textContent = String(index + 1).padStart(2, '0');
+    title.textContent = chapterLabels[index];
+    share.textContent = `${Math.round(coordinate / Math.max(1, chapters.length - 1) * 100)}%`;
+  }
+
   function clearRailHover() {
     railHoverX = null;
+    hoverOffset = null;
+    paintLens();
     setStyle(progressTrack, '--chapter-hover-x', '');
     setStyle(progressTrack, '--chapter-hover-view-x', '');
     setStyle(progressTrack, '--chapter-hover-view-y', '');
@@ -1597,6 +1672,7 @@
     if (vertical) {
       standDown();
       verticalMode = true;
+      rulerProbe?.remove();
       return;
     }
     verticalMode = false;
@@ -1606,4 +1682,17 @@
     pendingHash = true;
     resumeLayout();
   });
+
+  // The lens's marks, cut as finely as the screen's tick spacing asks; a
+  // station pointed at or focused runs a wave through its ticks; a cursor
+  // moved from the keyboard carries the probe's readout.
+  if (rulerLens) {
+    rulerLens.build(ticksPerStation());
+    for (const [index, link] of links.entries()) {
+      for (const type of ['pointerenter', 'focus']) link.addEventListener(type, () => { if (!verticalMode) rulerLens.wave(index); });
+    }
+    progressMarker?.addEventListener('focus', () => { keyboardCursor = progressMarker.matches(':focus-visible'); paintLens(); });
+    progressMarker?.addEventListener('blur', () => { keyboardCursor = false; paintLens(); });
+    paintLens();
+  }
 })();
