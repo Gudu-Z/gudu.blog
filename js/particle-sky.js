@@ -192,7 +192,10 @@
       this.wrapAttribute = gl.getAttribLocation(this.program.value, 'a_wrap');
     }
 
-    render(time, x, y) {
+    // `x` and `y` follow the pointer, as on the hero. `lift` raises the
+    // observer by that many units: the article page lowers it as the reader
+    // scrolls, so the stars rise behind the text by their nearness.
+    render(time, x, y, lift = 0) {
       const gl = this.gl, program = this.program, uniforms = program.uniforms;
       gl.useProgram(program.value);
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.target.buffer);
@@ -209,17 +212,18 @@
       // Whole-volume translations are equivalent under per-star wrapping;
       // bound the uniform to retain subpixel precision during long visits.
       const travel = (time - 12) * 1.50;
+      const rise = lift % 3200;
       if (this.orbit) {
         // Orbiting a point ORBIT_CENTRE ahead: the observer slides and turns
         // to keep facing it, so a star at depth z drifts by (z / centre - 1)
         // times the slide. The farthest stars sweep past at the turn's own
         // rate, about a fifth of a degree a second, and the nearest at a third of that.
         const slide = travel * 0.25;
-        gl.uniform3f(uniforms.u_observer, -(slide * 0.75) % 3200 + x * 2.1, -(slide * 0.50) % 3200 + y * 1.5, 0);
+        gl.uniform3f(uniforms.u_observer, -(slide * 0.75) % 3200 + x * 2.1, -(slide * 0.50) % 3200 + y * 1.5 + rise, 0);
         gl.uniform2f(uniforms.u_sweep, slide * 0.75 / ORBIT_CENTRE, slide * 0.50 / ORBIT_CENTRE);
       } else {
         gl.uniform3f(uniforms.u_observer, (travel * 0.75) % 3200 + x * 2.1,
-          (travel * 0.50) % 3200 + y * 1.5, 0);
+          (travel * 0.50) % 3200 + y * 1.5 + rise, 0);
         gl.uniform2f(uniforms.u_sweep, 0, 0);
       }
       gl.uniform2f(uniforms.u_chart, this.size, this.inset);

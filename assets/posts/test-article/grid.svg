@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="400" viewBox="0 0 960 400">
+  <!-- A placeholder figure for the test article's layout section: a drafting grid with one block in it. -->
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1c2b39"/>
+      <stop offset="1" stop-color="#0c131b"/>
+    </linearGradient>
+  </defs>
+  <rect width="960" height="400" fill="url(#ground)"/>
+  <g stroke="#2e4253" stroke-width="1">
+    <path d="M40 0V400M80 0V400M120 0V400M160 0V400M200 0V400M240 0V400M280 0V400M320 0V400M360 0V400M400 0V400M440 0V400M480 0V400M520 0V400M560 0V400M600 0V400M640 0V400M680 0V400M720 0V400M760 0V400M800 0V400M840 0V400M880 0V400M920 0V400"/>
+    <path d="M0 40H960M0 80H960M0 120H960M0 160H960M0 200H960M0 240H960M0 280H960M0 320H960M0 360H960"/>
+  </g>
+  <g fill="none" stroke="#9db3c6" stroke-width="1.5">
+    <path d="M400 150L480 110L560 150L480 190Z"/>
+    <path d="M400 150V250L480 290V190"/>
+    <path d="M560 150V250L480 290"/>
+  </g>
+  <path d="M480 190V290" stroke="#f06446" stroke-width="1.5"/>
+  <text x="40" y="384" fill="#6f8598" font-family="Consolas, monospace" font-size="13" letter-spacing="2">TEST FIGURE / 960 × 400</text>
+</svg>

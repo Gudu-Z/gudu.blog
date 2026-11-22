@@ -201,9 +201,13 @@ await test('each article loads Noto Sans SC cuts of its own words: the title in 
 
     await assert.rejects(syncArticleFonts({ root, fonts, checkOnly: true, cut }), /note-title-/);
     await syncArticleFonts({ root, fonts, cut });
-    // The title keeps every character; the prose keeps Han and CJK punctuation
-    // from the text, headings and closing line, but nothing from code.
-    assert.deepEqual(made, ['900: Rde石红', `400:${sorted('正文一段，加粗。小节本文完谢你的阅读')}`, `600:${sorted('加粗小节')}`]);
+    // The title keeps every character. The prose keeps Han and CJK punctuation
+    // from the text, headings and closing line, and from the page's own chrome
+    // (back link, facts, contents, neighbours, foot bar), but nothing from code.
+    const prose = '正文一段，加粗。小节' + '本文完。谢谢你的阅读。';
+    const chrome = '返回文章列表' + '分类发布阅读标签' + '约分钟' + '本文目录' + '上一篇下一篇已到达这一端' + '在自己的轨道上，保持好奇。' + '订阅';
+    assert.deepEqual(made, ['900: Rde石红', `400:${sorted(prose + chrome)}`, `600:${sorted('加粗小节' + '已到达这一端')}`]);
+    assert.ok(!made[1].includes('代'), 'code stays out of the cut');
     assert.equal(await readFile(join(root, paths.body), 'utf8'), made[1]);
     await syncArticleFonts({ root, fonts, checkOnly: true, cut });
     await syncArticleFonts({ root, fonts, cut });

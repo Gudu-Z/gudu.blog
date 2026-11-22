@@ -128,20 +128,27 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .footer-links { display: flex; gap: 26px; margin-left: auto; font-size: 10px; color: var(--muted); }
 .footer-links a { padding: 10px 0; }
 
-/* Reading uses the same quiet typography and orange wayfinding as the home page. */
-.article-page .site-header, .not-found-page .site-header { position: relative; border-bottom: 0; }
-.article-page .site-nav, .not-found-page .site-nav { margin-left: auto; margin-right: 32px; gap: 30px; color: light-dark(#45454e, #a0a0aa); font-size: 13px; letter-spacing: 0.05em; }
+/* Reading uses the same quiet typography and orange wayfinding as the home page.
+   The bar is the home page's bar (css/chapters.css): the same header unit,
+   1px up to laptop sizes and growing with the window to 1.3px, and the same
+   size for every part the two share. The links take the home tools' label
+   size. Phones keep their own fixed sizes. */
+:is(.article-page, .not-found-page) { --header-unit: clamp(1px, min(calc(100vw / 1500), calc(100svh / 960)), 1.3px); }
+.article-page .site-header, .not-found-page .site-header { position: relative; height: calc(86 * var(--header-unit)); border-bottom: 0; }
+.article-page .site-nav, .not-found-page .site-nav { margin-left: auto; margin-right: calc(32 * var(--header-unit)); gap: calc(30 * var(--header-unit)); color: light-dark(#45454e, #a0a0aa); font-size: min(13.5px, calc(11 * var(--header-unit))); letter-spacing: 0.05em; }
 :is(.article-page, .not-found-page) .site-nav a:hover { color: var(--red); }
-/* The brand coordinate matches the home page header at its base size. */
-:is(.article-page, .not-found-page) .site-brand { gap: 11px; }
-:is(.article-page, .not-found-page) .site-header .brand-logo { width: 46px; height: 46px; }
-:is(.article-page, .not-found-page) .header-brand-coordinate { display: grid; gap: 5px; color: light-dark(#55555d, #8e8e97); font: 10px/1 "Consolas", "SFMono-Regular", monospace; letter-spacing: 0.08em; white-space: nowrap; }
-:is(.article-page, .not-found-page) .header-brand-name { display: flex; align-items: center; gap: 8px; font-family: var(--ui-sans); font-size: 14px; letter-spacing: 0.12em; }
+:is(.article-page, .not-found-page) .site-brand { gap: calc(11 * var(--header-unit)); }
+:is(.article-page, .not-found-page) .site-header .brand-logo { width: calc(46 * var(--header-unit)); height: calc(46 * var(--header-unit)); }
+:is(.article-page, .not-found-page) .header-brand-coordinate { display: grid; gap: calc(5 * var(--header-unit)); color: light-dark(#55555d, #8e8e97); font: min(10.5px, calc(9 * var(--header-unit)))/1 "Consolas", "SFMono-Regular", monospace; letter-spacing: 0.08em; white-space: nowrap; }
+:is(.article-page, .not-found-page) .header-brand-name { display: flex; align-items: center; gap: calc(8 * var(--header-unit)); font-family: var(--ui-sans); font-size: calc(14 * var(--header-unit)); letter-spacing: 0.12em; }
 :is(.article-page, .not-found-page) .header-brand-name > span:first-child { color: light-dark(#161619, #dedee3); font-weight: 600; }
-:is(.article-page, .not-found-page) .header-brand-slash { color: var(--red); font-size: 11px; letter-spacing: 0; opacity: 0.55; }
-:is(.article-page, .not-found-page) .header-brand-kind { color: light-dark(#404048, #a6a6af); font-size: 10.5px; letter-spacing: 0.15em; }
+:is(.article-page, .not-found-page) .header-brand-slash { color: var(--red); font-size: calc(11 * var(--header-unit)); letter-spacing: 0; opacity: 0.55; }
+:is(.article-page, .not-found-page) .header-brand-kind { color: light-dark(#404048, #a6a6af); font-size: calc(10.5 * var(--header-unit)); letter-spacing: 0.15em; }
 :is(.article-page, .not-found-page) .header-brand-calibration { position: relative; display: block; height: 3px; background: linear-gradient(light-dark(#48484e3d, #9d9da33d), light-dark(#48484e3d, #9d9da33d)) left 1px / 100% 1px no-repeat; }
-:is(.article-page, .not-found-page) .header-brand-calibration::before { content: ""; position: absolute; top: 1px; left: 0; width: 10px; height: 1px; background: var(--red); opacity: 0.8; }
+:is(.article-page, .not-found-page) .header-brand-calibration::before { content: ""; position: absolute; top: 1px; left: 0; width: calc(10 * var(--header-unit)); height: 1px; background: var(--red); opacity: 0.8; }
+:is(.article-page, .not-found-page) .header-rss { gap: calc(9 * var(--header-unit)); font-size: min(13.5px, calc(11 * var(--header-unit))); }
+:is(.article-page, .not-found-page) :is(.header-rss, .header-theme) svg { width: min(21px, calc(17 * var(--header-unit))); height: min(21px, calc(17 * var(--header-unit))); }
+:is(.article-page, .not-found-page) .header-theme { min-width: calc(44 * var(--header-unit)); min-height: calc(44 * var(--header-unit)); margin-left: calc(14 * var(--header-unit)); }
 .header-rss { display: inline-flex; align-items: center; gap: 9px; color: light-dark(#45454e, #a0a0aa); font-size: 13px; letter-spacing: 0.05em; transition: color 180ms; }
 .header-rss svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.35; }
 .header-rss svg circle { fill: var(--red); stroke: var(--red); }
@@ -155,6 +162,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .header-theme:is([aria-pressed="true"], :hover, :focus-visible) .theme-jet { opacity: 1; }
 .header-theme:hover { color: var(--red); }
 .site-footer > a:last-child:not(:first-child) { font-size: 11px; color: var(--muted); margin-left: auto; }
+/* The foot bar mirrors the top bar: the same side margins, so the logo and the
+   last link line up with the logo and the toggle above, a hairline across
+   that width, and the same header units and sizes. */
+:is(.article-page, .not-found-page) .site-footer { width: auto; margin: 0; padding: calc(33 * var(--header-unit)) 4.2% calc(38 * var(--header-unit)); border-top: 0; background: linear-gradient(var(--line) 0 0) top center / 91.6% 1px no-repeat; gap: calc(30 * var(--header-unit)); }
+:is(.article-page, .not-found-page) .site-footer .brand-logo { width: calc(46 * var(--header-unit)); height: calc(46 * var(--header-unit)); }
+:is(.article-page, .not-found-page) .site-footer > :is(p, a:last-child:not(:first-child)) { font-size: min(13.5px, calc(11 * var(--header-unit))); }
 /* The article page wears the home page's HUD on its frame: the calibration
    rule (an orange start and small ticks), Chinese field names over small code
    names, registration corners, mono numbering and the orange square. The
@@ -195,6 +208,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
      Latin stays in the UI face; it stands ahead of the Apple system face,
      whose own cascade would otherwise take the Han. */
   --article-sans: "Segoe UI Variable Text", "Segoe UI", "Gudu Body", -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  /* Panels (replays, code, lone images) are lit from above: a bright top
+     edge, a fainter left one, and a soft shadow under them that shows by day;
+     by night the dark veil swallows it and the edge does the work. */
+  --lift-rim: light-dark(rgb(255 255 255 / 90%), rgb(225 232 240 / 16%));
+  --lift-side: light-dark(rgb(255 255 255 / 50%), rgb(225 232 240 / 6%));
+  --lift-shade: light-dark(rgb(22 30 38 / 24%), rgb(0 0 0 / 80%));
+  --lift-edges: inset 0 1px 0 var(--lift-rim), inset 1px 0 0 var(--lift-side);
+  --lift-shadow: 0 28px 50px -24px var(--lift-shade), 0 8px 16px -10px var(--lift-shade);
+  /* How far a heading or panel, and a loose HUD mark, sit off the text when
+     they enter or leave the window (see "Depth while scrolling"). */
+  --depth-panel: 8px;
+  --depth-mark: 16px;
   /* The root paints the page colour, so the opening sky can sit beneath the body. */
   background: transparent;
 }
@@ -204,7 +229,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .article-sky { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
 .article-sky > canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .article-shell { --article-width: min(1010px, 85%); width: var(--article-width); margin: 0 auto; padding: 48px 0 80px; }
-.article-back { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 60px; padding-block: 8px; color: var(--muted); font-size: 12px; letter-spacing: 0.06em; transition: color 180ms ease; }
+.article-back { display: inline-flex; align-items: center; gap: calc(10 * var(--header-unit, 1px)); margin-bottom: 60px; padding-block: 8px; color: var(--muted); font-size: calc(12 * var(--header-unit, 1px)); letter-spacing: 0.06em; transition: color 180ms ease; }
 .article-back > span { color: var(--red); font-family: var(--mono); transition: transform 180ms ease; }
 .article-back:hover { color: var(--paper); }
 .article-back:hover > span { transform: translateX(-3px); }
@@ -272,6 +297,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .demo-notice { margin: 24px 0 0; line-height: 1.8; padding: 12px; }
 .article-layout { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
 .article-body { counter-reset: section figure; min-width: 0; color: light-dark(#1d232a, #c6ced7); font-family: var(--article-sans); font-size: 17px; line-height: 1.9; letter-spacing: 0.02em; overflow-wrap: anywhere; }
+/* The article's own chrome (back link, facts, contents, neighbours, foot bar)
+   shares the prose face, so the page shows one Chinese face; its words are cut
+   with the prose. The top bar stays the home page's, and the comments, which
+   their script writes, keep the UI face. */
+.article-page :is(.article-shell, .site-footer) { font-family: var(--article-sans); }
+.article-page .article-comments { font-family: var(--ui-sans); }
 /* Words that scripts write keep the UI face: they are not in the cut. A
    replay's caption is the author's own, so it stays in the prose face. */
 .article-body :is(.mc-scene, .code-copy, .article-tools) { font-family: var(--ui-sans); }
@@ -304,7 +335,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .article-body img { display: block; max-width: 100%; height: auto; margin: 24px auto; }
 /* An image on its own keeps its pixels and gains the portrait's two corners. */
 .article-body p:has(> img:only-child) { position: relative; width: fit-content; margin-block: 44px; }
-.article-body p:has(> img:only-child) img { margin: 0; }
+/* The picture covers any edge drawn inside it, so a lone image takes only the shadow. */
+.article-body p:has(> img:only-child) img { margin: 0; box-shadow: var(--lift-shadow); }
 .article-body p:has(> img:only-child)::before, .article-body p:has(> img:only-child)::after { content: ""; position: absolute; width: 14px; height: 14px; border: solid var(--rule-strong); pointer-events: none; }
 .article-body p:has(> img:only-child)::before { top: -6px; left: -6px; border-width: 1px 0 0 1px; }
 .article-body p:has(> img:only-child)::after { right: -6px; bottom: -6px; border-width: 0 1px 1px 0; }
@@ -328,11 +360,27 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .article-callout p:last-child { margin-bottom: 0; }
 /* Code reads as a terminal panel: two registration corners, a language strip
    and a copy button that js/article.js adds. */
-.code-block { position: relative; margin-block: 30px 34px; background: var(--registration), light-dark(#e2e6ea, #0d1219); box-shadow: inset 0 0 0 1px var(--hairline); }
+.code-block { position: relative; margin-block: 30px 34px; background: var(--registration), light-dark(#e2e6ea, #0d1219); box-shadow: var(--lift-edges), inset 0 0 0 1px var(--hairline), var(--lift-shadow); }
 .code-language { display: block; padding: 9px 20px 8px; border-bottom: 1px solid var(--rule); color: var(--code-name); font: 10px/1.5 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; }
 .article-body pre { overflow-x: auto; margin: 0; padding: 18px 20px 20px; border: 0; background: transparent; tab-size: 2; line-height: 1.75; letter-spacing: 0; white-space: pre; }
 .article-body pre code { color: light-dark(#181e23, #cfd6dd); font-size: 13px; line-height: 1.75; }
 .code-block.has-copy:not(:has(> .code-language)) pre { padding-top: 38px; }
+/* Depth while scrolling. The running text and the frame are the reading
+   plane. Headings and panels float a little in front of it, carrying their
+   own marks (a heading's number, tick and "//" never leave it), and the loose
+   HUD marks, the rulers and the closing square, float further in front. Each
+   drifts by its depth as it crosses the window and is at rest level with the
+   middle, as the home page's chapters drift their details. The stars behind
+   are js/article-sky.js. Without scroll timelines, or under reduced motion,
+   everything stays still. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    :is(.article-title, .article-facts, .article-pagination > *, .article-body :is(h2, h3, .mc-scene, .code-block, p:has(> img:only-child), .markdown-table, blockquote)) { animation: depth-panel linear both; animation-timeline: view(); animation-range: cover; }
+    .article-body hr, .article-end-mark { animation: depth-mark linear both; animation-timeline: view(); animation-range: cover; }
+  }
+}
+@keyframes depth-panel { from { translate: 0 var(--depth-panel); } to { translate: 0 calc(-1 * var(--depth-panel)); } }
+@keyframes depth-mark { from { translate: 0 var(--depth-mark); } to { translate: 0 calc(-1 * var(--depth-mark)); } }
 .code-copy { position: absolute; top: 3px; right: 8px; padding: 5px 8px; border: 0; background: none; color: var(--code-name); font-size: 11px; line-height: 1.5; letter-spacing: 0.06em; transition: color 160ms ease; }
 .code-copy:hover { color: var(--paper); }
 .code-copy.is-done { color: var(--signal-text); }
@@ -367,26 +415,48 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .article-pagination .is-unavailable { background: none; box-shadow: none; outline: 1px dashed var(--rule); outline-offset: -1px; }
 .article-pagination .is-unavailable strong { color: var(--code-name); font-size: 14px; font-weight: 400; }
 /* On the contents rail, js/article.js moves an orange cursor between the
-   stations and keeps a readout of how much has been read. */
-.article-toc { position: sticky; top: 44px; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
-.toc-label { display: flex; flex-direction: column; gap: 3px; margin: 0 0 16px; color: var(--label); font-size: 12px; font-weight: 400; letter-spacing: 0.06em; }
-.toc-label > span { color: var(--code-name); font: 9px/1.4 var(--mono); letter-spacing: 0.08em; }
-.article-toc nav { position: relative; padding: 4px 0 6px 20px; }
+   stations and keeps a readout of how much has been read. Like the top bar,
+   the contents are an instrument and are drawn in header units, so they grow
+   with the window as the bar does (13px entries at laptop sizes). */
+.article-toc { position: sticky; top: 44px; min-width: 0; overflow-wrap: anywhere; font-size: calc(13 * var(--header-unit, 1px)); }
+.toc-label { display: flex; flex-direction: column; gap: calc(3 * var(--header-unit, 1px)); margin: 0 0 calc(16 * var(--header-unit, 1px)); color: var(--label); font-size: calc(13 * var(--header-unit, 1px)); font-weight: 400; letter-spacing: 0.06em; }
+.toc-label > span { color: var(--code-name); font: calc(9.5 * var(--header-unit, 1px))/1.4 var(--mono); letter-spacing: 0.08em; }
+.article-toc nav { position: relative; padding: calc(4 * var(--header-unit, 1px)) 0 calc(6 * var(--header-unit, 1px)) calc(20 * var(--header-unit, 1px)); }
 .article-toc nav::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 4px; background: linear-gradient(var(--rule-strong) 0 0) left / 1px 100% no-repeat, repeating-linear-gradient(var(--rule) 0 1px, transparent 1px 8px) left top / 4px 100% no-repeat; }
 .article-toc ol { margin: 0; padding: 0; list-style: none; counter-reset: toc; }
-.article-toc li { position: relative; margin: 0 0 18px; line-height: 1.6; }
+.article-toc li { position: relative; margin: 0 0 calc(18 * var(--header-unit, 1px)); line-height: 1.6; }
 .article-toc li:last-child { margin-bottom: 0; }
-.article-toc li::before { content: ""; position: absolute; top: 0.62em; left: -20px; width: 9px; height: 1px; background: var(--rule-strong); }
+.article-toc li::before { content: ""; position: absolute; top: 0.62em; left: calc(-20 * var(--header-unit, 1px)); width: calc(9 * var(--header-unit, 1px)); height: 1px; background: var(--rule-strong); }
 .article-toc li:not(.toc-subheading) { counter-increment: toc; }
 .article-toc li:not(.toc-subheading)::before { top: 0.5em; }
-.article-toc li:not(.toc-subheading) > a::before { content: counter(toc, decimal-leading-zero); display: block; margin-bottom: 1px; color: var(--code-name); font: 10px/1.4 var(--mono); letter-spacing: 0.1em; }
-.article-toc .toc-subheading { margin-top: -8px; padding-left: 12px; font-size: 11px; }
-.article-toc .toc-subheading::before { width: 5px; }
+.article-toc li:not(.toc-subheading) > a::before { content: counter(toc, decimal-leading-zero); display: block; margin-bottom: 1px; color: var(--code-name); font: calc(10.5 * var(--header-unit, 1px))/1.4 var(--mono); letter-spacing: 0.1em; }
+.article-toc .toc-subheading { margin-top: calc(-8 * var(--header-unit, 1px)); padding-left: calc(12 * var(--header-unit, 1px)); font-size: calc(12 * var(--header-unit, 1px)); }
+.article-toc .toc-subheading::before { width: calc(5 * var(--header-unit, 1px)); }
 .article-toc a { color: var(--muted); transition: color 160ms ease; }
 .article-toc a:hover, .article-toc a.is-active { color: var(--paper); }
 .article-toc a.is-active::before { color: var(--red); }
 .toc-cursor { position: absolute; top: 0; left: -3px; width: 7px; height: 9px; background: var(--red); clip-path: polygon(0 0, 100% 50%, 0 100%); transform: translateY(calc(var(--toc-y, 0px) - 50%)); pointer-events: none; }
-.toc-readout { display: flex; justify-content: space-between; gap: 12px; margin: 16px 0 0; padding-top: 9px; border-top: 1px solid var(--rule); color: var(--code-name); font: 10px/1.4 var(--mono); letter-spacing: 0.14em; }
+/* The rail as an instrument (js/article.js). The fine ticks become marks the
+   pointer swells: near it they grow to three and a half times their length
+   and brighten towards the text colour. A probe line crosses the rail at the
+   pointer with the share of the article read there; a click goes there and
+   a drag scrubs. An entry under the pointer or focus lights its section's
+   span on the rail. Without the script the ticks stay drawn as before. */
+.article-toc nav.has-rail::before { background: linear-gradient(var(--rule-strong) 0 0) left / 1px 100% no-repeat; }
+.article-toc li::before { pointer-events: none; }
+.toc-rail { position: absolute; top: 0; bottom: 0; left: -12px; width: calc(12px + 20 * var(--header-unit, 1px)); cursor: pointer; touch-action: none; }
+.toc-rail.is-scrubbing { cursor: grabbing; }
+.toc-ticks { position: absolute; top: 0; bottom: 0; left: 12px; }
+.toc-ticks > i { position: absolute; left: 0; width: 4px; height: 1px; background: color-mix(in srgb, var(--paper) calc(var(--zoom, 0) * 80%), var(--rule)); transform: scaleX(calc(1 + var(--zoom, 0) * 2.5)); transform-origin: left; transition: transform 140ms ease, background-color 140ms ease; }
+.toc-span { position: absolute; left: 12px; top: var(--span-top, 0); width: 1px; height: var(--span-height, 0); background: var(--paper); opacity: 0; transition: opacity 160ms ease; pointer-events: none; }
+.toc-rail.is-spanning .toc-span { opacity: 0.9; }
+.toc-probe { position: absolute; top: 0; left: 4px; width: 22px; height: 1px; background: var(--paper); opacity: 0; translate: 0 var(--probe-y, 0px); transition: opacity 140ms ease; pointer-events: none; }
+.toc-rail.is-probing .toc-probe { opacity: 0.85; }
+.toc-probe > output { position: absolute; top: 0; right: calc(100% + 6px); translate: 0 -50%; color: var(--paper); font: calc(10 * var(--header-unit, 1px))/1 var(--mono); letter-spacing: 0.06em; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) {
+  .toc-ticks > i, .toc-span, .toc-probe { transition: none; }
+}
+.toc-readout { display: flex; justify-content: space-between; gap: 12px; margin: calc(16 * var(--header-unit, 1px)) 0 0; padding-top: calc(9 * var(--header-unit, 1px)); border-top: 1px solid var(--rule); color: var(--code-name); font: calc(10.5 * var(--header-unit, 1px))/1.4 var(--mono); letter-spacing: 0.14em; }
 .toc-readout output { color: var(--paper); letter-spacing: 0.06em; }
 .reading-progress { position: fixed; top: 0; left: 0; width: 100%; height: 2px; z-index: 30; pointer-events: none; }
 .reading-progress span { display: block; width: 0; height: 100%; background: var(--red); }
@@ -462,7 +532,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 @media (max-width: 720px) {
   html { scroll-padding-top: 28px; }
   /* No rails and no veil, so a replay's sheet keeps its full glass. */
-  .article-page { --veil-night: 0; --veil-day: 0; }
+  .article-page { --veil-night: 0; --veil-day: 0; --depth-panel: 4px; --depth-mark: 8px; }
   :is(.article-header, .article-layout)::before { display: none; }
   /* The gutter marks belong to the rails. */
   .article-body h2::after, .article-body h3::before { display: none; }
@@ -474,8 +544,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
   .nav-rss span { display: none; }
   .article-page .site-nav, .not-found-page .site-nav { margin-right: 18px; gap: 18px; font-size: 12px; letter-spacing: 0; }
   :is(.article-page, .not-found-page) .header-brand-coordinate { display: none; }
+  /* Phones keep the bar as it was: base units, a 64px bar, 12px links. */
+  :is(.article-page, .not-found-page) { --header-unit: 1px; }
+  .article-page .site-header, .not-found-page .site-header { height: 64px; }
+  /* The foot bar keeps the phone bar's 7% margins and logo. */
+  :is(.article-page, .not-found-page) .site-footer { flex-wrap: wrap; gap: 18px; padding: 28px 7%; background-size: 86% 1px; }
+  :is(.article-page, .not-found-page) .site-footer .brand-logo { width: 40px; height: 40px; }
   :is(.article-page, .not-found-page) .site-header .brand-logo { width: 40px; height: 40px; }
-  .header-rss { font-size: 12px; }
+  .header-rss, :is(.article-page, .not-found-page) .header-rss { font-size: 12px; }
   .menu-toggle { display: flex; align-items: center; gap: 12px; padding: 12px 0 12px 18px; font-size: 11px; border: 0; background: none; }
   .menu-icon { display: block; width: 19px; height: 9px; border-block: 1px solid light-dark(#1b222a, #c6d0db); transition: transform 180ms; }
   .menu-toggle[aria-expanded="true"] .menu-icon { transform: rotate(-45deg); }

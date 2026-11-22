@@ -27,7 +27,7 @@ const prose = html => html
   .replace(/<(script|style|pre|code)\b[\s\S]*?<\/\1>/gi, '')
   .replace(/<figure class="mc-scene"[\s\S]*?<\/figure>/gi, figure => figure.match(/<figcaption>[\s\S]*?<\/figcaption>/i)?.[0] ?? '');
 const plain = html => decode(html.replace(/<[^>]*>/g, ''));
-const boldParts = html => [...html.matchAll(/<(h[2-6]|strong|b|th|dt)\b[^>]*>([\s\S]*?)<\/\1>/gi)].map(match => match[2]).join('');
+const boldParts = html => [...html.matchAll(/<(h[2-6]|strong|b|th)\b[^>]*>([\s\S]*?)<\/\1>/gi)].map(match => match[2]).join('');
 
 const faces = [
   { name: 'title', family: 'Gudu Title', weight: 900, range: '900', display: 'block', characters: ({ title }) => fontCharacters(title) },
@@ -36,10 +36,11 @@ const faces = [
 ];
 
 // The cuts one article asks for. `bodyHTML` is the article's body markup and
-// `extra` any other prose set in the body face (the deck, the closing line).
-export function articleFonts(post, bodyHTML = '', extra = '') {
+// `extraHTML` any other markup set in the body face: the deck, the closing
+// line and the page's own chrome (facts, contents, neighbours, foot bar).
+export function articleFonts(post, bodyHTML = '', extraHTML = '') {
   const html = prose(bodyHTML);
-  const words = { title: post.title, text: `${plain(html)}\n${extra}`, bold: plain(boldParts(html)) };
+  const words = { title: post.title, text: `${plain(html)}\n${plain(extraHTML)}`, bold: plain(boldParts(html) + boldParts(extraHTML)) };
   return faces.flatMap(({ name, characters: pick, ...face }) => {
     const characters = pick(words);
     if (!characters) return [];

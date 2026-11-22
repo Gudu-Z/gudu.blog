@@ -56,6 +56,8 @@
   /* The whole replay sits on one sheet of the glass, unblurred, so the
      article's stars still show through it, dimmed. */
   background: var(--mc-ground);
+  /* Lit from above like the article's other panels (css/blog.css). */
+  box-shadow: var(--lift-edges, 0 0 transparent), var(--lift-shadow, 0 0 transparent);
 }
 .mc-scene [data-mc-view]::after { content: ""; position: absolute; inset: -6px; z-index: 3; pointer-events: none; background: var(--registration); }
 .mc-stage {

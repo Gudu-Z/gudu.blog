@@ -127,7 +127,7 @@ function documentHead({ title, description, canonical, prefix, noindex = false, 
     <script src="${prefix}js/site-theme.js?v=20261030-day-mode"></script>
     <script src="${prefix}js/theme-jets.js?v=20261118-beam" defer></script>
     <link rel="stylesheet" href="${prefix}css/style.css?v=20261118-beam" />
-    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261121-body" />`.replace(/[ \t]+$/gm, '');
+    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261122-rail" />`.replace(/[ \t]+$/gm, '');
 }
 
 function renderArticle(post, index, posts, commentsConfig) {
@@ -136,9 +136,7 @@ function renderArticle(post, index, posts, commentsConfig) {
   const older = posts[index + 1];
   const toc = post.toc ?? post.sections.map(section => ({ id: section.id, text: section.title, level: 2 }));
   const body = post.bodyHTML ?? post.sections.map(section => `<section class="article-section" aria-labelledby="${section.id}"><h2 id="${section.id}">${escape(section.title)}</h2>${section.blocks.map(renderBlock).join('\n')}</section>`).join('\n');
-  // The deck and the closing line are set in the body face with the prose.
   const endNote = '本文完。谢谢你的阅读。';
-  const fonts = articleFonts(post, body, [post.deck, endNote].filter(Boolean).join('\n'));
   // Each neighbour is a panel labelled like the home page's fields: a Chinese
   // name with a small code name, and an arrow on its outer side when it links.
   const postLink = (item, className, label, code, arrow) => {
@@ -155,6 +153,17 @@ function renderArticle(post, index, posts, commentsConfig) {
     ['标签', 'TAGS', post.tags.length ? `<ul class="article-tags" aria-label="文章标签">${post.tags.map(tag => `<li>#${escape(tag)}</li>`).join('')}</ul>` : '<span class="article-facts-empty">—</span>'],
   ];
   const structuredData = post.demo ? '' : `<script type="application/ld+json">${jsonForHTML({ '@context': 'https://schema.org', '@type': 'BlogPosting', headline: post.title, description: post.excerpt, datePublished: post.date, mainEntityOfPage: postURL(post), inLanguage: 'zh-CN' })}</script>`;
+  // Besides the body, the article's own face sets the back link, the deck,
+  // facts and notice, the contents, the closing line, the neighbours and the
+  // foot bar, so their words are cut with the prose (scripts/article-fonts.mjs).
+  const back = '<a class="article-back" href="../index.html#journal"><span aria-hidden="true">←</span> 返回文章列表</a>';
+  const deck = post.deck ? `<p class="article-deck">${escape(post.deck)}</p>` : '';
+  const factList = `<dl class="article-facts">${facts.map(([name, code, value]) => `<div><dt>${name} <span aria-hidden="true">/ ${code}</span></dt><dd>${value}</dd></div>`).join('')}</dl>`;
+  const notice = post.demo ? '<p class="demo-notice">这是一篇用于预览版式的示例文章，不代表作者的真实经历或正式发布内容。</p>' : '';
+  const contents = toc.length ? `<aside class="article-toc" aria-label="文章目录"><p class="toc-label">本文目录 <span aria-hidden="true">/ CONTENTS</span></p><nav><ol>${toc.map(heading => `<li${heading.level === 3 ? ' class="toc-subheading"' : ''}><a data-toc-link href="#${escape(heading.id)}">${escape(heading.text)}</a></li>`).join('')}</ol></nav></aside>` : '';
+  const neighbours = `<nav class="article-pagination" aria-label="其他文章">${postLink(newer, 'article-prev', '上一篇', 'PREV', '←')}${postLink(older, 'article-next', '下一篇', 'NEXT', '→')}</nav>`;
+  const footer = siteFooter('../');
+  const fonts = articleFonts(post, body, [back, deck, factList, notice, contents, `<p>${endNote}</p>`, neighbours, footer].join('\n'));
   const html = `<!doctype html>
 ${generated}
 <html lang="zh-CN">
@@ -162,9 +171,10 @@ ${generated}
     ${documentHead({ title: `${post.title} · Gudu 的个人博客`, description: post.excerpt, canonical: postURL(post), prefix: '../', noindex: post.demo, article: post })}
     ${articleFontHead(fonts, '../')}
 ${structuredData}
-    <script src="../js/particle-sky.js?v=20261121-fill" defer></script>
-    <script src="../js/article-sky.js?v=20261121-orbit" defer></script>
-    <script src="../js/article.js?v=20261118-article" defer></script>${post.hasScenes ? '\n    <link rel="stylesheet" href="../css/mc-article.css?v=20261121-veil" />\n    <script type="module" src="../js/mc-article.mjs"></script>' : ''}
+    <script src="../js/particle-sky.js?v=20261122-lift" defer></script>
+    <script src="../js/article-parallax.js?v=20261122-depth" defer></script>
+    <script src="../js/article-sky.js?v=20261122-depth" defer></script>
+    <script src="../js/article.js?v=20261122-rail" defer></script>${post.hasScenes ? '\n    <link rel="stylesheet" href="../css/mc-article.css?v=20261122-depth" />\n    <script type="module" src="../js/mc-article.mjs"></script>' : ''}
     ${comments.head}
   </head>
   <body class="article-page">
@@ -172,24 +182,24 @@ ${structuredData}
     <div class="reading-progress" aria-hidden="true" hidden><span data-reading-progress></span></div>
     ${siteHeader('../')}
     <main class="article-shell" id="main-content" tabindex="-1">
-      <a class="article-back" href="../index.html#journal"><span aria-hidden="true">←</span> 返回文章列表</a>
+      ${back}
       <header class="article-header">
         <h1 class="article-title">${escape(post.title)}</h1>
-        ${post.deck ? `<p class="article-deck">${escape(post.deck)}</p>` : ''}
-        <dl class="article-facts">${facts.map(([name, code, value]) => `<div><dt>${name} <span aria-hidden="true">/ ${code}</span></dt><dd>${value}</dd></div>`).join('')}</dl>
-        ${post.demo ? '<p class="demo-notice">这是一篇用于预览版式的示例文章，不代表作者的真实经历或正式发布内容。</p>' : ''}
+        ${deck}
+        ${factList}
+        ${notice}
       </header>
       <div class="article-layout">
         <article class="article-body" aria-label="文章正文">
           ${body}
           <div class="article-end"><span class="article-end-mark" aria-hidden="true"></span><p>${endNote}<span class="article-end-code" aria-hidden="true">END OF ENTRY</span></p><div class="article-tools"><button class="copy-link" type="button" hidden>复制文章链接 <span aria-hidden="true">↗</span></button><p class="copy-status" role="status" aria-live="polite"></p></div></div>
         </article>
-        ${toc.length ? `<aside class="article-toc" aria-label="文章目录"><p class="toc-label">本文目录 <span aria-hidden="true">/ CONTENTS</span></p><nav><ol>${toc.map(heading => `<li${heading.level === 3 ? ' class="toc-subheading"' : ''}><a data-toc-link href="#${escape(heading.id)}">${escape(heading.text)}</a></li>`).join('')}</ol></nav></aside>` : ''}
+        ${contents}
       </div>
-      <nav class="article-pagination" aria-label="其他文章">${postLink(newer, 'article-prev', '上一篇', 'PREV', '←')}${postLink(older, 'article-next', '下一篇', 'NEXT', '→')}</nav>
+      ${neighbours}
       ${comments.body}
     </main>
-    ${siteFooter('../')}
+    ${footer}
   </body>
 </html>
 `;

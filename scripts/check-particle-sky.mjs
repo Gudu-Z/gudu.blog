@@ -116,18 +116,19 @@ await test('fill stars look as bright near as far, so distance does not thin the
   assert.ok(ratio > 0.8 && ratio < 1.25, `far and near fill stars should share one brightness scale (ratio ${ratio})`);
 });
 
+// A fake GL that records uniforms, enough to call render().
+function recorder() {
+  const values = {};
+  const gl = new Proxy({}, { get: (_, name) => {
+    if (name === 'uniform3f' || name === 'uniform2f') return (location, ...v) => { values[location] = v; };
+    if (name === 'getParameter') return () => 4096;
+    return typeof name === 'string' && /^[A-Z_0-9]+$/.test(name) ? 0 : () => {};
+  } });
+  const uniforms = { u_observer: 'u_observer', u_sweep: 'u_sweep', u_chart: 'u_chart', u_maxPoint: 'u_maxPoint' };
+  return { gl, values, owner: { gl, program: () => ({ value: {}, position: 0, uniforms }) } };
+}
+
 await test('an orbiting observer sweeps the far stars past fastest; a translating one the near stars', () => {
-  // A fake GL that records uniforms, enough to call render().
-  function recorder() {
-    const values = {};
-    const gl = new Proxy({}, { get: (_, name) => {
-      if (name === 'uniform3f' || name === 'uniform2f') return (location, ...v) => { values[location] = v; };
-      if (name === 'getParameter') return () => 4096;
-      return typeof name === 'string' && /^[A-Z_0-9]+$/.test(name) ? 0 : () => {};
-    } });
-    const uniforms = { u_observer: 'u_observer', u_sweep: 'u_sweep', u_chart: 'u_chart', u_maxPoint: 'u_maxPoint' };
-    return { gl, values, owner: { gl, program: () => ({ value: {}, position: 0, uniforms }) } };
-  }
   // Angular drift over ten seconds of a star at depth z, along the drift direction,
   // from the shader's p.xy = position - observer - sweep * |z|.
   function drift(orbit, z) {
@@ -147,4 +148,21 @@ await test('an orbiting observer sweeps the far stars past fastest; a translatin
   assert.ok(Math.hypot(far.x, far.y) > 2.5 * Math.hypot(near.x, near.y), 'far stars sweep past fastest');
   const still = drift(false, 1500), close = drift(false, 140);
   assert.ok(Math.hypot(close.x, close.y) > 5 * Math.hypot(still.x, still.y), 'a translating observer passes near stars fastest');
+});
+
+await test('a lift moves the observer straight up or down, so stars shift by their nearness, and whole volumes of it wrap away', () => {
+  for (const orbit of [true, false]) {
+    const { values, owner } = recorder();
+    const sky = new ParticleSky(owner, { orbit });
+    sky.target = {}; sky.size = 1024; sky.inset = 0.03; sky.maxPoint = 48; sky.count = 0;
+    const observer = (...lift) => { sky.render(20, 0.3, -0.2, ...lift); return values.u_observer; };
+    const [x0, y0, z0] = observer();
+    const [x1, y1, z1] = observer(-12);
+    assert.equal(x1, x0, 'the lift leaves the observer\'s x');
+    assert.equal(z1, z0, 'and its depth');
+    assert.ok(Math.abs(y1 - (y0 - 12)) < 1e-9, 'it lowers the observer by the lift');
+    // From p = position - observer, a star at depth z shifts by lift / z:
+    // ten times as far at 140 units as at 1400.
+    assert.deepEqual(observer(-12 - 3200 * 5), [x1, y1, z1], 'a lift of whole volumes changes nothing, so the uniform stays small');
+  }
 });

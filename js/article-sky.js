@@ -2,9 +2,11 @@
  * of them, seen through the hero's camera without the black hole. Beside the
  * hero's stars it draws the dense, faint fill population, and its observer
  * circles a point just ahead, so the far stars sweep past fastest and the near
- * ones lag. The sky is fixed behind the page, so scrolling moves only the
- * article. It pauses in a hidden tab, and under reduced motion it holds the
- * opening sky still.
+ * ones lag. The sky stays fixed behind the page, but it answers the reader in
+ * depth: scrolling lowers the observer, so the stars rise behind the text, the
+ * near ones faster; and a mouse, eased by js/article-parallax.js, moves the
+ * observer as on the hero. It pauses in a hidden tab, and under reduced motion
+ * it holds the opening sky still.
  */
 (() => {
   'use strict';
@@ -144,9 +146,24 @@
     return true;
   }
 
+  // Scrolling lowers the observer by descent() units, and a star at depth z
+  // then rises by FOCAL * (height / 2) * descent / z pixels: the nearest shown
+  // (NEAR_DEPTH away) at NEAR_SHARE of the scroll, farther ones in proportion
+  // to their nearness, the farthest barely at all.
+  const NEAR_SHARE = 0.2, NEAR_DEPTH = 140, FOCAL = 4.05;
+  const descent = () => window.scrollY * NEAR_SHARE * 2 * NEAR_DEPTH / (FOCAL * cssHeight);
+  // The page's eased mouse (js/article-parallax.js) moves the observer as on
+  // the hero, so near stars shift against it and far ones stay.
+  const home = { x: 0, y: 0 };
+
   function draw() {
     if (lost || !resize()) return;
-    sky.render(clock(), 0, 0);
+    // Under reduced motion the sky holds the opening view.
+    if (still.matches) sky.render(clock(), 0, 0);
+    else {
+      const pointer = window.ArticlePointer || home;
+      sky.render(clock(), pointer.x, pointer.y, -descent());
+    }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 0);

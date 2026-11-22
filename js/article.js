@@ -15,7 +15,7 @@
 
   // The contents rail: an orange cursor between the section stations, and a
   // readout of how much has been read. Both hide where the contents fold into
-  // a row (css/blog.css).
+  // a row (css/blog.css). The rail also answers the pointer (setupRail).
   if (article && nav && headings.length === links.length) {
     cursor = document.createElement('span');
     cursor.className = 'toc-cursor';
@@ -27,28 +27,171 @@
     row.innerHTML = '<span>READ</span><output>0%</output>';
     nav.after(row);
     readout = row.querySelector('output');
+    setupRail();
   }
 
   // The rail stands for the article: its top for the start, each station for
-  // a heading, its foot for the end of reading. Between two of them the cursor
-  // moves in proportion to the text read.
-  function railOffset(bounds, viewport, atEnd) {
-    const knots = [[bounds.top, 0]];
-    for (const [index, heading] of headings.entries()) {
-      const item = links[index].parentElement;
-      const tick = parseFloat(getComputedStyle(item, '::before').top) || 0;
-      knots.push([heading.getBoundingClientRect().top, item.offsetTop + tick]);
-    }
-    knots.push([bounds.bottom - viewport + readingLine, nav.clientHeight]);
-    if (atEnd) return knots[knots.length - 1][1];
+  // a heading, its foot for the end of reading. Knots pair a place of the
+  // reading line in the document with a height on the rail; between two of
+  // them the cursor moves in proportion to the text read.
+  function stationOffset(index) {
+    const item = links[index].parentElement;
+    return item.offsetTop + (parseFloat(getComputedStyle(item, '::before').top) || 0);
+  }
+
+  function railKnots() {
+    const scroll = window.scrollY;
+    const bounds = article.getBoundingClientRect();
+    const knots = [[bounds.top + scroll, 0]];
+    for (const [index, heading] of headings.entries()) knots.push([heading.getBoundingClientRect().top + scroll, stationOffset(index)]);
+    knots.push([bounds.bottom + scroll - window.innerHeight + readingLine, nav.clientHeight]);
     for (let i = 1; i < knots.length; i++) knots[i][0] = Math.max(knots[i][0], knots[i - 1][0]);
-    if (readingLine < knots[0][0]) return 0;
+    return knots;
+  }
+
+  function railOffset(atEnd) {
+    const knots = railKnots();
+    if (atEnd) return knots[knots.length - 1][1];
+    const line = window.scrollY + readingLine;
+    if (line < knots[0][0]) return 0;
     for (let i = 0; i < knots.length - 1; i++) {
       const [from, a] = knots[i];
       const [to, b] = knots[i + 1];
-      if (readingLine < to) return a + (b - a) * (readingLine - from) / Math.max(1, to - from);
+      if (line < to) return a + (b - a) * (line - from) / Math.max(1, to - from);
     }
     return knots[knots.length - 1][1];
+  }
+
+  // The inverse: the scroll that brings the reading line to a rail height.
+  function scrollForRail(height) {
+    const knots = railKnots();
+    const last = document.documentElement.scrollHeight - window.innerHeight;
+    const y = Math.min(Math.max(height, 0), knots[knots.length - 1][1]);
+    for (let i = 0; i < knots.length - 1; i++) {
+      const [from, a] = knots[i];
+      const [to, b] = knots[i + 1];
+      if (y <= b || i === knots.length - 2) {
+        const t = b > a ? Math.min(1, Math.max(0, (y - a) / (b - a))) : 1;
+        return Math.min(Math.max(0, from + (to - from) * t - readingLine), last);
+      }
+    }
+    return 0;
+  }
+
+  // The share of the article read at a scroll, as the readout counts it.
+  function shareAt(scroll) {
+    const bounds = article.getBoundingClientRect();
+    const top = bounds.top + window.scrollY - scroll;
+    const available = bounds.height - window.innerHeight + 120;
+    return available > 0 ? Math.min(1, Math.max(0, (120 - top) / available)) : 1;
+  }
+
+  // The rail as an instrument. Near the pointer the fine ticks swell and
+  // brighten, and a probe line shows the share of the article read at that
+  // height; a click goes there and a drag scrubs through the article, the
+  // cursor following. Pointing at or focusing an entry lights the span of its
+  // section on the rail: a heading's runs to the next heading of its rank or
+  // above, or to the end.
+  function setupRail() {
+    const STEP = 8;
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const band = document.createElement('div');
+    band.className = 'toc-rail';
+    band.setAttribute('aria-hidden', 'true');
+    band.innerHTML = '<span class="toc-ticks"></span><span class="toc-span"></span><span class="toc-probe"><output></output></span>';
+    nav.prepend(band);
+    nav.classList.add('has-rail');
+    const ticks = band.querySelector('.toc-ticks');
+    const span = band.querySelector('.toc-span');
+    const probe = band.querySelector('.toc-probe');
+    const label = probe.querySelector('output');
+
+    // The fine ticks stand every STEP pixels down the rail, as marks the
+    // pointer can swell one by one.
+    let marks = [];
+    function lay() {
+      const count = Math.floor(nav.clientHeight / STEP) + 1;
+      if (count === marks.length) return;
+      marks = Array.from({ length: count }, (_, i) => {
+        const mark = document.createElement('i');
+        mark.style.top = `${i * STEP}px`;
+        return mark;
+      });
+      ticks.replaceChildren(...marks);
+    }
+    lay();
+    if ('ResizeObserver' in window) new ResizeObserver(lay).observe(nav);
+
+    let pointer = null, frame = 0, press = null;
+    function draw() {
+      frame = 0;
+      for (const [i, mark] of marks.entries()) {
+        const zoom = pointer === null ? 0 : Math.exp(-(((i * STEP - pointer) / 18) ** 2));
+        const value = zoom < 0.02 ? '' : zoom.toFixed(2);
+        if (mark.style.getPropertyValue('--zoom') === value) continue;
+        if (value) mark.style.setProperty('--zoom', value);
+        else mark.style.removeProperty('--zoom');
+      }
+      band.classList.toggle('is-probing', pointer !== null);
+      if (pointer === null) return;
+      probe.style.setProperty('--probe-y', `${pointer.toFixed(1)}px`);
+      label.textContent = `${Math.round(shareAt(scrollForRail(pointer)) * 100)}%`;
+    }
+    const redraw = () => { if (!frame) frame = requestAnimationFrame(draw); };
+    const heightAt = event => Math.min(Math.max(event.clientY - nav.getBoundingClientRect().top, 0), nav.clientHeight);
+
+    band.addEventListener('pointerenter', event => { pointer = heightAt(event); redraw(); });
+    band.addEventListener('pointermove', event => {
+      pointer = heightAt(event);
+      redraw();
+      if (!press) return;
+      if (!press.dragging && Math.abs(event.clientY - press.y) < 3) return;
+      press.dragging = true;
+      band.classList.add('is-scrubbing');
+      window.scrollTo({ top: scrollForRail(pointer), behavior: 'instant' });
+    });
+    band.addEventListener('pointerleave', () => {
+      if (press) return;
+      pointer = null;
+      redraw();
+    });
+    band.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      press = { y: event.clientY, dragging: false };
+      band.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+    function release(event) {
+      if (!press) return;
+      const { dragging } = press;
+      press = null;
+      band.classList.remove('is-scrubbing');
+      if (!dragging && event.type === 'pointerup') window.scrollTo({ top: scrollForRail(heightAt(event)), behavior: still.matches ? 'instant' : 'smooth' });
+      if (event.type === 'pointercancel' || !band.matches(':hover')) {
+        pointer = null;
+        redraw();
+      }
+    }
+    band.addEventListener('pointerup', release);
+    band.addEventListener('pointercancel', release);
+
+    const minor = index => links[index].parentElement.classList.contains('toc-subheading');
+    function light(index) {
+      let next = index + 1;
+      while (next < links.length && !minor(index) && minor(next)) next++;
+      const top = stationOffset(index);
+      const end = next < links.length ? stationOffset(next) : nav.clientHeight;
+      span.style.setProperty('--span-top', `${top.toFixed(1)}px`);
+      span.style.setProperty('--span-height', `${Math.max(0, end - top).toFixed(1)}px`);
+      band.classList.add('is-spanning');
+    }
+    const dim = () => band.classList.remove('is-spanning');
+    for (const [index, link] of links.entries()) {
+      link.addEventListener('pointerenter', () => light(index));
+      link.addEventListener('focus', () => light(index));
+      link.addEventListener('pointerleave', dim);
+      link.addEventListener('blur', dim);
+    }
   }
 
   function updateReadingState() {
@@ -73,7 +216,7 @@
     }
     // A folded row hides the rail, so it needs no layout reads.
     if (cursor?.offsetParent) {
-      cursor.style.setProperty('--toc-y', `${railOffset(bounds, viewport, atEnd).toFixed(1)}px`);
+      cursor.style.setProperty('--toc-y', `${railOffset(atEnd).toFixed(1)}px`);
       const percent = `${Math.round(ratio * 100)}%`;
       if (readout.textContent !== percent) readout.textContent = percent;
     }
