@@ -128,7 +128,7 @@ Logo 使用作者在 `logo.ai` 中设计的圆环与斜向尖角图形，保留�
 
 ## 添加真实文章
 
-Minecraft 文章可嵌入投影或 MicroTimingReplay 红石录制。录制导出、写作语法与本地试播见[红石文章指南](docs/redstone-replay.md)。
+Minecraft 文章可嵌入投影或 MicroTimingReplay 红石录制。录制由模组在游戏里直接导出成文章读取的 `scene.json`（录像管理界面的「导出…」或 `/mtr export <录制名>`，模组 1.0.5 起；博客里的 `npm run mc:export` 仍可作备用），导出、写作语法与本地试播见[红石文章指南](docs/redstone-replay.md)。
 
 将 `content/post-template.md` 复制到 `content/posts/`，例如 `content/posts/my-first-story.md`，然后修改开头的信息和正文。一个文件就是一篇文章，不需要按分类建子目录。
 
