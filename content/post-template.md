@@ -3,6 +3,7 @@ title: 在这里填写文章标题
 slug: my-first-story
 date: 2026-10-29
 category: 白日梦话
+subcategory: # 子分类：同一分类下的细分目录，例如 红石机器；不写时用第一个标签。
 tags:
   - 故事
 draft: true

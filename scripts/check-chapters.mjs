@@ -254,12 +254,20 @@ function browser({ reduced = false, finePointer = true, url = 'https://gudu.blog
       classes: ['category-heading'], dataset: { depthOwner: surface.id }, offsetParent: series,
       geometry: () => ({ left: 0, top: 30, width: chapterWidth(1), height: 50 }),
     });
-    const columns = ['minecraft', 'daydreams', 'collected', 'other'].map((slug, index) => {
-      const column = new Element('a', {
-        classes: ['category-column'], dataset: { categoryLink: slug }, offsetParent: surface,
+    const stations = [['minecraft', 'Minecraft', 'GAME JOURNAL'], ['daydreams', '白日梦话', 'DAYDREAMS'],
+      ['collected', '神秘文案', 'COLLECTED WORDS'], ['other', '其他', 'MISCELLANY']];
+    const columns = stations.map(([slug, name, code], index) => {
+      const column = new Element('div', {
+        classes: ['category-column'], dataset: { categorySlug: slug }, offsetParent: surface,
         geometry: () => ({ left: chapterWidth(1) * index / 4, top: 0, width: chapterWidth(1) / 4, height: 600 }),
       });
-      column.href = `?category=${slug}#journal`;
+      const cover = new Element('a', { classes: ['category-cover'], dataset: { catalogLink: slug } });
+      cover.href = `#catalog-${slug}`;
+      const title = new Element('strong', { classes: ['category-name'] });
+      title.textContent = name;
+      const label = new Element('span', { classes: ['category-code'] });
+      label.textContent = code;
+      column.append(cover, title, label);
       return column;
     });
     surface.append(...columns);
@@ -4244,63 +4252,47 @@ await test('top search submission reaches the article panel while preserving inp
   }
 });
 
-await test('category selection animates to the start of Journal without writing a second history entry', () => {
-  for (const mode of ['animated', 'reduced', 'resize']) {
-    const origin = mode === 'resize' ? 'archive' : 'series';
-    const site = browser({ url: `https://gudu.blog/?q=old&source=category#${origin}`, reduced: mode === 'reduced', categoryLayout: true });
-    const selected = site.categoryPanels.columns[0];
-    selected.focus();
-    site.journal.scrollTop = 500;
-    const beforeSelection = site.url.href;
-    const historyCount = site.historyEntries.length;
-    // blog.js has already rendered the filter and pushed its combined query/hash.
-    const destinationUrl = new URL(site.url);
-    destinationUrl.searchParams.delete('q');
-    destinationUrl.searchParams.set('category', selected.dataset.categoryLink);
-    destinationUrl.hash = 'journal';
-    site.window.history.pushState(null, '', destinationUrl);
-    const start = site.top;
-    const event = site.event('site:category', { target: site.window, detail: { category: selected.dataset.categoryLink } });
-    assert.equal(event.defaultPrevented, true, 'claiming navigation prevents the blog fallback from scrolling a second time');
-    assert.equal(site.journal.scrollTop, 0, 'the next category opens at the first result');
-    assert.equal(site.historyEntries.length, historyCount + 1, 'the chapter controller does not duplicate the blog history push');
-    if (mode === 'reduced') {
-      assert.equal(site.top, site.destination('journal'));
-    } else {
-      assert.equal(site.top, start, 'category navigation starts without jumping the track');
-      site.advance(100);
-      assert.ok(site.top > Math.min(start, site.destination('journal')) && site.top < Math.max(start, site.destination('journal')), 'the track moves through intermediate positions');
-      assert.equal(site.document.activeElement, selected, 'focus waits for the article surface to arrive');
-      if (mode === 'resize') site.resizeWidth(600);
-    }
-    site.advance(1200);
-    assert.equal(site.top, site.destination('journal'), `${mode} reaches the measured article reading stop`);
-    assert.equal(site.document.activeElement, site.journal);
-    assert.equal(site.url.href, destinationUrl.href);
-    assert.equal(site.historyEntries.length, historyCount + 1, 'animation frames and completion do not rewrite the chosen URL');
-    assert.equal(site.pendingFrames, 0);
-    site.restore(beforeSelection, site.destination(origin));
-    assert.equal(site.top, site.destination(origin), 'browser Back returns directly to the original chapter');
-    assert.equal(site.url.href, beforeSelection);
-    assert.equal(site.historyEntries.length, historyCount + 1, 'history restoration creates no new entry');
+await test('the panel catalog keeps the home stops, camera and runway while the ruler tracks the row', () => {
+  const site = browser({ url: 'https://gudu.blog/?source=direct#catalog-daydreams', categoryLayout: true, reduced: true });
+  const api = site.window.SiteChapters;
+  const names = () => site.navLinks.map(link => link.querySelector('.chapter-station-title').textContent);
+  const initialY = site.destination('series');
+  assert.equal(site.top, initialY);
+  assert.equal(site.url.hash, '#catalog-daydreams');
+  const runway = site.runway.style.height;
+  const surface = site.categoryPanels.surface;
+  api.holdCatalog();
+  const pose = [...surface.style.values];
+  api.setCatalogRuler(1, 0.5);
+  assert.deepEqual(names(), ['Minecraft', '白日梦话', '神秘文案', '其他']);
+  assert.equal(site.progress.getAttribute('aria-label'), '文章目录分类');
+  const quarter = site.rulerWidth / 4;
+  assert.equal(site.markerX, 1.5 * quarter);
+  const samples = [];
+  site.window.SiteCatalog = { scrub: (...args) => samples.push(args) };
+  for (const [cell, position, ratio] of [[1, 0.1, 0], [1, 0.73, 0.7875], [1, 0.9, 1], [3, 0.5, 0.5]]) {
+    const x = site.rulerLeft + (cell + position) * quarter;
+    markerPointer(site, 'pointerdown', x, { target: site.progressRail });
+    markerPointer(site, 'pointerup', x);
+    const [station, value] = samples.at(-1);
+    assert.equal(station, cell);
+    assert.ok(Math.abs(value - ratio) < 1e-6);
   }
-});
-
-await test('unavailable category navigation leaves the event unclaimed for the blog fallback', () => {
-  for (const state of ['loading', 'menu', 'hidden', 'pagehide']) {
-    const site = browser({ url: 'https://gudu.blog/#series', loading: state === 'loading', hidden: state === 'hidden' });
-    if (state === 'menu') site.body.dataset.menuOpen = 'true';
-    if (state === 'pagehide') site.event('pagehide');
-    site.journal.scrollTop = 300;
-    const start = site.top;
-    const historyCount = site.historyEntries.length;
-    assert.equal(site.event('site:category', { target: site.window, detail: { category: 'minecraft' } }).defaultPrevented, false, state);
-    site.advance(1000);
-    assert.equal(site.top, start, state);
-    assert.equal(site.journal.scrollTop, 300, 'an unavailable controller does not alter the native reading position');
-    assert.equal(site.historyEntries.length, historyCount);
-    assert.equal(site.pendingFrames, 0);
-  }
+  api.setCatalogRuler(2, 0.9);
+  assert.equal(site.navLinks[2].getAttribute('aria-current'), 'location');
+  assert.ok(Math.abs(site.markerX - 2.9 * quarter) < 0.001);
+  site.jump(initialY + 400);
+  site.lateResize();
+  site.advance(100);
+  assert.equal(site.top, initialY);
+  assert.equal(site.url.hash, '#catalog-daydreams');
+  assert.deepEqual([...surface.style.values], pose);
+  assert.equal(site.runway.style.height, runway);
+  api.releaseCatalog();
+  assert.deepEqual(names(), ['关于', '分类', '最新文章', '归档']);
+  assert.equal(site.progress.getAttribute('aria-label'), '网站章节');
+  assert.equal(site.navLinks[1].getAttribute('aria-current'), 'location');
+  assert.equal(site.markerX, 1.5 * quarter);
 });
 
 await test('unrelated form submissions keep their native behavior and current chapter', () => {

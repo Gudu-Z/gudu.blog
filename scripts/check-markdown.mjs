@@ -11,6 +11,7 @@ const homepage = `<!doctype html><html lang="zh-CN"><title>Markdown fixture</tit
 ${categories.map(slug => `<span data-category-count="${slug}">0</span>`).join('\n')}
 <!-- posts:start --><!-- posts:end -->
 <!-- archive:start --><!-- archive:end -->
+${categories.map(slug => `<!-- catalog-${slug}:start --><!-- catalog-${slug}:end -->`).join('\n')}
 </main></html>\n`;
 const frontmatter = (attributes = {}, body = '只存在于临时目录中的测试正文。') => `---
 ${Object.entries({ title: 'Markdown 测试文章', date: '2026-10-29', category: '白日梦话', ...attributes })

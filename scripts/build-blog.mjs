@@ -15,6 +15,8 @@ const escape = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;
 const jsonForHTML = value => JSON.stringify(value).replace(/</g, '\\u003c');
 const postURL = post => `${site}/posts/${post.slug}.html`;
 const displayDate = date => date.replaceAll('-', '.');
+const twoDigits = number => String(number).padStart(2, '0');
+const ungrouped = '未分组';
 const textValue = (value, name) => {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${name} 必须是非空字符串。`);
   return value.trim();
@@ -44,8 +46,11 @@ function normalizePost(value, filename, markdown = null) {
   const parsedDate = new Date(`${date}T00:00:00Z`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parsedDate.valueOf()) || parsedDate.toISOString().slice(0, 10) !== date) throw new Error(`${filename}.date 需要有效的 YYYY-MM-DD 日期。`);
   const category = textValue(value.category, `${filename}.category`);
-  const tags = value.tags ?? [];
-  if (!Array.isArray(tags)) throw new Error(`${filename}.tags 必须是字符串数组。`);
+  const rawTags = value.tags ?? [];
+  if (!Array.isArray(rawTags)) throw new Error(`${filename}.tags 必须是字符串数组。`);
+  const tags = [...new Set(rawTags.map((tag, i) => textValue(tag, `${filename}.tags[${i}]`)))];
+  if (value.subcategory != null && typeof value.subcategory !== 'string') throw new Error(`${filename}.subcategory 必须是字符串。`);
+  const subcategory = value.subcategory?.trim() || tags[0] || ungrouped;
   if (!markdown && (!Array.isArray(value.sections) || !value.sections.length)) throw new Error(`${filename}.sections 需要至少一个章节。`);
   const reservedIds = new Set(['main-content', 'comments', 'comments-title', 'waline']);
   const ids = new Set(reservedIds);
@@ -72,7 +77,7 @@ function normalizePost(value, filename, markdown = null) {
   return {
     id: slug, slug, title, excerpt, summary: excerpt, deck, category,
     categorySlug: categorySlugs.get(category) ?? 'other',
-    tags: [...new Set(tags.map((tag, i) => textValue(tag, `${filename}.tags[${i}]`)))],
+    subcategory, tags,
     date, readingMinutes: Math.max(1, Math.ceil(chineseCharacters / 350 + words / 200)),
     url: `./posts/${slug}.html`, demo: value.demo === true, featured: value.featured === true,
     draft: value.draft === true, comments: value.comments !== false, sections,
@@ -147,7 +152,8 @@ function renderArticle(post, index, posts, commentsConfig) {
   // The header's facts read like the About card's form: a Chinese field name
   // over a small code name, four to a row under a calibration rule.
   const facts = [
-    ['分类', 'CATEGORY', `<a class="article-category" href="../index.html?category=${escape(post.categorySlug)}#journal">${escape(post.category)}</a>`],
+    ['分类', 'CATEGORY', `<a class="article-category" href="../index.html#catalog-${post.categorySlug}">${escape(post.category)}</a>`],
+    ['子分类', 'SUBCATEGORY', escape(post.subcategory)],
     ['发布', 'DATE', `<time datetime="${post.date}">${displayDate(post.date)}</time>`],
     ['阅读', 'READ TIME', `约 ${post.readingMinutes} 分钟`],
     ['标签', 'TAGS', post.tags.length ? `<ul class="article-tags" aria-label="文章标签">${post.tags.map(tag => `<li>#${escape(tag)}</li>`).join('')}</ul>` : '<span class="article-facts-empty">—</span>'],
@@ -249,6 +255,45 @@ function renderArchive(posts) {
   return years.map(year => `<section class="archive-year"><h3>${year}</h3><ol>${posts.filter(post => post.date.startsWith(year)).map(post => `<li><a href="${post.url}"><time datetime="${post.date}">${post.date.slice(5).replace('-', '.')}</time><span class="archive-title">${escape(post.title)}</span><span class="archive-category">${escape(post.category)}${post.demo ? ' · 示例' : ''}</span><span aria-hidden="true">↗</span></a></li>`).join('')}</ol></section>`).join('\n');
 }
 
+function renderCatalogCard(post, index) {
+  return `                        <li><a class="catalog-card" href="${post.url}">
+                          <span class="catalog-card-index" aria-hidden="true">${twoDigits(index + 1)}</span>
+                          <span class="catalog-card-title">${escape(post.title)}</span>
+                          <span class="catalog-card-meta"><time datetime="${post.date}">${displayDate(post.date)}</time> · ${post.readingMinutes} 分钟阅读</span>
+                          <span class="catalog-card-summary">${escape(post.excerpt)}</span>
+                          <span class="catalog-card-arrow" aria-hidden="true">↗</span>
+                        </a></li>`;
+}
+
+function renderCatalogGroup(name, posts) {
+  return `                    <section class="catalog-group" aria-label="${escape(name)}">
+                      <header class="catalog-group-head">
+                        <span class="catalog-group-symbol" aria-hidden="true">//</span>
+                        <h3>${escape(name)}</h3>
+                        <span class="catalog-group-rule" aria-hidden="true"></span>
+                        <span class="catalog-group-count"><span class="sr-only">共</span>${twoDigits(posts.length)}<span class="sr-only">篇</span></span>
+                      </header>
+                      <ol class="catalog-cards">
+${posts.map(renderCatalogCard).join('\n')}
+                      </ol>
+                    </section>`;
+}
+
+function renderCatalogBlock(posts) {
+  // The first post in each group is its most recent one.
+  const groups = Map.groupBy(posts, post => post.subcategory);
+  const names = [...groups.keys()].filter(name => name !== ungrouped);
+  if (groups.has(ungrouped)) names.push(ungrouped);
+  const content = names.length
+    ? names.map(name => renderCatalogGroup(name, groups.get(name))).join('\n')
+    : '                    <p class="catalog-empty">这个分类还没有文章<br />写好的文章会归到这里。</p>';
+  return `                <div class="catalog-block" hidden inert>
+                  <div class="catalog-row">
+${content}
+                  </div>
+                </div>`;
+}
+
 function replaceRegion(html, key, content) {
   const pattern = new RegExp(`(<!-- ${key}:start -->)[\\s\\S]*?(<!-- ${key}:end -->)`);
   if (!pattern.test(html)) throw new Error(`index.html 缺少 <!-- ${key}:start --> / <!-- ${key}:end --> 标记。`);
@@ -301,6 +346,10 @@ export async function buildBlog({ root = defaultRoot, checkOnly = false } = {}) 
   let homepage = await readFile(resolve(root, 'index.html'), 'utf8');
   homepage = replaceRegion(homepage, 'posts', renderCards(posts));
   homepage = replaceRegion(homepage, 'archive', renderArchive(posts));
+  for (const { slug } of categories) {
+    const articles = posts.filter(post => post.categorySlug === slug);
+    homepage = replaceRegion(homepage, `catalog-${slug}`, renderCatalogBlock(articles));
+  }
   homepage = renderCategoryCounts(homepage, posts);
   artifacts.set('index.html', homepage);
 

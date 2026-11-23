@@ -61,9 +61,9 @@
 
     // `hover` and `cursor` are places along the ruler in pixels from its
     // start (null when absent); `travelling` strengthens the cursor's lens.
-    function paint(hover, cursor, travelling = false) {
-      if (!rows.length) return;
-      const size = (axis === 'x' ? cells[0].offsetWidth : cells[0].offsetHeight) || 1;
+    function paint(hover, cursor, travelling, size) {
+      // Both rulers measure their cells before moving the pointer.
+      if (!rows.length || !size) return;
       const strength = travelling ? CURSOR_TRAVEL : CURSOR_REST;
       if (size === cell && hover === lastHover && cursor === lastCursor && strength === lastStrength) return;
       cell = size;

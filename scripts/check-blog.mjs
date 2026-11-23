@@ -8,16 +8,21 @@ import { buildBlog } from './build-blog.mjs';
 import { articleFontDirectory, syncArticleFonts } from './article-fonts.mjs';
 
 const expectedCategories = [
-  { name: 'Minecraft', slug: 'minecraft' },
-  { name: '白日梦话', slug: 'daydreams' },
-  { name: '神秘文案', slug: 'collected' },
-  { name: '其他', slug: 'other' },
+  { name: 'Minecraft', slug: 'minecraft', code: 'GAME JOURNAL', description: '关于 Minecraft 游戏的文章。' },
+  { name: '白日梦话', slug: 'daydreams', code: 'DAYDREAMS', description: '离奇的小故事，像做梦一样。' },
+  { name: '神秘文案', slug: 'collected', code: 'COLLECTED WORDS', description: '从互联网上收集的有趣文案。' },
+  { name: '其他', slug: 'other', code: 'MISCELLANY', description: '其他一些东西。' },
 ];
 const homepage = `<!doctype html><html lang="zh-CN"><title>Fixture</title><main>
-${expectedCategories.map(({ slug }) => `<span data-category-count="${slug}">0</span>`).join('\n')}
+${expectedCategories.map(({ slug, name }) => `<div class="category-column" data-category-slug="${slug}">
+  <div class="category-display"><!-- catalog-${slug}:start --><!-- catalog-${slug}:end --></div>
+  <strong class="category-name">${name}</strong><p class="category-description">手写的分类说明。</p>
+  <span data-category-count="${slug}">0</span>
+</div>`).join('\n')}
 <!-- posts:start --><!-- posts:end -->
 <!-- archive:start --><!-- archive:end -->
 </main></html>\n`;
+const catalogBlock = (html, slug) => html.split(`<!-- catalog-${slug}:start -->`)[1].split(`<!-- catalog-${slug}:end -->`)[0];
 const fixturePost = (overrides = {}) => ({
   slug: 'first-note',
   title: '一篇仅供测试的记录',
@@ -58,7 +63,13 @@ await test('an empty blog builds usable pages and a valid empty feed without sam
     assert.deepEqual(await metadata(), []);
     assert.deepEqual((await data()).categories, expectedCategories);
     const html = await read('index.html');
-    for (const { slug } of expectedCategories) assert.match(html, new RegExp(`data-category-count="${slug}">00<`));
+    for (const { slug } of expectedCategories) {
+      assert.match(html, new RegExp(`data-category-count="${slug}">00<`));
+      const block = catalogBlock(html, slug);
+      assert.match(block, /<div class="catalog-block" hidden inert>/);
+      assert.match(block, /<p class="catalog-empty">这个分类还没有文章<br \/>写好的文章会归到这里。<\/p>/);
+      assert.doesNotMatch(block, /<ol|class="catalog-group"/);
+    }
     assert.match(html, /class="journal-empty"/);
     assert.match(html, /class="archive-empty"/);
     assert.doesNotMatch(html, /class="post-card"/);
@@ -97,6 +108,7 @@ await test('published routes, escaping, archive order, and feeds agree with the 
     assert.equal(posts[0].url, './posts/latest-note.html');
     assert.equal(posts[0].categorySlug, 'minecraft');
     assert.deepEqual(posts[0].tags, ['<tag>']);
+    assert.equal(posts[0].subcategory, '<tag>');
     assert.ok(posts[0].readingMinutes >= 1);
     assert.doesNotMatch(await read('js/posts-data.js'), /<script>/);
 
@@ -109,6 +121,8 @@ await test('published routes, escaping, archive order, and feeds agree with the 
     assert.match(article, /rel="canonical" href="https:\/\/gudu\.blog\/posts\/latest-note\.html"/);
     assert.match(article, /data-toc-link href="#details"/);
     assert.match(article, /href="\.\/layout-preview\.html"/);
+    assert.ok(article.includes('<a class="article-category" href="../index.html#catalog-minecraft">Minecraft</a>'));
+    assert.ok(article.includes('<dt>子分类 <span aria-hidden="true">/ SUBCATEGORY</span></dt><dd>&lt;tag&gt;</dd>'));
     const schema = JSON.parse(article.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1]);
     assert.equal(schema.headline, hostile);
     assert.equal(schema.mainEntityOfPage, 'https://gudu.blog/posts/latest-note.html');
@@ -127,6 +141,51 @@ await test('published routes, escaping, archive order, and feeds agree with the 
     assert.doesNotMatch(await read('posts/layout-preview.html'), /application\/ld\+json/);
     assert.equal((await readdir(join(root, 'posts'))).includes('private-draft.html'), false);
     await buildBlog({ root, checkOnly: true });
+  });
+});
+
+await test('each catalog block groups cards by effective subcategory, newest first and ungrouped last', async () => {
+  await fixture(async ({ root, read, post, metadata }) => {
+    // A blank YAML value uses the same fallback as omitting the field.
+    await writeFile(join(root, 'content/posts/newest.md'), '---\ntitle: 最新文章\ndate: 2026-11-21\ncategory: Minecraft\nsubcategory:\n---\n正文。\n');
+    await post('rail.json', fixturePost({ slug: 'rail', date: '2026-11-10', subcategory: '  线路 & 车站  ' }));
+    await post('tower.json', fixturePost({ slug: 'tower', date: '2026-11-09', subcategory: ' ', tags: [' 建筑 ', '城堡'] }));
+    await post('bridge.json', fixturePost({ slug: 'bridge', date: '2026-10-06', tags: ['线路 & 车站'] }));
+    await buildBlog({ root });
+    assert.deepEqual((await metadata()).map(p => p.subcategory), ['未分组', '线路 & 车站', '建筑', '线路 & 车站']);
+    const html = await read('index.html');
+    const catalog = catalogBlock(html, 'minecraft');
+    const groups = [...catalog.matchAll(/<section class="catalog-group" aria-label="([^"]+)">([\s\S]*?)<\/section>/g)];
+    assert.deepEqual(groups.map(match => match[1]), ['线路 &amp; 车站', '建筑', '未分组']);
+    const cards = groups.map(match => [...match[2].matchAll(/<li><a class="catalog-card" href="\.\/posts\/([^"]+)\.html">/g)].map(card => card[1]));
+    assert.deepEqual(cards, [['rail', 'bridge'], ['tower'], ['newest']]);
+    assert.ok(groups.every(match => match[2].includes('<ol class="catalog-cards">')));
+    assert.ok(groups[0][2].includes('<span class="catalog-group-count"><span class="sr-only">共</span>02<span class="sr-only">篇</span></span>'));
+    assert.equal(html.match(/class="catalog-empty"/g)?.length, 3);
+    assert.doesNotMatch(catalog, /class="catalog-empty"/);
+    await writeFile(join(root, 'index.html'), html.replace(catalog, catalog.replace('线路 &amp; 车站', '过期')));
+    await assert.rejects(buildBlog({ root, checkOnly: true }), /index\.html/);
+    await buildBlog({ root });
+    assert.equal(await read('index.html'), html);
+  });
+});
+
+await test('the builder preserves the owner’s category markup outside the counts and display blocks', async () => {
+  await fixture(async ({ root, read, post }) => {
+    const page = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+    const columns = page.slice(page.indexOf('<div class="category-columns">'), page.indexOf('<section class="journal-section'));
+    const edited = columns.replace(/(<span class="category-description">)[\s\S]*?(<\/span>)/, '$1作者新写的 <em>Minecraft</em> 说明。$2');
+    assert.notEqual(edited, columns);
+    const normalize = html => html
+      .replace(/(<!-- catalog-([a-z-]+):start -->)[\s\S]*?(<!-- catalog-\2:end -->)/g, '$1$3')
+      .replace(/(data-category-count="[^"]+">)\d+(<)/g, '$1$2');
+    await writeFile(join(root, 'index.html'), `${edited}<!-- posts:start --><!-- posts:end --><!-- archive:start --><!-- archive:end -->`);
+    await post('note.json', fixturePost({ category: '白日梦话' }));
+    await buildBlog({ root });
+    const built = await read('index.html');
+    assert.equal(normalize(built.split('<!-- posts:start -->')[0]), normalize(edited));
+    assert.match(catalogBlock(built, 'daydreams'), /href="\.\/posts\/first-note\.html"/);
+    assert.match(catalogBlock(built, 'minecraft'), /class="catalog-empty"/);
   });
 });
 
@@ -205,7 +264,7 @@ await test('each article loads Noto Sans SC cuts of its own words: the title in 
     // from the text, headings and closing line, and from the page's own chrome
     // (back link, facts, contents, neighbours, foot bar), but nothing from code.
     const prose = '正文一段，加粗。小节' + '本文完。谢谢你的阅读。';
-    const chrome = '返回文章列表' + '分类发布阅读标签' + '约分钟' + '本文目录' + '上一篇下一篇已到达这一端' + '在自己的轨道上，保持好奇。' + '订阅';
+    const chrome = '返回文章列表' + '分类子分类未分组发布阅读标签' + '约分钟' + '本文目录' + '上一篇下一篇已到达这一端' + '在自己的轨道上，保持好奇。' + '订阅';
     assert.deepEqual(made, ['900: Rde石红', `400:${sorted(prose + chrome)}`, `600:${sorted('加粗小节' + '已到达这一端')}`]);
     assert.ok(!made[1].includes('代'), 'code stays out of the cut');
     assert.equal(await readFile(join(root, paths.body), 'utf8'), made[1]);
@@ -231,6 +290,7 @@ await test('invalid or ambiguous content fails before generating published files
     ['path traversal slug', { slug: '../escape' }, /slug/],
     ['impossible calendar date', { date: '2026-02-30' }, /date/],
     ['empty title', { title: ' ' }, /title/],
+    ['non-string subcategory', { subcategory: ['红石'] }, /subcategory/],
     ['string draft flag', { draft: 'true' }, /draft/],
     ['unsafe section anchor', { sections: [{ id: 'x" onclick="run()', title: 'Section', blocks: [{ type: 'paragraph', text: 'Text' }] }] }, /\.id/],
     ['reserved section anchor', { sections: [{ id: 'main-content', title: 'Section', blocks: [{ type: 'paragraph', text: 'Text' }] }] }, /\.id/],
@@ -438,8 +498,9 @@ function blogBrowser({ posts = browserPosts, url = 'https://gudu.blog/#journal' 
   const counts = new Map();
   for (const { name, slug } of expectedCategories) {
     const link = element('a');
-    link.dataset.categoryLink = slug;
-    link.href = `?category=${slug}#journal`;
+    link.className = 'category-column';
+    link.dataset.catalogLink = slug;
+    link.href = `#catalog-${slug}`;
     element('span', '', link).textContent = name;
     const count = element('span', '', link);
     count.dataset.categoryCount = slug;
@@ -527,45 +588,25 @@ await test('all four category filters remain available with accurate counts, inc
   assert.equal(empty.emptyState.hidden, true);
 });
 
-await test('a category link clears search, pushes one canonical URL and lets chapters take over navigation', () => {
-  const page = blogBrowser({ url: 'https://gudu.blog/?q=红石#about' });
-  const notifications = [];
-  page.window.addEventListener('site:category', event => {
-    notifications.push({ category: event.detail.category, cancelable: event.cancelable, titles: page.titles() });
-    event.preventDefault();
-  });
-  const event = page.click(page.links.get('minecraft').children[0]);
-  assert.equal(event.defaultPrevented, true);
-  assert.equal(page.searchInput.value, '');
-  assert.deepEqual(page.selected(), ['minecraft']);
-  assert.deepEqual(page.titles(), ['红石矿车', '浮岛建筑']);
-  assert.deepEqual(page.history, [{ method: 'pushState', url: 'https://gudu.blog/?category=minecraft#journal' }]);
-  assert.deepEqual(notifications, [{ category: 'minecraft', cancelable: true, titles: ['红石矿车', '浮岛建筑'] }]);
-  assert.equal(page.scrolls.length, 0, 'a canceled site:category event delegates scrolling to chapters');
-});
-
-await test('modified, middle-button and new-tab category clicks retain native link behavior', () => {
-  for (const options of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { button: 1 }, { target: '_blank' }]) {
-    const page = blogBrowser({ url: 'https://gudu.blog/?q=红石#about' });
+await test('catalog columns leave journal query, filters and navigation to their respective controls', () => {
+  for (const options of [{}, { ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { button: 1 }, { target: '_blank' }]) {
+    const page = blogBrowser({ url: 'https://gudu.blog/?category=other&q=红石#series' });
     const link = page.links.get('minecraft');
     if (options.target) link.target = options.target;
     const { target: _target, ...eventOptions } = options;
-    let notifications = 0;
-    page.window.addEventListener('site:category', () => { notifications += 1; });
     const event = page.click(link.children[0], eventOptions);
     assert.equal(event.defaultPrevented, false, JSON.stringify(options));
     assert.deepEqual(page.history, []);
-    assert.equal(notifications, 0);
+    assert.equal(page.scrolls.length, 0);
     assert.equal(page.searchInput.value, '红石');
-    assert.deepEqual(page.selected(), ['']);
-    assert.deepEqual(page.titles(), ['红石矿车', '红石生活']);
+    assert.deepEqual(page.selected(), ['other']);
+    assert.deepEqual(page.titles(), ['红石生活']);
   }
 });
 
 await test('selecting a category with no articles stays selected and renders a real empty result', () => {
   const page = blogBrowser();
-  page.window.addEventListener('site:category', event => event.preventDefault());
-  page.click(page.links.get('daydreams'));
+  page.click(page.filters().find(button => button.dataset.category === 'daydreams'));
   assert.deepEqual(page.selected(), ['daydreams']);
   assert.deepEqual(page.titles(), []);
   assert.equal(page.emptyState.hidden, false);
@@ -596,8 +637,8 @@ await test('popstate restores category and query together without writing anothe
   page.click(page.filters().find(button => button.dataset.category === 'minecraft'));
   page.input('矿车');
   const earlierUrl = page.window.location.href;
-  page.window.addEventListener('site:category', event => event.preventDefault());
-  page.click(page.links.get('other'));
+  page.click(page.filters().find(button => button.dataset.category === 'other'));
+  page.click(page.clearSearch);
   assert.deepEqual(page.titles(), ['红石生活']);
   const writes = page.history.length;
   page.popstate(earlierUrl);

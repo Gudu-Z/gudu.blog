@@ -6,7 +6,9 @@ import { test } from 'node:test';
 import { buildBlog } from './build-blog.mjs';
 import { readCommentsConfig } from './comments.mjs';
 
-const homepage = '<main><!-- posts:start --><!-- posts:end --><!-- archive:start --><!-- archive:end --></main>';
+const categories = ['minecraft', 'daydreams', 'collected', 'other'];
+const homepage = `<main><!-- posts:start --><!-- posts:end --><!-- archive:start --><!-- archive:end -->
+${categories.map(slug => `<!-- catalog-${slug}:start --><!-- catalog-${slug}:end -->`).join('\n')}</main>`;
 const article = (meta = '', body = '正文。') => `---\ntitle: 测试文章\nslug: test-note\ndate: 2026-10-30\ncategory: 白日梦话\n${meta}\n---\n\n${body}\n`;
 
 async function fixture(run) {

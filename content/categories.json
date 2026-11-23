@@ -1,6 +1,6 @@
 [
-  { "slug": "minecraft", "name": "Minecraft" },
-  { "slug": "daydreams", "name": "白日梦话" },
-  { "slug": "collected", "name": "神秘文案" },
-  { "slug": "other", "name": "其他" }
+  { "slug": "minecraft", "name": "Minecraft", "code": "GAME JOURNAL", "description": "关于 Minecraft 游戏的文章。" },
+  { "slug": "daydreams", "name": "白日梦话", "code": "DAYDREAMS", "description": "离奇的小故事，像做梦一样。" },
+  { "slug": "collected", "name": "神秘文案", "code": "COLLECTED WORDS", "description": "从互联网上收集的有趣文案。" },
+  { "slug": "other", "name": "其他", "code": "MISCELLANY", "description": "其他一些东西。" }
 ]

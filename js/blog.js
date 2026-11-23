@@ -227,10 +227,6 @@
     for (const button of filterList.querySelectorAll('button[data-category]')) {
       button.setAttribute('aria-pressed', String(button.dataset.category === state.category));
     }
-    for (const link of document.querySelectorAll('[data-category-link]')) {
-      if (link.dataset.categoryLink === state.category) link.setAttribute('aria-current', 'true');
-      else link.removeAttribute('aria-current');
-    }
     // Keep the authored welcome only for the unfiltered empty site. A chosen
     // category or query still needs an honest empty result with a reset action.
     if (!posts.length && !state.category && !state.query) {
@@ -273,13 +269,12 @@
     }
   }
 
-  function updateUrl(mode, hash) {
+  function updateUrl(mode) {
     const url = new URL(window.location.href);
     if (state.query) url.searchParams.set('q', state.query);
     else url.searchParams.delete('q');
     if (state.category) url.searchParams.set('category', state.category);
     else url.searchParams.delete('category');
-    if (hash) url.hash = hash;
     if (url.href === window.location.href) return false;
     // History can be unavailable in a sandboxed embed; filtering still works there.
     try {
@@ -345,28 +340,6 @@
     searchSession = false;
     updateUrl('push');
     render();
-  });
-  document.addEventListener('click', event => {
-    if (event.defaultPrevented || event.button > 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-    const link = event.target.closest?.('a[data-category-link]');
-    if (!link || link.hasAttribute('download') || (link.target && link.target !== '_self') || !categoryNames.has(link.dataset.categoryLink)) return;
-    const target = new URL(link.href, window.location.href);
-    if (target.origin !== window.location.origin || target.pathname !== window.location.pathname) return;
-    event.preventDefault();
-    state.query = '';
-    state.category = link.dataset.categoryLink;
-    state.limit = pageSize;
-    searchSession = false;
-    searchInput.value = '';
-    updateUrl('push', '#journal');
-    render();
-    const navigation = new CustomEvent('site:category', { detail: { category: state.category }, cancelable: true });
-    window.dispatchEvent(navigation);
-    if (!navigation.defaultPrevented) {
-      document.querySelector('#journal')?.scrollIntoView({
-        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start',
-      });
-    }
   });
   resetFilters?.addEventListener('click', resetAll);
   loadMore?.addEventListener('click', () => {

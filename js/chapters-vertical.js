@@ -25,6 +25,8 @@
   // the ticks swell as the tape slides under it.
   const tapeLens = window.RulerLens ? window.RulerLens.create(links, { axis: 'y', kind: (j, count) => (j === count / 2 ? 'mid' : '') }) : null;
   const journalIndex = sections.findIndex(section => section.id === 'journal');
+  const seriesIndex = sections.findIndex(section => section.id === 'series');
+  const catalogHashes = new Set([...document.querySelectorAll('[data-catalog-link]')].map(link => link.hash));
   const filterList = document.querySelector('.journal-toolbar > .filter-list');
   const filterToolbar = filterList?.parentElement;
   const query = matchMedia('(max-width: 720px), (max-height: 520px) and (pointer: coarse)');
@@ -53,6 +55,7 @@
     '.chapter-panel h2', '.chapter-panel > :is(.eyebrow, h3, p, .text-link)',
     '.series-empty', '.series-reading-link', '.journal-heading-part', '.category-heading',
     '.category-index', '.category-composition', '.category-description', '.category-bottom',
+    '.catalog-group-head', '.catalog-card', '.catalog-empty',
     '.journal-toolbar', '.journal-empty', '.search-empty', '.posts-list > .post-card',
     '.archive-year > h3', '.archive-year li', '.archive-group > h3', '.archive-item', '.site-footer',
   ].join(', ');
@@ -249,7 +252,8 @@
       if (risen.has(element)) continue;
       let nested = false;
       for (let node = element.parentElement; node && !nested; node = node.parentElement) nested = matched.has(node);
-      if (nested) continue;
+      // Cards inside a tall display reach the reading line individually.
+      if (nested && !element.closest('.catalog-block')) continue;
       risen.add(element);
       element.classList.add('is-vertical-reveal');
       rise.observe(element);
@@ -452,7 +456,7 @@
     nav.style.setProperty('--chapter-position', coordinate.toFixed(4));
     nav.style.setProperty('--site-progress', (coordinate / Math.max(1, chapters.length - 1)).toFixed(4));
     tape.style.setProperty('--chapter-marker-y', px(markerY));
-    tapeLens?.paint(null, markerY, nav.classList.contains('is-scrubbing') || nav.classList.contains('is-chapter-moving'));
+    tapeLens?.paint(null, markerY, nav.classList.contains('is-scrubbing') || nav.classList.contains('is-chapter-moving'), ruler.cell);
     const index = content ? 1 + Math.round(coordinate) : 0;
     nav.style.setProperty('--chapter-active-index', String(Math.max(0, index - 1)));
     if (index !== current) {
@@ -463,7 +467,7 @@
       if (previous >= 0) {
         markArrival(index, previous);
         // Navigation writes its own entry; reading along only renames this one.
-        if (!animation) writeHash(index);
+        if (!animation && !window.SiteChapters?.catalogHeld && !catalogHashes.has(window.location.hash)) writeHash(index);
       }
     }
     const percent = coordinate / Math.max(1, chapters.length - 1) * 100;
@@ -533,7 +537,8 @@
   }
 
   function restoreHash({ smooth = false } = {}) {
-    const index = sections.findIndex(section => `#${section.id}` === window.location.hash);
+    const hash = window.location.hash;
+    const index = catalogHashes.has(hash) ? seriesIndex : sections.findIndex(section => `#${section.id}` === hash);
     if (index < 0) return false;
     if (smooth) animateTo(landing(index), { kind: index === 0 || window.scrollY < entry - 2 ? 'hero' : 'content' });
     else { stopAnimation(); jump(landing(index)); }
@@ -737,11 +742,13 @@
     navigate(index);
   });
 
-  // A category link already wrote #journal; a search shows its results there.
-  window.addEventListener('site:category', event => {
-    if (!active || journalIndex < 0) return;
-    event.preventDefault();
-    navigate(journalIndex, { history: null });
+  window.addEventListener('site:catalog-layout', event => {
+    if (!active) return;
+    stopAnimation();
+    // Search can navigate in this same event, before the resize observer sees the closed cell.
+    measure();
+    if (event.detail?.dock) jump(landing(seriesIndex));
+    else queue();
   });
   document.addEventListener('submit', event => {
     if (!active || event.target.id !== 'post-search' || journalIndex < 0) return;
@@ -749,7 +756,9 @@
     navigate(journalIndex, { history: 'replace', focus: false });
   });
 
-  window.addEventListener('hashchange', () => { if (active) restoreHash({ smooth: true }); });
+  window.addEventListener('hashchange', () => {
+    if (active && !window.SiteChapters?.catalogHeld) restoreHash({ smooth: true });
+  });
   window.addEventListener('resize', () => { if (active) { measure(); queue(); } }, { passive: true });
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('scrollend', () => { if (active && !touch) settle(); });
@@ -822,7 +831,7 @@
   function deactivate() {
     if (!active) return;
     // Name the chapter being read in the URL: the strip reopens on it.
-    writeHash(Math.max(0, current));
+    if (!window.SiteChapters?.catalogHeld) writeHash(Math.max(0, current));
     active = false;
     stopAnimation();
     cancelAnimationFrame(frame);

@@ -112,7 +112,23 @@
   }
   const calibratingPanels = new Set();
   let revealViewport = { top: 0, bottom: window.innerHeight };
-  const chapterLabels = chapters.map((chapter, index) => links[index]?.querySelector('.chapter-station-title')?.textContent.trim() || chapter.id);
+  const homeStations = links.map(link => ({
+    hash: link.hash,
+    name: link.querySelector('.chapter-station-title').textContent.trim(),
+    code: link.querySelector('.chapter-station-subtitle').textContent.trim(),
+  }));
+  const catalogStations = [...document.querySelectorAll('[data-category-slug]')].map(column => ({
+    hash: `#catalog-${column.dataset.categorySlug}`,
+    name: column.querySelector('.category-name').textContent.trim(),
+    code: column.querySelector('.category-code').textContent.trim(),
+  }));
+  const seriesIndex = sections.findIndex(section => section.id === 'series');
+  let chapterLabels = homeStations.map(station => station.name);
+  let catalogHeld = false;
+  let catalogLabels = false;
+  const labelAnimations = new Set();
+  let markerGlide = null;
+  let glideFrame = 0;
   // Every inline style and inert state the strip writes, so it can hand the
   // page over clean when the vertical phone page takes it (standDown).
   const styleValues = new Map();
@@ -195,6 +211,7 @@
   }
 
   function writeHash(index, mode = 'replace') {
+    if (catalogHeld) return;
     if (window.location.hash === `#${sections[index].id}`) return;
     const url = new URL(window.location.href);
     url.hash = sections[index].id;
@@ -246,13 +263,13 @@
     if (idleTimer || progressNav.classList.contains('is-chapter-idle')) return;
     // Share the existing quiet-period timer. Each surface calibrates once per
     // visit; the ruler still starts its idle decoration after a full second.
-    const pendingCalibration = revealUnits.some(unit => unit.calibrationReady && !unit.calibrated);
+    const pendingCalibration = !catalogHeld && revealUnits.some(unit => unit.calibrationReady && !unit.calibrated);
     idleTimer = setTimeout(() => {
       idleTimer = 0;
       const scroll = y();
       if (!canIdle(scroll)) return;
       for (const unit of revealUnits) {
-        if (!unit.calibrationReady || unit.calibrated) continue;
+        if (catalogHeld || !unit.calibrationReady || unit.calibrated) continue;
         unit.calibrated = true;
         calibratingPanels.add(unit);
         setClass(unit.element, 'is-chapter-scanning', false);
@@ -307,6 +324,7 @@
       movingTimer = setTimeout(() => {
         movingTimer = 0;
         setClass(progressNav, 'is-chapter-moving', false);
+        if (catalogHeld) paintLens();
       }, 140);
     }
     if (changed && index > 0) {
@@ -576,7 +594,7 @@
   // the page position as knownScroll: reading again after their style writes
   // would force a synchronous restyle of the whole page.
   function update(syncHash = true, instantPanels = false, calibratePanels = false, knownScroll = null) {
-    if (!active || !positions.length) return;
+    if (!active || !positions.length || catalogHeld) return;
     const scroll = knownScroll ?? readScroll();
     renderedScroll = scroll;
     const progress = clamp(scroll / Math.max(1, entry), 0, 1);
@@ -592,14 +610,7 @@
     setStyle(progressNav, '--chapter-position', chapterPosition.toFixed(5));
     setStyle(progressNav, '--site-progress', siteProgress.toFixed(5));
     const markerOffset = (chapterPosition + 0.5) * progressTrackWidth / chapters.length;
-    const markerX = `${markerOffset.toFixed(3)}px`;
-    setStyle(progressMarker, '--chapter-marker-x', markerX);
-    setStyle(progressTrack, '--chapter-marker-x', markerX);
-    cursorOffset = markerOffset;
-    paintLens();
-    // The cursor and the ticks it lights turn with the fold they are on.
-    setFold(progressMarker, foldAt(markerOffset));
-    setFold(progressResponse, foldAt(markerOffset));
+    placeMarker(markerOffset);
     setClass(root, 'is-content', visible);
     // A partly assembled toolbar must not accept Tab focus before docking.
     setInert(header, !visible || Boolean(transition?.direction));
@@ -633,7 +644,7 @@
   }
 
   function measure() {
-    if (!available() || measuring) return;
+    if (!available() || measuring || catalogHeld) return;
     measuring = true;
     // Read each slot once: a compact chapter must dock at its own center and
     // must not leave an invisible full-width slot between its neighbors.
@@ -672,7 +683,7 @@
   }
 
   function canPointerParallax() {
-    return available() && initialized && mouseMotion.matches && window.innerWidth > 720
+    return available() && !catalogHeld && initialized && mouseMotion.matches && window.innerWidth > 720
       && !motion.matches && !blocked() && !frame && !lastFrame && !transition && !railSeek
       && !scrub && !pointerPressed && !pointerEditing() && !touching && !interactionKind && y() >= entry - 1;
   }
@@ -825,6 +836,7 @@
     // Use the grabbed point as the origin: the large hit target must not jump
     // the page when pressed away from the tiny visual cursor. Geometry is cached.
     const coordinate = drag.startPosition + (unfold(drag.latestX - pointerNavX) - drag.startFlat) * drag.positionPerPixel;
+    if (catalogHeld) { scrubCatalog(coordinate); return; }
     const top = clamp(entry + offsetAt(coordinate), entry, maximum);
     targetY = smoothY = top;
     if (Math.abs(top - y()) > 0.01) {
@@ -882,6 +894,12 @@
     if (!drag.keepFocus && document.activeElement === progressMarker) progressMarker.blur();
     noteIdleActivity();
     if (canCommit) {
+      if (catalogHeld) {
+        if (!drag.dragging) scrubCatalog(drag.startPosition);
+        setInteraction(null);
+        scheduleIdle();
+        return;
+      }
       const reached = drag.dragging ? coordinateAt(y() - entry) : drag.startPosition;
       // A click lands where its preview showed; a drag glides onto a center it was let go near.
       const settled = drag.dragging ? settleCoordinate(reached) : magnetCoordinate(reached);
@@ -915,7 +933,9 @@
     const railPosition = (unfold(event.clientX - pointerNavX) - progressTrackLeft) / progressTrackWidth * chapters.length - 0.5;
     // Clamp only when applying the position so a drag starting in an outer
     // half-cell stays aligned with the pointer as it enters the usable range.
-    const startPosition = grabbedMarker ? coordinateAt(y() - entry) : railPosition;
+    const startPosition = grabbedMarker
+      ? catalogHeld ? cursorOffset / progressTrackWidth * chapters.length - 0.5 : coordinateAt(y() - entry)
+      : railPosition;
     // On a fold, equal screen steps are unequal steps along the ruler, so a
     // drag follows the pointer's place on the flat ruler.
     scrub = { pointerId: event.pointerId, startX: event.clientX, latestX: event.clientX, startFlat: unfold(event.clientX - pointerNavX), startPosition, positionPerPixel: chapters.length / progressTrackWidth, dragging: grabbedMarker, keepFocus };
@@ -1094,7 +1114,8 @@
   // stays under a still mouse while the ruler moves; geometry stays cached.
   function paintRailHover() {
     if (railHoverX === null || scrub || !progressTrackWidth) return;
-    const coordinate = magnetCoordinate((unfold(railHoverX - pointerNavX) - progressTrackLeft) / progressTrackWidth * chapters.length - 0.5);
+    const raw = (unfold(railHoverX - pointerNavX) - progressTrackLeft) / progressTrackWidth * chapters.length - 0.5;
+    const coordinate = catalogHeld ? clamp(raw, -0.5, chapters.length - 0.5) : magnetCoordinate(raw);
     const offset = (coordinate + 0.5) * progressTrackWidth / chapters.length;
     setStyle(progressTrack, '--chapter-hover-x', `${offset.toFixed(3)}px`);
     hoverOffset = offset;
@@ -1104,7 +1125,7 @@
     setStyle(progressTrack, '--chapter-hover-view-x', `${(view.x - progressTrackLeft).toFixed(3)}px`);
     setStyle(progressTrack, '--chapter-hover-view-y', `${view.drop.toFixed(3)}px`);
     setFold(progressRail, foldAt(offset));
-    setRailTarget(links[Math.round(coordinate)] || null);
+    setRailTarget(links[clamp(Math.round(coordinate), 0, links.length - 1)] || null);
   }
 
   // The lens swells the ticks near the pointer and around the cursor, more
@@ -1123,7 +1144,7 @@
   function paintLens() {
     if (!rulerLens || verticalMode) return;
     const travelling = Boolean(scrub) || progressNav?.classList.contains('is-chapter-moving');
-    rulerLens.paint(scrub ? null : hoverOffset, cursorOffset, travelling);
+    rulerLens.paint(scrub ? null : hoverOffset, cursorOffset, travelling || Boolean(markerGlide), progressTrackWidth / chapters.length);
     const at = scrub?.dragging || keyboardCursor ? cursorOffset : hoverOffset;
     if (at === null || !progressTrackWidth) {
       rulerProbe.remove();
@@ -1152,6 +1173,147 @@
     setFold(progressRail, '');
     setRailTarget(null);
   }
+
+  function placeMarker(offset) {
+    const value = `${offset.toFixed(3)}px`;
+    setStyle(progressMarker, '--chapter-marker-x', value);
+    setStyle(progressTrack, '--chapter-marker-x', value);
+    cursorOffset = offset;
+    setFold(progressMarker, foldAt(offset));
+    setFold(progressResponse, foldAt(offset));
+    paintLens();
+  }
+
+  function scrubCatalog(coordinate) {
+    const station = clamp(Math.floor(coordinate + 0.5), 0, chapters.length - 1);
+    window.SiteCatalog?.scrub(station, clamp((coordinate - station + 0.4) / 0.8, 0, 1));
+  }
+
+  function swapLabel(element, value, delay, duration) {
+    if (duration && element.animate) {
+      const old = element.cloneNode(true);
+      old.setAttribute('aria-hidden', 'true');
+      element.parentElement.append(old);
+      const leave = old.animate([{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: '0 -6px' }],
+        { duration, delay, easing: 'ease-in', fill: 'both' });
+      const enter = element.animate([{ opacity: 0, translate: '0 6px' }, { opacity: 1, translate: '0 0' }],
+        { duration, delay: delay + duration, easing: 'ease-out', fill: 'backwards' });
+      const finish = () => {
+        enter.onfinish = null;
+        old.remove();
+        leave.cancel();
+        enter.cancel();
+        labelAnimations.delete(finish);
+      };
+      labelAnimations.add(finish);
+      enter.onfinish = finish;
+    }
+    element.textContent = value;
+  }
+
+  function finishMarkerGlide() {
+    if (!markerGlide) return;
+    const { animation, to } = markerGlide;
+    markerGlide = null;
+    cancelAnimationFrame(glideFrame);
+    animation.onfinish = null;
+    animation.cancel();
+    placeMarker(to);
+  }
+
+  function finishCatalogRuler() {
+    finishMarkerGlide();
+    for (const finish of labelAnimations) finish();
+  }
+
+  function setCatalogRuler(index, fraction = 0.5, { duration = 0, delay = 0, swap = false, speed = 1 } = {}) {
+    if (verticalMode) return;
+    const catalog = index >= 0;
+    const stations = catalog ? catalogStations : homeStations;
+    const selected = catalog ? index : seriesIndex - 1;
+    if (!stations[selected]) return;
+    const animate = !motion.matches && !document.hidden;
+    if (catalog !== catalogLabels) {
+      for (const finish of labelAnimations) finish();
+      catalogLabels = catalog;
+      chapterLabels = stations.map(station => station.name);
+      progressNav?.setAttribute('aria-label', catalog ? '文章目录分类' : '网站章节');
+      links.forEach((link, i) => {
+        link.href = stations[i].hash;
+        const lag = (delay + 40 * i) * speed;
+        const time = animate && swap ? 140 * speed : 0;
+        swapLabel(link.querySelector('.chapter-station-title'), stations[i].name, lag, time);
+        swapLabel(link.querySelector('.chapter-station-subtitle'), stations[i].code, lag, time);
+      });
+    }
+    links.forEach((link, i) => {
+      if ((i === selected) === link.hasAttribute('aria-current')) return;
+      if (i === selected) link.setAttribute('aria-current', 'location');
+      else link.removeAttribute('aria-current');
+    });
+    const offset = (selected + fraction) * progressTrackWidth / chapters.length;
+    const percent = (catalog ? offset / Math.max(1, progressTrackWidth) : selected / (chapters.length - 1)) * 100;
+    setStyle(progressNav, '--chapter-active-index', String(selected));
+    setStyle(progressNav, '--chapter-position', (selected + fraction - 0.5).toFixed(5));
+    setStyle(progressNav, '--site-progress', (percent / 100).toFixed(5));
+    setFold(progressScan, foldAt((selected + 0.5) * progressTrackWidth / chapters.length));
+    const sliderValue = percent.toFixed(1);
+    if (lastSliderValue !== sliderValue) progressMarker?.setAttribute('aria-valuenow', sliderValue);
+    lastSliderValue = sliderValue;
+    const label = `${stations[selected].name}，${Math.round(percent)}%`;
+    if (progressMarker?.getAttribute('aria-valuetext') !== label) progressMarker?.setAttribute('aria-valuetext', label);
+    if (markerGlide?.to === offset) return;
+    finishMarkerGlide();
+    if (catalogHeld && offset !== cursorOffset && !duration) {
+      lastIdleActivity = performance.now();
+      clearIdle();
+      updateProgressFeedback(offset, true, false, currentIndex, currentIndex);
+      scheduleIdle(renderedScroll);
+    }
+    if (!animate || !duration || !progressMarker?.animate || cursorOffset === offset) { placeMarker(offset); return; }
+    const from = cursorOffset;
+    // The marker changes projection at each hinge. Sample the same timeline for its fold and lens.
+    const animation = progressMarker.animate([], { duration: duration * speed, delay: delay * speed, fill: 'both',
+      easing: 'cubic-bezier(0.65, 0, 0.35, 1)' });
+    markerGlide = { animation, to: offset };
+    const paint = () => {
+      const progress = animation.effect.getComputedTiming().progress ?? 0;
+      placeMarker(from + (offset - from) * progress);
+      glideFrame = requestAnimationFrame(paint);
+    };
+    animation.onfinish = finishMarkerGlide;
+    paint();
+  }
+
+  function measureCatalogDock() {
+    if (verticalMode) {
+      window.dispatchEvent(new CustomEvent('site:catalog-layout', { detail: { dock: true } }));
+      return;
+    }
+    const held = catalogHeld;
+    catalogHeld = false;
+    resetPointerParallax(true);
+    goTo(seriesIndex, { historyMode: null, instant: true });
+    catalogHeld = held;
+  }
+
+  window.SiteChapters = {
+    get catalogHeld() { return catalogHeld; },
+    holdCatalog() {
+      if (catalogHeld) return;
+      measureCatalogDock();
+      catalogHeld = true;
+    },
+    releaseCatalog() {
+      if (!catalogHeld) return;
+      finishCatalogRuler();
+      setCatalogRuler(-1);
+      catalogHeld = false;
+      if (verticalMode) window.dispatchEvent(new CustomEvent('site:catalog-layout'));
+      else if (available()) measure();
+    },
+    measureCatalogDock, setCatalogRuler, finishCatalogRuler,
+  };
 
   function hoverRail(event) {
     if (!available() || event.pointerType !== 'mouse' || event.buttons) { clearRailHover(); return; }
@@ -1200,6 +1362,7 @@
   progressMarker?.addEventListener('blur', () => setClass(progressMarker, 'is-pointer-focused', false));
 
   progressMarker?.addEventListener('keydown', event => {
+    if (catalogHeld) return;
     if (!['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) setClass(progressMarker, 'is-pointer-focused', false);
     if (event.code === 'Escape' && scrub) { event.preventDefault(); finishScrub(); resetPointerParallax(true); return; }
     if (!available() || blocked() || transition?.direction || y() < entry - 1
@@ -1338,7 +1501,7 @@
   }
 
   window.addEventListener('wheel', event => {
-    if (!available()) return;
+    if (!available() || catalogHeld) return;
     if (scrub) { if (!event.ctrlKey && !event.metaKey) event.preventDefault(); return; }
     noteIdleActivity();
     scheduleIdle();
@@ -1374,7 +1537,7 @@
   }, { passive: false });
 
   document.addEventListener('keydown', event => {
-    if (!available()) return;
+    if (!available() || catalogHeld) return;
     if (['Home', 'End', 'ArrowDown', 'ArrowRight', 'PageDown', 'Space', 'ArrowUp', 'ArrowLeft', 'PageUp'].includes(event.code)) {
       noteIdleActivity();
       scheduleIdle();
@@ -1414,7 +1577,7 @@
   });
 
   window.addEventListener('touchstart', event => {
-    if (!available()) return;
+    if (!available() || catalogHeld) return;
     touching = event.touches.length > 0;
     noteIdleActivity();
     touch = event.touches.length === 1 && !scrub && !interactive(event.target) && !blocked()
@@ -1422,7 +1585,7 @@
     if (touch && !transition?.entrance) stop();
   }, { passive: true });
   window.addEventListener('touchmove', event => {
-    if (!available()) return;
+    if (!available() || catalogHeld) return;
     noteIdleActivity();
     if (!active || !touch || blocked() || event.touches.length !== 1) return;
     const dx = touch.x - event.touches[0].clientX;
@@ -1471,15 +1634,6 @@
     goTo(index, { focus: true, entrance: index === 0 || (y() < entry - 2 && index > 0) });
   });
 
-  window.addEventListener('site:category', event => {
-    if (!available() || blocked()) return;
-    const index = sections.findIndex(section => section.id === 'journal');
-    if (index < 0) return;
-    event.preventDefault();
-    sections[index].scrollTop = 0;
-    goTo(index, { historyMode: null, focus: true });
-  });
-
   document.addEventListener('submit', event => {
     if (!available() || blocked() || event.target.id !== 'post-search') return;
     const index = sections.findIndex(section => section.id === 'journal');
@@ -1490,15 +1644,18 @@
   });
 
   function restoreHash() {
+    if (catalogHeld) return;
     if (!available()) { pendingHash = true; return; }
     pendingHash = false;
-    const index = sections.findIndex(section => `#${section.id}` === window.location.hash);
+    const hash = window.location.hash;
+    const index = catalogStations.some(station => station.hash === hash)
+      ? seriesIndex : sections.findIndex(section => `#${section.id}` === hash);
     if (index >= 0) goTo(index, { historyMode: null, instant: true });
     else { stop(); queueUpdate(); }
   }
 
   function reflow() {
-    if (!available()) return;
+    if (!available() || catalogHeld) return;
     resetPointerParallax(true);
     if (!positions.length) { measure(); return; }
     const previousPosition = suspendedPosition ?? position();
@@ -1543,11 +1700,15 @@
     // Programmatic movement updates synchronously. Its later native scroll
     // event must not create a second animation chain for the same position.
     if (!available() || settingScroll || y() === renderedScroll) return;
+    if (catalogHeld) {
+      if (positions[seriesIndex] !== undefined) window.scrollTo({ top: positions[seriesIndex], behavior: 'instant' });
+      return;
+    }
     noteIdleActivity();
     queueUpdate();
   }, { passive: true });
   document.addEventListener('scroll', event => {
-    if (!available()) return;
+    if (!available() || catalogHeld) return;
     const group = groupsByChapter.get(event.target?.closest?.('.chapter-section'));
     if (!group) return;
     clampChapterScroll(group);
@@ -1558,9 +1719,9 @@
   }, { passive: true, capture: true });
   window.addEventListener('resize', reflow, { passive: true });
   window.addEventListener('hashchange', restoreHash);
-  window.addEventListener('popstate', () => { if (available()) { stop(); queueUpdate(); } });
+  window.addEventListener('popstate', () => { if (available() && !catalogHeld) { stop(); queueUpdate(); } });
   window.addEventListener('site:revealed', () => {
-    if (!available()) return;
+    if (!available() || catalogHeld) return;
     if (suspendedPosition !== null || !positions.length) { resumeLayout(); return; }
     noteIdleActivity(); measure(); if (window.location.hash) restoreHash();
   });
@@ -1670,6 +1831,8 @@
     const vertical = Boolean(event.detail?.vertical);
     if (vertical === verticalMode) return;
     if (vertical) {
+      finishCatalogRuler();
+      if (catalogLabels) setCatalogRuler(-1);
       standDown();
       verticalMode = true;
       rulerProbe?.remove();

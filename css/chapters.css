@@ -228,10 +228,10 @@ html.has-chapters .home-page .journal-section > * { flex-shrink: 0; }
 }
 .home-page .chapter-panel > .chapter-panel-light { display: none; }
 .home-page .chapter-section .accent,
-.home-page .chapter-section .eyebrow > span,
+.home-page .chapter-section .eyebrow > span:first-child,
 .home-page .chapter-section .text-link span { color: var(--chapter-accent); }
 .home-page .chapter-section .eyebrow { font-size: 10px; letter-spacing: 0.16em; color: var(--chapter-muted); }
-.home-page .chapter-section .eyebrow > span { margin-right: 14px; }
+.home-page .chapter-section .eyebrow > span:first-child { margin-right: 14px; }
 /* Chapter titles share one weight and end with the Hero's orange square. */
 .home-page .chapter-section :is(.category-heading, .section-heading, .archive-heading) h2 { font-weight: 600; letter-spacing: 0.02em; }
 .home-page .chapter-section h2 > .accent {
@@ -459,14 +459,14 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     z-index: -1;
     pointer-events: none;
   }
-  html.has-chapters .home-page .chapter-panel > .chapter-panel-light::before,
-  html.has-chapters .home-page .chapter-panel > .chapter-panel-light::after {
+  html.has-chapters .home-page :is(.chapter-panel, .category-column) > .chapter-panel-light::before,
+  html.has-chapters .home-page :is(.chapter-panel, .category-column) > .chapter-panel-light::after {
     content: "";
     position: absolute;
     inset: 0;
     pointer-events: none;
   }
-  html.has-chapters .home-page .chapter-panel > .chapter-panel-light::before {
+  html.has-chapters .home-page :is(.chapter-panel, .category-column) > .chapter-panel-light::before {
     /* Light remains local to the upper-left edge. The gradient is static;
        only its opacity follows the surface normal, without washing out copy. */
     background: radial-gradient(ellipse 42% 72% at 0% 8%,
@@ -474,15 +474,15 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
       light-dark(rgb(13 15 17 / 0.3%), rgb(232 234 237 / 0.3%)) 56%, transparent 82%);
     opacity: var(--chapter-light-left, 0);
   }
-  html.has-chapters .home-page .chapter-panel > .chapter-panel-light::after {
+  html.has-chapters .home-page :is(.chapter-panel, .category-column) > .chapter-panel-light::after {
     background: radial-gradient(ellipse 48% 88% at 100% 85%,
       light-dark(rgb(0 0 0 / 4.1%), rgb(0 0 0 / 9%)), light-dark(rgb(0 0 0 / 1.8%), rgb(0 0 0 / 4%)) 32%, transparent 82%);
     opacity: var(--chapter-light-right, 0);
   }
   /* The Hero transition changes this opacity every frame. Separate layers
      blend it on the compositor instead of repainting each whole panel. */
-  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel > .chapter-panel-light::before,
-  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel > .chapter-panel-light::after {
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page :is(.chapter-panel, .category-column) > .chapter-panel-light::before,
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page :is(.chapter-panel, .category-column) > .chapter-panel-light::after {
     will-change: opacity;
   }
   html.has-chapters .home-page .chapter-section :where(
@@ -669,7 +669,7 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     transform-origin: left center;
     animation: chapter-settle-line 240ms cubic-bezier(0.16, 1, 0.3, 1);
   }
-  html.has-chapters .home-page .chapter-panel.is-chapter-calibrating :is(.eyebrow > span, .connection-number) {
+  html.has-chapters .home-page .chapter-panel.is-chapter-calibrating :is(.eyebrow > span:first-child, .connection-number) {
     animation: chapter-settle-mark 180ms ease-out 60ms;
   }
   html.has-chapters .home-page .chapter-panel.is-chapter-calibrating :is(.about-calibration, .series-path-mark) > span {
@@ -682,7 +682,7 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel.is-chapter-calibrating::before,
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel.is-chapter-calibrating::after,
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel.is-chapter-calibrating :is(.about-calibration, .connection-rule)::before,
-  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel.is-chapter-calibrating :is(.eyebrow > span, .connection-number),
+  html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel.is-chapter-calibrating :is(.eyebrow > span:first-child, .connection-number),
   html.has-chapters:is(.is-chapter-entering, .is-chapter-leaving) .home-page .chapter-panel.is-chapter-calibrating :is(.about-calibration, .series-path-mark) > span { animation: none; }
 }
 @keyframes chapter-settle-rule {

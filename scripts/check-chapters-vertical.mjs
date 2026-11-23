@@ -125,18 +125,25 @@ async function waitFor(page, expression, timeout = 6000) {
   throw new Error(`timed out waiting for ${expression}`);
 }
 
-async function viewport(page, { width, height, mobile }) {
-  await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile }, page.sessionId);
+async function viewport(page, { width, height, mobile, deviceScaleFactor = 1 }) {
+  await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor, mobile }, page.sessionId);
   await send('Emulation.setTouchEmulationEnabled', mobile ? { enabled: true, maxTouchPoints: 5 } : { enabled: false }, page.sessionId);
 }
 
-async function open(path = '/', { width = 390, height = 844, mobile = true, reduced = false } = {}) {
+async function open(path = '/', { width = 390, height = 844, mobile = true, deviceScaleFactor = 1, reduced = false, beforeScripts } = {}) {
   const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
   const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
   const page = { targetId, sessionId };
   await send('Page.enable', {}, sessionId);
   await send('Runtime.enable', {}, sessionId);
-  await viewport(page, { width, height, mobile });
+  if (beforeScripts) {
+    await send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `document.addEventListener('readystatechange', () => {
+        if (document.readyState === 'interactive') { ${beforeScripts} }
+      });`,
+    }, sessionId);
+  }
+  await viewport(page, { width, height, mobile, deviceScaleFactor });
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: reduced ? 'reduce' : 'no-preference' }] }, sessionId);
   await send('Page.navigate', { url: origin + path }, sessionId);
   await waitFor(page, "document.readyState === 'complete' && !document.documentElement.classList.contains('is-loading')", 10000);
@@ -200,6 +207,16 @@ async function click(page, x, y) {
   await mouse(page, 'mouseMoved', x, y);
   await mouse(page, 'mousePressed', x, y, 1);
   await mouse(page, 'mouseReleased', x, y);
+}
+async function clickLink(page, selector) {
+  const point = await evaluate(page, `(() => {
+    const link = document.querySelector(${JSON.stringify(selector)});
+    const box = link.getBoundingClientRect();
+    const x = box.left + box.width / 2, y = box.top + box.height / 2;
+    return { x, y, reachable: link.contains(document.elementFromPoint(x, y)) };
+  })()`);
+  assert.ok(point.reachable, `${selector} can be clicked where it is painted`);
+  await click(page, point.x, point.y);
 }
 async function drag(page, x, from, to) {
   await mouse(page, 'mouseMoved', x, from);
@@ -477,7 +494,7 @@ test('the tape is one control: tap the axis, drag it, or tap a name', { skip }, 
   await close(page);
 });
 
-test('section links, categories, search and linked URLs land on their chapter', { skip }, async () => {
+test('section links, catalog search and linked URLs land on their chapter', { skip }, async () => {
   let page = await open();
   await scroll(page, (await state(page)).entry);
   const journalLanding = async () => (await sectionTop(page, 'journal')) - (await state(page)).header - 8;
@@ -485,15 +502,15 @@ test('section links, categories, search and linked URLs land on their chapter', 
   await sleep(1100);
   assert.ok(Math.abs((await state(page)).y - await journalLanding()) <= 2, 'the About card opens the journal');
   await scroll(page, (await sectionTop(page, 'series')) - 78);
-  await evaluate(page, "document.querySelector('#series a[data-category-link]').click()");
-  await sleep(1100);
+  await evaluate(page, "document.querySelector('#series a[data-catalog-link]').click()");
+  await waitFor(page, "document.documentElement.matches('.is-catalog:not(.is-catalog-transitioning)')");
   let now = await state(page);
-  assert.ok(Math.abs(now.y - await journalLanding()) <= 2, 'a category opens the journal');
-  assert.match(now.search, /category=/);
-  await scroll(page, (await state(page)).entry);
+  assert.equal(now.hash, '#catalog-minecraft');
+  assert.equal(now.current, '分类');
   await evaluate(page, "(document.querySelector('#post-search input').value = 'x', document.querySelector('#post-search').requestSubmit(), 1)");
   await sleep(1100);
   assert.ok(Math.abs((await state(page)).y - await journalLanding()) <= 2, 'a search shows its results in the journal');
+  assert.equal(await evaluate(page, "document.documentElement.classList.contains('is-catalog')"), false);
   await close(page);
 
   page = await open('/#archive');
@@ -501,6 +518,626 @@ test('section links, categories, search and linked URLs land on their chapter', 
   assert.ok(Math.abs(now.y - Math.min((await sectionTop(page, 'archive')) - now.header - 8, now.height - 844)) <= 2, 'a linked chapter opens on load');
   assert.equal(now.current, '归档');
   await close(page);
+});
+
+const desktop = { width: 1600, height: 860, mobile: false };
+const phone = { width: 390, height: 844, mobile: true };
+const slugs = ['minecraft', 'daydreams', 'collected', 'other'];
+const homeLabels = ['关于', '分类', '最新文章', '归档'];
+const catalogLabels = ['Minecraft', '白日梦话', '神秘文案', '其他'];
+const cover = slug => `.category-cover[href="#catalog-${slug}"]`;
+const catalogSelector = slug => `[data-category-slug="${slug}"] .catalog-block`;
+const catalogStation = slug => `.chapter-progress-links a[href="#catalog-${slug}"] .chapter-station-title`;
+
+function withArticles(groups, perGroup) {
+  // Use the builder's real markup for overflow without publishing fixture posts.
+  return `{
+    const row = document.querySelector('[data-category-slug="minecraft"] .catalog-row');
+    const group = row.querySelector('section').cloneNode(true);
+    const card = group.querySelector('li').cloneNode(true);
+    row.replaceChildren();
+    for (let i = 0; i < ${groups}; i++) {
+      const section = group.cloneNode(true);
+      const name = '测试分组 ' + (i + 1);
+      section.setAttribute('aria-label', name);
+      section.querySelector('h3').textContent = name;
+      section.querySelector('.catalog-group-count').textContent = String(${perGroup}).padStart(2, '0');
+      const list = section.querySelector('ol');
+      list.replaceChildren();
+      for (let j = 0; j < ${perGroup}; j++) {
+        const item = card.cloneNode(true);
+        item.querySelector('.catalog-card-index').textContent = String(j + 1).padStart(2, '0');
+        item.querySelector('.catalog-card-title').textContent = '测试文章 ' + (i * ${perGroup} + j + 1);
+        list.append(item);
+      }
+      row.append(section);
+    }
+  }`;
+}
+
+async function settledCatalog(page, slug) {
+  const condition = slug
+    ? `location.hash === '#catalog-${slug}' && document.querySelector('[data-category-slug="${slug}"].is-catalog-open .catalog-block:not([hidden]):not([inert])')`
+    : `location.hash === '#series' && !document.documentElement.classList.contains('is-catalog')`;
+  await waitFor(page, `(${condition}) && !document.documentElement.classList.contains('is-catalog-transitioning')`);
+}
+
+function readBoard(page) {
+  return evaluate(page, `(() => {
+    const one = selector => document.querySelector(selector);
+    const rect = node => {
+      const { left, right, top, bottom, width, height } = node.getBoundingClientRect();
+      return { left, right, top, bottom, width, height };
+    };
+    const columns = [...document.querySelectorAll('#category-surface .category-column')];
+    const neighbors = [...document.querySelectorAll('.chapter-section:not(#series) :is(.chapter-panel, [data-depth-owner])')];
+    const ink = node => {
+      let opacity = 1;
+      for (; node; node = node.parentElement) opacity *= Number(getComputedStyle(node).opacity);
+      return opacity;
+    };
+    const visibleText = node => [...node.childNodes].map(child =>
+      child.nodeType === Node.TEXT_NODE ? child.textContent : ink(child) > 0.01 ? visibleText(child) : '').join('');
+    const group = one('.is-catalog-open .catalog-block');
+    const panel = one('#category-surface');
+    const facet = col => {
+      const light = col.querySelector('.category-facet-light');
+      return light.getClientRects().length ? rect(light) : rect(panel);
+    };
+    const column = group?.closest('.category-column');
+    const tracked = [one('#series'), panel, one('.category-heading'), one('.category-heading h2'),
+      one('.category-heading-text'), one('.category-heading .accent'), ...columns,
+      ...document.querySelectorAll('.catalog-block, .chapter-section:not(#series)'), ...neighbors];
+    return {
+      title: visibleText(one('.category-heading-text')),
+      name: one('#series-title').getAttribute('aria-label'),
+      eyebrow: one('.category-heading .eyebrow').textContent.trim().replace(/\\s+/g, ' '),
+      labels: [...document.querySelectorAll('.chapter-progress-links > a')].map(link => link.querySelector('.chapter-station-title').textContent),
+      links: [...document.querySelectorAll('.chapter-progress-links > a')].map(link => link.hash),
+      subs: [...document.querySelectorAll('.chapter-progress-links > a')].map(link => link.querySelector('.chapter-station-subtitle').textContent),
+      rulerName: one('.chapter-progress').getAttribute('aria-label'),
+      active: columns.map(col => col.classList.contains('is-catalog-open')),
+      blocks: columns.map(col => { const block = col.querySelector('.catalog-block'); return [block.hidden, block.inert]; }),
+      widths: columns.map(col => col.offsetWidth),
+      displays: columns.map(col => col.querySelector('.category-display').offsetWidth),
+      folds: columns.map(col => getComputedStyle(col).transform.startsWith('matrix3d')),
+      board: [facet(columns[0]).left, facet(columns.at(-1)).right],
+      columns: columns.map(rect),
+      openColumn: column && rect(column),
+      display: column && rect(column.querySelector('.category-display')),
+      items: group && [...group.querySelectorAll('.catalog-card, .catalog-empty')].map(rect),
+      overflow: group && group.scrollWidth - group.clientWidth,
+      fades: group && ['left', 'right'].map(side =>
+        parseFloat(getComputedStyle(group).getPropertyValue('--catalog-' + side + '-fade'))),
+      heading: rect(one('.category-heading')),
+      ruleEnd: rect(one('.category-heading-rule')).right,
+      frame: [rect(one('.site-header .site-brand')).left, rect(one('.site-header .header-tools')).right],
+      y: scrollY, runway: one('#chapter-scroll').style.height, slot: one('#series').offsetWidth,
+      neighbors: neighbors.map(el => ({ top: rect(el).top, ink: ink(el) })),
+      cards: group && [...group.querySelectorAll('ol a')].map(ink),
+      // Chapter depth owns these inline variables before a catalog opens.
+      styles: tracked.map(node => [...node.style].filter(key => !key.startsWith('--chapter-')).map(key => [key, node.style.getPropertyValue(key)])),
+    };
+  })()`);
+}
+
+function near(value, expected, tolerance, label) {
+  assert.ok(Math.abs(value - expected) <= tolerance, `${label}: got ${value}, expected ${expected} ±${tolerance}`);
+}
+
+function checkHeading(view) {
+  near(view.heading.left, Math.max(view.board[0], view.frame[0]), 1, 'heading starts at the visible board');
+  near(view.ruleEnd, Math.min(view.board[1], view.frame[1]), 1, 'rule ends at the visible board');
+}
+
+function checkFullRow(view) {
+  assert.ok(view.items.length > 0);
+  for (const item of view.items) {
+    assert.ok(item.left >= view.display.left - 1 && item.right <= view.display.right + 1,
+      `card [${item.left}, ${item.right}] fits display [${view.display.left}, ${view.display.right}]`);
+    assert.ok(item.left >= view.frame[0] - 1 && item.right <= view.frame[1] + 1, 'the entire card is inside the frames');
+  }
+  assert.equal(view.overflow, 0);
+  assert.deepEqual(view.fades, [0, 0]);
+}
+
+async function checkRestored(page, baseline) {
+  await settledCatalog(page, '');
+  const view = await readBoard(page);
+  assert.equal(view.title, '分类');
+  assert.equal(view.eyebrow, '02 CATEGORIES');
+  assert.equal(view.name, baseline.name);
+  assert.deepEqual(view.labels, homeLabels);
+  assert.deepEqual(view.board, baseline.board);
+  assert.deepEqual(view.heading, baseline.heading);
+  assert.equal(view.ruleEnd, baseline.ruleEnd);
+  assert.deepEqual(view.widths, baseline.widths);
+  assert.deepEqual(view.displays, baseline.displays);
+  assert.deepEqual(view.styles, baseline.styles, 'closing removes temporary inline styles');
+  assert.deepEqual(view.blocks, Array(4).fill([true, true]));
+  assert.deepEqual(view.folds, Array(4).fill(false));
+  assert.equal(view.y, baseline.y);
+  await markerAt(page, 2, 0.5);
+}
+
+async function markerAt(page, cell, fraction) {
+  const point = await evaluate(page, RULER_POINT(cell, fraction));
+  const marker = await evaluate(page, MARKER);
+  near(marker.x, point.x, 2, `ruler cell ${cell} at ${Math.round(fraction * 100)}%`);
+}
+
+async function press(page, key) {
+  const codes = { Escape: 27, Home: 36, End: 35, Tab: 9, PageDown: 34, ArrowLeft: 37 };
+  const params = { key, code: key, windowsVirtualKeyCode: codes[key] };
+  await send('Input.dispatchKeyEvent', { ...params, type: 'keyDown' }, page.sessionId);
+  await send('Input.dispatchKeyEvent', { ...params, type: 'keyUp' }, page.sessionId);
+}
+
+async function wheel(page, deltaX, deltaY) {
+  await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 800, y: 430, deltaX, deltaY }, page.sessionId);
+}
+
+test('a category opens inside its docked panel and a switch moves the expansion', { skip }, async () => {
+  const page = await open('/#series', desktop);
+  try {
+    const home = await readBoard(page);
+    await clickLink(page, cover('minecraft'));
+    await settledCatalog(page, 'minecraft');
+    const view = await readBoard(page);
+    assert.equal(view.title, '文章目录');
+    assert.equal(view.name, '文章目录');
+    assert.equal(view.eyebrow, '02 ARTICLE INDEX');
+    assert.deepEqual(view.labels, catalogLabels);
+    assert.deepEqual(view.links, slugs.map(slug => '#catalog-' + slug));
+    assert.deepEqual(view.subs, ['GAME JOURNAL', 'DAYDREAMS', 'COLLECTED WORDS', 'MISCELLANY']);
+    assert.equal(view.rulerName, '文章目录分类');
+    assert.ok(view.displays[0] > home.displays[0]);
+    assert.deepEqual(view.widths.slice(1), home.widths.slice(1));
+    assert.deepEqual(view.blocks, [[false, false], [true, true], [true, true], [true, true]]);
+    assert.deepEqual(view.folds, [true, false, false, true]);
+    const material = await evaluate(page, `(() => {
+      const panel = document.querySelector('#category-surface');
+      const facets = [...panel.querySelectorAll('.category-facet-light')];
+      return {
+        flat: getComputedStyle(panel.querySelector(':scope > .chapter-panel-light')).display,
+        background: getComputedStyle(panel).backgroundImage,
+        shadow: getComputedStyle(panel).boxShadow,
+        lit: facets.map(el => getComputedStyle(el, '::before').backgroundSize),
+        glass: facets.map(el => getComputedStyle(el).backgroundColor),
+      };
+    })()`);
+    assert.deepEqual([material.flat, material.background, material.shadow], ['none', 'none', 'none']);
+    assert.ok(material.lit.every(size => parseFloat(size) > 1000), 'each facet samples the common panel light');
+    assert.ok(material.glass.every(color => color !== 'rgba(0, 0, 0, 0)'), 'each facet carries the panel material');
+    assert.ok(view.neighbors.length > 0 && view.neighbors.every(neighbor => neighbor.ink === 0));
+    near(view.board[0], home.board[0], 1, 'left panel edge');
+    assert.ok(view.board[1] <= view.frame[1] + 1, 'this single article fits beside all three neighbours');
+    checkHeading(view);
+    checkFullRow(view);
+    assert.equal(view.y, home.y);
+    assert.equal(view.runway, home.runway);
+    assert.equal(view.slot, home.slot);
+    await markerAt(page, 1, 0.5);
+    await wheel(page, 0, 650);
+    await press(page, 'End');
+    await sleep(300);
+    assert.equal((await state(page)).y, home.y);
+    assert.equal((await state(page)).hash, '#catalog-minecraft');
+
+    await clickLink(page, cover('collected'));
+    await settledCatalog(page, 'collected');
+    const switched = await readBoard(page);
+    assert.deepEqual(switched.active, [false, false, true, false]);
+    assert.equal(switched.widths[0], home.widths[0]);
+    assert.ok(switched.displays[2] > home.displays[2]);
+    assert.equal(switched.title, '文章目录');
+    await markerAt(page, 3, 0.5);
+    await clickLink(page, '.chapter-progress-links a[href="#catalog-minecraft"] .chapter-station-title');
+    await evaluate(page, 'history.back()');
+    await settledCatalog(page, 'collected');
+    await clickLink(page, '.chapter-progress-links a[href="#catalog-minecraft"] .chapter-station-title');
+    await settledCatalog(page, 'minecraft');
+    const card = catalogSelector('minecraft') + ' ol a';
+    const path = await evaluate(page, `document.querySelector(${JSON.stringify(card)}).pathname`);
+    await clickLink(page, card);
+    await waitFor(page, `location.pathname === ${JSON.stringify(path)} && document.readyState === 'complete'`);
+  } finally { await close(page); }
+});
+
+test('a catalog that fits keeps its docked left edge for every category', { skip }, async () => {
+  for (const [width, height] of [[1280, 720], [1600, 860]]) {
+    const page = await open('/#series', { ...desktop, width, height });
+    try {
+      const home = await readBoard(page);
+      for (const slug of slugs) {
+        await clickLink(page, slug === slugs[0] ? cover(slug) : catalogStation(slug));
+        await settledCatalog(page, slug);
+        const view = await readBoard(page);
+        near(view.board[0], home.board[0], 1, `${width}px ${slug} keeps the board anchored`);
+        assert.ok(view.columns.at(-1).right <= view.frame[1] + 1, 'all four columns fit');
+        checkFullRow(view);
+        checkHeading(view);
+      }
+    } finally { await close(page); }
+  }
+});
+
+test('the narrow catalog slides toward the first slot and stops at the docked panel end', { skip }, async () => {
+  const page = await open('/#series', { ...desktop, width: 871, height: 817, deviceScaleFactor: 2 });
+  try {
+    const home = await readBoard(page);
+    function checkOther(view) {
+      checkHeading(view);
+      checkFullRow(view);
+      assert.ok(view.board[0] < home.board[0] - 1, 'the board yields to the last category');
+      assert.ok(view.openColumn.left >= view.frame[0] - 1);
+      near(view.openColumn.right, view.frame[1], 1, 'the last category lands on the right frame');
+    }
+    const slot = home.columns[0].left;
+    await clickLink(page, cover('daydreams'));
+    await seekCatalog(page, 430);
+    const opening = await readBoard(page);
+    checkHeading(opening);
+    await seekCatalog(page, 1200);
+    await settledCatalog(page, 'daydreams');
+    const daydreams = await readBoard(page);
+    checkHeading(daydreams);
+    checkFullRow(daydreams);
+    near(daydreams.openColumn.left, slot, 6, 'daydreams reaches the first slot');
+    near(daydreams.columns.at(-1).right, home.board[1], 1, 'the last column stops at the docked panel end');
+    assert.ok(daydreams.columns[0].left < 0 && daydreams.columns[0].right <= slot + 6,
+      'the preceding column slides off the left edge and clears the first slot');
+    assert.ok(opening.board[0] > daydreams.board[0] && opening.board[0] < home.board[0]);
+    assert.ok(opening.widths[1] > home.widths[1] && opening.widths[1] < daydreams.widths[1]);
+
+    await clickLink(page, catalogStation('other'));
+    await seekCatalog(page, 380);
+    const switching = await readBoard(page);
+    checkHeading(switching);
+    await seekCatalog(page, 900);
+    await settledCatalog(page, 'other');
+    const last = await readBoard(page);
+    checkOther(last);
+    near(switching.board[0], (daydreams.board[0] + last.board[0]) / 2, 1, 'the slide is halfway through the move');
+    near(switching.widths[3], (daydreams.widths[3] + last.widths[3]) / 2, 1, 'the width follows the same move');
+
+    await clickLink(page, catalogStation('minecraft'));
+    await settledCatalog(page, 'minecraft');
+    const minecraft = await readBoard(page);
+    checkHeading(minecraft);
+    checkFullRow(minecraft);
+    near(minecraft.openColumn.left, slot, 2, 'the folded Minecraft column keeps the first slot');
+    near(minecraft.board[0], home.board[0], 1, 'the first category grows from the docked left edge');
+    const shifts = minecraft.columns.slice(1).map((column, i) => column.left - home.columns[i + 1].left);
+    assert.ok(shifts[0] > 1);
+    for (const shift of shifts.slice(1)) near(shift, shifts[0], 1, 'each neighbour moves with the gain');
+    assert.ok(minecraft.board[1] > minecraft.frame[1] + 1, 'the last facet crosses the right frame');
+    await clickLink(page, '.catalog-back');
+    await checkRestored(page, home);
+
+    await clickLink(page, cover('collected'));
+    await settledCatalog(page, 'collected');
+    const collected = await readBoard(page);
+    checkHeading(collected);
+    checkFullRow(collected);
+    near(collected.columns.at(-1).right, home.board[1], 1, 'the docked end limits the slide for collected');
+    near(collected.columns[1].left, slot, 6, 'daydreams occupies the first slot');
+    near(collected.openColumn.left, collected.columns[1].right, 1, 'collected stays directly after daydreams');
+    await clickLink(page, '.catalog-back');
+    await seekCatalog(page, 380);
+    const closing = await readBoard(page);
+    checkHeading(closing);
+    assert.ok(closing.board[0] > collected.board[0] && closing.board[0] < home.board[0]);
+    assert.ok(closing.widths[2] > home.widths[2] && closing.widths[2] < collected.widths[2]);
+    await seekCatalog(page, 1100);
+    await checkRestored(page, home);
+
+    // Exercise a real article as well as the last category's empty card.
+    await evaluate(page, `document.querySelector('[data-category-slug="other"] .catalog-row')
+      .replaceChildren(document.querySelector('[data-category-slug="minecraft"] .catalog-group').cloneNode(true))`);
+    await clickLink(page, cover('minecraft'));
+    await settledCatalog(page, 'minecraft');
+    await clickLink(page, '.chapter-progress-links a[href="#catalog-other"] .chapter-station-title');
+    await seekCatalog(page, 380);
+    const moving = await readBoard(page);
+    checkHeading(moving);
+    await seekCatalog(page, 900);
+    await settledCatalog(page, 'other');
+    const other = await readBoard(page);
+    checkOther(other);
+    assert.ok(moving.board[0] > other.board[0] && moving.board[0] < minecraft.board[0],
+      'switching interpolates the shift with the widths');
+    assert.ok(moving.widths[3] > home.widths[3] && moving.widths[3] < other.widths[3]);
+    await clickLink(page, '.catalog-back');
+    await checkRestored(page, home);
+  } finally { await close(page); }
+});
+
+test('a short desktop holds a two-line title and summary inside the open facet', { skip }, async () => {
+  const beforeScripts = `{
+    const card = document.querySelector('[data-category-slug="minecraft"] .catalog-card');
+    card.querySelector('.catalog-card-title').textContent = '在这篇红石笔记里记录一次完整的测试过程';
+    card.querySelector('.catalog-card-summary').textContent = '把观察到的细节按顺序记下来，比较每一步变化，再从头检查整个过程。';
+  }`;
+  const page = await open('/#series', { ...desktop, width: 1280, height: 600, beforeScripts });
+  try {
+    const home = await readBoard(page);
+    await clickLink(page, cover('minecraft'));
+    await settledCatalog(page, 'minecraft');
+    const board = await readBoard(page);
+    assert.equal(board.slot, home.slot);
+    assert.equal(board.runway, home.runway);
+    assert.equal(board.y, home.y);
+
+    const fit = await evaluate(page, `(() => {
+      const col = document.querySelector('.is-catalog-open');
+      const within = (child, parent) => {
+        const inner = col.querySelector(child).getBoundingClientRect();
+        const outer = col.querySelector(parent).getBoundingClientRect();
+        return [inner.top - outer.top, outer.bottom - inner.bottom, inner.left - outer.left, outer.right - inner.right];
+      };
+      const lines = selector => {
+        const el = col.querySelector(selector), style = getComputedStyle(el);
+        return Math.round(el.offsetHeight / parseFloat(style.lineHeight));
+      };
+      return {
+        lines: ['.catalog-card-title', '.catalog-card-summary'].map(lines),
+        group: within('.catalog-group', '.category-display'),
+        footer: within('.category-bottom', '.category-facet-light'),
+        clipped: col.querySelector('.catalog-block').scrollHeight - col.querySelector('.catalog-block').clientHeight,
+      };
+    })()`);
+    assert.deepEqual(fit.lines, [2, 2], 'the fixture exercises both lines of each text field');
+    assert.ok(fit.group.every(gap => gap >= -1) && fit.clipped <= 1, `the group fits the display (${fit.group}; ${fit.clipped}px overflow)`);
+    assert.ok(fit.footer.every(gap => gap >= -1), `the footer fits the folded material (${fit.footer})`);
+  } finally { await close(page); }
+});
+
+test('the back control, Escape and browser Back restore the home panel', { skip }, async () => {
+  const page = await open('/#series', desktop);
+  try {
+    const baseline = await readBoard(page);
+    for (const exit of ['control', 'escape', 'history']) {
+      await clickLink(page, cover('minecraft'));
+      await settledCatalog(page, 'minecraft');
+      if (exit === 'history') await evaluate(page, 'history.back()');
+      else if (exit === 'escape') await press(page, 'Escape');
+      else await clickLink(page, '.catalog-back');
+      await checkRestored(page, baseline);
+    }
+  } finally { await close(page); }
+});
+
+test('a long catalog row spans both frames and scrolls independently of the strip', { skip }, async () => {
+  const page = await open('/#series', { ...desktop, beforeScripts: withArticles(3, 4) });
+  try {
+    const home = await readBoard(page);
+    await clickLink(page, cover('minecraft'));
+    await settledCatalog(page, 'minecraft');
+    const view = await readBoard(page);
+    assert.equal(view.cards.length, 12);
+    near(view.openColumn.left, view.frame[0], 1, 'projected open column left edge');
+    near(view.openColumn.right, view.frame[1], 1, 'projected open column right edge');
+    checkHeading(view);
+    await markerAt(page, 1, 0.1);
+    const read = `document.querySelector(${JSON.stringify(catalogSelector('minecraft'))})`;
+    const fades = () => evaluate(page, `['left', 'right'].map(side =>
+      parseFloat(getComputedStyle(${read}).getPropertyValue('--catalog-' + side + '-fade')))`);
+    const max = await evaluate(page, `${read}.scrollWidth - ${read}.clientWidth`);
+    assert.ok(max > 1000);
+    assert.deepEqual(await fades(), [0, 90]);
+    for (const [x, y] of [[0, 160], [220, 0]]) {
+      const from = await evaluate(page, `${read}.scrollLeft`);
+      await wheel(page, x, y);
+      await waitFor(page, `${read}.scrollLeft > ${from + 5}`);
+    }
+    assert.deepEqual(await fades(), [90, 90]);
+    await press(page, 'End');
+    await waitFor(page, `Math.abs(${read}.scrollLeft - ${max}) < .5 && getComputedStyle(${read}).getPropertyValue('--catalog-right-fade') === '0px'`);
+    await markerAt(page, 1, 0.9);
+    assert.deepEqual(await fades(), [90, 0]);
+    await press(page, 'Home');
+    await waitFor(page, `${read}.scrollLeft < 1`);
+    await markerAt(page, 1, 0.1);
+    await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, page.sessionId);
+    await swipe(page, 800, 490, 350);
+    await waitFor(page, `${read}.scrollLeft > 10`);
+    await send('Emulation.setTouchEmulationEnabled', { enabled: false }, page.sessionId);
+    const fromTouch = await evaluate(page, `${read}.scrollLeft`);
+    await press(page, 'PageDown');
+    await waitFor(page, `${read}.scrollLeft > ${fromTouch + 10}`);
+    const axis = await evaluate(page, RULER_POINT(1, 0.5));
+    await click(page, axis.x, axis.y);
+    await waitFor(page, `Math.abs(${read}.scrollLeft / ${max} - .5) < .02`);
+    const start = await evaluate(page, MARKER);
+    const target = await evaluate(page, RULER_POINT(1, 0.7));
+    await mouse(page, 'mousePressed', start.x, start.y, 1);
+    await mouse(page, 'mouseMoved', target.x, target.y, 1);
+    await mouse(page, 'mouseReleased', target.x, target.y);
+    await waitFor(page, `Math.abs(${read}.scrollLeft / ${max} - .75) < .035`);
+    await press(page, 'Home');
+    await waitFor(page, `${read}.scrollLeft < 1`);
+    await evaluate(page, `[...${read}.querySelectorAll('ol a')].at(-2).focus({preventScroll: true})`);
+    await press(page, 'Tab');
+    await waitFor(page, `(() => {
+      const block = ${read}, last = [...block.querySelectorAll('ol a')].at(-1);
+      const card = last.getBoundingClientRect(), clip = block.getBoundingClientRect();
+      return document.activeElement === last && card.left >= clip.left - 1 && card.right <= clip.right + 1;
+    })()`);
+    assert.equal((await state(page)).y, view.y);
+    const second = await evaluate(page, RULER_POINT(2, 0.5));
+    await click(page, second.x, second.y);
+    await settledCatalog(page, 'daydreams');
+    await clickLink(page, '.chapter-progress-links a[href="#catalog-minecraft"] .chapter-station-title');
+    await settledCatalog(page, 'minecraft');
+    await clickLink(page, '.catalog-back');
+    await checkRestored(page, home);
+  } finally { await close(page); }
+});
+
+// Seeking all live effects also advances the heading's typing clock.
+async function seekCatalog(page, time, action = '') {
+  await evaluate(page, `(async () => {
+    ${action}
+    for (let i = 0; i < 3; i++) {
+      for (const animation of document.getAnimations()) {
+        animation.pause();
+        animation.currentTime = ${time};
+      }
+      await new Promise(requestAnimationFrame);
+    }
+  })()`);
+}
+
+test('catalog frames show the sink, heading rewrite, widening and card stagger', { skip }, async () => {
+  const page = await open('/#series', { ...desktop, beforeScripts: withArticles(1, 3) });
+  try {
+    const home = await readBoard(page);
+    const witness = home.neighbors.findIndex(item => item.ink > .01);
+    assert.ok(witness >= 0);
+    await seekCatalog(page, 0, `document.querySelector(${JSON.stringify(cover('minecraft'))}).click();`);
+    let frame = await readBoard(page);
+    assert.equal(frame.title, '分类');
+    assert.equal(frame.displays[0], home.displays[0]);
+    await seekCatalog(page, 200);
+    const early = await readBoard(page);
+    assert.equal(early.title, '', 'both source glyphs have been erased');
+    assert.ok(early.neighbors[witness].top > home.neighbors[witness].top + 2);
+    assert.equal(await evaluate(page, "getComputedStyle(document.querySelector('.is-catalog-open .category-index-line'), '::after').width"), '24px');
+    await seekCatalog(page, 350);
+    assert.equal(await evaluate(page, "getComputedStyle(document.querySelector('#series-title .accent')).opacity"), '0');
+    await seekCatalog(page, 560);
+    const middle = await readBoard(page);
+    assert.match(middle.title, /^文章?$/);
+    assert.equal(await evaluate(page, "getComputedStyle(document.querySelector('#series-title .accent')).opacity"), '1');
+    assert.ok(middle.neighbors.every(neighbor => neighbor.ink < .01));
+    assert.ok(early.displays[0] > home.displays[0] && middle.displays[0] > early.displays[0]);
+    assert.deepEqual(middle.cards, [0, 0, 0]);
+    await seekCatalog(page, 800);
+    frame = await readBoard(page);
+    assert.ok(frame.displays[0] > middle.displays[0]);
+    assert.ok(frame.cards[0] > frame.cards[1] && frame.cards[1] > frame.cards[2] && frame.cards[2] > 0,
+      `cards appear from left to right (${frame.cards})`);
+    assert.equal(frame.eyebrow, '02 ARTICLE INDEX');
+    await seekCatalog(page, 1200);
+    frame = await readBoard(page);
+    assert.equal(frame.title, '文章目录');
+    assert.deepEqual(frame.cards, [1, 1, 1]);
+    assert.ok(!await evaluate(page, "document.documentElement.classList.contains('is-catalog-transitioning')"));
+  } finally { await close(page); }
+});
+
+test('a chapter hash opens the selected catalog directly on load and reload', { skip }, async () => {
+  const beforeScripts = `{
+    window.animatedCatalogOnLoad = false;
+    const root = document.documentElement;
+    new MutationObserver(records => {
+      if (root.classList.contains('is-catalog-transitioning') || records.some(record =>
+        record.oldValue?.split(' ').includes('is-catalog-transitioning'))) window.animatedCatalogOnLoad = true;
+    }).observe(root, { attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+  }`;
+  const page = await open('/#catalog-daydreams', { ...desktop, beforeScripts });
+  try {
+    for (const reload of [false, true]) {
+      if (reload) {
+        await send('Page.reload', {}, page.sessionId);
+        await waitFor(page, "document.readyState === 'complete' && !document.documentElement.classList.contains('is-loading')");
+      }
+      await settledCatalog(page, 'daydreams');
+      assert.equal((await readBoard(page)).title, '文章目录');
+      assert.equal(await evaluate(page, 'window.animatedCatalogOnLoad'), false);
+      await markerAt(page, 2, 0.5);
+    }
+  } finally { await close(page); }
+});
+
+test('slow catalog transitions finish on theme, resize or visibility changes and queue a return', { skip }, async () => {
+  const page = await open('/?catalogslow=1#series', desktop);
+  try {
+    const choose = `document.querySelector(${JSON.stringify(cover('minecraft'))}).click()`;
+    await seekCatalog(page, 1000, choose);
+    assert.equal((await readBoard(page)).title, '', '1000 ms in slow mode samples the 200 ms typing stage');
+    await evaluate(page, 'SiteTheme.toggle()');
+    await settledCatalog(page, 'minecraft');
+    await evaluate(page, "document.querySelector('.catalog-back').click()");
+    await viewport(page, { ...desktop, width: 1599 });
+    await settledCatalog(page, '');
+    await evaluate(page, `(() => {
+      ${choose};
+      Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+      try { document.dispatchEvent(new Event('visibilitychange')); }
+      finally { delete document.hidden; }
+    })()`);
+    await settledCatalog(page, 'minecraft');
+    await evaluate(page, `document.querySelector(${JSON.stringify(cover('collected'))}).click()`);
+    await evaluate(page, `document.querySelector(${JSON.stringify(cover('other'))}).click()`);
+    assert.equal(await evaluate(page, 'location.hash'), '#catalog-collected');
+    await press(page, 'Escape');
+    await waitFor(page, "location.hash === '#series'", 12000);
+    await waitFor(page, "!document.documentElement.matches('.is-catalog, .is-catalog-transitioning')", 8000);
+  } finally { await close(page); }
+});
+
+test('deep links, reduced motion and both theme palettes render the selected category', { skip }, async () => {
+  for (const theme of ['light', 'dark']) {
+    const page = await open(`/?theme=${theme}#catalog-daydreams`, { ...desktop, reduced: true });
+    try {
+      await settledCatalog(page, 'daydreams');
+      assert.equal((await readBoard(page)).title, '文章目录');
+      await markerAt(page, 2, 0.5);
+      const snap = await evaluate(page, `(() => {
+        document.querySelector(${JSON.stringify(cover('minecraft'))}).click();
+        const root = document.documentElement;
+        const card = document.querySelector('.is-catalog-open .catalog-card');
+        return [location.hash, root.classList.contains('is-catalog-transitioning'), root.dataset.theme, getComputedStyle(card).backgroundColor];
+      })()`);
+      assert.deepEqual(snap, ['#catalog-minecraft', false, theme, theme === 'dark' ? 'rgba(14, 16, 19, 0.3)' : 'rgba(240, 241, 243, 0.3)']);
+      assert.deepEqual((await readBoard(page)).folds, Array(4).fill(false));
+      await clickLink(page, '.site-header .site-brand');
+      await waitFor(page, "location.hash === '#home' && !document.documentElement.classList.contains('is-catalog')");
+    } finally { await close(page); }
+  }
+});
+
+test('the phone expands only the chosen grid cell and keeps the home tape', { skip }, async () => {
+  for (const size of [phone, { ...phone, reduced: true }, { ...phone, width: 844, height: 390 }]) {
+    const page = await open('/#series', { ...size, beforeScripts: withArticles(1, 3) });
+    try {
+      const old = await readBoard(page);
+      await evaluate(page, `document.querySelector(${JSON.stringify(cover('minecraft'))}).click()`);
+      if (size.reduced) assert.equal((await readBoard(page)).title, '文章目录');
+      await settledCatalog(page, 'minecraft');
+      const now = await readBoard(page);
+      assert.deepEqual(now.labels, homeLabels);
+      assert.ok(now.widths[0] > old.widths[0]);
+      assert.deepEqual(now.widths.slice(1), old.widths.slice(1));
+      const grid = await evaluate(page, `(() => {
+        const column = document.querySelector('.is-catalog-open');
+        const width = column.parentElement.clientWidth;
+        const cards = [...column.querySelectorAll('.catalog-card')].map(el => {
+          let top = 0;
+          for (let node = el; node; node = node.offsetParent) top += node.offsetTop;
+          return { top, height: el.offsetHeight, width: el.offsetWidth };
+        });
+        const back = document.querySelector('.catalog-back').getBoundingClientRect();
+        const display = column.querySelector('.category-display');
+        return { width, column: column.offsetWidth, display: display.clientWidth, height: display.clientHeight, cards,
+          back: back.top - document.querySelector('.site-header').getBoundingClientRect().bottom };
+      })()`);
+      near(grid.column, grid.width, 1, 'phone cell spans its grid');
+      assert.ok(grid.height >= grid.cards.reduce((height, card) => height + card.height, 0) + 20, 'the display contains every card');
+      assert.ok(grid.back >= 0);
+      for (const [index, card] of grid.cards.entries()) {
+        near(card.width, grid.display - 32, 1, 'phone card gutters');
+        if (index) near(card.top - grid.cards[index - 1].top - grid.cards[index - 1].height, 10, 1, 'phone card spacing');
+      }
+      assert.equal((await state(page)).width, size.width);
+      await scroll(page, now.y + 450);
+      await clickLink(page, '.catalog-back');
+      await settledCatalog(page, '');
+      near((await state(page)).y, old.y, 2, 'return to the phone category heading');
+    } finally { await close(page); }
+  }
 });
 
 test('each region tilts as one straight plate, flat in the middle and leaning in at the edges', { skip }, async () => {
