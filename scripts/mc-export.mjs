@@ -11,8 +11,8 @@ import { blockStateName, readStateRegistry } from './mc-export-registry.mjs';
 
 const axes = ['x', 'y', 'z'];
 const directions = ['down', 'up', 'north', 'south', 'west', 'east'];
-function coords(tag) {
-  const pos = axes.map(axis => tag[axis]);
+function coords(tag, suffix = '') {
+  const pos = axes.map(axis => tag?.[axis + suffix]);
   if (!pos.every(Number.isSafeInteger)) throw Error('方块坐标无效。');
   return pos;
 }
@@ -48,20 +48,33 @@ export function exportScene(profile, record, registry, minecraftVersion, selecte
   const dimension = selectedDimension ?? [...dimensions][0];
   if (typeof dimension !== 'string' || !dimension || !dimensions.has(dimension)) throw Error(`快照没有所选维度 ${dimension}。`);
   const areas = recordedAreas.filter(area => area.dimension === dimension);
-  const boxes = areas.map(area => {
+  const boxes = [], sweptCells = new Set(), origin = [Infinity, Infinity, Infinity];
+  for (const area of areas) {
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
     for (const block of array(area.blocks, 'area.blocks')) {
-      for (const [axis, n] of coords(block).entries()) {
+      const pos = coords(block);
+      if (area.sparse) sweptCells.add(pos.join(','));
+      for (const [axis, n] of pos.entries()) {
         min[axis] = Math.min(min[axis], n);
         max[axis] = Math.max(max[axis], n);
       }
     }
     if (!area.blocks.length) throw Error(`快照选区 ${area.name} 没有方块坐标。`);
-    return { min, max };
-  });
-  const origin = axes.map((_, i) => boxes.reduce((low, box) => Math.min(box.min[i], low), Infinity));
+    if (!area.sparse) boxes.push({ min, max });
+    for (let i = 0; i < 3; i++) origin[i] = Math.min(origin[i], min[i]);
+  }
   const local = pos => pos.map((n, i) => n - origin[i]);
-  const contains = pos => boxes.some(box => pos.every((n, i) => n >= box.min[i] && n <= box.max[i]));
+  function contains(pos, padding = 0) {
+    if (boxes.some(box => pos.every((n, i) => n >= box.min[i] && n <= box.max[i] + padding))) return true;
+    if (!sweptCells.size) return false;
+    // A following area's sparse snapshots contain only the newly swept cells.
+    // An actor on an exact face can belong to either adjacent cell.
+    const cells = pos.map(n => padding && Number.isInteger(n) ? [n, n - 1] : [Math.floor(n)]);
+    for (const x of cells[0]) for (const y of cells[1]) for (const z of cells[2]) {
+      if (sweptCells.has(`${x},${y},${z}`)) return true;
+    }
+    return false;
+  }
   const palette = ['minecraft:air'];
   const names = new Map([['minecraft:air', 0]]);
   function intern(name) {
@@ -96,7 +109,6 @@ export function exportScene(profile, record, registry, minecraftVersion, selecte
   const actors = actorTracks(areas, frames, local);
   diagnostics.omittedEntities = actors.omittedEntities;
   diagnostics.playerAccounts = actors.playerAccounts;
-  const actorInArea = pos => boxes.some(box => pos.every((n, i) => n >= box.min[i] && n <= box.max[i] + 1));
   const events = [];
   function visit(tag, tick, parent, inheritedDimension) {
     const type = tag.type;
@@ -113,9 +125,9 @@ export function exportScene(profile, record, registry, minecraftVersion, selecte
     }
     let inArea = !world || contains(world);
     if (world && typeof tag.entityUuid === 'string') {
-      inArea = actorInArea([tag.x, tag.y, tag.z])
+      inArea = contains([tag.x, tag.y, tag.z], 1)
         || (actors.isActive(tag) && ((type === 'entitySpawn' && tag.despawn)
-          || (['entityMove', 'entityCollideAxis'].includes(type) && actorInArea([tag.oldX, tag.oldY, tag.oldZ]))));
+          || (['entityMove', 'entityCollideAxis'].includes(type) && contains([tag.oldX, tag.oldY, tag.oldZ], 1))));
     }
     const include = (!eventDimension || eventDimension === dimension) && inArea;
     let nextParent = parent;
@@ -125,6 +137,14 @@ export function exportScene(profile, record, registry, minecraftVersion, selecte
       if (world) event.pos = local(world);
       const description = detail(tag);
       if (typeof description === 'string' && description) event.detail = description;
+      if (type === 'areaMove') {
+        const from = [local(coords(tag.before, 1)), local(coords(tag.before, 2))];
+        const to = [local(coords(tag.after, 1)), local(coords(tag.after, 2))];
+        const name = tag.after.name;
+        event.pos = to[0];
+        event.areaMove = { name, from, to };
+        event.detail = `选区 ${name} 移动`;
+      }
       if (type === 'setBlock') {
         if (!world) throw Error('setBlock 缺少位置。');
         if (tag.succeed === 0 || tag.succeed === false) event.detail = '写入失败';

@@ -28,12 +28,14 @@ function renderCode(tokens, index) {
 markdown.renderer.rules.fence = renderCode;
 markdown.renderer.rules.code_block = renderCode;
 markdown.renderer.rules.mc_scene = (tokens, index) => {
-  const { id, scene, bookmark, caption, poster, schematic, speed, speedUnit, granularity } = tokens[index].meta;
+  const { id, scene, bookmark, caption, poster, schematic, speed, speedUnit, granularity, loop, autoplay } = tokens[index].meta;
   const base = `../assets/minecraft/${scene}/`;
   const image = poster ? `<img data-mc-poster src="${escape(base + poster.split('/').map(encodeURIComponent).join('/'))}" alt="" loading="lazy" decoding="async" />` : '';
   const rate = speed === undefined ? '' : ` data-speed="${speed}"`;
   const unit = speedUnit === undefined ? '' : ` data-speed-unit="${speedUnit}"`;
-  return `<figure class="mc-scene" id="${escape(id)}" data-src="${base}scene.json" data-bookmark="${escape(bookmark)}"${rate}${unit}${granularity ? ` data-granularity="${granularity}"` : ''}${schematic ? ' data-mc-kind="structure"' : ''}>
+  const repeat = loop ? ' data-loop="true"' : '';
+  const auto = autoplay ? ' data-autoplay="true"' : '';
+  return `<figure class="mc-scene" id="${escape(id)}" data-src="${base}scene.json" data-bookmark="${escape(bookmark)}"${rate}${unit}${granularity ? ` data-granularity="${granularity}"` : ''}${repeat}${auto}${schematic ? ' data-mc-kind="structure"' : ''}>
 ${image}<div data-mc-view></div>
 <button type="button" data-mc-open hidden>${schematic ? '查看 3D 结构' : '打开红石回放'}</button>
 <p data-mc-status role="status"></p>
@@ -89,12 +91,14 @@ const sceneKey = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 function parseSceneBlock(source, fail) {
   const fields = yamlFields(source, '场景配置', fail);
   for (const key of Object.keys(fields)) {
-    if (!['scene', 'bookmark', 'caption', 'speed', 'speed-unit', 'granularity'].includes(key)) fail(`未知的场景字段 ${key}。`);
+    if (!['scene', 'bookmark', 'caption', 'speed', 'speed-unit', 'granularity', 'loop', 'autoplay'].includes(key)) fail(`未知的场景字段 ${key}。`);
   }
-  const { scene, bookmark, caption, speed } = fields;
+  const { scene, bookmark, caption, speed, loop = false, autoplay = false } = fields;
   if (typeof scene !== 'string' || !sceneKey.test(scene)) fail('scene 需要有效的场景 ID。');
   if (bookmark !== undefined && (typeof bookmark !== 'string' || !sceneKey.test(bookmark))) fail('bookmark 需要有效的书签 ID。');
   if (caption !== undefined && (typeof caption !== 'string' || !caption.trim())) fail('caption 需要非空文字。');
+  if (typeof loop !== 'boolean') fail('loop 需要填写布尔值 true 或 false。');
+  if (typeof autoplay !== 'boolean') fail('autoplay 需要填写布尔值 true 或 false。');
   const speedUnit = fields['speed-unit'] === undefined ? undefined : normalizeSpeedUnit(fields['speed-unit']);
   if (fields['speed-unit'] !== undefined && !speedUnit) fail('speed-unit 需要填写 gt/s、s/gt、x、event/s 或 phase/s。');
   if (speed !== undefined && !validPlaybackRate(speed, speedUnit ?? 'gt/s')) {
@@ -102,7 +106,7 @@ function parseSceneBlock(source, fail) {
   }
   const granularity = normalizeGranularity(fields.granularity);
   if (fields.granularity !== undefined && !granularity) fail('granularity 需要填写 tick（游戏刻）、phase（阶段）或 event（事件）。');
-  return { scene, bookmark: bookmark ?? '', speed, speedUnit, granularity, caption: caption?.trim() ?? `Minecraft 结构 · ${scene}` };
+  return { scene, bookmark: bookmark ?? '', speed, speedUnit, granularity, loop, autoplay, caption: caption?.trim() ?? `Minecraft 结构 · ${scene}` };
 }
 
 /** Return rendered body and plain metadata; metadata fields are validated by the builder. */

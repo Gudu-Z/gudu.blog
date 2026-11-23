@@ -143,6 +143,7 @@ function mountFigure(figure) {
   }
 
   async function activate(requestedStep, requestedTick) {
+    const retryAutoplay = failed && playback?.awaitingAutoplay;
     release();
     failed = false;
     showStage();
@@ -160,7 +161,19 @@ function mountFigure(figure) {
       }
       const bookmark = scene.bookmarks?.[figure.dataset.bookmark] ?? {};
       const replay = scene.schematic ? null : createReplay(scene);
+      const firstArea = replay?.followAreas[0];
+      let followArea = firstArea, followOffset;
+      const bookmarkFollowOffset = replay?.followOffsetAt(firstArea, bookmark.step ?? 0);
+      function frameFollowOffset(reset) {
+        if (followArea === undefined) return reset ? bookmarkFollowOffset : followOffset;
+        const offset = replay.followOffsetAt(followArea, replay.step);
+        if (followArea === firstArea || !bookmark.camera?.position) return offset;
+        // All tracks start from the saved camera at the bookmark's step.
+        const atBookmark = replay.followOffsetAt(followArea, bookmark.step);
+        return offset.map((n, i) => bookmarkFollowOffset[i] + n - atBookmark[i]);
+      }
       let framePending = false, frameLoading = false, resetPending = false, playingNow = false;
+      let followDuration = 0, snapFollow = false;
       let focus, focusActor, mark, source;
       // Keep at most one geometry build in flight. The clock may pass several
       // ticks during a build; submit the latest block and piston state when it finishes.
@@ -169,9 +182,12 @@ function mountFigure(figure) {
         framePending = false;
         const reset = resetPending;
         resetPending = false;
+        followOffset = frameFollowOffset(reset);
+        const duration = snapFollow || followArea === undefined ? 0 : followDuration;
+        snapFollow = false;
         if (reset && !bookmark.camera) viewer.resetView();
         viewer.render(replay.blocks, {
-          revision: replay.revision, focus, focusActor, mark, pistons: replay.pistons,
+          revision: replay.revision, followOffset, followDuration: duration, focus, focusActor, mark, pistons: replay.pistons,
           sourceFocus: source?.block, sourceActor: source?.actorId, sourceKind: source && eventKind(source.event),
           entities: replay.entities, entityRevision: replay.entityRevision,
           players: replay.players, playerRevision: replay.playerRevision,
@@ -188,6 +204,9 @@ function mountFigure(figure) {
         playback = mountTimeline(view, figure, scene, replay, bookmark, (step, resetCamera, position) => {
           resumeStep = step;
           resumeTick = position.tick;
+          followDuration = position.followDuration;
+          // Preserve a seek or loop boundary even when a mesh build skips its frame.
+          snapFollow ||= followDuration === 0;
           const event = position.gap ? null : replay.event;
           const target = eventTarget(replay, event);
           const atBookmark = step === (bookmark.step ?? 0) && (bookmark.tick === undefined
@@ -205,9 +224,17 @@ function mountFigure(figure) {
           framePending = true;
           resetPending ||= resetCamera;
           submitLatest();
-        }, () => viewer?.getCamera(), {
+        }, () => viewer?.getCamera(frameFollowOffset(false)), {
           speedUnit,
           authorSpeed,
+          onFollowArea: area => {
+            const shown = viewer?.holdFollow();
+            if (area === undefined) followOffset = shown ?? frameFollowOffset(false);
+            followArea = area;
+            snapFollow = true;
+            framePending = true;
+            submitLatest();
+          },
           onPlaying: value => {
             playingNow = value;
             viewer?.setPlaying(value);
@@ -219,6 +246,9 @@ function mountFigure(figure) {
         const preferred = requestedStep ?? bookmark.step ?? 0;
         const useRequest = requestedStep != null && preferred <= scene.events.length;
         playback.seek(useRequest ? preferred : bookmark.step ?? 0, false, useRequest ? requestedTick : bookmark.tick);
+        // Keep shared steps and reopened figures paused. A failed first render
+        // can still use its pending autoplay when the reader retries.
+        if (figure.dataset.autoplay === 'true' && (!useRequest || retryAutoplay)) playback.autoplayWhenVisible(stage);
       }
       status.textContent = '正在载入 3D 预览…';
       // Every step rebuilds the view, usually within a frame or two and, while
@@ -258,7 +288,7 @@ function mountFigure(figure) {
       const { createSceneViewer } = await import('./mc-viewer.mjs');
       if (signal.aborted) return;
       const instance = await createSceneViewer(stage, scene, {
-        sceneURL, camera: bookmark.camera, focus: bookmark.focus, signal,
+        sceneURL, camera: bookmark.camera, bookmarkFollowOffset, focus: bookmark.focus, signal,
         name: figure.querySelector('figcaption')?.textContent || '红石结构',
         theme: document.documentElement.dataset.theme || 'dark', onStatus,
         onFocusBox: (box, model) => callout?.place(box, model),

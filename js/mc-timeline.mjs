@@ -10,7 +10,7 @@ const eventNames = {
   movingPistonTick: '活塞运动', itemTransfer: '物品传输', entityMove: '实体移动',
   entitySpawn: '实体进出', entityTick: '实体刻', entitySetHealth: '实体生命变化',
   entityCollideAxis: '实体碰撞', blockEntityTick: '方块实体刻', blockEntityCreation: '创建方块实体',
-  networkPacket: '网络数据包',
+  networkPacket: '网络数据包', areaMove: '选区移动',
 };
 const subtypes = {
   NeighbourUpdate: '邻居更新', ShapeUpdate: '形状更新', ExecuteBlockTick: '执行方块计划刻',
@@ -302,6 +302,11 @@ function properties(map) {
 // style. A block change lists only what it changed, the new value in orange.
 function eventFields(scene, replay, event) {
   const list = element('dl', '', 'mc-fields');
+  if (event?.areaMove) {
+    const { from, to } = event.areaMove;
+    list.append(field('选区角点', 'POS', `${worldPosition(scene, from[0])} → ${worldPosition(scene, to[0])}`, true));
+    return list;
+  }
   if (event?.type.startsWith('entity')) {
     const { actorId } = eventTarget(replay, event);
     const player = replay.players.get(actorId) ?? event.player;
@@ -362,6 +367,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   const { groups, depths } = indexTicks(scene.events);
   const axis = createTickAxis(groups, scene.tickRange);
   const phases = phaseStops(scene.events, groups);
+  const loop = figure.dataset.loop === 'true';
   // Apply the final phase's trailing mutations as its own stop when needed.
   const phaseDuration = phases.length + (axis.end > (phases.at(-1) ?? 0) ? 1 : 0);
   function duration() {
@@ -418,6 +424,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   const shareStatus = element('span', '', 'mc-share-status');
   shareStatus.setAttribute('role', 'status');
   let playing = false, ready = false, frame = 0, tallest = 0;
+  let autoplayPending = false, inView = false;
   let { rate: speed, unit: speedUnit } = getDefaultPlayback(options.authorSpeed, options.speedUnit);
   let mode = normalizeGranularity(figure.dataset.granularity) ?? 'phase', cursor = axis.forStep(0);
   let time = 0, baseTime = 0, baseStamp = 0;
@@ -531,6 +538,16 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     element('span', '← → 上一步 / 下一步', 'mc-legend-item'),
     element('span', '双击 / 回车 展开或收起下一级', 'mc-legend-item'));
   settings.append(rateLabel, unitLabel, modeLabel, saveSpeed, resetSpeed, legend, keys);
+  if (replay.followAreas.length) {
+    const label = element('label', '', 'mc-mode');
+    const select = element('select');
+    select.append(element('option', '固定视角'));
+    for (const name of replay.followAreas) select.append(element('option', '选区 ' + name));
+    select.selectedIndex = 1;
+    select.addEventListener('change', () => options.onFollowArea(replay.followAreas[select.selectedIndex - 1]));
+    label.append(fieldName('相机跟随', 'FOLLOW'), select);
+    settings.insertBefore(label, legend);
+  }
   // The summary reads "20 gt/s · 阶段" beside the settings icon.
   settingsSummary.title = '播放设置';
   settingsSummary.append(summarySpeed, element('span', '·', 'mc-settings-dot'), summaryMode, icon('tune'));
@@ -560,7 +577,13 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
       showPlaying(true);
       return;
     }
-    if (playing) { pause(); return; }
+    if (playing) pause();
+    else start();
+  });
+
+  function start() {
+    if (playing || !ready || !duration()) return;
+    autoplayPending = false;
     const done = cursor.step === axis.end && (speedClock(speedUnit) !== 'tick' || cursor.offset === axis.maxOffset);
     if (time >= duration() || (done && (cursor.step > 0 || axis.maxOffset > 0))) {
       manual(axis.forStep(0));
@@ -572,7 +595,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     list.setPlaying(true);
     options.onPlaying?.(true);
     frame = requestAnimationFrame(animate);
-  });
+  }
   // The play button turns into pause while the replay runs.
   function showPlaying(value) {
     const label = value ? '暂停（空格）' : '播放（空格）';
@@ -664,7 +687,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   container.append(panel);
 
   function timeAt(stamp) {
-    return Math.min(duration(), baseTime + (Math.max(0, stamp - baseStamp) / 1000) * speed);
+    return baseTime + (Math.max(0, stamp - baseStamp) / 1000) * speed;
   }
 
   function rebasePlayback(share = 0) {
@@ -679,6 +702,19 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   function animate(stamp) {
     if (!playing) return;
     const clock = speedClock(speedUnit);
+    const end = duration();
+    if (loop && !settle && time >= end) {
+      // The last game tick already spans a full tick. On a counted clock the
+      // final event or phase starts at `end` and needs its own display interval.
+      // Wait for the last model build before sending the initial snapshot again.
+      if (ready && (clock === 'tick' || timeAt(stamp) >= end + 1)) {
+        time = baseTime = 0;
+        baseStamp = stamp;
+        present(axis.forStep(0));
+      }
+      if (playing) frame = requestAnimationFrame(animate);
+      return;
+    }
     let landed = false;
     if (settle) {
       // Timed in the clock of the moment, so a new speed unit keeps its place.
@@ -686,7 +722,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
       const from = timeFor(settle.cursor, axis, phases, mode, clock), to = timeFor(settle.ahead, axis, phases, mode, clock);
       landed = s >= 1;
       time = landed ? to : from + (to - from) * (settle.share + (1 - settle.share) * s * (2 - s));
-    } else time = timeAt(stamp);
+    } else time = Math.min(end, timeAt(stamp));
     const due = landed ? settle.ahead : playbackCursor(axis, phases, time, mode, clock);
     // Starting mid-phase at a bookmark must never rewind to the phase entry.
     if (landed ? !sameCursor(cursor, due) : (due.step > cursor.step || (clock === 'tick' && due.step === cursor.step && !sameCursor(cursor, due)))) present(due);
@@ -697,7 +733,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
     list.follow(cursor.step, cursor.offset, ahead.step, ahead.offset, fraction);
     const at = timeFor(cursor, axis, phases, mode);
     slider.value = String(axis.origin + at + (timeFor(ahead, axis, phases, mode) - at) * fraction);
-    if (landed || time >= duration()) stop();
+    if (landed || (!loop && time >= end)) stop();
     else if (playing) frame = requestAnimationFrame(animate);
   }
 
@@ -739,6 +775,7 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   }
 
   function present(nextCursor, resetCamera = false) {
+    const forward = playing && nextCursor.step >= cursor.step && !resetCamera;
     cursor = nextCursor;
     const { step, tick, offset, groupIndex } = cursor;
     replay.seek(step);
@@ -784,10 +821,21 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
       }
     }
     shareStatus.replaceChildren();
-    onStep(step, resetCamera, { tick, gap, playing });
+    let followDuration = 0;
+    if (forward && replay.followAreas.length) {
+      // About a tick and a half of travel. Counted clocks may have many
+      // stops in one game tick, depending on what this machine recorded.
+      const clock = speedClock(speedUnit);
+      let stops = 1;
+      if (group && clock === 'event') stops = group.last - group.first + 1;
+      if (group && clock === 'phase') stops = lowerBound(phases, group.last + 1) - lowerBound(phases, group.first);
+      followDuration = Math.min(240, Math.max(75, 1500 * stops / speed));
+    }
+    onStep(step, resetCamera, { tick, gap, playing, followDuration });
   }
 
   function manual(target, resetCamera = false) {
+    autoplayPending = false;
     stop();
     time = timeFor(target, axis, phases, mode, speedClock(speedUnit));
     present(target, resetCamera);
@@ -798,9 +846,39 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
   function setReady(value) {
     ready = value;
     play.disabled = !duration() || (!ready && !playing);
+    tryAutoplay();
+  }
+  function tryAutoplay() {
+    if (autoplayPending && inView && !document.hidden) start();
+  }
+  function autoplayWhenVisible(stage) {
+    autoplayPending = true;
+    const { signal } = settingsWatch;
+    const update = visible => {
+      inView = visible;
+      if (visible) tryAutoplay();
+      else if (playing) stop();
+    };
+    // The viewer preloads nearby figures. Start the clock only when the model
+    // itself enters the viewport, so the reader sees the beginning.
+    if ('IntersectionObserver' in window) {
+      const watch = new IntersectionObserver(entries => update(entries.at(-1).isIntersecting));
+      watch.observe(stage);
+      signal.addEventListener('abort', () => watch.disconnect(), { once: true });
+    } else {
+      const check = () => {
+        const box = stage.getBoundingClientRect();
+        update(box.bottom > 0 && box.top < innerHeight && box.right > 0 && box.left < innerWidth);
+      };
+      window.addEventListener('scroll', check, { capture: true, passive: true, signal });
+      window.addEventListener('resize', check, { signal });
+      check();
+    }
+    document.addEventListener('visibilitychange', tryAutoplay, { signal });
   }
   return {
-    seek, stop, setReady, getTick: () => cursor.tick,
+    seek, stop, setReady, autoplayWhenVisible, getTick: () => cursor.tick,
+    get awaitingAutoplay() { return autoplayPending; },
     // The current event's details, for js/mc-callout.mjs to set beside its block.
     details: inspect,
     // The clock, transport, settings and links, which a wide figure floats in its 3D view.
@@ -819,6 +897,6 @@ export function mountTimeline(container, figure, scene, replay, bookmark, onStep
       settings.insertBefore(row, legend);
       return value => { input.checked = value; };
     },
-    destroy() { stop(); list.destroy(); settingsWatch.abort(); },
+    destroy() { autoplayPending = false; stop(); list.destroy(); settingsWatch.abort(); },
   };
 }

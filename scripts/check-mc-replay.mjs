@@ -13,6 +13,7 @@ import { readRecordingNbt } from './mc-export-nbt.mjs';
 import { createReplayHitboxes, replayEntityBounds } from '../js/mc-entity-hitboxes.mjs';
 import { Group } from '../js/vendor/mc-engine.mjs';
 import { createReplay, eventTarget, validateScene } from '../js/mc-replay.mjs';
+import { createCameraFollow } from '../js/mc-camera-follow.mjs';
 import { readPalette, replayBounds, renderData } from '../js/mc-render-data.mjs';
 import { adjacentCursor, createTickAxis, indexTicks, phaseStops, playbackCursor, timeFor } from '../js/mc-timeline.mjs';
 import { branchShapes, indexEventRows, visibleSteps } from '../js/mc-event-list.mjs';
@@ -45,6 +46,89 @@ await test('seeking preserves nested tick order, failed writes and air across fo
   const version = replay.revision;
   replay.seek(1);
   assert.equal(replay.revision, version, 'Notification-only seeks keep the same geometry.');
+});
+
+await test('camera tracks use the recorded move step and keep each following area independent across seeks', () => {
+  const area = (name, x, y, z) => ({ name, x1: x, y1: y, z1: z, x2: x + 1, y2: y + 2, z2: z + 3 });
+  const start = area('机头', 30, -7, 9), east = area('机头', 31, -7, 9);
+  const tail = area('机尾', 40, -7, 9), raised = area('机尾', 40, -6, 9);
+  const move = (before, after) => ({ type: 'areaMove', before, after });
+  const record = { areas: [{ dimension: 'minecraft:overworld', blocks: [{ x: 30, y: -7, z: 9, stateId: 1 }] }] };
+  const profile = { frames: [{ tick: 8, events: [
+    { type: 'phase', children: [move(start, east), move(tail, raised)] },
+    move(east, start),
+  ] }] };
+  const scene = validateScene(exportScene(profile, record, ['minecraft:air', 'minecraft:slime_block'], '1.21.10'));
+  assert.deepEqual(scene.events[1].areaMove, { name: '机头', from: [[0,0,0],[1,2,3]], to: [[1,0,0],[2,2,3]] });
+  const replay = createReplay(scene);
+  assert.deepEqual(replay.followAreas, ['机头', '机尾']);
+  for (const [step, dx, dy] of [[4,0,1],[0,0,0],[2,1,0],[3,1,1],[1,0,0]]) {
+    replay.seek(step);
+    assert.deepEqual(replay.followOffsetAt('机头', step), [dx,0,0]);
+    assert.deepEqual(replay.followOffsetAt('机尾', step), [0,dy,0]);
+    assert.equal(replay.revision, 0);
+  }
+  const legacy = { ...scene, events: [{ tick: 8, type: 'areaMove', pos: [5,0,0] }] };
+  assert.deepEqual(createReplay(validateScene(legacy)).followAreas, []);
+  assert.throws(() => validateScene({ ...scene, events: [{ tick: 8, type: 'areaMove', areaMove: { name: '机头', from: [], to: [] } }] }), /areaMove/);
+});
+
+await test('camera follow eases on the frame clock, redirects from the visible pose and seeks exactly', () => {
+  let now = 0, nextFrame = 0;
+  const pending = new Map();
+  const clock = {
+    performance: { now: () => now },
+    requestAnimationFrame(callback) { pending.set(++nextFrame, callback); return nextFrame; },
+    cancelAnimationFrame(id) { pending.delete(id); },
+  };
+  function advance(ms) {
+    now += ms;
+    const callbacks = [...pending.values()];
+    pending.clear();
+    for (const callback of callbacks) callback(now);
+  }
+  const position = [0, 0, 0];
+  const follow = createCameraFollow((x, y, z) => {
+    position[0] += x;
+    position[1] += y;
+    position[2] += z;
+  }, clock);
+  follow.to([8, -4, 2], 100);
+  advance(25);
+  assert.deepEqual(position, [1.25, -.625, .3125]);
+  assert.deepEqual(follow.offset, position);
+  follow.to([8, -4, 2], 100);
+  follow.to(null);
+  advance(25);
+  assert.deepEqual(position, [4, -2, 1], 'presenting the same move again keeps its original start time');
+  follow.to([-4, 2, 3], 100);
+  assert.deepEqual(position, [4, -2, 1]);
+  advance(50);
+  assert.deepEqual(position, [0, 0, 2], 'a new target starts from the displayed translation');
+  advance(300);
+  assert.deepEqual(position, [-4, 2, 3], 'a late frame lands exactly on all three axes');
+  assert.equal(pending.size, 0);
+
+  follow.to([4, 2, 3], 100);
+  advance(50);
+  assert.deepEqual(follow.hold(), [0, 2, 3]);
+  advance(100);
+  assert.deepEqual(position, [0, 2, 3], 'a fixed camera stops mid-move');
+  follow.to([4, 2, 3], 100);
+  advance(25);
+  follow.finish();
+  assert.deepEqual(position, [4, 2, 3], 'pausing uses the exact recorded offset');
+  follow.to([8, 2, 3], 100);
+  advance(25);
+  follow.to([8, 2, 3], 0);
+  assert.deepEqual(position, [8, 2, 3], 'seeking to the active target cancels the remaining motion');
+  follow.to([12, 2, 3], 100);
+  follow.reset([40, 0, 0]);
+  advance(200);
+  assert.deepEqual(position, [8, 2, 3], 'restoring the camera externally only resets the follow baseline');
+  follow.to([38, 0, 0]);
+  assert.deepEqual(position, [6, 2, 3]);
+  assert.equal(pending.size, 0);
 });
 
 await test('piston progress, removal and bookmark seeking are reversible', () => {

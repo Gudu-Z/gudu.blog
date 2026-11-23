@@ -2,6 +2,7 @@ import { Renderer, AssetProvider, BlockModelResolver, Box3, parseLitematica,
   extractSigns, extractPlayerHeads, extractBanners, extractStatues, extractDecoratedPots } from './vendor/mc-engine.mjs';
 import { readPalette, replayBounds, renderData } from './mc-render-data.mjs';
 import { mountAxisGizmo } from './mc-axes.mjs';
+import { createCameraFollow } from './mc-camera-follow.mjs';
 import { createMarkerLayer, markerCells } from './mc-markers.mjs';
 
 import { createReplayHitboxes, replayEntityBounds } from './mc-entity-hitboxes.mjs';
@@ -298,7 +299,7 @@ async function readSchematic(url, signal) {
 
 // Fit the initial figures with the machine. Camera bounds may include players
 // well outside the recorded blocks and must not change the blocks' packed keys.
-function replayFraming(scene, bounds, palette, onlyActors) {
+function replayFraming(scene, bounds, palette, onlyActors, followsArea) {
   let players = scene.players ?? [];
   if (!players.length && !scene.blocks.length) {
     const spawn = scene.events.find(event => event.player?.pos);
@@ -315,7 +316,14 @@ function replayFraming(scene, bounds, palette, onlyActors) {
     const box = replayEntityBounds(entity);
     if (box) actorBoxes.push([...box.min, ...box.max.map((n, axis) => n - box.min[axis])]);
   }
-  return { bounds: framingBounds(bounds, actorBoxes, onlyActors), blocks: scene.blocks, players, actorBoxes, geometryBounds: bounds, palette };
+  let blocks = scene.blocks, viewBounds = bounds;
+  if (followsArea) {
+    // Frame the starting machine at its own scale, even if it travels hundreds
+    // of blocks. The packed geometry still uses the bounds of the entire replay.
+    blocks = blocks.filter(cell => !isAir(palette[cell[3]]));
+    if (blocks.length) viewBounds = replayBounds({ blocks, events: [] });
+  }
+  return { bounds: framingBounds(viewBounds, actorBoxes, onlyActors), blocks, players, actorBoxes, geometryBounds: bounds, palette };
 }
 
 function framingBounds(bounds, actorBoxes, onlyActors) {
@@ -480,6 +488,7 @@ function applyCamera(renderer, bounds, saved, framing, inset = 0) {
   if (saved?.position && saved.target) {
     camera.position.fromArray(saved.position);
     renderer.controls.target.fromArray(saved.target);
+    camera.far = Math.max(camera.far, camera.position.distanceTo(renderer.controls.target) * 2);
   }
   if (camera.isOrthographicCamera && saved?.height) {
     const aspect = renderer.container.clientWidth / Math.max(1, renderer.container.clientHeight);
@@ -520,7 +529,9 @@ async function staticDetails(renderer, data, assets, signal) {
   await renderer.renderEntities(data.entities ?? [], assets, data, undefined, { signal });
 }
 
-export async function createSceneViewer(container, scene, { sceneURL, name = 'çº¢çŸ³ç»“æž„', camera: bookmarkCamera,
+const stillOffset = [0, 0, 0];
+
+export async function createSceneViewer(container, scene, { sceneURL, name = 'çº¢çŸ³ç»“æž„', camera: bookmarkCamera, bookmarkFollowOffset,
   focus: initialFocus, theme = 'auto', onStatus, onFocusBox, inset, signal: parentSignal } = {}) {
   const lifecycle = new AbortController(), { signal } = lifecycle;
   parentSignal?.throwIfAborted();
@@ -530,11 +541,16 @@ export async function createSceneViewer(container, scene, { sceneURL, name = 'çº
   let entityLayer, blockData, fitFirstEntity = false;
   let hitboxes, focusActor, mark = null, sourceFocus, sourceActor, sourceKind, entityRevision, boxesVisible = true, hasBoxes = false, boxesListener;
   let completed = false, busy = false, active = true, readyFrame = 0, revision, focus = initialFocus;
+  let framingOffset = stillOffset, playing = false, followGeneration = 0;
+  const follow = createCameraFollow(translateCamera);
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  reducedMotion.addEventListener('change', () => { if (reducedMotion.matches) follow.finish(); }, { signal });
 
   function destroy() {
     if (signal.aborted) return;
     lifecycle.abort();
     cancelAnimationFrame(readyFrame);
+    follow.hold();
     parentSignal?.removeEventListener('abort', destroy);
     resize?.disconnect();
     visibility?.disconnect();
@@ -609,15 +625,42 @@ export async function createSceneViewer(container, scene, { sceneURL, name = 'çº
   }
   // The pixels the host covers on the right of the view (its floating timeline).
   const coveredRight = () => Math.max(0, Math.min((container.clientWidth || 1) / 2, inset?.() ?? 0));
-  function setCamera(saved, viewFraming) {
+  // Move the orbit with the model. Panning, rotating, zooming and the axis
+  // gizmo can still change the reader's view independently between frames.
+  function translateCamera(dx, dy, dz) {
+    const delta = renderer.camera.position.clone().set(dx, dy, dz);
+    renderer.camera.position.add(delta);
+    renderer.controls.target.add(delta);
+    renderer.controls.update();
+    renderer.requestRender();
+  }
+  function moveCamera(offset, duration) {
+    follow.to(offset, playing && active && !document.hidden && !reducedMotion.matches ? duration : 0);
+  }
+  function holdFollow() {
+    // A mesh submitted before a reader changed tracks can finish afterwards.
+    followGeneration++;
+    return follow.hold();
+  }
+  function setPlaying(value) {
+    playing = value;
+    outline.setPlaying(value);
+    if (!playing) follow.finish();
+  }
+  function setCamera(saved, viewFraming = framing) {
     axes.cancel();
     applyCamera(renderer, bounds, saved, viewFraming, coveredRight());
+    // Saved camera coordinates describe the bookmark's own frame.
+    follow.reset(saved?.position && saved.target ? bookmarkFollowOffset ?? stillOffset : framingOffset);
     // A projection switch can replace the camera without firing a controls change.
     axes.update();
   }
   function keepCamera() { fitFirstEntity = false; }
   function resetView() {
-    if (renderer && bounds) setCamera(bookmarkCamera, framing);
+    if (!renderer || !bounds) return;
+    const offset = follow.hold();
+    setCamera(bookmarkCamera, framing);
+    moveCamera(offset);
   }
   function reportError(error) {
     revision = undefined;
@@ -639,7 +682,8 @@ export async function createSceneViewer(container, scene, { sceneURL, name = 'çº
     });
   }
 
-  async function drawModel(data, camera, actors) {
+  async function drawModel(data, actors, { camera, followOffset, followDuration } = {}) {
+    const generation = followGeneration;
     busy = true;
     onStatus?.({ type: 'loading' });
     const finish = renderer.beginSceneUpdate();
@@ -653,9 +697,11 @@ export async function createSceneViewer(container, scene, { sceneURL, name = 'çº
       // first visible model once, unless the reader already moved the camera.
       const fitted = fitFirstEntity && !camera ? entityModelFraming(renderer, bounds, framing) : framing;
       const newFraming = fitted !== framing;
+      if (newFraming) framingOffset = followOffset ?? stillOffset;
       if (newFraming || camera) keepCamera();
       framing = fitted;
       if (!completed || camera || newFraming) setCamera(camera ?? bookmarkCamera, framing);
+      if (generation === followGeneration) moveCamera(followOffset, completed && !camera && !newFraming ? followDuration : 0);
       completed = true;
     } finally {
       finish();
@@ -690,7 +736,7 @@ export async function createSceneViewer(container, scene, { sceneURL, name = 'çº
     // A schematic's framing only turns the default view to its long side.
     if (structure) framing = { bounds, footprint: structureFootprint(structure) };
     else {
-      framing = replayFraming(scene, bounds, palette, onlyActors);
+      framing = replayFraming(scene, bounds, palette, onlyActors, Boolean(bookmarkFollowOffset));
       playerLayer = await createPlayerLayer(scene, renderer, assets, signal);
       if (scene.entities?.length || scene.events.some(e => e.entity)) entityLayer = createReplayEntityLayer(renderer, assets, signal);
       signal.throwIfAborted();
@@ -720,7 +766,9 @@ export async function createSceneViewer(container, scene, { sceneURL, name = 'çº
     });
     resize.observe(container);
     if ('IntersectionObserver' in window) {
-      visibility = new IntersectionObserver(([entry]) => {
+      visibility = new IntersectionObserver(entries => {
+        // An anchor jump can queue both the old and new positions in one delivery.
+        const entry = entries.at(-1);
         if (signal.aborted || active === entry.isIntersecting) return;
         active = entry.isIntersecting;
         renderer.setActive(active);
@@ -767,6 +815,7 @@ export async function createSceneViewer(container, scene, { sceneURL, name = 'çº
       const actors = entityLayer && (blocksChanged || entitiesChanged) ? new Map(options.entities) : null;
       if (!blocksChanged && !actors) {
         if (options.camera) setCamera(options.camera);
+        moveCamera(options.followOffset, options.camera ? 0 : options.followDuration);
         redraw();
         return false;
       }
@@ -777,16 +826,26 @@ export async function createSceneViewer(container, scene, { sceneURL, name = 'çº
         markers?.sync(markerCells(palette, blocks, options.pistons)).catch(reportError);
       }
       revision = options.revision;
-      drawModel(blocksChanged ? blockData : null, options.camera, actors).catch(reportError);
+      drawModel(blocksChanged ? blockData : null, actors, options).catch(reportError);
       return true;
     },
-    getCamera() {
+    getCamera(followOffset) {
       if (!renderer || !completed) return undefined;
       const { camera, controls } = renderer;
-      return { position: camera.position.toArray(), target: controls.target.toArray(), zoom: camera.zoom,
+      const position = camera.position.toArray(), target = controls.target.toArray();
+      if (followOffset) {
+        // Author bookmarks describe the selected step, even mid-transition.
+        const shown = follow.offset;
+        for (let i = 0; i < 3; i++) {
+          const remaining = followOffset[i] - shown[i];
+          position[i] += remaining;
+          target[i] += remaining;
+        }
+      }
+      return { position, target, zoom: camera.zoom,
         projection: renderer.getProjectionMode(), ...(camera.isOrthographicCamera ? { height: camera.top - camera.bottom } : {}) };
     },
-    resetView, setTheme, setPlaying: outline.setPlaying, destroy,
+    resetView, setTheme, setPlaying, holdFollow, destroy,
     // Whether the entity hitboxes show, for the settings card; null without entities.
     entityBoxes: hasBoxes ? {
       get visible() { return boxesVisible; },

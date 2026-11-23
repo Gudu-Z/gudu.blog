@@ -163,8 +163,8 @@ await test('scene fences publish accessible posters and bookmark references only
     await post('lamp.md', frontmatter({ category: 'Minecraft' }, [
       fence('caption: "灯面 <A>"'), '## mc-lamp', fence('bookmark: side\ncaption: 灯的侧面\nspeed: 2.5\ngranularity: 游戏刻'),
       fence('granularity: event'), fence('speed: 0.5\nspeed-unit: s/gt'), fence('speed: 2\nspeed-unit: x'),
-      fence('speed-unit: gt/s'), fence('speed: 3.5\nspeed-unit: event/s'),
-      fence('speed: 2\nspeed-unit: PHASE/S'),
+      fence('speed-unit: gt/s'), fence('speed: 3.5\nspeed-unit: event/s\nloop: true\nautoplay: false'),
+      fence('speed: 2\nspeed-unit: PHASE/S\nloop: false\nautoplay: true'),
     ].join('\n\n')));
     await post('other.md', frontmatter());
     await post('unrecorded.md', frontmatter({ draft: true }, '```mc-scene\nscene: pending\n```'));
@@ -184,6 +184,10 @@ await test('scene fences publish accessible posters and bookmark references only
     assert.match(html, /id="mc-lamp-8"[^>]* data-speed="3\.5" data-speed-unit="event\/s"/);
     assert.match(html, /id="mc-lamp-9"[^>]* data-speed="2" data-speed-unit="phase\/s"/);
     assert.equal(html.match(/ data-speed-unit=/g).length, 5);
+    assert.match(html, /id="mc-lamp-8"[^>]* data-loop="true"/);
+    assert.equal(html.match(/ data-loop=/g).length, 1);
+    assert.match(html, /id="mc-lamp-9"[^>]* data-autoplay="true"/);
+    assert.equal(html.match(/ data-autoplay=/g).length, 1);
     assert.match(html, /<img data-mc-poster src="\.\.\/assets\/minecraft\/lamp\/front\.png"/);
     assert.match(html, /<img data-mc-poster src="\.\.\/assets\/minecraft\/lamp\/side\.png"/);
     assert.match(html, /<button type="button" data-mc-open hidden>/);
@@ -194,6 +198,10 @@ await test('scene fences publish accessible posters and bookmark references only
     await buildBlog({ root, checkOnly: true });
     await post('lamp.md', frontmatter({}, fence('granularity: invalid')));
     await assert.rejects(buildBlog({ root }), /lamp\.md.*mc-scene.*granularity/);
+    await post('lamp.md', frontmatter({}, fence('loop: "false"')));
+    await assert.rejects(buildBlog({ root }), /lamp\.md.*mc-scene.*loop.*true.*false/);
+    await post('lamp.md', frontmatter({}, fence('autoplay: "true"')));
+    await assert.rejects(buildBlog({ root }), /lamp\.md.*mc-scene.*autoplay.*true.*false/);
     await post('lamp.md', frontmatter({}, fence('speed: 0')));
     await assert.rejects(buildBlog({ root }), /speed/);
     await post('lamp.md', frontmatter({}, fence('speed: -1\nspeed-unit: event/s')));

@@ -5,6 +5,9 @@ const blockState = /^[a-z0-9_.-]+:[a-z0-9_./-]+(?:\[[a-z0-9_-]+=[a-z0-9_.-]+(?:,
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = Number.isSafeInteger;
 const vector = (value, test = integer) => Array.isArray(value) && value.length === 3 && value.every(test);
+const corners = value => Array.isArray(value) && value.length === 2 && value.every(pos => vector(pos))
+  && value[0].every((n, axis) => n <= value[1][axis]);
+const zeroOffset = Object.freeze([0, 0, 0]);
 const positionKey = pos => pos.join(',');
 
 function requireField(valid, field) {
@@ -99,6 +102,10 @@ export function validateScene(scene) {
       if (scene.tickRange) requireField(event.tick >= scene.tickRange[0] && event.tick <= scene.tickRange[1]
         && (i === 0 || event.tick >= scene.events[i - 1].tick), `events[${i}].tick / tickRange`);
       if (event.pos !== undefined) requireField(vector(event.pos), `events[${i}].pos`);
+      if (event.areaMove !== undefined) {
+        const move = event.areaMove;
+        requireField(object(move) && typeof move.name === 'string' && corners(move.from) && corners(move.to), `events[${i}].areaMove`);
+      }
       for (const field of ['before', 'after']) {
         if (event[field] !== undefined) requireField(event.pos && validIndex(event[field]), `events[${i}].${field}`);
       }
@@ -133,6 +140,16 @@ function cellMap(cells) {
   return new Map(cells.map(([x, y, z, value]) => [`${x},${y},${z}`, value]));
 }
 
+function latestAt(versions, step) {
+  let low = 0, high = versions.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (versions[mid].step <= step) low = mid + 1;
+    else high = mid;
+  }
+  return versions[low - 1];
+}
+
 // Each position has its own history. A long seek probes changing positions only,
 // without replaying every notification or cloning the entire structure per tick.
 function stateTrack(initial, empty) {
@@ -145,14 +162,8 @@ function stateTrack(initial, empty) {
     keysByStep[step] = key;
   }
   function restore(key, step) {
-    const versions = history.get(key);
-    let low = 0, high = versions.length;
-    while (low < high) {
-      const mid = Math.floor((low + high) / 2);
-      if (versions[mid].step <= step) low = mid + 1;
-      else high = mid;
-    }
-    const value = low ? versions[low - 1].value : initial.get(key);
+    const version = latestAt(history.get(key), step);
+    const value = version ? version.value : initial.get(key);
     if (empty(value)) return current.delete(key);
     if (current.get(key) === value) return false;
     current.set(key, value);
@@ -216,7 +227,19 @@ export function createReplay(scene) {
   const pistons = stateTrack(cellMap(scene.pistons ?? []), value => value == null);
   const players = stateTrack(new Map((scene.players ?? []).map(p => [p.id, p])), value => value == null);
   const entities = stateTrack(new Map((scene.entities ?? []).map(e => [e.id, e])), value => value == null);
+  const followTracks = new Map();
   for (const [i, event] of scene.events.entries()) {
+    const move = event.areaMove;
+    if (move) {
+      let track = followTracks.get(move.name);
+      if (!track) {
+        track = { origin: move.from[0], moves: [] };
+        followTracks.set(move.name, track);
+      }
+      // The recorder translates both corners by the bound block's movement.
+      const offset = move.to[0].map((n, axis) => n - track.origin[axis]);
+      track.moves.push({ step: i + 1, offset });
+    }
     if (event.entity) entities.record(event.entity.id, i + 1, event.entity.removed ? null : event.entity);
     if (event.player) players.record(event.player.id, i + 1, event.player.removed ? null : event.player);
     if (event.after === undefined && event.piston === undefined) continue;
@@ -227,6 +250,12 @@ export function createReplay(scene) {
   let step = 0, revision = 0, playerRevision = 0, entityRevision = 0;
   return {
     blocks: blocks.current, pistons: pistons.current, players: players.current, entities: entities.current,
+    followAreas: [...followTracks.keys()],
+    followOffsetAt(area, step) {
+      const track = followTracks.get(area);
+      if (!track) return undefined;
+      return latestAt(track.moves, step)?.offset ?? zeroOffset;
+    },
     get entityRevision() { return entityRevision; },
     get playerRevision() { return playerRevision; },
     get step() { return step; },
