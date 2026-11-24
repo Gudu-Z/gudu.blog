@@ -545,8 +545,8 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     .journal-toolbar, .journal-empty, .search-empty, .posts-list > .post-card,
     .archive-year > h3, .archive-year li, .archive-group > h3, .archive-item, .site-footer
   ):focus-within { --chapter-layer-opacity: 1; --chapter-layer-x: 0px; transition: none; }
-  html.has-chapters .home-page .category-column:focus-visible > *,
-  html.has-chapters .home-page .category-column:focus-visible .category-description { --chapter-layer-opacity: 1; --chapter-layer-x: 0px; transition: none; }
+  html.has-chapters .home-page .category-column:has(> .category-cover:focus-visible) > *,
+  html.has-chapters .home-page .category-column:has(> .category-cover:focus-visible) .category-description { --chapter-layer-opacity: 1; --chapter-layer-x: 0px; transition: none; }
   html.has-chapters .home-page .chapter-section .connection-card:focus-visible > :is(.connection-card-head, h3, p, .connection-action) { --chapter-layer-opacity: 1; --chapter-layer-x: 0px; transition: none; }
 
   /* Direct jumps and Hero travel suppress time-based reveal tails. The About

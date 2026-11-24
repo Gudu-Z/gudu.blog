@@ -126,6 +126,7 @@
   let chapterLabels = homeStations.map(station => station.name);
   let catalogHeld = false;
   let catalogLabels = false;
+  let catalogStarts = [];
   const labelAnimations = new Set();
   let markerGlide = null;
   let glideFrame = 0;
@@ -662,6 +663,7 @@
     progressTrackLeft = (ruler?.left || 0) - pointerNavX;
     progressTrackWidth = ruler?.width || 0;
     measureFolds(ruler);
+    if (catalogLabels) measureCatalogStarts();
     // A resize across the widths the CSS cuts finer recuts the lens's marks.
     rulerLens?.build(ticksPerStation());
     paintRailHover();
@@ -1184,9 +1186,19 @@
     paintLens();
   }
 
+  function measureCatalogStarts() {
+    const stationWidth = progressTrackWidth / links.length;
+    catalogStarts = links.map(link => {
+      const labelWidth = Math.max(...['.chapter-station-title', '.chapter-station-subtitle'].map(selector =>
+        link.querySelector(selector).getBoundingClientRect().width));
+      return clamp((labelWidth + 12) / stationWidth, 0.25, 0.5);
+    });
+  }
+
   function scrubCatalog(coordinate) {
     const station = clamp(Math.floor(coordinate + 0.5), 0, chapters.length - 1);
-    window.SiteCatalog?.scrub(station, clamp((coordinate - station + 0.4) / 0.8, 0, 1));
+    const start = catalogStarts[station];
+    window.SiteCatalog?.scrub(station, clamp((coordinate - station + 0.5 - start) / (0.9 - start), 0, 1));
   }
 
   function swapLabel(element, value, delay, duration) {
@@ -1226,7 +1238,7 @@
     for (const finish of labelAnimations) finish();
   }
 
-  function setCatalogRuler(index, fraction = 0.5, { duration = 0, delay = 0, swap = false, speed = 1 } = {}) {
+  function setCatalogRuler(index, progress = null, { duration = 0, delay = 0, swap = false, speed = 1 } = {}) {
     if (verticalMode) return;
     const catalog = index >= 0;
     const stations = catalog ? catalogStations : homeStations;
@@ -1245,12 +1257,15 @@
         swapLabel(link.querySelector('.chapter-station-title'), stations[i].name, lag, time);
         swapLabel(link.querySelector('.chapter-station-subtitle'), stations[i].code, lag, time);
       });
+      if (catalog) measureCatalogStarts();
     }
     links.forEach((link, i) => {
       if ((i === selected) === link.hasAttribute('aria-current')) return;
       if (i === selected) link.setAttribute('aria-current', 'location');
       else link.removeAttribute('aria-current');
     });
+    const start = catalogStarts[selected];
+    const fraction = catalog && progress !== null ? start + (0.9 - start) * progress : 0.5;
     const offset = (selected + fraction) * progressTrackWidth / chapters.length;
     const percent = (catalog ? offset / Math.max(1, progressTrackWidth) : selected / (chapters.length - 1)) * 100;
     setStyle(progressNav, '--chapter-active-index', String(selected));
@@ -1260,7 +1275,7 @@
     const sliderValue = percent.toFixed(1);
     if (lastSliderValue !== sliderValue) progressMarker?.setAttribute('aria-valuenow', sliderValue);
     lastSliderValue = sliderValue;
-    const label = `${stations[selected].name}，${Math.round(percent)}%`;
+    const label = `${stations[selected].name}，${Math.round(Number(sliderValue))}%`;
     if (progressMarker?.getAttribute('aria-valuetext') !== label) progressMarker?.setAttribute('aria-valuetext', label);
     if (markerGlide?.to === offset) return;
     finishMarkerGlide();
@@ -1299,9 +1314,15 @@
 
   window.SiteChapters = {
     get catalogHeld() { return catalogHeld; },
+    scrollCatalogChapter(delta) {
+      const chapter = scrollableChapter(sections[seriesIndex], Math.sign(delta));
+      if (!chapter || !delta) return false;
+      chapter.scrollTop = clamp(chapter.scrollTop + delta, 0, groupsByChapter.get(chapter).scrollLimit);
+      return true;
+    },
     holdCatalog() {
       if (catalogHeld) return;
-      measureCatalogDock();
+      if (!verticalMode) measureCatalogDock();
       catalogHeld = true;
     },
     releaseCatalog() {
@@ -1362,11 +1383,14 @@
   progressMarker?.addEventListener('blur', () => setClass(progressMarker, 'is-pointer-focused', false));
 
   progressMarker?.addEventListener('keydown', event => {
-    if (catalogHeld) return;
     if (!['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) setClass(progressMarker, 'is-pointer-focused', false);
     if (event.code === 'Escape' && scrub) { event.preventDefault(); finishScrub(); resetPointerParallax(true); return; }
     if (!available() || blocked() || transition?.direction || y() < entry - 1
         || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (catalogHeld) {
+      if (window.SiteCatalog?.markerKey(event.code)) event.preventDefault();
+      return;
+    }
     // Space has no slider meaning; it must not scroll the page between chapters.
     if (event.code === 'Space') { event.preventDefault(); return; }
     const deltas = { ArrowLeft: -0.05, ArrowDown: -0.05, ArrowRight: 0.05, ArrowUp: 0.05, PageDown: -1, PageUp: 1 };

@@ -4261,16 +4261,22 @@ await test('the panel catalog keeps the home stops, camera and runway while the 
   assert.equal(site.url.hash, '#catalog-daydreams');
   const runway = site.runway.style.height;
   const surface = site.categoryPanels.surface;
+  for (const link of site.navLinks) {
+    link.querySelector('.chapter-station-title').geometry = () => ({ left: 15, top: 0, width: 70, height: 20 });
+    link.querySelector('.chapter-station-subtitle').geometry = () => ({ left: 15, top: 0, width: 80, height: 10 });
+  }
   api.holdCatalog();
   const pose = [...surface.style.values];
-  api.setCatalogRuler(1, 0.5);
+  api.setCatalogRuler(1, null);
   assert.deepEqual(names(), ['Minecraft', '白日梦话', '神秘文案', '其他']);
   assert.equal(site.progress.getAttribute('aria-label'), '文章目录分类');
   const quarter = site.rulerWidth / 4;
   assert.equal(site.markerX, 1.5 * quarter);
   const samples = [];
   site.window.SiteCatalog = { scrub: (...args) => samples.push(args) };
-  for (const [cell, position, ratio] of [[1, 0.1, 0], [1, 0.73, 0.7875], [1, 0.9, 1], [3, 0.5, 0.5]]) {
+  const start = Math.min(.5, Math.max(.25, (80 + 12) / quarter));
+  for (const [cell, ratio] of [[1, 0], [1, .73], [1, 1], [3, .5]]) {
+    const position = start + (.9 - start) * ratio;
     const x = site.rulerLeft + (cell + position) * quarter;
     markerPointer(site, 'pointerdown', x, { target: site.progressRail });
     markerPointer(site, 'pointerup', x);
@@ -4278,7 +4284,7 @@ await test('the panel catalog keeps the home stops, camera and runway while the 
     assert.equal(station, cell);
     assert.ok(Math.abs(value - ratio) < 1e-6);
   }
-  api.setCatalogRuler(2, 0.9);
+  api.setCatalogRuler(2, 1);
   assert.equal(site.navLinks[2].getAttribute('aria-current'), 'location');
   assert.ok(Math.abs(site.markerX - 2.9 * quarter) < 0.001);
   site.jump(initialY + 400);

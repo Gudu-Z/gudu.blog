@@ -19,12 +19,12 @@
     <script src="./js/black-hole-theme.js?v=20261101-white-hole"></script>
     <link rel="stylesheet" href="./css/style.css?v=20261118-beam" />
     <link rel="stylesheet" href="./css/blog.css?v=20261122-rail" />
-    <link rel="stylesheet" href="./css/chapters.css?v=20261123-catalog-panel" />
+    <link rel="stylesheet" href="./css/chapters.css?v=20261124-catalog-fixes" />
     <link rel="stylesheet" href="./css/about-terminal.css?v=20261115-dossier" />
     <link rel="stylesheet" href="./css/chapter-interactions.css?v=20261101-day-mode" />
     <link rel="stylesheet" href="./css/categories.css?v=20261123-catalog-panel" />
     <link rel="stylesheet" href="./css/chapters-vertical.css?v=20261123-catalog-panel" />
-    <link rel="stylesheet" href="./css/catalog.css?v=20261123-catalog-panel2" />
+    <link rel="stylesheet" href="./css/catalog.css?v=20261124-catalog-fixes" />
     <link rel="stylesheet" href="./css/cursor.css?v=20261101-day-mode" />
     <script src="./js/ink-splatter.js?v=20261020-camera-preserved" defer></script>
     <script src="./js/particle-sky.js?v=20261122-lift" defer></script>
@@ -37,9 +37,9 @@
     <script src="./js/posts-data.js?v=20261123-catalog-panel" defer></script>
     <script src="./js/blog.js?v=20261123-catalog-panel" defer></script>
     <script src="./js/ruler-lens.js?v=20261123-catalog-panel" defer></script>
-    <script src="./js/chapters.js?v=20261123-catalog-panel" defer></script>
-    <script src="./js/chapters-vertical.js?v=20261123-catalog-panel" defer></script>
-    <script src="./js/catalog.js?v=20261123-catalog-panel3" defer></script>
+    <script src="./js/chapters.js?v=20261124-catalog-fixes" defer></script>
+    <script src="./js/chapters-vertical.js?v=20261124-catalog-fixes" defer></script>
+    <script src="./js/catalog.js?v=20261124-catalog-fixes" defer></script>
     <script src="./js/cursor.js?v=20261122-magnet" defer></script>
   </head>
   <body class="home-page">
@@ -54,6 +54,7 @@
           <span class="header-brand-calibration"></span>
         </span>
       </a>
+      <a class="catalog-back" href="#series" aria-label="返回分类"><span aria-hidden="true">←</span> <span><span class="catalog-back-verb">返回</span>分类</span> <span class="catalog-back-code" aria-hidden="true">/ CATEGORIES</span></a>
       <nav class="header-tools" aria-label="站点工具">
         <form class="post-search header-search" id="post-search" role="search" hidden>
           <button class="header-search-toggle" type="submit" aria-label="搜索文章" aria-expanded="false" aria-controls="header-search-fields"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg></button>
@@ -364,7 +365,6 @@
         </div>
       </div>
     </main>
-    <a class="catalog-back" href="#series"><span aria-hidden="true">←</span> 返回分类 <span class="catalog-back-code" aria-hidden="true">/ CATEGORIES</span></a>
     <nav class="chapter-progress" aria-label="网站章节">
       <div class="chapter-progress-track">
         <span class="chapter-progress-rail" aria-hidden="true"><i></i><i></i></span>

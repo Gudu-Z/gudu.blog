@@ -1,13 +1,14 @@
 .catalog-back {
-  position: fixed;
-  top: calc(var(--header-height) + var(--hud-inset-top, 0px) + var(--hud-header-drop, 0px) + 10px);
-  left: 5.5%;
+  position: absolute;
+  top: 50%;
+  left: var(--catalog-back-x, 0px);
+  translate: 0 -50%;
   z-index: 9;
   display: inline-flex;
   align-items: center;
   gap: 7px;
   color: var(--chapter-muted);
-  font-size: 12px;
+  font-size: calc(12 * var(--header-unit));
   line-height: 1.5;
   text-decoration: none;
   visibility: hidden;
@@ -15,13 +16,13 @@
   pointer-events: none;
   transition: opacity calc(200ms * var(--catalog-speed, 1)) ease, color calc(180ms * var(--catalog-speed, 1)) ease, visibility 0s calc(200ms * var(--catalog-speed, 1));
 }
-html.is-catalog .catalog-back {
+html.is-catalog .site-header:not(:has(.header-search.is-expanded)) .catalog-back {
   visibility: visible;
   opacity: 1;
   pointer-events: auto;
   transition-delay: 0s;
 }
-.catalog-back-code { font: 9px/1.5 var(--chapter-mono); }
+.catalog-back-code { font: calc(9 * var(--header-unit))/1.5 var(--chapter-mono); }
 .catalog-back > span:first-child { transition: color calc(180ms * var(--catalog-speed, 1)) ease, transform calc(180ms * var(--catalog-speed, 1)) ease; }
 .catalog-back:is(:hover, :focus-visible) { color: var(--chapter-text); }
 .catalog-back:is(:hover, :focus-visible) > span:first-child { color: var(--chapter-signal); transform: translateX(-3px); }
@@ -32,7 +33,8 @@ html.is-catalog .catalog-back {
   z-index: 2;
   outline: none;
 }
-.category-cover:focus-visible, .catalog-card:focus-visible { outline: none; }
+.category-cover:focus-visible { outline: none; }
+.catalog-card:focus-visible { outline: 1px solid light-dark(#222d3675, #b6c4d075); outline-offset: 4px; }
 .is-catalog-open.has-compact-row .category-index { margin-top: var(--catalog-bleed-y); }
 .is-catalog-open.has-compact-row .category-composition { margin-top: var(--catalog-gap-composition); }
 .is-catalog-open.has-compact-row .category-name { margin-top: var(--catalog-gap-name); }
@@ -234,13 +236,24 @@ html.has-chapters .home-page .series-section.has-catalog-board .category-panel {
   background-position: calc(var(--catalog-light-x) + var(--catalog-light-overlap, 40px)) center;
   background-repeat: no-repeat;
 }
-html.is-catalog:not(.has-vertical-chapters) .chapter-section:not(#series) { opacity: 0; interactivity: inert; }
-html.is-catalog:not(.has-vertical-chapters) .chapter-viewport { touch-action: none; }
-html.has-chapters .home-page .series-section.has-catalog-board { overflow: visible; }
+html.is-catalog:not(.has-vertical-chapters) .chapter-section:not(#series) { opacity: 0; }
+html.is-catalog:not(.has-vertical-chapters) .chapter-viewport { touch-action: pinch-zoom; }
+/* Keep the native vertical scroll position while the folded columns extend across the viewport. */
+html.has-chapters .home-page .series-section.has-catalog-board.is-chapter-scrollable { --chapter-bleed: 100vw; }
 .category-heading-label { white-space: pre; }
 .is-catalog-transitioning .category-heading-text { display: inline-block; }
 
-html.has-vertical-chapters .catalog-back { left: 6%; }
+/* Keep the text at its station inset and include that inset in the label's measured width. */
+html.is-catalog:not(.has-vertical-chapters) :is(.chapter-station-title, .chapter-station-subtitle) {
+  left: 0;
+  padding-left: 15px;
+}
+
+html.has-vertical-chapters .catalog-back { font-size: 12px; }
+.has-vertical-chapters .catalog-back-code { display: none; }
+@media (width < 360px) {
+  .has-vertical-chapters .catalog-back-verb { display: none; }
+}
 .has-vertical-chapters .is-catalog-open { grid-column: 1 / -1; }
 .has-vertical-chapters .is-catalog-open .category-display { height: auto; container-type: inline-size; }
 .has-vertical-chapters .is-catalog-open .category-scene { left: 50%; opacity: .5; scale: 1; }
@@ -253,6 +266,23 @@ html.has-vertical-chapters .catalog-back { left: 6%; }
 }
 .has-vertical-chapters .catalog-cards { flex-direction: column; gap: 10px; }
 .has-vertical-chapters .catalog-card { width: 100%; }
+.has-vertical-chapters :is(.catalog-card, .catalog-empty) {
+  background: light-dark(rgb(240 241 243 / 76%), rgb(14 16 19 / 76%));
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+.has-vertical-chapters .catalog-group-head {
+  --catalog-heading-line: max(12px, calc(14.83 * var(--category-unit)));
+  align-items: flex-start;
+  height: auto;
+  min-height: calc(19.07 * var(--category-unit));
+}
+.has-vertical-chapters .catalog-group-head h3 { white-space: normal; overflow-wrap: anywhere; }
+.has-vertical-chapters :is(.catalog-group-count, .catalog-group-symbol) { line-height: var(--catalog-heading-line); }
+.has-vertical-chapters .catalog-group-rule {
+  min-width: calc(9.53 * var(--category-unit));
+  margin-top: calc(var(--catalog-heading-line) / 2);
+}
 @media (prefers-reduced-motion: no-preference) {
   html.has-vertical-chapters.is-catalog .home-page .catalog-block .is-vertical-reveal {
     transition-duration: calc(520ms * var(--catalog-speed, 1)), calc(760ms * var(--catalog-speed, 1));
@@ -260,6 +290,15 @@ html.has-vertical-chapters .catalog-back { left: 6%; }
   }
 }
 @media (min-width: 601px) {
+  html.has-vertical-chapters.is-catalog .category-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 14px;
+  }
+  html.has-vertical-chapters.is-catalog .category-column:nth-child(3)::before { display: none; }
+  html.has-vertical-chapters.is-catalog .category-column:nth-child(n+3) {
+    padding-top: 14px;
+    border-top: 1px solid light-dark(#1b262a1f, #bfced31f);
+  }
   html.has-vertical-chapters.is-catalog .category-panel,
   html.has-vertical-chapters.is-catalog .category-columns,
   html.has-vertical-chapters.is-catalog .category-column { height: auto; }
@@ -267,5 +306,7 @@ html.has-vertical-chapters .catalog-back { left: 6%; }
 }
 @media (prefers-reduced-motion: reduce) {
   .catalog-back, .catalog-back > span:first-child { transition: none; }
+  /* The global reduced duration still starts implicit transitions. Read the new row geometry immediately. */
+  html.is-catalog:not(.has-vertical-chapters) :is(.category-columns, .catalog-row, .chapter-progress-marker) { transition-property: none; }
   .has-catalog-board .category-column:is(:first-child, :last-child) { transform: none; }
 }

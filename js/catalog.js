@@ -1,9 +1,14 @@
 (() => {
   'use strict';
   const root = document.documentElement;
+  const originalTitle = document.title;
   const series = document.querySelector('#series');
   const chapters = window.SiteChapters;
   if (!series || !chapters) return;
+  const header = document.querySelector('.site-header');
+  const brand = header.querySelector('.site-brand');
+  const back = header.querySelector('.catalog-back');
+  const search = header.querySelector('.header-search');
   const panel = series.querySelector('.category-panel');
   const grid = panel.querySelector('.category-columns');
   const heading = series.querySelector('.category-heading');
@@ -12,6 +17,7 @@
   const period = title.querySelector('.accent');
   const eyebrow = heading.querySelector('.category-heading-label');
   const neighbours = [...document.querySelectorAll('.chapter-section:not(#series)')];
+  const inertNeighbours = new Set();
   const cells = [...grid.children].map(column => ({
     column, slug: column.dataset.categorySlug, cover: column.querySelector('.category-cover'),
     display: column.querySelector('.category-display'), scene: column.querySelector('.category-scene'),
@@ -25,9 +31,28 @@
   const px = value => value + 'px';
   const clamp = (n, low, high) => Math.max(low, Math.min(n, high));
   const fromHash = hash => cells.findIndex(cell => hash === '#catalog-' + cell.slug);
+  function viewportTop(element) {
+    let top = -window.scrollY;
+    for (let node = element; node; node = node.offsetParent) top += node.offsetTop;
+    return top;
+  }
   let active = -1, base, board, run, pendingNavigation, scrollFrame, scrollTarget, touch;
   let limit = 0, scrollWidth = 0;
+  let pendingScrub;
   if (speed !== 1) root.style.setProperty('--catalog-speed', String(speed));
+
+  function positionBack() {
+    const frame = header.getBoundingClientRect(), logo = brand.getBoundingClientRect();
+    const gap = phone() ? '14px' : '44 * var(--header-unit)';
+    back.style.setProperty('--catalog-back-x', `calc(${logo.right - frame.left}px + ${gap})`);
+    // Perspective lifts the visual center of the folded brand above the header's center.
+    back.style.marginTop = px((logo.top + logo.bottom - frame.top - frame.bottom) / 2);
+  }
+
+  // Keep focus out of the back link as soon as the search starts its fade.
+  const syncSearch = () => { back.inert = search.classList.contains('is-expanded'); };
+  new MutationObserver(syncSearch).observe(search, { attributes: true, attributeFilter: ['class'] });
+  syncSearch();
 
   function measureBase() {
     const css = getComputedStyle(panel);
@@ -93,8 +118,9 @@
     const columnRight = edge(start + track, index === tracks.length - 1 ? track : 0, padY, Math.max);
     const boardRight = edge(width - rightInset - padX, tracks.at(-1), padY, Math.max);
     const headingLeft = Math.max(base.frameLeft, edge(leftInset, -a, 0, Math.min));
-    const headingRight = Math.min(base.frameRight, edge(width - rightInset, b, 0, Math.max));
-    return { width, shift, foldShift, tracks, angle, leftInset, rightInset, columnLeft, columnRight, boardRight,
+    const outerRight = edge(width - rightInset, b, 0, Math.max);
+    const headingRight = Math.min(base.frameRight, outerRight);
+    return { width, shift, foldShift, tracks, angle, leftInset, rightInset, columnLeft, columnRight, boardRight, outerRight,
       headingShift: headingLeft - base.headingLeft, headingWidth: (headingRight - headingLeft) / base.headingScale,
       folds: [fold(leftInset + a, angle), fold(width - rightInset - b, -angle)],
     };
@@ -122,7 +148,7 @@
     while (result.columnRight - result.columnLeft <= span) {
       if (hi === requested) {
         if (index === 0 || result.boardRight <= base.frameRight + .005) return result;
-        const extra = clamp(result.columnLeft - base.slotLeft, 0, result.boardRight - base.dockRight);
+        const extra = clamp(result.columnLeft - base.slotLeft, 0, result.outerRight - base.dockRight);
         return layout(result.tracks, angle, result.shift - extra, index, result.shift);
       }
       lo = hi;
@@ -192,7 +218,7 @@
     const x = block.scrollLeft;
     block.style.setProperty('--catalog-left-fade', px(x > .5 ? 90 : 0));
     block.style.setProperty('--catalog-right-fade', px(limit - x > .5 ? 90 : 0));
-    return limit ? .1 + .8 * clamp(x / limit, 0, 1) : .5;
+    return limit ? clamp(x / limit, 0, 1) : null;
   }
 
   function scrollToRow(x) {
@@ -213,6 +239,15 @@
     scrollFrame = requestAnimationFrame(step);
   }
 
+  function stepRow(direction) {
+    const position = scrollFrame ? scrollTarget : cells[active].block.scrollLeft;
+    const next = clamp(position + 100 * direction, 0, limit);
+    // Native scroll offsets can be fractional even though scrollWidth and clientWidth are integers.
+    if (Math.abs(next - position) < 1) return false;
+    scrollToRow(next);
+    return true;
+  }
+
   function show(index, old = -1) {
     cells.forEach(({ column, cover, block }, i) => {
       column.classList.toggle('is-catalog-open', i === index);
@@ -223,13 +258,34 @@
     });
   }
 
+  function holdNeighbourInert() {
+    for (const section of neighbours) {
+      if (section.inert) continue;
+      section.inert = true;
+      inertNeighbours.add(section);
+    }
+  }
+
+  function clearNeighbourInert() {
+    for (const section of inertNeighbours) section.inert = false;
+    inertNeighbours.clear();
+  }
+
+  function updateCoverInert() {
+    cells.forEach(({ column, cover }, i) => {
+      const bounds = phone() ? null : column.getBoundingClientRect();
+      cover.inert = i === active || Boolean(bounds && (bounds.right <= 0 || bounds.left >= innerWidth));
+    });
+  }
+
   function cleanFinish() {
     show(active);
     if (active < 0) {
       root.classList.remove('is-catalog');
       clearBoard();
+      clearNeighbourInert();
       chapters.releaseCatalog();
-    }
+    } else updateCoverInert();
     root.classList.remove('is-catalog-transitioning');
     chapters.finishCatalogRuler();
     if (active >= 0 && !phone()) chapters.setCatalogRuler(active, scrollState(active));
@@ -286,17 +342,30 @@
     if (eyebrow.textContent !== decoded) eyebrow.textContent = decoded;
   }
 
+  function focusEnteredCard(transition) {
+    if (run !== transition || !transition.focusTarget || (pendingNavigation && pendingNavigation.index !== active)
+        || (pendingScrub && pendingScrub.index !== active)) return;
+    transition.focusTarget.focus({ preventScroll: true });
+    transition.focusTarget = null;
+  }
+
   function finish(interrupted = false) {
     if (!run) return;
     cancelAnimationFrame(run.frame);
     run.effects.forEach(effect => effect.cancel());
+    focusEnteredCard(run);
     run = null;
     writeTitle(active >= 0);
     cleanFinish();
     if (pendingNavigation) {
       const request = pendingNavigation;
       pendingNavigation = null;
+      pendingScrub = null;
       change(request.index, { ...request, instant: interrupted || request.instant });
+    } else if (pendingScrub) {
+      const { index, fraction } = pendingScrub;
+      pendingScrub = null;
+      scrub(index, fraction, interrupted);
     }
   }
 
@@ -327,7 +396,15 @@
     [0, 3].forEach((i, side) => effect(cells[i].column, path.map(b => ({ transform: b.folds[side] })), delay, duration));
   }
 
-  function animateCell(index, opening, switching, delay, duration) {
+  function rowCards(index, visibleOnly) {
+    const { block } = cells[index];
+    const cards = [...block.querySelectorAll('.catalog-card, .catalog-empty')];
+    if (!visibleOnly) return cards;
+    const left = block.scrollLeft, right = left + block.clientWidth;
+    return cards.filter(card => card.offsetLeft < right && card.offsetLeft + card.offsetWidth > left);
+  }
+
+  function animateCell(index, opening, switching, delay, duration, cards) {
     const { column, scene, line, action } = cells[index];
     const visual = (element, frames, start, time, ease, pseudo) =>
       effect(element, opening ? frames : [...frames].reverse(), start, time, ease, pseudo);
@@ -335,13 +412,18 @@
     visual(action, [{ opacity: 1 }, { opacity: 0 }], delay, 160);
     visual(line, [{ width: 'calc(3 * var(--category-unit))', height: 'calc(3 * var(--category-unit))', top: 'calc(-1 * var(--category-unit))' },
       { width: '24px', height: '1px', top: '0px' }], 0, 180, arrive, '::after');
-    const cards = [...column.querySelectorAll('.catalog-card, .catalog-empty')];
     const appear = switching ? 440 : 560;
     column.querySelectorAll('.catalog-group-head').forEach(el =>
       visual(el, [{ opacity: 0 }, { opacity: 1 }], opening ? appear : 0, opening ? 200 : switching ? 140 : 220));
     cards.forEach((el, i) => {
-      if (opening) effect(el, [{ opacity: 0, translate: '0 14px' }, { opacity: 1, translate: '0 0' }],
-        appear + i * 60, 360, arrive);
+      if (opening) {
+        const animation = effect(el, [{ opacity: 0, translate: '0 14px' }, { opacity: 1, translate: '0 0' }],
+          appear + i * 60, 360, arrive);
+        if (el === run.focusTarget) {
+          const transition = run;
+          animation.onfinish = () => focusEnteredCard(transition);
+        }
+      }
       else if (switching) effect(el, [{ opacity: 1 }, { opacity: 0 }], 0, 140);
       else effect(el, [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: '0 10px' }],
         (cards.length - 1 - i) * 40, 220);
@@ -356,12 +438,18 @@
     if (index === active) return;
     const old = active, opening = index >= 0, switching = opening && old >= 0;
     const desktop = !phone(), motion = !instant && !reduce.matches && !document.hidden && (desktop || !switching);
+    const keep = !desktop && opening ? viewportTop(cells[index].column) : null;
     const fromKeyboard = focus && document.activeElement?.matches('.category-cover:focus-visible');
+    const previousFocus = document.activeElement;
+    const losingFocus = old >= 0 && (cells[old].block.contains(previousFocus) || previousFocus?.matches('.catalog-back'));
+    const outgoingCards = desktop && motion && old >= 0 ? rowCards(old, !switching) : [];
     cancelAnimationFrame(scrollFrame);
     scrollFrame = 0;
     touch = null;
     if (old < 0) {
       chapters.holdCatalog();
+      positionBack();
+      if (desktop) holdNeighbourInert();
       if (historyMode === 'push' && location.hash !== '#series') history.replaceState(history.state, '', '#series');
     }
     if (desktop && !base) base = measureBase();
@@ -369,6 +457,12 @@
     root.classList.add('is-catalog');
     show(index, motion && desktop ? old : -1);
     active = index;
+    document.title = opening
+      ? cells[index].column.querySelector('.category-name').textContent.trim() + ' · 文章目录 · ' + originalTitle
+      : originalTitle;
+    if (!desktop && opening) window.dispatchEvent(new CustomEvent('site:catalog-layout', {
+      detail: { cell: cells[index].column, keep, instant },
+    }));
     if (desktop && opening) {
       cells[index].block.style.setProperty('--catalog-row-start', px(base.displays[index] * .62));
       cells[index].block.scrollLeft = 0;
@@ -379,13 +473,16 @@
     }
     scrollWidth = desktop && opening ? cells[index].block.clientWidth : 0;
     limit = desktop && opening ? Math.max(0, cells[index].block.scrollWidth - scrollWidth) : 0;
-    const fraction = desktop && opening ? scrollState(index) : .5;
+    const incomingCards = desktop && motion && opening ? rowCards(index, true) : [];
+    const fraction = desktop && opening ? scrollState(index) : null;
     const hash = opening ? '#catalog-' + cells[index].slug : '#series';
     if (historyMode && location.hash !== hash) history[historyMode + 'State'](history.state, '', hash);
     if (!desktop && !opening && location.hash === '#series') chapters.measureCatalogDock();
-    if (focus && !opening) cells[old].cover.focus({ preventScroll: true });
-    if (fromKeyboard && opening) {
-      (cells[index].block.querySelector('a') || document.querySelector('.catalog-back')).focus({ preventScroll: true });
+    if ((focus || losingFocus) && !opening) cells[old].cover.focus({ preventScroll: true });
+    let focusTarget;
+    if ((fromKeyboard || losingFocus) && opening) {
+      focusTarget = cells[index].block.querySelector('.catalog-card');
+      if (!focusTarget || !motion) (focusTarget || document.querySelector('.catalog-back')).focus({ preventScroll: true });
     }
     title.setAttribute('aria-label', opening ? '文章目录' : '分类');
     if (desktop) chapters.setCatalogRuler(index, fraction, { swap: motion && !switching, speed,
@@ -395,12 +492,12 @@
     const clock = document.body.animate([{}, {}], { duration: 1, fill: 'both' });
     clock.id = 'catalog-transition-clock';
     clock.startTime = document.timeline.currentTime;
-    run = { clock, effects: [clock], length: switching ? 800 : opening ? 1100 : 1000 };
+    run = { clock, effects: [clock], focusTarget, length: switching ? 800 : opening ? 1100 : 1000 };
     if (desktop) {
       const duration = switching ? 480 : opening ? 620 : 520, delay = switching ? 140 : 120;
       animateBoard(from, board, delay, duration);
-      if (old >= 0) animateCell(old, false, switching, delay, duration);
-      if (opening) animateCell(index, true, switching, delay, duration);
+      if (old >= 0) animateCell(old, false, switching, delay, duration, outgoingCards);
+      if (opening) animateCell(index, true, switching, delay, duration, incomingCards);
       if (!switching) for (const n of neighbours) {
         const rect = n.getBoundingClientRect();
         const cx = innerWidth / 2 - (rect.left + rect.width / 2), cy = innerHeight / 2 - (rect.top + rect.height / 2);
@@ -433,35 +530,57 @@
     cancelAnimationFrame(scrollFrame);
     scrollFrame = 0;
     const index = active, block = cells[index].block;
+    if (phone()) {
+      positionBack();
+      if (base) {
+        clearBoard();
+        block.removeAttribute('style');
+        limit = 0;
+      }
+      clearNeighbourInert();
+      updateCoverInert();
+      return;
+    }
     const fraction = limit ? block.scrollLeft / limit : 0;
     clearBoard();
     cells[index].column.classList.remove('is-catalog-open');
     chapters.measureCatalogDock();
-    if (!phone()) base = measureBase();
+    positionBack();
+    holdNeighbourInert();
+    base = measureBase();
     show(index);
-    if (phone()) { block.removeAttribute('style'); limit = 0; return; }
     block.style.setProperty('--catalog-row-start', px(base.displays[index] * .62));
     setBoard(fit(index));
     fitRowHeight(index);
     scrollWidth = block.clientWidth;
     limit = Math.max(0, block.scrollWidth - scrollWidth);
     block.scrollLeft = fraction * limit;
+    updateCoverInert();
     chapters.setCatalogRuler(index, scrollState(index));
   }
 
   function stop(e) { e.preventDefault(); e.stopImmediatePropagation(); }
   function exitInstantly() {
     pendingNavigation = null;
+    pendingScrub = null;
+    if (run) run.focusTarget = null;
     finish();
     if (active >= 0) change(-1, { instant: true, historyMode: null, focus: false });
   }
+  function exitsCatalog(link) {
+    if (!link || link.hasAttribute('download') || (link.target && link.target !== '_self')) return false;
+    if (link.origin !== location.origin || link.pathname !== location.pathname || link.search !== location.search) return false;
+    return link.hash === '#home' || neighbours.some(section => link.hash === '#' + section.id)
+      || (phone() && link.hash === '#series' && link.matches('[data-chapter-link]'));
+  }
   document.addEventListener('pointerdown', e => {
-    if (run && !e.target.closest('.catalog-back, [data-theme-toggle]')) stop(e);
+    if (run && !e.target.closest('.catalog-back, [data-theme-toggle]') && !exitsCatalog(e.target.closest('a[href]'))) stop(e);
   }, true);
   document.addEventListener('click', e => {
     if (e.button || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
     const link = e.target.closest('a[href]');
     if (link?.matches('.catalog-back')) { stop(e); change(-1); return; }
+    if ((active >= 0 || run) && exitsCatalog(link)) { exitInstantly(); return; }
     if (run) {
       if (e.target.closest('[data-theme-toggle]')) finish(true);
       else stop(e);
@@ -472,7 +591,6 @@
       const index = fromHash(link.hash);
       if (index >= 0) { stop(e); change(index); return; }
     }
-    if (active >= 0 && (link.matches('.site-brand') || (phone() && link.matches('[data-chapter-link]')))) exitInstantly();
   }, true);
   document.addEventListener('submit', e => {
     if (e.target.id !== 'post-search') return;
@@ -482,11 +600,25 @@
 
   window.addEventListener('keydown', e => {
     if (active < 0 && !run) return;
-    if (e.key === 'Escape') { stop(e); change(-1); return; }
+    if (e.key === 'Escape') {
+      if (e.target.closest?.('.header-search.is-expanded')) return;
+      stop(e); change(-1); return;
+    }
+    if (run && e.key === 'Enter' && exitsCatalog(e.target.closest?.('a[href]'))) return;
     if (run) { stop(e); return; }
-    if (phone() || e.ctrlKey || e.metaKey || e.altKey || e.target.closest('input,textarea,[contenteditable="true"]')) return;
+    if (phone() || e.ctrlKey || e.metaKey || e.altKey || e.target.closest('input,textarea,select,[contenteditable="true"],.chapter-progress-marker')) return;
+    if (['ArrowUp', 'ArrowDown'].includes(e.key) && series.classList.contains('is-chapter-scrollable')) {
+      stop(e);
+      chapters.scrollCatalogChapter(e.key === 'ArrowDown' ? 100 : -100);
+      return;
+    }
+    if (['ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      stop(e);
+      stepRow(e.key === 'ArrowRight' ? 1 : -1);
+      return;
+    }
     const position = scrollFrame ? scrollTarget : cells[active].block.scrollLeft;
-    const keys = { ArrowRight: position + 100, ArrowLeft: position - 100, PageDown: position + scrollWidth * .6,
+    const keys = { PageDown: position + scrollWidth * .6,
       PageUp: position - scrollWidth * .6, Home: 0, End: limit };
     if (Object.hasOwn(keys, e.key)) { stop(e); scrollToRow(keys[e.key]); }
   }, true);
@@ -494,9 +626,11 @@
     if (active < 0 && !run || e.ctrlKey || phone() && !run) return;
     stop(e);
     if (run) return;
-    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    const vertical = Math.abs(e.deltaY) >= Math.abs(e.deltaX);
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1;
-    scrollToRow((scrollFrame ? scrollTarget : cells[active].block.scrollLeft) + delta * unit);
+    const distance = (vertical ? e.deltaY : e.deltaX) * unit;
+    if (vertical && chapters.scrollCatalogChapter(distance)) return;
+    scrollToRow((scrollFrame ? scrollTarget : cells[active].block.scrollLeft) + distance);
   }, { capture: true, passive: false });
   window.addEventListener('touchstart', e => {
     if (active < 0 || phone() || e.touches.length !== 1 || e.target.closest('.chapter-progress')) return;
@@ -513,6 +647,10 @@
   }, { capture: true, passive: false });
   for (const name of ['touchend', 'touchcancel']) window.addEventListener(name, () => { touch = null; });
   cells.forEach(({ block }, i) => {
+    block.addEventListener('transitionend', e => {
+      if (phone() && e.propertyName === 'translate' && e.target === run?.focusTarget
+          && e.target.classList.contains('is-vertical-shown')) focusEnteredCard(run);
+    });
     block.addEventListener('scroll', () => {
       if (active === i && !run && !phone()) chapters.setCatalogRuler(i, scrollState(i));
     });
@@ -529,11 +667,30 @@
       }
     });
   });
+  function scrub(index, fraction, instant = false) {
+    if (active < 0 || phone() || pendingNavigation) return;
+    if (!run && index !== active) change(index, { instant, focus: false });
+    if (run) { pendingScrub = { index, fraction }; return; }
+    const x = clamp(fraction, 0, 1) * limit;
+    if (instant) cells[active].block.scrollLeft = x;
+    else scrollToRow(x);
+  }
   window.SiteCatalog = {
-    scrub(index, fraction) {
-      if (run || active < 0 || phone()) return;
-      if (index !== active) change(index);
-      else scrollToRow(clamp(fraction, 0, 1) * limit);
+    scrub,
+    markerKey(code) {
+      if (code === 'Space') return true;
+      if (code === 'Home' || code === 'End') {
+        if (code === 'Home') scrub(0, 0);
+        else scrub(cells.length - 1, 1);
+        return true;
+      }
+      const directions = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, PageUp: 1, PageDown: -1 };
+      const direction = directions[code];
+      if (!direction) return false;
+      if (!code.startsWith('Arrow') || !stepRow(direction)) {
+        change(clamp(active + direction, 0, cells.length - 1), { focus: false });
+      }
+      return true;
     },
   };
   function followHistory() {
@@ -544,7 +701,10 @@
   window.addEventListener('popstate', followHistory);
   window.addEventListener('hashchange', followHistory);
   window.addEventListener('resize', refresh);
-  window.addEventListener('site:chapter-mode', () => requestAnimationFrame(refresh));
+  window.addEventListener('site:chapter-mode', e => {
+    if (e.detail.vertical) refresh();
+    else requestAnimationFrame(refresh);
+  });
   window.addEventListener('site:revealed', refresh);
   window.addEventListener('pageshow', e => { if (e.persisted) refresh(); });
   window.addEventListener('site:theme', () => finish(true));

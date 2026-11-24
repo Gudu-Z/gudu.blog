@@ -187,7 +187,8 @@ const STATE = `(() => {
   };
 })()`;
 const state = page => evaluate(page, STATE);
-const sectionTop = (page, id) => evaluate(page, `(() => { let top = 0; for (let node = document.getElementById('${id}'); node; node = node.offsetParent) top += node.offsetTop; return top; })()`);
+const layoutTop = (page, selector) => evaluate(page, `(() => { let top = 0; for (let node = document.querySelector(${JSON.stringify(selector)}); node; node = node.offsetParent) top += node.offsetTop; return top; })()`);
+const sectionTop = (page, id) => layoutTop(page, '#' + id);
 const scroll = (page, top) => evaluate(page, `(scrollTo({ top: ${top}, behavior: 'instant' }), new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() => done(scrollY)))))`);
 
 async function swipe(page, x, from, to) {
@@ -208,7 +209,7 @@ async function click(page, x, y) {
   await mouse(page, 'mousePressed', x, y, 1);
   await mouse(page, 'mouseReleased', x, y);
 }
-async function clickLink(page, selector) {
+async function clickLink(page, selector, { touch = false } = {}) {
   const point = await evaluate(page, `(() => {
     const link = document.querySelector(${JSON.stringify(selector)});
     const box = link.getBoundingClientRect();
@@ -216,7 +217,10 @@ async function clickLink(page, selector) {
     return { x, y, reachable: link.contains(document.elementFromPoint(x, y)) };
   })()`);
   assert.ok(point.reachable, `${selector} can be clicked where it is painted`);
-  await click(page, point.x, point.y);
+  if (touch) {
+    await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: point.x, y: point.y }] }, page.sessionId);
+    await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, page.sessionId);
+  } else await click(page, point.x, point.y);
 }
 async function drag(page, x, from, to) {
   await mouse(page, 'mouseMoved', x, from);
@@ -667,7 +671,7 @@ async function markerAt(page, cell, fraction) {
 }
 
 async function press(page, key) {
-  const codes = { Escape: 27, Home: 36, End: 35, Tab: 9, PageDown: 34, ArrowLeft: 37 };
+  const codes = { Enter: 13, Escape: 27, Home: 36, End: 35, Tab: 9, PageDown: 34, ArrowLeft: 37 };
   const params = { key, code: key, windowsVirtualKeyCode: codes[key] };
   await send('Input.dispatchKeyEvent', { ...params, type: 'keyDown' }, page.sessionId);
   await send('Input.dispatchKeyEvent', { ...params, type: 'keyUp' }, page.sessionId);
@@ -784,7 +788,7 @@ test('the narrow catalog slides toward the first slot and stops at the docked pa
     checkHeading(daydreams);
     checkFullRow(daydreams);
     near(daydreams.openColumn.left, slot, 6, 'daydreams reaches the first slot');
-    near(daydreams.columns.at(-1).right, home.board[1], 1, 'the last column stops at the docked panel end');
+    assert.ok(daydreams.board[1] >= home.board[1] - 1, 'the outer facet reaches the docked panel end');
     assert.ok(daydreams.columns[0].left < 0 && daydreams.columns[0].right <= slot + 6,
       'the preceding column slides off the left edge and clears the first slot');
     assert.ok(opening.board[0] > daydreams.board[0] && opening.board[0] < home.board[0]);
@@ -820,8 +824,7 @@ test('the narrow catalog slides toward the first slot and stops at the docked pa
     const collected = await readBoard(page);
     checkHeading(collected);
     checkFullRow(collected);
-    near(collected.columns.at(-1).right, home.board[1], 1, 'the docked end limits the slide for collected');
-    near(collected.columns[1].left, slot, 6, 'daydreams occupies the first slot');
+    near(collected.board[1], home.board[1], 1, 'the outer edge of the docked panel limits the slide for collected');
     near(collected.openColumn.left, collected.columns[1].right, 1, 'collected stays directly after daydreams');
     await clickLink(page, '.catalog-back');
     await seekCatalog(page, 380);
@@ -919,7 +922,8 @@ test('a long catalog row spans both frames and scrolls independently of the stri
     near(view.openColumn.left, view.frame[0], 1, 'projected open column left edge');
     near(view.openColumn.right, view.frame[1], 1, 'projected open column right edge');
     checkHeading(view);
-    await markerAt(page, 1, 0.1);
+    const startFraction = (await state(page)).position + 0.5;
+    assert.ok(startFraction >= 0.25 && startFraction <= 0.5);
     const read = `document.querySelector(${JSON.stringify(catalogSelector('minecraft'))})`;
     const fades = () => evaluate(page, `['left', 'right'].map(side =>
       parseFloat(getComputedStyle(${read}).getPropertyValue('--catalog-' + side + '-fade')))`);
@@ -938,7 +942,7 @@ test('a long catalog row spans both frames and scrolls independently of the stri
     assert.deepEqual(await fades(), [90, 0]);
     await press(page, 'Home');
     await waitFor(page, `${read}.scrollLeft < 1`);
-    await markerAt(page, 1, 0.1);
+    await markerAt(page, 1, startFraction);
     await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, page.sessionId);
     await swipe(page, 800, 490, 350);
     await waitFor(page, `${read}.scrollLeft > 10`);
@@ -946,11 +950,14 @@ test('a long catalog row spans both frames and scrolls independently of the stri
     const fromTouch = await evaluate(page, `${read}.scrollLeft`);
     await press(page, 'PageDown');
     await waitFor(page, `${read}.scrollLeft > ${fromTouch + 10}`);
-    const axis = await evaluate(page, RULER_POINT(1, 0.5));
+    // Start the axis press away from the moving marker's 44px drag handle.
+    await press(page, 'Home');
+    await waitFor(page, `${read}.scrollLeft === 0`);
+    const axis = await evaluate(page, RULER_POINT(1, startFraction + (0.9 - startFraction) * 0.5));
     await click(page, axis.x, axis.y);
-    await waitFor(page, `Math.abs(${read}.scrollLeft / ${max} - .5) < .02`);
+    await waitFor(page, `Math.abs((${MARKER}).x - ${axis.x}) <= 1`);
     const start = await evaluate(page, MARKER);
-    const target = await evaluate(page, RULER_POINT(1, 0.7));
+    const target = await evaluate(page, RULER_POINT(1, startFraction + (0.9 - startFraction) * 0.75));
     await mouse(page, 'mousePressed', start.x, start.y, 1);
     await mouse(page, 'mouseMoved', target.x, target.y, 1);
     await mouse(page, 'mouseReleased', target.x, target.y);
@@ -973,6 +980,117 @@ test('a long catalog row spans both frames and scrolls independently of the stri
     await clickLink(page, '.catalog-back');
     await checkRestored(page, home);
   } finally { await close(page); }
+});
+
+test('the catalog cursor clears its labels and tracks clicks and drags through category switches', { skip }, async () => {
+  for (const [width, height] of [[871, 817], [1440, 900]]) {
+    const page = await open('/#catalog-minecraft', { ...desktop, width, height, beforeScripts: withArticles(3, 4) });
+    try {
+      await settledCatalog(page, 'minecraft');
+      const marker = await evaluate(page, MARKER);
+      const right = await evaluate(page, `Math.max(...[...document.querySelector('[data-chapter-link][aria-current]')
+        .querySelectorAll('.chapter-station-title, .chapter-station-subtitle')].map(el => el.getBoundingClientRect().right))`);
+      assert.ok(marker.x - right >= 8, `at ${width}px the marker clears the label by ${marker.x - right}px`);
+      const here = await evaluate(page, RULER_POINT(1, .77));
+      await click(page, here.x, here.y);
+      await waitFor(page, `Math.abs((${MARKER}).x - ${here.x}) <= 1`);
+      // Drag into station B, then release over C before B's switch finishes.
+      await mouse(page, 'mousePressed', here.x, here.y, 1);
+      const middle = await evaluate(page, RULER_POINT(2, .6));
+      await mouse(page, 'mouseMoved', middle.x, middle.y, 1);
+      await waitFor(page, "location.hash === '#catalog-daydreams' && document.documentElement.classList.contains('is-catalog-transitioning')");
+      const end = await evaluate(page, RULER_POINT(3, .72));
+      await mouse(page, 'mouseMoved', end.x, end.y, 1);
+      await mouse(page, 'mouseReleased', end.x, end.y);
+      await settledCatalog(page, 'collected');
+      // A click partway into an overflowing category must survive the switch too.
+      await click(page, here.x, here.y);
+      await settledCatalog(page, 'minecraft');
+      await waitFor(page, `Math.abs((${MARKER}).x - ${here.x}) <= 1`);
+    } finally { await close(page); }
+  }
+});
+
+test('the catalog slider keys scroll rows, change categories, and expose the new value', { skip }, async () => {
+  const page = await open('/#catalog-minecraft', { ...desktop, reduced: true, beforeScripts: withArticles(3, 4) + `
+    const row = document.querySelector('[data-category-slug="other"] .catalog-row');
+    row.replaceChildren(...[...document.querySelector('[data-category-slug="minecraft"] .catalog-row').children].map(group => group.cloneNode(true)));` });
+  try {
+    const row = "document.querySelector('.is-catalog-open .catalog-block')";
+    const marker = "document.querySelector('.chapter-progress-marker')";
+    await evaluate(page, `${marker}.focus({preventScroll: true})`);
+    for (const [key, target] of [['ArrowRight', 100], ['ArrowUp', 200], ['ArrowDown', 100], ['ArrowLeft', 0]]) {
+      await press(page, key);
+      await waitFor(page, `${row}.scrollLeft === ${target}`);
+    }
+    await press(page, 'End');
+    await settledCatalog(page, 'other');
+    await waitFor(page, `${row}.scrollLeft === ${row}.scrollWidth - ${row}.clientWidth`);
+    await waitFor(page, `${marker}.getAttribute('aria-valuenow') === '97.5'`);
+    assert.deepEqual(failures, []);
+    const end = await evaluate(page, RULER_POINT(4, .9));
+    await waitFor(page, `Math.abs((${MARKER}).x - ${end.x}) <= 1`);
+    await markerAt(page, 4, .9);
+    assert.equal(await evaluate(page, `${marker}.getAttribute('aria-valuenow')`), '97.5');
+    assert.equal(await evaluate(page, `${marker}.getAttribute('aria-valuetext')`), '其他，98%');
+    assert.ok(await evaluate(page, `!${marker}.dispatchEvent(new KeyboardEvent('keydown', {key:' ', code:'Space', bubbles:true, cancelable:true}))`));
+    await press(page, 'PageDown');
+    await settledCatalog(page, 'collected');
+    await press(page, 'PageUp');
+    await settledCatalog(page, 'other');
+    await press(page, 'ArrowLeft');
+    await settledCatalog(page, 'collected');
+    await press(page, 'ArrowRight');
+    await settledCatalog(page, 'other');
+    await press(page, 'Home');
+    await settledCatalog(page, 'minecraft');
+    assert.equal(await evaluate(page, `${row}.scrollLeft`), 0);
+    await waitFor(page, `${marker}.getAttribute('aria-valuetext').startsWith('Minecraft，')`);
+    assert.ok(await evaluate(page, `document.activeElement === ${marker}`));
+  } finally { await close(page); }
+});
+
+test('a short catalog scrolls the chapter to its bottom before the row and keeps the offset on return', { skip }, async () => {
+  for (const height of [480, 720]) {
+    const page = await open('/#series', { ...desktop, width: 1280, height, beforeScripts: withArticles(3, 4) });
+    try {
+      const chapter = "document.querySelector('#series')";
+      const row = "document.querySelector('.is-catalog-open .catalog-block')";
+      assert.equal(await evaluate(page, `${chapter}.classList.contains('is-chapter-scrollable')`), height === 480);
+      const initial = await evaluate(page, `(${chapter}.scrollTop = 20, ${chapter}.scrollTop)`);
+      await evaluate(page, `document.querySelector('${cover('minecraft')}').click()`);
+      await settledCatalog(page, 'minecraft');
+      near(await evaluate(page, `${chapter}.scrollTop`), initial, 1, 'the chapter offset carries into the catalog');
+      await wheel(page, 0, 800);
+      if (height === 480) {
+        await waitFor(page, `${chapter}.scrollTop > ${initial}`);
+        assert.equal(await evaluate(page, `${row}.scrollLeft`), 0);
+        assert.ok(await evaluate(page, `(() => {
+          const clip = getComputedStyle(document.querySelector('.chapter-viewport')).clipPath.match(/inset\\(([^)]+)/)[1].split(/\\s+/).map(parseFloat);
+          return document.querySelector('.is-catalog-open .category-bottom').getBoundingClientRect().bottom < innerHeight - clip[2];
+        })()`), 'the category count is above the ruler clip');
+        await wheel(page, 0, 150);
+        await waitFor(page, `${row}.scrollLeft > 10`);
+        const bottom = await evaluate(page, `${chapter}.scrollTop`);
+        await press(page, 'ArrowUp');
+        await waitFor(page, `${chapter}.scrollTop < ${bottom}`);
+        const above = await evaluate(page, `${chapter}.scrollTop`);
+        const left = await evaluate(page, `${row}.scrollLeft`);
+        await wheel(page, 300, 2);
+        await waitFor(page, `${row}.scrollLeft > ${left + 10}`);
+        assert.equal(await evaluate(page, `${chapter}.scrollTop`), above);
+        await press(page, 'ArrowDown');
+        await waitFor(page, `${chapter}.scrollTop > ${above}`);
+      } else {
+        await waitFor(page, `${row}.scrollLeft > 10`);
+        assert.equal(await evaluate(page, `${chapter}.scrollTop`), 0);
+      }
+      const carried = await evaluate(page, `${chapter}.scrollTop`);
+      await press(page, 'Escape');
+      await settledCatalog(page, '');
+      near(await evaluate(page, `${chapter}.scrollTop`), carried, 1, 'closing preserves the chapter scroll position');
+    } finally { await close(page); }
+  }
 });
 
 // Seeking all live effects also advances the heading's typing clock.
@@ -1024,6 +1142,127 @@ test('catalog frames show the sink, heading rewrite, widening and card stagger',
     assert.equal(frame.title, '文章目录');
     assert.deepEqual(frame.cards, [1, 1, 1]);
     assert.ok(!await evaluate(page, "document.documentElement.classList.contains('is-catalog-transitioning')"));
+  } finally { await close(page); }
+});
+
+test('only cards in the open window stagger, even with a hundred articles', { skip }, async () => {
+  const page = await open('/#series', { width: 1440, height: 900, mobile: false, beforeScripts: withArticles(4, 25) });
+  const running = "document.documentElement.classList.contains('is-catalog-transitioning')";
+  const block = `document.querySelector(${JSON.stringify(catalogSelector('minecraft'))})`;
+  const effects = () => evaluate(page, `[...${block}.querySelectorAll('.catalog-card')].flatMap((card, i) =>
+    card.getAnimations().filter(animation => animation.effect.getKeyframes().some(frame => frame.opacity !== undefined))
+      .map(animation => [i, animation.effect.getTiming().delay]))`);
+  const visible = () => evaluate(page, `(() => {
+    const block = ${block};
+    return [...block.querySelectorAll('.catalog-card')].flatMap((card, i) => {
+      // Overflow clips the row before the column's 3D fold projects it.
+      const x = card.offsetLeft - block.scrollLeft;
+      return x < block.clientWidth && x + card.offsetWidth > 0 ? [i] : [];
+    });
+  })()`);
+  const neighbours = () => evaluate(page, "[...document.querySelectorAll('.chapter-section:not(#series)')].map(el => el.inert)");
+  const covers = () => evaluate(page, `[...document.querySelectorAll('.category-column')].map(column => {
+    const box = column.getBoundingClientRect();
+    return [column.querySelector('.category-cover').inert,
+      column.matches('.is-catalog-open') || box.right <= 0 || box.left >= innerWidth];
+  })`);
+  try {
+    const original = await neighbours();
+    assert.ok(original.includes(false), 'one or more neighbouring sections are at least partly on screen at rest');
+    await seekCatalog(page, 0, `document.querySelector(${JSON.stringify(cover('minecraft'))}).click();`);
+    const entrance = await effects();
+    await seekCatalog(page, 1599);
+    assert.equal(await evaluate(page, running), false, 'opening has released input by 1.6 seconds');
+    const first = await visible();
+    assert.ok(first.length > 1 && first.length < 100);
+    assert.deepEqual(entrance, first.map((i, k) => [i, 560 + k * 60]));
+    assert.ok((await neighbours()).every(Boolean), 'the hidden sections are inert while reading');
+    const held = await covers();
+    assert.ok(held.filter(([inert]) => inert).length > 1, 'the open cover and at least one offscreen cover are inert');
+    assert.ok(held.every(([inert, expected]) => inert === expected));
+    await evaluate(page, "window.dispatchEvent(new Event('resize'))");
+    assert.ok((await neighbours()).every(Boolean), 'measuring the dock restored its inert attributes');
+    assert.ok((await covers()).every(([inert, expected]) => inert === expected));
+
+    await evaluate(page, `${block}.scrollLeft = ${block}.scrollWidth`);
+    const last = await visible();
+    assert.ok(last.includes(99));
+    await seekCatalog(page, 0, "document.querySelector('.catalog-back').click();");
+    assert.deepEqual(await effects(), last.map((i, k) => [i, (last.length - 1 - k) * 40]));
+    await seekCatalog(page, 1199);
+    assert.equal(await evaluate(page, running), false, 'closing has released input by 1.2 seconds');
+    assert.deepEqual(await neighbours(), original);
+    assert.ok((await covers()).every(([inert]) => !inert));
+  } finally { await close(page); }
+});
+
+test('catalog keyboard focus follows card entrance, interrupted runs and browser history', { skip }, async () => {
+  const page = await open('/#series', { ...desktop, beforeScripts: withArticles(3, 4) });
+  const first = "document.querySelector('.is-catalog-open .catalog-card')";
+  const back = "document.querySelector('.catalog-back')";
+  const minecraft = `document.querySelector(${JSON.stringify(cover('minecraft'))})`;
+  try {
+    await press(page, 'Tab');
+    await evaluate(page, `window.cardFocus = [];
+      document.addEventListener('focusin', e => {
+        if (e.target.matches('.catalog-card')) cardFocus.push({
+          opacity: Number(getComputedStyle(e.target).opacity),
+          running: document.documentElement.classList.contains('is-catalog-transitioning')
+        });
+      });
+      ${minecraft}.focus({preventScroll: true})`);
+    await press(page, 'Enter');
+    await waitFor(page, `document.activeElement === ${first}`);
+    const log = await evaluate(page, 'cardFocus');
+    assert.deepEqual(log, [{ opacity: 1, running: true }], 'focus arrives on the opaque card while later cards still enter');
+    await settledCatalog(page, 'minecraft');
+
+    await clickLink(page, catalogStation('other'));
+    await settledCatalog(page, 'other');
+    await evaluate(page, `${back}.focus(); history.back()`);
+    await settledCatalog(page, 'minecraft');
+    assert.equal(await evaluate(page, `document.activeElement === ${first}`), true, 'Back from the return link focuses the new first card');
+    await evaluate(page, 'history.forward()');
+    await settledCatalog(page, 'other');
+    assert.equal(await evaluate(page, `document.activeElement === ${back}`), true, 'Forward from a card focuses the empty category’s return link');
+    await evaluate(page, 'history.back()');
+    await settledCatalog(page, 'minecraft');
+    await evaluate(page, 'history.back()');
+    await settledCatalog(page, '');
+    assert.equal(await evaluate(page, `document.activeElement === ${minecraft}`), true, 'Back to the chapter focuses the old cover');
+
+    await press(page, 'Tab');
+    await evaluate(page, `${minecraft}.focus({preventScroll: true})`);
+    await press(page, 'Enter');
+    await evaluate(page, "window.dispatchEvent(new Event('site:theme'))");
+    assert.equal(await evaluate(page, `document.activeElement === ${first}`), true, 'interrupting the run completes its focus transfer');
+    await press(page, 'Escape');
+    await settledCatalog(page, '');
+    await evaluate(page, 'cardFocus.length = 0');
+    await press(page, 'Enter');
+    await press(page, 'Escape');
+    await settledCatalog(page, '');
+    assert.deepEqual(await evaluate(page, 'cardFocus'), [], 'a pending close cancels the focus transfer');
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] }, page.sessionId);
+    await press(page, 'Enter');
+    assert.equal(await evaluate(page, `document.activeElement === ${first}`), true, 'reduced motion focuses the first card immediately');
+    await viewport(page, { width: 390, height: 844, mobile: true });
+    await waitFor(page, `document.documentElement.classList.contains('has-vertical-chapters')
+      && [...document.querySelectorAll('.chapter-section:not(#series)')].every(el => !el.inert)
+      && [...document.querySelectorAll('.category-column:not(.is-catalog-open) .category-cover')].every(el => !el.inert)`);
+  } finally { await close(page); }
+});
+
+test('Escape collapses an expanded header search before closing its catalog', { skip }, async () => {
+  const page = await open('/#catalog-minecraft', desktop);
+  try {
+    await clickLink(page, '.header-search-toggle');
+    await waitFor(page, "document.activeElement.matches('.header-search.is-expanded input')");
+    await press(page, 'Escape');
+    assert.equal(await evaluate(page, "document.activeElement.matches('.header-search:not(.is-expanded) .header-search-toggle')"), true);
+    await settledCatalog(page, 'minecraft');
+    await press(page, 'Escape');
+    await settledCatalog(page, '');
   } finally { await close(page); }
 });
 
@@ -1100,17 +1339,20 @@ test('deep links, reduced motion and both theme palettes render the selected cat
 });
 
 test('the phone expands only the chosen grid cell and keeps the home tape', { skip }, async () => {
-  for (const size of [phone, { ...phone, reduced: true }, { ...phone, width: 844, height: 390 }]) {
+  for (const size of [phone, { ...phone, reduced: true }, { ...phone, width: 650, height: 900 }, { ...phone, width: 844, height: 390 }]) {
     const page = await open('/#series', { ...size, beforeScripts: withArticles(1, 3) });
     try {
       const old = await readBoard(page);
+      const tracks = () => evaluate(page, "getComputedStyle(document.querySelector('.category-columns')).gridTemplateColumns.split(' ').length");
+      assert.equal(await tracks(), size.width > 600 ? 4 : 2);
       await evaluate(page, `document.querySelector(${JSON.stringify(cover('minecraft'))}).click()`);
       if (size.reduced) assert.equal((await readBoard(page)).title, '文章目录');
       await settledCatalog(page, 'minecraft');
       const now = await readBoard(page);
       assert.deepEqual(now.labels, homeLabels);
       assert.ok(now.widths[0] > old.widths[0]);
-      assert.deepEqual(now.widths.slice(1), old.widths.slice(1));
+      assert.equal(await tracks(), 2);
+      for (const width of now.widths.slice(1)) near(width, now.widths[0] / 2, 1, 'the other cells occupy one track');
       const grid = await evaluate(page, `(() => {
         const column = document.querySelector('.is-catalog-open');
         const width = column.parentElement.clientWidth;
@@ -1119,14 +1361,11 @@ test('the phone expands only the chosen grid cell and keeps the home tape', { sk
           for (let node = el; node; node = node.offsetParent) top += node.offsetTop;
           return { top, height: el.offsetHeight, width: el.offsetWidth };
         });
-        const back = document.querySelector('.catalog-back').getBoundingClientRect();
         const display = column.querySelector('.category-display');
-        return { width, column: column.offsetWidth, display: display.clientWidth, height: display.clientHeight, cards,
-          back: back.top - document.querySelector('.site-header').getBoundingClientRect().bottom };
+        return { width, column: column.offsetWidth, display: display.clientWidth, height: display.clientHeight, cards };
       })()`);
       near(grid.column, grid.width, 1, 'phone cell spans its grid');
       assert.ok(grid.height >= grid.cards.reduce((height, card) => height + card.height, 0) + 20, 'the display contains every card');
-      assert.ok(grid.back >= 0);
       for (const [index, card] of grid.cards.entries()) {
         near(card.width, grid.display - 32, 1, 'phone card gutters');
         if (index) near(card.top - grid.cards[index - 1].top - grid.cards[index - 1].height, 10, 1, 'phone card spacing');
@@ -1135,9 +1374,198 @@ test('the phone expands only the chosen grid cell and keeps the home tape', { sk
       await scroll(page, now.y + 450);
       await clickLink(page, '.catalog-back');
       await settledCatalog(page, '');
+      assert.equal(await tracks(), size.width > 600 ? 4 : 2);
       near((await state(page)).y, old.y, 2, 'return to the phone category heading');
     } finally { await close(page); }
   }
+});
+
+test('the catalog back link sits beside the folded brand and leaves the search room to open', { skip }, async () => {
+  const page = await open('/#catalog-minecraft', phone);
+  try {
+    for (const width of [320, 360, 390, 721, 871, 1024, 1440, 1920]) {
+      const mobile = width <= 720;
+      await viewport(page, { width, height: width === 1024 ? 700 : width === 1920 ? 1080 : 844, mobile });
+      await waitFor(page, `innerWidth === ${width} && document.documentElement.classList.contains('has-vertical-chapters') === ${mobile}`);
+      // Mode and resize hooks complete the HUD and catalog measurements on the next frame.
+      await evaluate(page, 'new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))');
+      await settledCatalog(page, 'minecraft');
+      if (mobile) await scroll(page, (await state(page)).y + 200);
+      const geometry = await evaluate(page, `(() => {
+        const back = document.querySelector('.site-header > .site-brand + .catalog-back');
+        const brand = back.previousElementSibling.getBoundingClientRect(), box = back.getBoundingClientRect();
+        const style = getComputedStyle(back);
+        const tools = [...back.nextElementSibling.querySelectorAll('.header-search-toggle, .header-tool')];
+        return {
+          centerDifference: (box.top + box.bottom - brand.top - brand.bottom) / 2,
+          gap: box.left - brand.right, unit: parseFloat(style.fontSize) / 12,
+          overlapsTools: tools.some(tool => box.right > tool.getBoundingClientRect().left),
+          text: back.innerText.replace(/\\s+/g, ' ').trim(), name: back.getAttribute('aria-label'),
+          reachable: back.contains(document.elementFromPoint((box.left + box.right) / 2, (box.top + box.bottom) / 2)),
+          bottom: box.bottom, eyebrow: document.querySelector('.category-heading .eyebrow').getBoundingClientRect().top,
+        };
+      })()`);
+      near(geometry.centerDifference, 0, 1, `back link and brand center at ${width}px`);
+      near(geometry.gap, mobile ? 14 : 44 * geometry.unit, 1, `gap after the brand at ${width}px`);
+      assert.equal(geometry.overlapsTools, false, `back link clears all three tools at ${width}px`);
+      assert.ok(geometry.reachable, `back link is above the page at ${width}px`);
+      assert.equal(geometry.name, '返回分类');
+      assert.equal(geometry.text, width < 360 ? '← 分类' : mobile ? '← 返回分类' : '← 返回分类 / CATEGORIES');
+      if (width === 1024) assert.ok(geometry.bottom < geometry.eyebrow, 'the back link clears ARTICLE INDEX');
+      await evaluate(page, "document.querySelector('.header-search-toggle').focus()");
+      await waitFor(page, "document.querySelector('.catalog-back').inert && getComputedStyle(document.querySelector('.catalog-back')).visibility === 'hidden'");
+      assert.ok(await evaluate(page, `(() => {
+        const back = document.querySelector('.catalog-back');
+        back.focus();
+        return document.activeElement !== back && getComputedStyle(back).pointerEvents === 'none';
+      })()`));
+      await press(page, 'Escape');
+      await waitFor(page, "!document.querySelector('.catalog-back').inert && getComputedStyle(document.querySelector('.catalog-back')).opacity === '1'");
+      await evaluate(page, "document.querySelector('.site-header .site-brand').focus()");
+      await press(page, 'Tab');
+      assert.ok(await evaluate(page, "document.activeElement.matches('.catalog-back')"), 'back follows the brand in tab order');
+    }
+  } finally { await close(page); }
+});
+
+test('the phone catalog wraps group names and frosts the cards and empty state', { skip }, async () => {
+  const page = await open('/?theme=dark#catalog-minecraft', { ...phone, width: 320, reduced: true });
+  try {
+    const styles = await evaluate(page, `(() => {
+      const column = document.querySelector('.is-catalog-open'), heading = column.querySelector('h3');
+      heading.textContent = 'SubcategoryName'.repeat(12);
+      const head = heading.parentElement;
+      const line = parseFloat(getComputedStyle(heading).lineHeight);
+      const frosted = el => [getComputedStyle(el).backgroundColor, getComputedStyle(el).backdropFilter];
+      return {
+        lines: heading.offsetHeight / line, fits: heading.scrollWidth <= heading.clientWidth,
+        contains: head.offsetHeight >= heading.offsetHeight,
+        headStyles: [getComputedStyle(heading).whiteSpace, getComputedStyle(heading).overflowWrap],
+        firstLine: [...head.children].filter(el => el !== heading).every(el => el.offsetWidth > 0 &&
+          Math.abs((el.offsetTop + el.offsetHeight / 2) - (heading.offsetTop + line / 2)) <= 1),
+        materials: [column.querySelector('.catalog-card'), document.querySelector('.catalog-empty')].map(frosted),
+      };
+    })()`);
+    assert.ok(styles.lines > 1 && styles.fits && styles.contains);
+    assert.deepEqual(styles.headStyles, ['normal', 'anywhere']);
+    assert.ok(styles.firstLine, 'the symbol, rule and count follow the first line');
+    assert.deepEqual(styles.materials, Array(2).fill(['rgba(14, 16, 19, 0.76)', 'blur(6px)']));
+  } finally { await close(page); }
+});
+
+test('desktop catalog cards have a keyboard focus frame and the viewport allows pinch zoom', { skip }, async () => {
+  const page = await open('/?theme=dark#catalog-minecraft', { ...desktop, reduced: true });
+  try {
+    await press(page, 'Tab');
+    const styles = await evaluate(page, `(() => {
+      const card = document.querySelector('.is-catalog-open .catalog-card');
+      card.focus({ preventScroll: true });
+      const style = getComputedStyle(card);
+      const viewport = document.querySelector('.chapter-viewport');
+      const gesture = name => viewport.dispatchEvent(new TouchEvent(name, { bubbles: true, cancelable: true,
+        touches: [1, 2].map(identifier => new Touch({ identifier, target: viewport })) }));
+      return [card.matches(':focus-visible'), style.outlineWidth, style.outlineStyle, style.outlineColor,
+        style.outlineOffset, getComputedStyle(viewport).touchAction, gesture('touchstart'), gesture('touchmove')];
+    })()`);
+    assert.deepEqual(styles, [true, '1px', 'solid', 'rgba(182, 196, 208, 0.46)', '4px', 'pinch-zoom', true, true]);
+  } finally { await close(page); }
+});
+
+test('phone catalog landings follow the tapped cell and preserve the reading position across refreshes', { skip }, async () => {
+  const page = await open('/#series', { ...phone, beforeScripts: withArticles(1, 12) });
+  const column = slug => `[data-category-slug="${slug}"]`;
+  const original = await evaluate(page, 'document.title');
+  try {
+    const home = await state(page);
+    await clickLink(page, cover('other'), { touch: true });
+    await settledCatalog(page, 'other');
+    const otherOffset = await layoutTop(page, column('other')) - (await state(page)).y;
+    assert.ok(otherOffset >= home.header + 7 && otherOffset <= home.header + .45 * (phone.height - home.header) + 1,
+      `the lower cell opens in reading range at ${otherOffset}px`);
+    assert.equal(await evaluate(page, 'document.title'), '其他 · 文章目录 · ' + original);
+    await clickLink(page, '.catalog-back');
+    await settledCatalog(page, '');
+    near((await state(page)).y, home.y, 2, 'closing returns to the category heading');
+    assert.equal(await evaluate(page, 'document.title'), original);
+    await clickLink(page, cover('minecraft'));
+    await settledCatalog(page, 'minecraft');
+    near((await state(page)).y, home.y, 2, 'the first row keeps the heading in view');
+    assert.equal(await evaluate(page, 'document.title'), 'Minecraft · 文章目录 · ' + original);
+
+    const reading = await scroll(page, home.y + 420);
+    await viewport(page, { ...phone, height: phone.height + 56 });
+    await waitFor(page, `innerHeight === ${phone.height + 56}`);
+    for (const action of ['', "document.dispatchEvent(new Event('visibilitychange'));",
+      "dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));", "dispatchEvent(new Event('site:revealed'));"]) {
+      await evaluate(page, `${action} new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))`);
+      near((await state(page)).y, reading, 2, 'catalog refresh preserves the reading position');
+      assert.equal(await evaluate(page, "document.querySelector('.is-catalog-open').dataset.categorySlug"), 'minecraft');
+    }
+
+    await scroll(page, await layoutTop(page, column('daydreams')) - 600);
+    await clickLink(page, cover('daydreams'));
+    await settledCatalog(page, 'daydreams');
+    const daydreamTop = await layoutTop(page, column('daydreams'));
+    await waitFor(page, `Math.abs(scrollY - ${daydreamTop - home.header - 8}) <= 2`);
+    assert.equal(await evaluate(page, 'document.title'), '白日梦话 · 文章目录 · ' + original);
+    await evaluate(page, 'history.back()');
+    await settledCatalog(page, 'minecraft');
+    assert.equal(await evaluate(page, 'document.title'), 'Minecraft · 文章目录 · ' + original);
+    await evaluate(page, 'history.forward()');
+    await settledCatalog(page, 'daydreams');
+    assert.equal(await evaluate(page, 'document.title'), '白日梦话 · 文章目录 · ' + original);
+  } finally { await close(page); }
+});
+
+test('the phone journal link leaves the open catalog and lands on About', { skip }, async () => {
+  const page = await open('/#series', phone);
+  try {
+    const original = await evaluate(page, 'document.title');
+    await clickLink(page, cover('minecraft'));
+    await settledCatalog(page, 'minecraft');
+    const journalLink = '#journal-note .text-link';
+    await scroll(page, await layoutTop(page, journalLink) - 350);
+    await clickLink(page, journalLink, { touch: true });
+    await waitFor(page, "location.hash === '#about' && !document.documentElement.matches('.is-catalog') && document.activeElement.id === 'about'");
+    near((await state(page)).y, (await state(page)).entry, 2, 'the journal link lands on About');
+    assert.equal(await evaluate(page, 'document.title'), original);
+  } finally { await close(page); }
+});
+
+test('the lower catalog deep link lands by its cell on load and on returning to the phone layout', { skip }, async () => {
+  // Model a late layout change under the loader just before its landing correction.
+  const beforeScripts = `window.addEventListener('site:revealed', () => {
+    const about = document.querySelector('#about');
+    about.style.paddingBottom = (parseFloat(getComputedStyle(about).paddingBottom) + 160) + 'px';
+  }, { once: true });`;
+  const page = await open('/#catalog-other', { ...phone, beforeScripts });
+  try {
+    for (const mode of ['load', 'mode change']) {
+      if (mode === 'mode change') {
+        await viewport(page, desktop);
+        await waitFor(page, "document.querySelector('#series.has-catalog-board')");
+        await viewport(page, phone);
+        await waitFor(page, "document.documentElement.matches('.has-vertical-chapters') && !document.querySelector('#series.has-catalog-board')");
+      }
+      await settledCatalog(page, 'other');
+      const now = await state(page);
+      near(await layoutTop(page, '.is-catalog-open') - now.y, now.header + 8, 2, `the lower deep link on ${mode}`);
+      assert.equal(await evaluate(page, 'document.title'), '其他 · 文章目录 · Gŭdù || 个人博客');
+      const reading = await scroll(page, now.y + 420);
+      await evaluate(page, "dispatchEvent(new Event('site:revealed'))");
+      near((await state(page)).y, reading, 2, 'a later reveal preserves reading after a deep link');
+    }
+  } finally { await close(page); }
+});
+
+test('the desktop skip link leaves the open catalog and focuses About', { skip }, async () => {
+  const page = await open('/#catalog-minecraft', { ...desktop, reduced: true });
+  try {
+    await evaluate(page, "document.querySelector('.skip-link').focus({ preventScroll: true })");
+    await press(page, 'Enter');
+    await waitFor(page, "location.hash === '#about' && !document.documentElement.matches('.is-catalog') && document.activeElement.id === 'about'");
+    assert.equal((await state(page)).current, '关于');
+  } finally { await close(page); }
 });
 
 test('each region tilts as one straight plate, flat in the middle and leaning in at the edges', { skip }, async () => {

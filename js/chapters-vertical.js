@@ -98,6 +98,7 @@
   let movingTimer = 0;
   let arrivalTimer = 0;
   let interacted = false;
+  let catalogRevealPending = root.classList.contains('is-loading');
   let reveal = null;
   let rise = null;
   let reset = null;
@@ -138,6 +139,16 @@
     if (index <= 0) return 0;
     if (index === 1) return entry;
     return clamp(tops[index - 1] - headerHeight - 8, entry, maxScroll);
+  }
+
+  const catalogReadingLimit = () => headerHeight + .45 * (viewportHeight() - headerHeight);
+
+  function catalogLanding() {
+    const dock = landing(seriesIndex);
+    const cell = sections[seriesIndex]?.querySelector('.is-catalog-open');
+    if (!cell) return dock;
+    const top = pageBox(cell).top;
+    return top - dock <= catalogReadingLimit() ? dock : clamp(top - headerHeight - 8, entry, maxScroll);
   }
 
   function measure() {
@@ -538,10 +549,12 @@
 
   function restoreHash({ smooth = false } = {}) {
     const hash = window.location.hash;
-    const index = catalogHashes.has(hash) ? seriesIndex : sections.findIndex(section => `#${section.id}` === hash);
+    const catalog = catalogHashes.has(hash);
+    const index = catalog ? seriesIndex : sections.findIndex(section => `#${section.id}` === hash);
     if (index < 0) return false;
-    if (smooth) animateTo(landing(index), { kind: index === 0 || window.scrollY < entry - 2 ? 'hero' : 'content' });
-    else { stopAnimation(); jump(landing(index)); }
+    const destination = catalog ? catalogLanding() : landing(index);
+    if (smooth) animateTo(destination, { kind: index === 0 || window.scrollY < entry - 2 ? 'hero' : 'content' });
+    else { stopAnimation(); jump(destination); }
     return true;
   }
 
@@ -747,7 +760,17 @@
     stopAnimation();
     // Search can navigate in this same event, before the resize observer sees the closed cell.
     measure();
-    if (event.detail?.dock) jump(landing(seriesIndex));
+    const { cell, keep, instant, dock } = event.detail || {};
+    if (cell) {
+      if (!instant) interacted = true;
+      const top = pageBox(cell).top;
+      jump(top - keep);
+      const offset = top - window.scrollY;
+      if (offset < headerHeight + 8 || offset > catalogReadingLimit()) {
+        if (instant) jump(catalogLanding());
+        else animateTo(catalogLanding(), { kind: 'content' });
+      }
+    } else if (dock) jump(landing(seriesIndex));
     else queue();
   });
   document.addEventListener('submit', event => {
@@ -770,9 +793,12 @@
   // Fonts, images and search results change the page under the loader; a
   // reader who has not interacted yet still lands on the linked chapter.
   window.addEventListener('site:revealed', () => {
+    // The loader corrects a deep link once. Later reveals must preserve reading scroll.
+    const correctLanding = catalogRevealPending || !catalogHashes.has(window.location.hash);
+    catalogRevealPending = false;
     if (!active) return;
     measure();
-    if (!interacted && window.location.hash) restoreHash();
+    if (!interacted && window.location.hash && correctLanding) restoreHash();
     else queue();
   });
   window.addEventListener('pageshow', () => { if (active) { measure(); queue(); } });
@@ -780,12 +806,12 @@
   function activate() {
     if (active) return;
     // The strip stands down first and clears what it wrote.
+    root.classList.add('has-chapters', 'has-vertical-chapters');
     window.dispatchEvent(new CustomEvent('site:chapter-mode', { detail: { vertical: true } }));
     active = true;
     current = -1;
     lastProgress = -1;
     interacted = false;
-    root.classList.add('has-chapters', 'has-vertical-chapters');
     marker.setAttribute('aria-orientation', 'vertical');
     tapeLens?.build(8);
     for (const element of units) {
