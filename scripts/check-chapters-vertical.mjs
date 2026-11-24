@@ -1867,6 +1867,48 @@ test('the About record reads as an ID card and fits its chapter', { skip }, asyn
   assert.deepEqual(failures, []);
 });
 
+// The tape's names hang under their station lines. Each must end above the
+// next line and stay on screen, on short phones and phones on their side too.
+const TAPE_LABELS = `(() => {
+  const shown = element => getComputedStyle(element).display !== 'none';
+  const links = [...document.querySelectorAll('.chapter-progress-links > a')];
+  return {
+    vertical: document.documentElement.classList.contains('has-vertical-chapters'),
+    width: innerWidth,
+    stations: links.map((link, index) => {
+      const title = link.querySelector('.chapter-station-title');
+      const box = title.getBoundingClientRect();
+      const next = links[index + 1]?.getBoundingClientRect().top ?? link.getBoundingClientRect().bottom;
+      return {
+        name: title.textContent, clear: next - box.bottom, right: box.right, size: parseFloat(getComputedStyle(title).fontSize),
+        number: shown(link.querySelector('.chapter-station-index')), english: shown(link.querySelector('.chapter-station-subtitle')),
+      };
+    }),
+  };
+})()`;
+
+test('the phone tape keeps its names apart and on screen, on its side too', { skip }, async () => {
+  for (const size of [{ width: 390, height: 844 }, { width: 375, height: 553 }, { width: 844, height: 390 }, { width: 915, height: 356 }, { width: 740, height: 300 }]) {
+    const at = `${size.width}x${size.height}`;
+    const page = await open('/?intro=short#series', size);
+    try {
+      await waitFor(page, "document.documentElement.classList.contains('is-content')");
+      const tape = await evaluate(page, TAPE_LABELS);
+      assert.equal(tape.vertical, true, at);
+      for (const station of tape.stations) {
+        assert.equal(station.english, false, `${at}: ${station.name} leaves out its English name`);
+        assert.ok(station.clear >= 1, `${at}: ${station.name} ends ${station.clear.toFixed(1)}px above the next station line`);
+        assert.ok(station.right <= tape.width, `${at}: ${station.name} stays on screen (${station.right.toFixed(1)} of ${tape.width})`);
+        assert.ok(station.size >= 9, `${at}: ${station.name} stays readable at ${station.size}px`);
+      }
+      if (size.height === 844) assert.ok(tape.stations.every(station => station.number && station.size === 12), 'a tall phone keeps the numbers and 12px names');
+      if (size.width === 844) assert.ok(tape.stations.every(station => !station.number && station.size === 12), 'on its side the tape drops the numbers before shrinking the names');
+    } finally {
+      await close(page);
+    }
+  }
+});
+
 test('resizing hands the page between the strip and the vertical page', { skip }, async () => {
   const page = await open();
   await scroll(page, (await sectionTop(page, 'series')) - 78);

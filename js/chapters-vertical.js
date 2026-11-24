@@ -64,6 +64,10 @@
   // leaves it. Screens too short for readable cells keep the tape still.
   const TAPE_INSET = 16;
   const TAPE_MIN_CELL = 56;
+  // A station number (17px) above the longest name, 最新文章 (54px), stays 3px
+  // clear of the next station line in cells this tall. Shorter cells, as on
+  // phones on their side, drop the numbers (css/chapters-vertical.css).
+  const TAPE_NUMBERED_CELL = 74;
 
   const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
   const px = value => `${value.toFixed(2)}px`;
@@ -178,6 +182,7 @@
     ruler.lowest = TAPE_INSET;
     ruler.highest = Math.max(TAPE_INSET, TAPE_INSET + usable - chapters.length * ruler.cell);
     nav.style.setProperty('--tape-cell', px(ruler.cell));
+    nav.classList.toggle('is-tape-tight', ruler.cell < TAPE_NUMBERED_CELL);
     // The pointer's line is the reading line: the chapter crossing it is read.
     readingLine = box.top + ruler.pointer;
 
@@ -891,7 +896,7 @@
     tapeLens?.destroy();
     for (const [element, inert] of inertStates) if (inert) element.inert = false;
     inertStates.clear();
-    nav.classList.remove('is-scrubbing', 'is-chapter-moving', 'is-moving-back');
+    nav.classList.remove('is-scrubbing', 'is-chapter-moving', 'is-moving-back', 'is-tape-tight');
     marker.setAttribute('aria-orientation', 'horizontal');
     root.classList.remove('has-vertical-chapters');
     window.dispatchEvent(new CustomEvent('site:chapter-mode', { detail: { vertical: false } }));

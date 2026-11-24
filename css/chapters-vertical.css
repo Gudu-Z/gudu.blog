@@ -314,6 +314,19 @@ html.has-vertical-chapters .home-page .chapter-station-title {
   letter-spacing: 0.12em;
   white-space: nowrap;
 }
+/* The tape leaves out the English names at every width, phones on their side
+   included: beside the axis they would run into the ticks and off the screen. */
+html.has-vertical-chapters .home-page .chapter-station-subtitle { display: none; }
+/* Cells too short for a number above the longest name, 最新文章, drop the
+   numbers (js/chapters-vertical.js), and the names start at the station line.
+   Shorter cells shrink the names until four characters fit 3px clear of the
+   next station line; below 9px they close up their spacing instead. */
+html.has-vertical-chapters .home-page .chapter-progress.is-tape-tight .chapter-station-index { display: none; }
+html.has-vertical-chapters .home-page .chapter-progress.is-tape-tight .chapter-station-title {
+  top: 4px;
+  font-size: clamp(9px, (var(--tape-cell, 120px) - 7px) / 4.48, 12px);
+  letter-spacing: clamp(0px, (var(--tape-cell, 120px) - 43px) / 4, 0.12em);
+}
 html.has-vertical-chapters .home-page .chapter-progress-links a.is-arriving::after { animation: chapter-tape-arrive 380ms ease-out; }
 html.has-vertical-chapters .home-page .chapter-progress-links a.is-departing::after { transform: scaleY(0); transform-origin: bottom; }
 html.has-vertical-chapters .home-page .chapter-progress.is-moving-back .chapter-progress-links a:is([aria-current], .is-active)::after { transform-origin: bottom; }
