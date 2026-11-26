@@ -830,7 +830,31 @@ test('the narrow catalog slides toward the first slot and stops at the docked pa
   } finally { await close(page); }
 });
 
-test('a short desktop holds a two-line title and summary inside the open facet', { skip }, async () => {
+// The first entry of the open category, read at rest or under the pointer.
+// Vertical text stacks its lines across, so its columns are width / line height.
+const ENTRY = `(() => {
+  const col = document.querySelector('.is-catalog-open');
+  const card = col.querySelector('.catalog-card');
+  const rect = node => node.getBoundingClientRect();
+  const within = (inner, outer) => [inner.top - outer.top, outer.bottom - inner.bottom, inner.left - outer.left, outer.right - inner.right];
+  const columns = el => Math.round(el.offsetWidth / parseFloat(getComputedStyle(el).lineHeight));
+  const box = rect(card), block = col.querySelector('.catalog-block');
+  const centre = [box.left + box.width / 2, box.top + box.height / 2];
+  return {
+    hover: card.matches(':hover'),
+    reachable: card.contains(document.elementFromPoint(...centre)),
+    centre,
+    clipped: card.classList.contains('is-clipped'),
+    columns: ['.catalog-card-title', '.catalog-card-summary'].map(selector => columns(card.querySelector(selector))),
+    shown: ['.catalog-card-index', '.catalog-card-summary', '.catalog-card-meta'].map(selector => getComputedStyle(card.querySelector(selector)).opacity),
+    title: within(rect(card.querySelector('.catalog-card-title')), box),
+    group: within(rect(col.querySelector('.catalog-group')), rect(col.querySelector('.category-display'))),
+    footer: within(rect(col.querySelector('.category-bottom')), rect(col.querySelector('.category-facet-light'))),
+    overflow: block.scrollHeight - block.clientHeight,
+  };
+})()`;
+
+test('a short desktop keeps a long title in one column and lets it run on when pointed at', { skip }, async () => {
   const beforeScripts = `{
     const card = document.querySelector('[data-category-slug="minecraft"] .catalog-card');
     card.querySelector('.catalog-card-title').textContent = '在这篇红石笔记里记录一次完整的测试过程';
@@ -846,27 +870,31 @@ test('a short desktop holds a two-line title and summary inside the open facet',
     assert.equal(board.runway, home.runway);
     assert.equal(board.y, home.y);
 
-    const fit = await evaluate(page, `(() => {
-      const col = document.querySelector('.is-catalog-open');
-      const within = (child, parent) => {
-        const inner = col.querySelector(child).getBoundingClientRect();
-        const outer = col.querySelector(parent).getBoundingClientRect();
-        return [inner.top - outer.top, outer.bottom - inner.bottom, inner.left - outer.left, outer.right - inner.right];
-      };
-      const lines = selector => {
-        const el = col.querySelector(selector), style = getComputedStyle(el);
-        return Math.round(el.offsetHeight / parseFloat(style.lineHeight));
-      };
-      return {
-        lines: ['.catalog-card-title', '.catalog-card-summary'].map(lines),
-        group: within('.catalog-group', '.category-display'),
-        footer: within('.category-bottom', '.category-facet-light'),
-        clipped: col.querySelector('.catalog-block').scrollHeight - col.querySelector('.catalog-block').clientHeight,
-      };
-    })()`);
-    assert.deepEqual(fit.lines, [2, 2], 'the fixture exercises both lines of each text field');
-    assert.ok(fit.group.every(gap => gap >= -1) && fit.clipped <= 1, `the group fits the display (${fit.group}; ${fit.clipped}px overflow)`);
-    assert.ok(fit.footer.every(gap => gap >= -1), `the footer fits the column material (${fit.footer})`);
+    // The click leaves the pointer where the cover was; park it off the entries.
+    await mouse(page, 'mouseMoved', 1, 1);
+    await sleep(450);
+    const rest = await evaluate(page, ENTRY);
+    assert.equal(rest.hover, false, 'the entry starts unpointed');
+    assert.equal(rest.clipped, true, 'the fixture cuts the long title short');
+    assert.deepEqual(rest.columns, [1, 2], 'the title keeps one column and the summary fills both of its own');
+    assert.equal(rest.shown[1], '1', 'the summary shows at rest');
+    assert.ok(rest.title.every(gap => gap >= -1), `the title stays inside its frame (${rest.title})`);
+    assert.ok(rest.group.every(gap => gap >= -1) && rest.overflow <= 1, `the group fits the display (${rest.group}; ${rest.overflow}px overflow)`);
+    assert.ok(rest.footer.every(gap => gap >= -1), `the spine's count fits the column material (${rest.footer})`);
+
+    assert.ok(rest.reachable, 'the entry can be pointed at where it is painted');
+    await mouse(page, 'mouseMoved', ...rest.centre);
+    await sleep(450);
+    const pointed = await evaluate(page, ENTRY);
+    assert.equal(pointed.hover, true);
+    assert.ok(pointed.columns[0] >= 2, `the clipped title runs on into the right column (${pointed.columns[0]} columns)`);
+    assert.deepEqual(pointed.shown, ['0', '0', '0'], 'the numeral, summary and date step aside for it');
+    assert.ok(pointed.title.every(gap => gap >= -1), `the unfolded title stays inside its frame (${pointed.title})`);
+
+    await mouse(page, 'mouseMoved', 1, 1);
+    await sleep(450);
+    const left = await evaluate(page, ENTRY);
+    assert.deepEqual([left.columns, left.shown[1]], [[1, 2], '1'], 'leaving the entry folds the title back');
   } finally { await close(page); }
 });
 
@@ -927,34 +955,48 @@ test('an open category keeps its specimen open, centred and dimmed without group
   } finally { await close(page); }
 });
 
-test('catalog cards start at the display margin and every group lines up', { skip }, async () => {
-  // Two groups of two; the second group's first title wraps onto a second line.
+test("catalog entries start after the open category's spine and every entry shares one frame", { skip }, async () => {
+  // Two groups of two; the second group's first title is too long for its column.
   const longTitle = `document.querySelectorAll('[data-category-slug="minecraft"] .catalog-group')[1]
-    .querySelector('.catalog-card-title').textContent = '一个很长很长的测试标题，长到在卡片里要折成两行才放得下';`;
+    .querySelector('.catalog-card-title').textContent = '一个很长很长的测试标题，长到在一列里怎么也放不下，只好先截断';`;
   const page = await open('/#series', { ...desktop, beforeScripts: withArticles(2, 2) + longTitle });
   try {
     await clickLink(page, cover('minecraft'));
     await settledCatalog(page, 'minecraft');
+    await mouse(page, 'mouseMoved', 1, 1);
+    await sleep(450);
     const row = await evaluate(page, `(() => {
       const column = document.querySelector('[data-category-slug="minecraft"]');
       const row = column.querySelector('.catalog-row');
-      const css = getComputedStyle(row);
-      const lines = title => Math.round(title.offsetHeight / parseFloat(getComputedStyle(title).lineHeight));
+      const rect = node => node.getBoundingClientRect();
+      const probe = column.appendChild(document.createElement('div'));
+      probe.style.cssText = 'position: absolute; width: var(--catalog-spine)';
+      const spine = parseFloat(getComputedStyle(probe).width);
+      probe.remove();
+      const group = row.querySelector('.catalog-group');
+      const cards = [...row.querySelectorAll('.catalog-card')];
+      const titles = cards.map(card => card.querySelector('.catalog-card-title'));
       return {
-        padding: [parseFloat(css.paddingLeft), parseFloat(css.paddingRight)],
-        start: row.querySelector('.catalog-group').getBoundingClientRect().left - row.getBoundingClientRect().left,
+        padding: parseFloat(getComputedStyle(row).paddingLeft), spine,
+        start: rect(group).left - rect(row).left,
+        spineEnd: Math.max(...[...column.querySelectorAll(':is(.category-name, .category-description, .category-bottom)')].map(node => rect(node).right)) - rect(group).left,
+        level: rect(column.querySelector('.category-name-glyph')).top - rect(titles[0]).top,
         width: row.offsetWidth, display: column.querySelector('.category-display').clientWidth,
         heads: [...row.querySelectorAll('.catalog-group-head')].map(head => head.offsetTop),
-        cards: [...row.querySelectorAll('.catalog-card')].map(card => [card.offsetTop, card.offsetHeight]),
-        lines: [...row.querySelectorAll('.catalog-group')].map(group => [...group.querySelectorAll('.catalog-card-title')].map(lines)),
+        cards: cards.map(card => [card.offsetTop, card.offsetHeight, card.offsetWidth]),
+        columns: titles.map(title => title.offsetWidth / parseFloat(getComputedStyle(title).lineHeight)),
+        clipped: cards.map(card => card.classList.contains('is-clipped')),
       };
     })()`);
-    assert.deepEqual(row.lines, [[1, 1], [2, 1]], 'the fixture wraps one title in the second group');
-    assert.ok(row.padding[0] > 0 && row.padding[0] === row.padding[1], `the row keeps the same margin at both ends (${row.padding})`);
-    near(row.start, row.padding[0], 1 / 64, 'the first group starts at the display margin');
+    assert.deepEqual(row.clipped, [false, false, true, false], 'only the long title is marked as cut short');
+    assert.ok(row.columns.every(columns => Math.round(columns) === 1), `every title keeps one column (${row.columns})`);
+    near(row.padding, row.spine, 1 / 64, "the row's start padding holds the spine");
+    near(row.start, row.padding, 1 / 64, 'the first group starts where the spine ends');
+    assert.ok(row.spineEnd <= 1, `the spine stays clear of the first group (${row.spineEnd}px over)`);
+    assert.ok(Math.abs(row.level) <= 2, `the category name starts level with the first title (${row.level}px off)`);
     assert.ok(Math.abs(row.display - row.width) <= 1, `the open display widens to fit its row (${row.display} vs ${row.width})`);
     assert.equal(new Set(row.heads).size, 1, `group heads share one line (${row.heads})`);
-    assert.equal(new Set(row.cards.map(String)).size, 1, `every card shares one top edge and height (${JSON.stringify(row.cards)})`);
+    assert.equal(new Set(row.cards.map(String)).size, 1, `every entry shares one top edge, height and width (${JSON.stringify(row.cards)})`);
   } finally { await close(page); }
 });
 
@@ -1819,9 +1861,9 @@ test('deep links, reduced motion and both theme palettes render the selected cat
         document.querySelector(${JSON.stringify(cover('minecraft'))}).click();
         const root = document.documentElement;
         const card = document.querySelector('.is-catalog-open .catalog-card');
-        return [location.hash, root.classList.contains('is-catalog-transitioning'), root.dataset.theme, getComputedStyle(card).backgroundColor];
+        return [location.hash, root.classList.contains('is-catalog-transitioning'), root.dataset.theme, getComputedStyle(card).borderTopColor];
       })()`);
-      assert.deepEqual(snap, ['#catalog-minecraft', false, theme, theme === 'dark' ? 'rgba(14, 16, 19, 0.55)' : 'rgba(240, 241, 243, 0.55)']);
+      assert.deepEqual(snap, ['#catalog-minecraft', false, theme, theme === 'dark' ? 'rgba(226, 230, 234, 0.44)' : 'rgba(24, 28, 32, 0.46)']);
       assert.deepEqual((await readBoard(page)).transforms, Array(4).fill('none'));
       await clickLink(page, '.site-header .site-brand');
       await waitFor(page, "location.hash === '#home' && !document.documentElement.classList.contains('is-catalog')");
@@ -1859,7 +1901,7 @@ test('the phone expands only the chosen grid cell and keeps the home tape', { sk
       assert.ok(grid.height >= grid.cards.reduce((height, card) => height + card.height, 0) + 20, 'the display contains every card');
       for (const [index, card] of grid.cards.entries()) {
         near(card.width, grid.display - 32, 1, 'phone card gutters');
-        if (index) near(card.top - grid.cards[index - 1].top - grid.cards[index - 1].height, 10, 1, 'phone card spacing');
+        if (index) near(card.top - grid.cards[index - 1].top - grid.cards[index - 1].height, 0, 1, 'phone entries meet at their rules');
       }
       assert.equal((await state(page)).width, size.width);
       await scroll(page, now.y + 450);
@@ -1919,7 +1961,7 @@ test('the catalog back link sits beside the folded brand and leaves the search r
   } finally { await close(page); }
 });
 
-test('the phone catalog wraps group names and frosts the cards and empty state', { skip }, async () => {
+test('the phone catalog wraps group names and sets its articles as a typographic index', { skip }, async () => {
   const page = await open('/?theme=dark#catalog-minecraft', { ...phone, width: 320, reduced: true });
   try {
     const styles = await evaluate(page, `(() => {
@@ -1927,20 +1969,24 @@ test('the phone catalog wraps group names and frosts the cards and empty state',
       heading.textContent = 'SubcategoryName'.repeat(12);
       const head = heading.parentElement;
       const line = parseFloat(getComputedStyle(heading).lineHeight);
-      const frosted = el => [getComputedStyle(el).backgroundColor, getComputedStyle(el).backdropFilter];
+      // No box: a bare entry under a 1px rule, solid for an article, dashed when empty.
+      const material = el => { const css = getComputedStyle(el); return [css.backgroundColor, css.backdropFilter, css.borderTopWidth, css.borderTopStyle, css.borderLeftStyle]; };
       return {
         lines: heading.offsetHeight / line, fits: heading.scrollWidth <= heading.clientWidth,
         contains: head.offsetHeight >= heading.offsetHeight,
         headStyles: [getComputedStyle(heading).whiteSpace, getComputedStyle(heading).overflowWrap],
         firstLine: [...head.children].filter(el => el !== heading).every(el => el.offsetWidth > 0 &&
           Math.abs((el.offsetTop + el.offsetHeight / 2) - (heading.offsetTop + line / 2)) <= 1),
-        materials: [column.querySelector('.catalog-card'), document.querySelector('.catalog-empty')].map(frosted),
+        materials: [column.querySelector('.catalog-card'), document.querySelector('.catalog-empty')].map(material),
+        type: (card => [getComputedStyle(card.querySelector('.catalog-card-index')).fontSize, getComputedStyle(card.querySelector('.catalog-card-title')).fontWeight,
+          getComputedStyle(card.querySelector('.catalog-card-reading')).display])(column.querySelector('.catalog-card')),
       };
     })()`);
     assert.ok(styles.lines > 1 && styles.fits && styles.contains);
     assert.deepEqual(styles.headStyles, ['normal', 'anywhere']);
     assert.ok(styles.firstLine, 'the symbol, rule and count follow the first line');
-    assert.deepEqual(styles.materials, Array(2).fill(['rgba(14, 16, 19, 0.76)', 'blur(6px)']));
+    assert.deepEqual(styles.materials, [['rgba(0, 0, 0, 0)', 'none', '1px', 'solid', 'none'], ['rgba(0, 0, 0, 0)', 'none', '1px', 'dashed', 'none']]);
+    assert.deepEqual(styles.type, ['34px', '600', 'inline'], 'a large numeral, a bold title, and the reading time beside the date');
   } finally { await close(page); }
 });
 

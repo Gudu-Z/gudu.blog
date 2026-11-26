@@ -259,7 +259,7 @@ function renderCatalogCard(post, index) {
   return `                        <li><a class="catalog-card" href="${post.url}">
                           <span class="catalog-card-index" aria-hidden="true">${twoDigits(index + 1)}</span>
                           <span class="catalog-card-title">${escape(post.title)}</span>
-                          <span class="catalog-card-meta"><time datetime="${post.date}">${displayDate(post.date)}</time> · ${post.readingMinutes} 分钟阅读</span>
+                          <span class="catalog-card-meta"><time datetime="${post.date}">${displayDate(post.date)}</time><span class="catalog-card-reading"> · ${post.readingMinutes} 分钟阅读</span></span>
                           <span class="catalog-card-summary">${escape(post.excerpt)}</span>
                           <span class="catalog-card-arrow" aria-hidden="true">↗</span>
                         </a></li>`;

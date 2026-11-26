@@ -61,24 +61,17 @@ html.is-catalog .site-header:not(:has(.header-search.is-expanded)) .catalog-back
    into one texture, which the panel's perspective then magnifies into a blur. */
 .is-catalog-open .category-scene { --category-diagram-opacity: .2; --category-detail-opacity: .32; }
 .catalog-block {
-  --catalog-glass: light-dark(rgb(240 241 243 / 55%), rgb(14 16 19 / 55%));
   position: absolute;
   inset: 0;
   overflow: clip;
 }
-/* One line of groups. They share the tallest group's height, so their heads
-   and card edges line up, and the line stays centred in the display. The
-   cards start at the display's own margin; the open column widens to fit them. */
-.catalog-row {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: max-content;
-  align-content: center;
-  gap: calc(31.78 * var(--category-unit));
-  width: max-content;
-  min-height: 100%;
-  padding-inline: calc(25.42 * var(--category-unit));
-}
+.catalog-cards { list-style: none; margin: 0; padding: 0; }
+.catalog-card { position: relative; box-sizing: border-box; color: inherit; text-decoration: none; }
+.catalog-card-index { color: var(--chapter-signal); font: max(9px, calc(10.59 * var(--category-unit)))/1.3 var(--chapter-mono); }
+.catalog-card-title { color: var(--chapter-text); }
+.catalog-card-meta { color: var(--chapter-muted); font: max(9px, calc(10.59 * var(--category-unit)))/1.3 var(--chapter-mono); }
+.catalog-card-summary { color: var(--chapter-muted); }
+.catalog-card-arrow { display: none; }
 .catalog-group { display: flex; flex-direction: column; gap: calc(12.71 * var(--category-unit)); }
 .catalog-group-head {
   display: flex;
@@ -86,122 +79,270 @@ html.is-catalog .site-header:not(:has(.header-search.is-expanded)) .catalog-back
   gap: calc(9.53 * var(--category-unit));
   height: calc(19.07 * var(--category-unit));
 }
-.catalog-group-symbol {
-  color: light-dark(#222d36, #b6c4d0);
-  opacity: .65;
-  font: 600 max(9px, calc(14.83 * var(--category-unit)))/1 var(--chapter-mono);
-  letter-spacing: .12em;
-}
 .catalog-group-head h3 {
   margin: 0;
   color: var(--chapter-text);
   font: 500 max(12px, calc(14.83 * var(--category-unit)))/1 var(--ui-sans);
   white-space: nowrap;
 }
+.catalog-group-symbol {
+  color: light-dark(#222d36, #b6c4d0);
+  opacity: .65;
+  font: 600 max(9px, calc(14.83 * var(--category-unit)))/1 var(--chapter-mono);
+  letter-spacing: .12em;
+}
 .catalog-group-rule { flex: 1; height: 1px; background: var(--chapter-rule); }
-.catalog-group-count, .catalog-card-index, .catalog-card-meta {
-  color: var(--chapter-text);
-  font: max(9px, calc(10.59 * var(--category-unit)))/1.3 var(--chapter-mono);
+.catalog-group-count { color: var(--chapter-text); font: max(9px, calc(10.59 * var(--category-unit)))/1.3 var(--chapter-mono); }
+.catalog-empty { margin: 0; color: var(--chapter-muted); }
+
+/* Desktop: each article stands as a vertical entry in an open frame: a top
+   line, a long left line and a right line that stops two thirds of the way
+   down. One character grid sets the entry. A title character is exactly two
+   summary characters tall; the numeral sits level with the title's first
+   character and the summary starts on its third. Titles keep one size and
+   one column; a title cut short unfolds into the summary's place on hover or
+   focus. The row's start padding holds the open category's spine. */
+html:not(.has-vertical-chapters) .catalog-row {
+  --u: var(--category-unit);
+  --sf: max(12px, calc(12 * var(--u)));
+  --tf: calc(2 * var(--sf));
+  --cell: calc(1.1 * var(--tf));
+  --row-pad: calc(13 * var(--u));
+  --card-h: calc(100cqh - 2 * var(--row-pad));
+  --pad-top: calc(30 * var(--u));
+  --pad-bottom: calc(16 * var(--u));
+  --entry-w: calc(46 * var(--u) + 1.9 * var(--tf) + 3.8 * var(--sf));
+  --line: light-dark(rgb(24 28 32 / 46%), rgb(226 230 234 / 44%));
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  gap: calc(44 * var(--u));
+  box-sizing: border-box;
+  width: max-content;
+  height: 100cqh;
+  padding: var(--row-pad) calc(25.42 * var(--u)) var(--row-pad) var(--catalog-spine);
 }
-.catalog-cards {
-  display: flex;
-  flex: 1;
-  gap: calc(14.83 * var(--category-unit));
-  list-style: none;
-  margin: 0;
-  padding: 0;
+html:not(.has-vertical-chapters) .catalog-group { flex-direction: row; height: var(--card-h); gap: calc(24 * var(--u)); }
+/* The subcategory stands at the head of its entries: its name, a fading
+   hairline, then the count. */
+html:not(.has-vertical-chapters) .catalog-group-head {
+  flex: none;
+  gap: calc(12 * var(--u));
+  height: auto;
+  padding-top: var(--pad-top);
+  writing-mode: vertical-lr;
 }
-.catalog-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: calc(250 * var(--category-unit));
-  height: 100%;
-  min-height: calc(158.9 * var(--category-unit));
-  padding: calc(16.95 * var(--category-unit)) calc(16.95 * var(--category-unit)) calc(14.83 * var(--category-unit));
-  border: 1px solid light-dark(rgb(24 28 32 / 16%), rgb(210 216 222 / 16%));
-  background: var(--catalog-glass);
-  backdrop-filter: blur(4px);
-  text-decoration: none;
-  transition: border-color calc(180ms * var(--catalog-speed, 1)) ease;
+html:not(.has-vertical-chapters) .catalog-group-symbol { display: none; }
+html:not(.has-vertical-chapters) .catalog-group-head h3 {
+  color: var(--chapter-muted);
+  font: 500 max(12px, calc(15 * var(--u)))/1 var(--ui-sans);
+  letter-spacing: .3em;
+  white-space: nowrap;
 }
-.catalog-card::before {
+html:not(.has-vertical-chapters) .catalog-group-rule { width: 1px; height: auto; background: linear-gradient(var(--line), transparent); }
+html:not(.has-vertical-chapters) .catalog-group-count { color: var(--chapter-signal); letter-spacing: .1em; }
+html:not(.has-vertical-chapters) .catalog-cards { display: flex; gap: calc(26 * var(--u)); height: var(--card-h); }
+html:not(.has-vertical-chapters) .catalog-cards > li { display: flex; height: var(--card-h); }
+html:not(.has-vertical-chapters) :is(.catalog-card, .catalog-empty) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: calc(.78 * var(--tf));
+  align-items: start;
+  width: var(--entry-w);
+  height: var(--card-h);
+  padding: var(--pad-top) calc(24 * var(--u)) var(--pad-bottom) calc(22 * var(--u));
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  transition: border-color 220ms ease;
+}
+html:not(.has-vertical-chapters) .catalog-card {
+  grid-template-rows: var(--cell) var(--cell) minmax(0, 1fr) auto;
+  grid-template-areas: "title index" "title ." "title summary" "title date";
+}
+/* The left line's orange head marks the first title character; on hover it
+   runs the whole line. */
+html:not(.has-vertical-chapters) .catalog-card::before {
   content: "";
   position: absolute;
   top: -1px;
   left: -1px;
-  width: calc(10.59 * var(--category-unit));
-  height: calc(10.59 * var(--category-unit));
-  border: solid var(--chapter-signal);
-  border-width: 1px 0 0 1px;
-  opacity: .8;
-  transition: width calc(180ms * var(--catalog-speed, 1)) ease, height calc(180ms * var(--catalog-speed, 1)) ease;
+  width: 1px;
+  height: calc(var(--pad-top) + var(--cell) + 1px);
+  background: var(--chapter-signal);
+  transition: height 420ms cubic-bezier(.16, 1, .3, 1);
 }
-.catalog-card-index { color: var(--chapter-signal); }
-.catalog-card-title, .catalog-card-summary {
+html:not(.has-vertical-chapters) :is(.catalog-card, .catalog-empty)::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  right: 0;
+  width: 1px;
+  height: 66%;
+  background: var(--line);
+  transition: background-color 220ms ease;
+}
+html:not(.has-vertical-chapters) .catalog-card:is(:hover, :focus-visible) { --line: light-dark(rgb(24 28 32 / 80%), rgb(240 243 246 / 80%)); }
+html:not(.has-vertical-chapters) .catalog-card:is(:hover, :focus-visible)::before { height: calc(100% + 1px); }
+html:not(.has-vertical-chapters) :is(.catalog-card-index, .catalog-empty-count) {
+  justify-self: start;
+  margin-top: calc(.04 * var(--tf));
+  color: var(--chapter-text);
+  opacity: .3;
+  font: 300 calc(.92 * var(--tf))/1 var(--category-tech);
+  letter-spacing: .02em;
+  transition: opacity 200ms ease;
+}
+html:not(.has-vertical-chapters) .catalog-card-index { grid-area: index; }
+html:not(.has-vertical-chapters) .catalog-card-title {
+  grid-area: title;
+  height: calc(var(--card-h) - var(--pad-top) - var(--pad-bottom));
+  overflow: hidden;
+  font: 300 var(--tf)/1.12 var(--ui-sans);
+  letter-spacing: .1em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  writing-mode: vertical-lr;
+  transition: color 200ms ease;
+}
+html:not(.has-vertical-chapters) .catalog-card:is(:hover, :focus-visible) .catalog-card-title { color: light-dark(#000, #fff); }
+html:not(.has-vertical-chapters) :is(.catalog-card-summary, .catalog-empty-text) {
+  max-height: 100%;
+  font: var(--sf)/1.9 var(--ui-sans);
+  letter-spacing: .1em;
+  writing-mode: vertical-lr;
+}
+html:not(.has-vertical-chapters) .catalog-card-summary {
+  grid-area: summary;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
+  transition: opacity 200ms ease;
 }
-.catalog-card-title {
-  margin-top: calc(12.71 * var(--category-unit));
-  color: var(--chapter-text);
-  font: 500 max(12px, calc(16.95 * var(--category-unit)))/1.4 var(--ui-sans);
+/* The date stands at the foot of the right column. */
+html:not(.has-vertical-chapters) :is(.catalog-card-meta, .catalog-empty-code) {
+  align-self: end;
+  justify-self: start;
+  margin-top: calc(.5 * var(--tf));
+  line-height: 1;
+  letter-spacing: .12em;
+  white-space: nowrap;
+  writing-mode: vertical-lr;
 }
-.catalog-card-meta { margin-top: calc(6.36 * var(--category-unit)); color: var(--chapter-muted); }
-.catalog-card-summary {
-  margin-top: calc(10.59 * var(--category-unit));
-  color: var(--chapter-muted);
-  font: max(12px, calc(12.71 * var(--category-unit)))/1.7 var(--ui-sans);
+html:not(.has-vertical-chapters) .catalog-card-meta { grid-area: date; opacity: .85; transition: opacity 200ms ease; }
+html:not(.has-vertical-chapters) .catalog-card-reading { display: none; }
+/* A title cut short (js/catalog.js marks it) runs on into the right column. */
+html:not(.has-vertical-chapters) .catalog-card.is-clipped:is(:hover, :focus-visible) :is(.catalog-card-index, .catalog-card-summary, .catalog-card-meta) { opacity: 0; }
+html:not(.has-vertical-chapters) .catalog-card.is-clipped:is(:hover, :focus-visible) .catalog-card-summary { position: absolute; }
+html:not(.has-vertical-chapters) .catalog-card.is-clipped:is(:hover, :focus-visible) .catalog-card-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  white-space: normal;
 }
-.catalog-card-arrow {
-  position: absolute;
-  right: calc(8 * var(--category-unit));
-  bottom: calc(5 * var(--category-unit));
-  color: var(--chapter-text);
-  font-size: max(12px, calc(13.77 * var(--category-unit)));
-  opacity: 0;
-  transition: opacity calc(180ms * var(--catalog-speed, 1)) ease;
+/* An empty category is an entry left blank: dashed lines, 00 where the
+   numeral goes, the note where the title would be, NO ENTRIES at the foot. */
+html:not(.has-vertical-chapters) .catalog-empty {
+  grid-template-rows: var(--cell) minmax(0, 1fr) auto;
+  grid-template-areas: "text count" "text ." "text code";
+  border-style: dashed none none dashed;
 }
-.catalog-card:is(:hover, :focus-visible) { border-color: light-dark(rgb(24 28 32 / 34%), rgb(210 216 222 / 34%)); }
-.catalog-card:is(:hover, :focus-visible)::before { width: calc(19.07 * var(--category-unit)); height: calc(19.07 * var(--category-unit)); }
-.catalog-card:is(:hover, :focus-visible) .catalog-card-arrow { opacity: 1; }
-/* An empty category reads like an instrument with nothing on it: a card-sized
-   frosted slot with a dashed edge, a large zero count in the categories'
-   numeral face, a NO ENTRIES code over a hairline, then the note. */
-.catalog-empty {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  box-sizing: border-box;
-  width: calc(250 * var(--category-unit));
-  min-height: calc(158.9 * var(--category-unit));
-  margin: 0;
-  padding: calc(16.95 * var(--category-unit)) calc(16.95 * var(--category-unit)) calc(14.83 * var(--category-unit));
-  border: 1px dashed light-dark(rgb(24 28 32 / 24%), rgb(210 216 222 / 22%));
-  background: var(--catalog-glass);
-  backdrop-filter: blur(4px);
-  color: var(--chapter-muted);
-  font: max(12px, calc(13.77 * var(--category-unit)))/1.9 var(--ui-sans);
-}
-.catalog-empty-count {
-  color: light-dark(#69737c, #6a747d);
-  font: 600 calc(44 * var(--category-unit))/1 var(--category-tech);
-  letter-spacing: .06em;
-  font-variant-numeric: tabular-nums;
-}
-.catalog-empty-code {
-  display: flex;
-  align-items: center;
-  gap: calc(9.53 * var(--category-unit));
-  margin-top: calc(10.59 * var(--category-unit));
-  color: light-dark(#4b545c, #8a949d);
-  font: max(9px, calc(10.59 * var(--category-unit)))/1 var(--chapter-mono);
+html:not(.has-vertical-chapters) .catalog-empty::after { width: 0; background: none; border-right: 1px dashed var(--line); }
+html:not(.has-vertical-chapters) .catalog-empty-count { grid-area: count; }
+html:not(.has-vertical-chapters) .catalog-empty-text { grid-area: text; }
+html:not(.has-vertical-chapters) .catalog-empty-code {
+  grid-area: code;
+  font: max(9px, calc(10.59 * var(--u)))/1 var(--chapter-mono);
   letter-spacing: .2em;
 }
-.catalog-empty-code::after { content: ""; flex: 1; height: 1px; background: var(--chapter-rule); }
-.catalog-empty-text { margin-top: calc(12.71 * var(--category-unit)); }
+
+/* The open category stands as a spine at the head of its row. Its name,
+   description and count turn vertical at the left, level with the entries'
+   first characters, and the display takes the column's whole height.
+   js/catalog.js flies the name's characters between the row and the spine. */
+.category-column {
+  /* The spine's width: the name's column, then two columns of description in
+     its own (clamped) size and a gap before the first subcategory. */
+  --catalog-spine-text: max(12px, calc(12 * var(--category-unit)));
+  --catalog-spine: calc(82 * var(--category-unit) + 3.8 * var(--catalog-spine-text));
+}
+.category-name-glyph { display: inline-block; }
+html:not(.has-vertical-chapters) .has-catalog-board .is-catalog-open :is(.category-name, .category-description, .category-bottom) {
+  position: absolute;
+  z-index: 3;
+  margin: 0;
+  writing-mode: vertical-lr;
+}
+html:not(.has-vertical-chapters) .has-catalog-board .is-catalog-open :is(.category-name, .category-description) {
+  /* The header strip, the display's top gap, the row's and the entry's padding. */
+  top: calc(81 * var(--category-unit));
+}
+html:not(.has-vertical-chapters) .has-catalog-board .is-catalog-open .category-name { left: calc(30 * var(--category-unit)); letter-spacing: .06em; }
+html:not(.has-vertical-chapters) .has-catalog-board .is-catalog-open .category-description {
+  left: calc(84 * var(--category-unit));
+  min-height: 0;
+  max-height: calc(150 * var(--category-unit));
+  font-size: var(--catalog-spine-text);
+  line-height: 1.9;
+  letter-spacing: .12em;
+}
+html:not(.has-vertical-chapters) .has-catalog-board .is-catalog-open .category-bottom {
+  top: auto;
+  bottom: calc(29 * var(--category-unit));
+  left: calc(30 * var(--category-unit));
+  padding: 0;
+  border: 0;
+}
+html:not(.has-vertical-chapters) .has-catalog-board .is-catalog-open .category-bottom::before,
+html:not(.has-vertical-chapters) .has-catalog-board .is-catalog-open .category-action { display: none; }
+
+/* Phones: a typographic index. No boxes: a hairline with an orange start
+   above each article, a large thin numeral, the title, its date and reading
+   time, and one line of summary. */
+.has-vertical-chapters .catalog-cards { display: flex; flex-direction: column; }
+.has-vertical-chapters :is(.catalog-card, .catalog-empty) {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  column-gap: 10px;
+  align-content: start;
+  width: 100%;
+  padding: 14px 0 16px;
+  border-top: 1px solid var(--chapter-rule);
+}
+.has-vertical-chapters .catalog-card::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 0;
+  width: 22px;
+  height: 1px;
+  background: var(--chapter-signal);
+}
+.has-vertical-chapters :is(.catalog-card-index, .catalog-empty-count) {
+  grid-row: 1 / span 3;
+  color: light-dark(#7d868e, #5d666e);
+  font: 300 34px/.95 var(--category-tech);
+}
+.has-vertical-chapters :is(.catalog-card-title, .catalog-card-meta, .catalog-card-summary, .catalog-empty-code, .catalog-empty-text) { grid-column: 2; }
+.has-vertical-chapters .catalog-card-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font: 600 17px/1.4 var(--ui-sans);
+}
+.has-vertical-chapters .catalog-card-meta { margin-top: 6px; font-size: 11px; }
+.has-vertical-chapters .catalog-card-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  margin-top: 6px;
+  font: 13px/1.7 var(--ui-sans);
+}
+.has-vertical-chapters .catalog-empty { border-top-style: dashed; }
+.has-vertical-chapters .catalog-empty-code { font: 10.5px/1.3 var(--chapter-mono); letter-spacing: .2em; }
+.has-vertical-chapters .catalog-empty-text { margin-top: 6px; font: 13px/1.7 var(--ui-sans); }
 
 /* The docked slot keeps its original place in the chapter strip. */
 .series-section.has-catalog-board :is(.category-panel, .category-heading) {
@@ -288,13 +429,6 @@ html.has-vertical-chapters .catalog-back { font-size: 12px; }
   flex-direction: column;
   align-items: stretch;
   padding: 16px;
-}
-.has-vertical-chapters .catalog-cards { flex-direction: column; gap: 10px; }
-.has-vertical-chapters :is(.catalog-card, .catalog-empty) { width: 100%; }
-.has-vertical-chapters :is(.catalog-card, .catalog-empty) {
-  background: light-dark(rgb(240 241 243 / 76%), rgb(14 16 19 / 76%));
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
 }
 .has-vertical-chapters .catalog-group-head {
   --catalog-heading-line: max(12px, calc(14.83 * var(--category-unit)));

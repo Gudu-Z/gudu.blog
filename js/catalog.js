@@ -24,7 +24,23 @@
     action: column.querySelector('.category-action'), line: column.querySelector('.category-index-line'),
     block: column.querySelector('.catalog-block'), row: column.querySelector('.catalog-row'),
     light: column.querySelector('.category-facet-light'),
+    description: column.querySelector('.category-description'), bottom: column.querySelector('.category-bottom'),
+    name: column.querySelector('.category-name'), flights: [],
   }));
+  // Each character of a name is its own box, so it can fly between the name's
+  // row under the display and an open category's spine (see flySpine).
+  for (const cell of cells) {
+    const text = cell.name.textContent;
+    cell.name.textContent = '';
+    cell.glyphs = [...text].map(character => {
+      const glyph = document.createElement('span');
+      glyph.className = 'category-name-glyph';
+      glyph.textContent = character;
+      cell.name.append(glyph);
+      return glyph;
+    });
+    cell.latin = cell.name.classList.contains('category-latin');
+  }
   const reduce = matchMedia('(prefers-reduced-motion: reduce)');
   const phone = () => root.classList.contains('has-vertical-chapters');
   const speed = new URLSearchParams(location.search).get('catalogslow') === '1' ? 5 : 1;
@@ -277,6 +293,63 @@
     entrances.delete(index);
   }
 
+  // An open column stands its name, description and count vertically at its
+  // left, as a spine (css/catalog.css). Positions are layout offsets within
+  // the column, so the panel's 3D pose cannot skew them.
+  function centreIn(element, column) {
+    let x = element.offsetWidth / 2, y = element.offsetHeight / 2;
+    for (let node = element; node && node !== column; node = node.offsetParent) {
+      x += node.offsetLeft;
+      y += node.offsetTop;
+    }
+    return [x, y];
+  }
+
+  function spineState(i) {
+    const { column, glyphs, scene } = cells[i];
+    return { glyphs: glyphs.map(glyph => centreIn(glyph, column)), scene: centreIn(scene, column)[1] };
+  }
+
+  function cancelFlights(i) {
+    for (const animation of cells[i].flights) animation.cancel();
+    cells[i].flights = [];
+  }
+
+  // Each character flies from where it stood before the column opened or
+  // closed to where it stands now, a little after the one before; Latin
+  // letters turn a quarter on the way, as a spine's letters lie. The
+  // specimen glides to the middle of the display's new height, and the
+  // description and count fade in where they now stand.
+  function flySpine(i, before, opening, animate, delay = 0) {
+    cancelFlights(i);
+    if (reduce.matches || !before) return;
+    const cell = cells[i], after = spineState(i);
+    const play = (...args) => { const animation = animate(...args); cell.flights.push(animation); return animation; };
+    cell.glyphs.forEach((glyph, n) => {
+      const [x0, y0] = before.glyphs[n], [x1, y1] = after.glyphs[n];
+      const turn = cell.latin ? (opening ? -90 : 90) : 0;
+      const order = opening ? n : cell.glyphs.length - 1 - n;
+      play(glyph, [{ transform: `translate(${x0 - x1}px, ${y0 - y1}px) rotate(${turn}deg)` }, { transform: 'none' }],
+        delay + 60 + order * 38, 640, arrive);
+    });
+    const drop = before.scene - after.scene;
+    if (Math.abs(drop) > .5) {
+      play(cell.scene, [{ translate: `-50% calc(-50% + ${drop}px)` }, { translate: '-50% -50%' }], delay, 640, arrive);
+    }
+    for (const part of [cell.description, cell.bottom]) {
+      play(part, [{ opacity: 0 }, { opacity: 0, offset: .6 }, { opacity: 1 }], delay, 820, 'ease-out');
+    }
+  }
+
+  // A title longer than its column ends in an ellipsis; css/catalog.css lets
+  // such a title run on into the summary's place on hover or focus.
+  function markClipped(i) {
+    if (i < 0 || phone()) return;
+    for (const title of cells[i].block.querySelectorAll('.catalog-card-title')) {
+      title.closest('.catalog-card').classList.toggle('is-clipped', title.scrollHeight > title.clientHeight + 1);
+    }
+  }
+
   function finishHandOver() {
     if (!flips.size && !entrances.size && !folds.size && !scrollFrame) panel.classList.remove('is-catalog-hand-over');
   }
@@ -328,6 +401,7 @@
     if (cells[i].block.contains(document.activeElement)) focusReadingCard();
     cancelFlip(i);
     cancelEntrance(i);
+    cancelFlights(i);
     endFold(i);
     setExpanded(i, false);
     resizeTrack(i, base.tracks[i], fixRight);
@@ -356,11 +430,14 @@
     if (block.contains(document.activeElement)) focusReadingCard();
     cancelFlip(i);
     cancelEntrance(i);
+    const spine = spineState(i);
     panel.classList.add('is-catalog-hand-over');
     column.classList.add('is-catalog-folding');
     column.classList.toggle('is-catalog-fold-right', fixRight);
     column.classList.remove('is-catalog-open');
     block.inert = true;
+    flySpine(i, spine, false, (node, frames, delay, duration, easing) =>
+      node.animate(frames, { delay: delay * speed, duration: duration * speed, easing, fill: 'backwards' }));
     const play = (node, frames, delay, duration, easing, pseudoElement) => node.animate(frames, { delay: delay * speed,
       duration: duration * speed, easing, fill: 'both', ...(pseudoElement && { pseudoElement }) });
     folds.set(i, { from: board.tracks[i], fixRight, start: now, effects: [
@@ -409,6 +486,7 @@
     endFold(index);
     const width = base.tracks[index] + base.gains[index], gain = width - board.tracks[index];
     if (!reduce.matches && direction > 0 && gain) carryFollowingColumns(index, gain);
+    cells[index].spineFrom = reduce.matches ? null : spineState(index);
     setExpanded(index, true);
     resizeTrack(index, width, direction < 0);
   }
@@ -425,6 +503,9 @@
     play(cells[index].line, [{ transform: 'translateY(calc(-1 * var(--category-unit))) scale(calc(3 * var(--category-unit) / 24px), calc(3 * var(--category-unit) / 1px))' },
       { transform: 'none' }], 0, 180, arrive, '::after');
     animateCellContents(index, true, true, 0, rowCards(index), play);
+    flySpine(index, cells[index].spineFrom, true, (node, frames, delay, duration, easing) =>
+      node.animate(frames, { delay: delay * speed, duration: duration * speed, easing, fill: 'backwards' }));
+    cells[index].spineFrom = null;
     entrances.set(index, effects);
     Promise.all(effects.map(a => a.finished)).then(() => {
       if (entrances.get(index) === effects) entrances.delete(index);
@@ -436,9 +517,10 @@
     // The ends hold for the board that running folds are heading to.
     const b = folds.size ? settledBoard() : board;
     const left = base.left + b.shift + base.padX, right = b.tracks.reduce((x, width) => x + width, left);
-    // A backward opening can leave a fully fitted board at a negative CSS
-    // left. That anchor correction does not create a new scrolling range.
-    if (right - b.shift <= base.frameRight && left >= base.frameLeft) return 0;
+    // A board that lies wholly inside the frame has nothing left to reveal.
+    // A backward opening can leave it there at a negative CSS left; moving it
+    // back toward that anchor would only push its far end out of view.
+    if (right <= base.frameRight + layoutTolerance && left >= base.frameLeft - layoutTolerance) return 0;
     if (direction < 0) return Math.max(0, -b.shift);
     return Math.max(0, Math.min(right - base.frameRight, b.width - base.w + b.shift));
   }
@@ -507,6 +589,7 @@
     for (const index of opened) {
       if (!expanded(index)) continue;
       fitRowHeight(index);
+      markClipped(index);
       if (!reduce.matches) enterInPlace(index);
     }
     updateCoverInert();
@@ -532,6 +615,7 @@
     gesture = null;
     for (const index of flips.keys()) cancelFlip(index);
     for (const index of entrances.keys()) cancelEntrance(index);
+    cells.forEach((_, i) => cancelFlights(i));
     if (folds.size) {
       for (const [index, fold] of folds) {
         endFold(index);
@@ -793,6 +877,8 @@
     }
     if (desktop && !base) base = measureBase();
     const from = desktop ? board || layout(base.tracks, 0) : null;
+    // Where the names stand before their columns change, for flySpine.
+    const spines = desktop && motion ? [...new Set([index, ...leaving])].filter(i => i >= 0).map(i => [i, spineState(i)]) : [];
     root.classList.add('is-catalog');
     show(index, motion && desktop ? leaving : []);
     active = index;
@@ -805,6 +891,7 @@
       if (opening) startReading(index);
       setBoard(opening ? layout(range.tracks, range.start) : layout(base.tracks, 0));
       fitRowHeight(index);
+      markClipped(index);
     }
     const incomingCards = desktop && motion && opening ? rowCards(index) : [];
     const fraction = desktop && opening ? scrollState() : null;
@@ -840,6 +927,7 @@
       if (!switching) chapters.animateCatalogPose(opening, (node, frames) => effect(node, frames, delay, duration));
       leaving.forEach((i, n) => animateCell(i, false, switching, delay, outgoingCards[n] || []));
       if (opening) animateCell(index, true, switching, delay, incomingCards);
+      for (const [i, before] of spines) flySpine(i, before, i === index, effect);
       if (!switching) for (const n of neighbours) {
         const rect = n.getBoundingClientRect();
         const cx = innerWidth / 2 - (rect.left + rect.width / 2), cy = innerHeight / 2 - (rect.top + rect.height / 2);
@@ -913,6 +1001,7 @@
     distanceRead += fraction * range.limit;
     setBoard(layout(range.tracks, range.start - fraction * range.limit));
     fitRowHeight(index);
+    markClipped(index);
     updateCoverInert();
     chapters.setCatalogRuler(index, scrollState());
   }
