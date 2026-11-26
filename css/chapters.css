@@ -180,6 +180,7 @@ html.has-chapters .home-page .chapter-track {
   transform: translate3d(var(--chapter-x, 0px), 0, 0);
   will-change: transform;
 }
+html.has-flat-catalog .home-page .chapter-track { will-change: auto; }
 html.has-chapters .home-page .chapter-section {
   flex: 0 0 var(--chapter-width);
   width: var(--chapter-width);
@@ -436,13 +437,14 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
     --chapter-reveal-reverse: 1;
   }
   html.has-chapters .home-page .chapter-section :is(.chapter-panel, .chapter-reveal-unit) {
-    transform: translate3d(var(--chapter-camera-x, 0px), var(--chapter-camera-y, 0px), 0)
+    --chapter-plate-transform: translate3d(var(--chapter-camera-x, 0px), var(--chapter-camera-y, 0px), 0)
       perspective(var(--chapter-perspective, 1400px))
       rotateX(var(--chapter-view-pitch, 0deg))
       rotateY(var(--chapter-view-yaw, 0deg))
       translate3d(calc(-1 * var(--chapter-camera-x, 0px) + var(--chapter-depth-x, 0px)), calc(-1 * var(--chapter-camera-y, 0px)), var(--chapter-depth-z, 0px))
       rotateY(var(--chapter-depth-yaw, 0deg))
       scaleX(var(--chapter-depth-span, 1));
+    transform: var(--chapter-plate-transform);
     transform-origin: var(--chapter-depth-origin-x, 50%) var(--chapter-depth-origin-y, 50%);
   }
   html.has-chapters .home-page .chapter-section .chapter-panel {
@@ -512,6 +514,13 @@ html.has-chapters .home-page .archive-section { grid-template-rows: minmax(min-c
   html.has-chapters .home-page .chapter-section .chapter-reveal-unit:not(.chapter-panel) {
     translate: var(--chapter-layer-x, 0px) 0;
     transition-property: var(--chapter-reveal-properties, opacity, translate);
+  }
+  /* The board animation borrows the strip's plate transform on its way in
+     and out. Once it lands, the text and glass sit in the flat page plane. */
+  html.has-flat-catalog .home-page #series :is(.chapter-reveal-unit, .category-composition) {
+    transform: none;
+    translate: none;
+    scale: none;
   }
   html.has-chapters .home-page .chapter-section :where(
     .about-panel-top, .about-name-label, .connection-heading, .connection-card-head, .chapter-panel h2, .chapter-panel > :is(.eyebrow, h3),
@@ -1241,6 +1250,13 @@ html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scale
 html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-response,
 html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-rail::before { display: none; }
 html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scales .ruler-marks { display: block; position: absolute; inset: 0; pointer-events: none; }
+/* No mark reads the ruler's moving cursor, progress or hover variables.
+   Pinned here, they stop restyling every mark on every frame of a scroll. */
+html.has-chapters .home-page .ruler-marks {
+  --chapter-position: 0; --site-progress: 0; --chapter-active-index: 0;
+  --chapter-marker-x: 0px; --chapter-response-x: 0px;
+  --chapter-hover-x: 0px; --chapter-hover-view-x: 0px; --chapter-hover-view-y: 0px;
+}
 html.has-chapters:not(.has-vertical-chapters) .home-page .chapter-progress-scales .ruler-marks > i {
   --tick: light-dark(#4e4e4e2e, #9898982e);
   position: absolute;

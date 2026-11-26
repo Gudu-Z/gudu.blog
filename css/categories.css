@@ -134,7 +134,8 @@
 /* Specimens. All four share one construction: 1px planes in the same camera,
    over the same drafting floor. On hover the camera drifts and the specimen
    rises, then each one opens in its own way and shows one orange detail.
-   Entry is staged with delays; leaving returns every part at once. */
+   Entry is staged with delays; leaving returns every part at once. An open
+   catalog column (css/catalog.css) holds its specimen in the same pose. */
 .category-scene {
   --category-ease: cubic-bezier(.22, .6, .2, 1);
   --category-return: 700ms;
@@ -162,7 +163,7 @@
   transform: rotateX(-24deg) rotateY(-38deg);
   transition: transform var(--category-return) var(--category-ease);
 }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-stage { transform: rotateX(-24deg) rotateY(-20deg); transition-duration: 1600ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-stage { transform: rotateX(-24deg) rotateY(-20deg); transition-duration: 1600ms; }
 /* The drafting floor: an 8 x 8 grid with brighter axes, fading out toward its edges. */
 .category-floor {
   --category-grid: color-mix(in srgb, currentColor 26%, transparent);
@@ -184,7 +185,7 @@
   mask-composite: intersect;
 }
 .category-specimen { position: absolute; transform-style: preserve-3d; transform: translateY(-56px); transition: transform var(--category-return) var(--category-ease); }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-specimen { transform: translateY(-62px); transition-duration: 1600ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-specimen { transform: translateY(-62px); transition-duration: 1600ms; }
 .category-specimen i { position: absolute; display: block; box-sizing: border-box; border: 1px solid currentColor; transition: transform var(--category-return) var(--category-ease), opacity var(--category-return) ease; }
 
 /* Minecraft: a block, with a pixel grid on top and a grass line on its sides.
@@ -208,17 +209,17 @@
     light-dark(rgb(37 52 63 / 3%), rgb(170 188 202 / 3%));
 }
 .category-block > i:nth-child(6) { transform: rotateX(-90deg) translateZ(29px); background: light-dark(rgb(37 52 63 / 3%), rgb(170 188 202 / 3%)); }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-block > i { transition-duration: 1100ms; transition-delay: 120ms; }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-block > i:nth-child(1) { transform: translateZ(40px); }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-block > i:nth-child(2) { transform: rotateY(180deg) translateZ(40px); }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-block > i:nth-child(3) { transform: rotateY(-90deg) translateZ(40px); transition-delay: 180ms; }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-block > i:nth-child(4) { transform: rotateY(90deg) translateZ(40px); transition-delay: 180ms; }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-block > i:nth-child(5) { transform: rotateX(90deg) translateZ(46px); transition-delay: 0ms; }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-block > i:nth-child(6) { transform: rotateX(-90deg) translateZ(36px); transition-delay: 240ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-block > i { transition-duration: 1100ms; transition-delay: 120ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-block > i:nth-child(1) { transform: translateZ(40px); }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-block > i:nth-child(2) { transform: rotateY(180deg) translateZ(40px); }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-block > i:nth-child(3) { transform: rotateY(-90deg) translateZ(40px); transition-delay: 180ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-block > i:nth-child(4) { transform: rotateY(90deg) translateZ(40px); transition-delay: 180ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-block > i:nth-child(5) { transform: rotateX(90deg) translateZ(46px); transition-delay: 0ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-block > i:nth-child(6) { transform: rotateX(-90deg) translateZ(36px); transition-delay: 240ms; }
 .category-core { position: absolute; transform-style: preserve-3d; transform: rotateY(0deg) scale3d(.3, .3, .3); transition: transform var(--category-return) var(--category-ease); }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-core { transform: rotateY(90deg) scale3d(1, 1, 1); transition-duration: 1400ms; transition-delay: 300ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-core { transform: rotateY(90deg) scale3d(1, 1, 1); transition-duration: 1400ms; transition-delay: 300ms; }
 .category-core > i { left: -8px; top: -8px; width: 16px; height: 16px; border-color: var(--red); background: light-dark(rgb(240 100 70 / 16%), rgb(240 100 70 / 16%)); opacity: 0; }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-core > i { opacity: 1; transition-duration: 500ms; transition-delay: 300ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-core > i { opacity: var(--category-detail-opacity, 1); transition-duration: 500ms; transition-delay: 300ms; }
 .category-core > i:nth-child(1) { transform: translateZ(8px); }
 .category-core > i:nth-child(2) { transform: rotateY(180deg) translateZ(8px); }
 .category-core > i:nth-child(3) { transform: rotateY(-90deg) translateZ(8px); }
@@ -232,14 +233,14 @@
 .category-orb > i:nth-child(1) { transform: rotateX(90deg) rotateY(0deg); }
 .category-orb > i:nth-child(2) { transform: rotateY(0deg) rotateX(0deg); }
 .category-orb > i:nth-child(3) { transform: rotateY(90deg) rotateX(0deg); }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-orb > i:nth-child(1) { transform: rotateX(62deg) rotateY(24deg); transition-duration: 1300ms; }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-orb > i:nth-child(2) { transform: rotateY(64deg) rotateX(28deg); transition-duration: 1650ms; transition-delay: 60ms; }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-orb > i:nth-child(3) { transform: rotateY(134deg) rotateX(-36deg); transition-duration: 2000ms; transition-delay: 120ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-orb > i:nth-child(1) { transform: rotateX(62deg) rotateY(24deg); transition-duration: 1300ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-orb > i:nth-child(2) { transform: rotateY(64deg) rotateX(28deg); transition-duration: 1650ms; transition-delay: 60ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-orb > i:nth-child(3) { transform: rotateY(134deg) rotateX(-36deg); transition-duration: 2000ms; transition-delay: 120ms; }
 .category-orbit { position: absolute; transform-style: preserve-3d; transform: rotateX(14deg) rotateY(-80deg); transition: transform var(--category-return) var(--category-ease); }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-orbit { transform: rotateX(14deg) rotateY(150deg); transition-duration: 2000ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-orbit { transform: rotateX(14deg) rotateY(150deg); transition-duration: 2000ms; }
 /* The moon turns against its orbit, so it always faces the camera. */
 .category-moon { position: absolute; left: -2.5px; top: -2.5px; width: 5px; height: 5px; background: var(--red); opacity: 0; transform: translateX(56px) rotateY(80deg); transition: transform var(--category-return) var(--category-ease), opacity 300ms ease; }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-moon { opacity: 1; transform: translateX(56px) rotateY(-150deg); transition-duration: 2000ms, 400ms; transition-delay: 0ms, 150ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-moon { opacity: var(--category-detail-opacity, 1); transform: translateX(56px) rotateY(-150deg); transition-duration: 2000ms, 400ms; transition-delay: 0ms, 150ms; }
 
 /* Collected words: three standing cards. Hover fans them out like a hand and
    writes out the redacted lines on the front card, ending at an orange cursor. */
@@ -247,19 +248,19 @@
 .category-cards > i:nth-child(1) { transform: translate3d(0, 0, -15px) rotateY(0deg) rotateZ(0deg); border-color: color-mix(in srgb, currentColor 50%, transparent); }
 .category-cards > i:nth-child(2) { transform: translate3d(0, 0, 0) rotateY(0deg) rotateZ(0deg); border-color: color-mix(in srgb, currentColor 75%, transparent); }
 .category-cards > i:nth-child(3) { transform: translate3d(0, 0, 15px) rotateY(0deg) rotateZ(0deg); background: light-dark(rgb(37 52 63 / 4%), rgb(170 188 202 / 4%)); }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-cards > i { transition-duration: 1100ms; }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-cards > i:nth-child(1) { transform: translate3d(-22px, 4px, -9px) rotateY(-16deg) rotateZ(-8deg); }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-cards > i:nth-child(2) { transform: translate3d(0, -6px, 3px) rotateY(0deg) rotateZ(0deg); transition-delay: 50ms; }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-cards > i:nth-child(3) { transform: translate3d(22px, 3px, 15px) rotateY(16deg) rotateZ(7deg); transition-delay: 100ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-cards > i { transition-duration: 1100ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-cards > i:nth-child(1) { transform: translate3d(-22px, 4px, -9px) rotateY(-16deg) rotateZ(-8deg); }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-cards > i:nth-child(2) { transform: translate3d(0, -6px, 3px) rotateY(0deg) rotateZ(0deg); transition-delay: 50ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-cards > i:nth-child(3) { transform: translate3d(22px, 3px, 15px) rotateY(16deg) rotateZ(7deg); transition-delay: 100ms; }
 .category-cards > i > span { position: absolute; left: 7px; top: var(--category-line-y); width: var(--category-redacted); height: 1px; background: color-mix(in srgb, currentColor 62%, transparent); transition: width var(--category-return) var(--category-ease); }
 .category-cards > i > span:nth-child(1) { --category-line-y: 12px; --category-redacted: 9px; --category-written: 24px; --category-line-step: 0; height: 2px; }
 .category-cards > i > span:nth-child(2) { --category-line-y: 24px; --category-redacted: 14px; --category-written: 37px; --category-line-step: 1; }
 .category-cards > i > span:nth-child(3) { --category-line-y: 32px; --category-redacted: 6px; --category-written: 31px; --category-line-step: 2; }
 .category-cards > i > span:nth-child(4) { --category-line-y: 40px; --category-redacted: 17px; --category-written: 37px; --category-line-step: 3; }
 .category-cards > i > span:nth-child(5) { --category-line-y: 48px; --category-redacted: 8px; --category-written: 22px; --category-line-step: 4; }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-cards > i > span { width: var(--category-written); transition-duration: 380ms; transition-delay: calc(280ms + var(--category-line-step) * 110ms); }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-cards > i > span { width: var(--category-written); transition-duration: 380ms; transition-delay: calc(280ms + var(--category-line-step) * 110ms); }
 .category-cards > i > span:last-child::after { content: ""; position: absolute; left: calc(100% + 3px); top: -3px; width: 2px; height: 7px; background: var(--red); opacity: 0; transition: opacity 200ms ease; }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-cards > i > span:last-child::after { opacity: 1; transition-delay: 860ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-cards > i > span:last-child::after { opacity: var(--category-detail-opacity, 1); transition-delay: 860ms; }
 
 /* Miscellany: an octahedron, whose twelve edges are three orthogonal squares.
    Hover turns each square in its own plane, refolding the octahedron into the
@@ -268,11 +269,11 @@
 .category-crystal > i:nth-child(1) { transform: rotateZ(45deg) scale(1); }
 .category-crystal > i:nth-child(2) { transform: rotateY(90deg) rotateZ(45deg) scale(1); }
 .category-crystal > i:nth-child(3) { transform: rotateX(90deg) rotateZ(45deg) scale(1); }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-crystal > i:nth-child(1) { transform: rotateZ(0deg) scale(1.16); transition-duration: 1150ms; }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-crystal > i:nth-child(2) { transform: rotateY(90deg) rotateZ(0deg) scale(1.16); transition-duration: 1400ms; transition-delay: 80ms; }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-crystal > i:nth-child(3) { transform: rotateX(90deg) rotateZ(90deg) scale(1.16); transition-duration: 1650ms; transition-delay: 160ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-crystal > i:nth-child(1) { transform: rotateZ(0deg) scale(1.16); transition-duration: 1150ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-crystal > i:nth-child(2) { transform: rotateY(90deg) rotateZ(0deg) scale(1.16); transition-duration: 1400ms; transition-delay: 80ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-crystal > i:nth-child(3) { transform: rotateX(90deg) rotateZ(90deg) scale(1.16); transition-duration: 1650ms; transition-delay: 160ms; }
 .category-node { position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; background: var(--red); opacity: 0; transform: rotateZ(45deg) scale(.4); transition: transform var(--category-return) var(--category-ease), opacity var(--category-return) ease; }
-.category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-node { opacity: 1; transform: rotateZ(0deg) scale(1); transition-duration: 900ms, 400ms; transition-delay: 380ms; }
+.category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-node { opacity: var(--category-detail-opacity, 1); transform: rotateZ(0deg) scale(1); transition-duration: 900ms, 400ms; transition-delay: 380ms; }
 /* Smaller displays step the specimen down so it stays inside the brackets.
    Widths follow the moon's orbit, heights the raised specimen over its floor. */
 @container category-display (width < 16.7em) or (height < 18.3em) { .category-scene { --category-art-size: .9; } }

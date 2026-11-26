@@ -4252,7 +4252,7 @@ await test('top search submission reaches the article panel while preserving inp
   }
 });
 
-await test('the panel catalog keeps the home stops, camera and runway while the ruler tracks the row', () => {
+await test('the catalog holds its chapter stop while its ruler crosses between reading ranges', () => {
   const site = browser({ url: 'https://gudu.blog/?source=direct#catalog-daydreams', categoryLayout: true, reduced: true });
   const api = site.window.SiteChapters;
   const names = () => site.navLinks.map(link => link.querySelector('.chapter-station-title').textContent);
@@ -4271,6 +4271,7 @@ await test('the panel catalog keeps the home stops, camera and runway while the 
   assert.deepEqual(names(), ['Minecraft', '白日梦话', '神秘文案', '其他']);
   assert.equal(site.progress.getAttribute('aria-label'), '文章目录分类');
   const quarter = site.rulerWidth / 4;
+  assert.equal(api.catalogStationWidth, quarter);
   assert.equal(site.markerX, 1.5 * quarter);
   const samples = [];
   site.window.SiteCatalog = { scrub: (...args) => samples.push(args) };
@@ -4287,6 +4288,23 @@ await test('the panel catalog keeps the home stops, camera and runway while the 
   api.setCatalogRuler(2, 1);
   assert.equal(site.navLinks[2].getAttribute('aria-current'), 'location');
   assert.ok(Math.abs(site.markerX - 2.9 * quarter) < 0.001);
+  for (const [cursorIndex, progress, nextProgress, from, to] of [
+    [1, 1, 0, 1.9, 2 + start],
+    [0, null, null, .5, 1.5],
+    [0, null, 0, .5, 1 + start],
+    [1, 1, null, 1.9, 2.5],
+  ]) {
+    for (const between of [0, .25, .5, .75, 1, .75, .5, .25, 0]) {
+      const expected = (from + (to - from) * between) * quarter;
+      for (const selected of [cursorIndex, cursorIndex + 1]) {
+        api.setCatalogRuler(selected, progress, { cursorIndex, nextProgress, between });
+        assert.ok(Math.abs(site.markerX - expected) < .001, 'the marker follows travel between the endpoints');
+        assert.equal(site.navLinks[selected].getAttribute('aria-current'), 'location');
+        assert.equal(site.navLinks.filter(link => link.hasAttribute('aria-current')).length, 1);
+        assert.ok(site.progressMarker.getAttribute('aria-valuetext').startsWith(names()[selected]));
+      }
+    }
+  }
   site.jump(initialY + 400);
   site.lateResize();
   site.advance(100);
@@ -4299,6 +4317,24 @@ await test('the panel catalog keeps the home stops, camera and runway while the 
   assert.equal(site.progress.getAttribute('aria-label'), '网站章节');
   assert.equal(site.navLinks[1].getAttribute('aria-current'), 'location');
   assert.equal(site.markerX, 1.5 * quarter);
+});
+
+await test('a short catalog reading range moves the ruler only by the board travel in each frame', () => {
+  const site = browser({ url: 'https://gudu.blog/#catalog-daydreams', categoryLayout: true, reduced: true });
+  const api = site.window.SiteChapters;
+  api.holdCatalog();
+  api.setCatalogRuler(1, 0);
+  const start = site.markerX;
+  for (const [progress, travel, expected] of [[1, 3, start + 3], [1, 0, start + 3], [0, -2, start + 1]]) {
+    api.setCatalogRuler(1, progress, { travel });
+    assert.ok(Math.abs(site.markerX - expected) < .001);
+    const share = expected / site.rulerWidth;
+    assert.equal(site.progress.style.getPropertyValue('--site-progress'), share.toFixed(5));
+    assert.equal(site.progress.style.getPropertyValue('--chapter-position'), (share * 4 - .5).toFixed(5));
+    assert.equal(site.progressMarker.getAttribute('aria-valuenow'), (share * 100).toFixed(1));
+  }
+  api.setCatalogRuler(1, 1);
+  assert.ok(Math.abs(site.markerX - 1.9 * api.catalogStationWidth) < .001, 'a direct seek still reaches its endpoint');
 });
 
 await test('unrelated form submissions keep their native behavior and current chapter', () => {

@@ -533,11 +533,11 @@ const cover = slug => `.category-cover[href="#catalog-${slug}"]`;
 const catalogSelector = slug => `[data-category-slug="${slug}"] .catalog-block`;
 const catalogStation = slug => `.chapter-progress-links a[href="#catalog-${slug}"] .chapter-station-title`;
 
-function withArticles(groups, perGroup) {
+function withArticles(groups, perGroup, slug = 'minecraft') {
   // Use the builder's real markup for overflow without publishing fixture posts.
   return `{
-    const row = document.querySelector('[data-category-slug="minecraft"] .catalog-row');
-    const group = row.querySelector('section').cloneNode(true);
+    const row = document.querySelector('[data-category-slug="${slug}"] .catalog-row');
+    const group = document.querySelector('[data-category-slug="minecraft"] .catalog-group').cloneNode(true);
     const card = group.querySelector('li').cloneNode(true);
     row.replaceChildren();
     for (let i = 0; i < ${groups}; i++) {
@@ -604,15 +604,14 @@ function readBoard(page) {
       blocks: columns.map(col => { const block = col.querySelector('.catalog-block'); return [block.hidden, block.inert]; }),
       widths: columns.map(col => col.offsetWidth),
       displays: columns.map(col => col.querySelector('.category-display').offsetWidth),
-      folds: columns.map(col => getComputedStyle(col).transform.startsWith('matrix3d')),
+      transforms: columns.map(col => getComputedStyle(col).transform),
       board: [facet(columns[0]).left, facet(columns.at(-1)).right],
       columns: columns.map(rect),
       openColumn: column && rect(column),
       display: column && rect(column.querySelector('.category-display')),
       items: group && [...group.querySelectorAll('.catalog-card, .catalog-empty')].map(rect),
       overflow: group && group.scrollWidth - group.clientWidth,
-      fades: group && ['left', 'right'].map(side =>
-        parseFloat(getComputedStyle(group).getPropertyValue('--catalog-' + side + '-fade'))),
+      mask: group && getComputedStyle(group).maskImage,
       heading: rect(one('.category-heading')),
       ruleEnd: rect(one('.category-heading-rule')).right,
       frame: [rect(one('.site-header .site-brand')).left, rect(one('.site-header .header-tools')).right],
@@ -642,7 +641,7 @@ function checkFullRow(view) {
     assert.ok(item.left >= view.frame[0] - 1 && item.right <= view.frame[1] + 1, 'the entire card is inside the frames');
   }
   assert.equal(view.overflow, 0);
-  assert.deepEqual(view.fades, [0, 0]);
+  assert.equal(view.mask, 'none');
 }
 
 async function checkRestored(page, baseline) {
@@ -659,7 +658,7 @@ async function checkRestored(page, baseline) {
   assert.deepEqual(view.displays, baseline.displays);
   assert.deepEqual(view.styles, baseline.styles, 'closing removes temporary inline styles');
   assert.deepEqual(view.blocks, Array(4).fill([true, true]));
-  assert.deepEqual(view.folds, Array(4).fill(false));
+  assert.deepEqual(view.transforms, Array(4).fill('none'));
   assert.equal(view.y, baseline.y);
   await markerAt(page, 2, 0.5);
 }
@@ -681,10 +680,23 @@ async function wheel(page, deltaX, deltaY) {
   await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 800, y: 430, deltaX, deltaY }, page.sessionId);
 }
 
+const columnEdge = (slug, edge) => `document.querySelector('[data-category-slug="${slug}"]').getBoundingClientRect().${edge}`;
+const panelLeft = "document.querySelector('#category-surface').getBoundingClientRect().left";
+const flatDock = page => evaluate(page, `(() => {
+  const panel = document.querySelector('#category-surface');
+  const transform = panel.style.transform;
+  panel.style.transform = 'none';
+  const { left, right } = panel.getBoundingClientRect();
+  const slot = panel.querySelector('.category-column').getBoundingClientRect().left;
+  panel.style.transform = transform;
+  return { left, right, slot };
+})()`);
+
 test('a category opens inside its docked panel and a switch moves the expansion', { skip }, async () => {
   const page = await open('/#series', desktop);
   try {
     const home = await readBoard(page);
+    const dock = await flatDock(page);
     await clickLink(page, cover('minecraft'));
     await settledCatalog(page, 'minecraft');
     const view = await readBoard(page);
@@ -698,7 +710,7 @@ test('a category opens inside its docked panel and a switch moves the expansion'
     assert.ok(view.displays[0] > home.displays[0]);
     assert.deepEqual(view.widths.slice(1), home.widths.slice(1));
     assert.deepEqual(view.blocks, [[false, false], [true, true], [true, true], [true, true]]);
-    assert.deepEqual(view.folds, [true, false, false, true]);
+    assert.deepEqual(view.transforms, Array(4).fill('none'));
     const material = await evaluate(page, `(() => {
       const panel = document.querySelector('#category-surface');
       const facets = [...panel.querySelectorAll('.category-facet-light')];
@@ -714,7 +726,7 @@ test('a category opens inside its docked panel and a switch moves the expansion'
     assert.ok(material.lit.every(size => parseFloat(size) > 1000), 'each facet samples the common panel light');
     assert.ok(material.glass.every(color => color !== 'rgba(0, 0, 0, 0)'), 'each facet carries the panel material');
     assert.ok(view.neighbors.length > 0 && view.neighbors.every(neighbor => neighbor.ink === 0));
-    near(view.board[0], home.board[0], 1, 'left panel edge');
+    near(view.board[0], dock.left, 1, 'left panel edge');
     assert.ok(view.board[1] <= view.frame[1] + 1, 'this single article fits beside all three neighbours');
     checkHeading(view);
     checkFullRow(view);
@@ -722,7 +734,7 @@ test('a category opens inside its docked panel and a switch moves the expansion'
     assert.equal(view.runway, home.runway);
     assert.equal(view.slot, home.slot);
     await markerAt(page, 1, 0.5);
-    await wheel(page, 0, 650);
+    await wheel(page, 0, 24);
     await press(page, 'End');
     await sleep(300);
     assert.equal((await state(page)).y, home.y);
@@ -752,12 +764,12 @@ test('a catalog that fits keeps its docked left edge for every category', { skip
   for (const [width, height] of [[1280, 720], [1600, 860]]) {
     const page = await open('/#series', { ...desktop, width, height });
     try {
-      const home = await readBoard(page);
+      const dock = await flatDock(page);
       for (const slug of slugs) {
         await clickLink(page, slug === slugs[0] ? cover(slug) : catalogStation(slug));
         await settledCatalog(page, slug);
         const view = await readBoard(page);
-        near(view.board[0], home.board[0], 1, `${width}px ${slug} keeps the board anchored`);
+        near(view.board[0], dock.left, 1, `${width}px ${slug} keeps the board anchored`);
         assert.ok(view.columns.at(-1).right <= view.frame[1] + 1, 'all four columns fit');
         checkFullRow(view);
         checkHeading(view);
@@ -767,91 +779,40 @@ test('a catalog that fits keeps its docked left edge for every category', { skip
 });
 
 test('the narrow catalog slides toward the first slot and stops at the docked panel end', { skip }, async () => {
-  const page = await open('/#series', { ...desktop, width: 871, height: 817, deviceScaleFactor: 2 });
+  const page = await open('/#series', { ...desktop, width: 871, height: 817, deviceScaleFactor: 2,
+    beforeScripts: withArticles(1, 5, 'daydreams') + withArticles(1, 2, 'other') });
   try {
     const home = await readBoard(page);
-    function checkOther(view) {
-      checkHeading(view);
-      checkFullRow(view);
-      assert.ok(view.board[0] < home.board[0] - 1, 'the board yields to the last category');
-      assert.ok(view.openColumn.left >= view.frame[0] - 1);
-      near(view.openColumn.right, view.frame[1], 1, 'the last category lands on the right frame');
-    }
-    const slot = home.columns[0].left;
-    await clickLink(page, cover('daydreams'));
+    const dock = await flatDock(page);
+    await seekCatalog(page, 0, `document.querySelector('${cover('daydreams')}').click();`);
     await seekCatalog(page, 430);
     const opening = await readBoard(page);
-    checkHeading(opening);
-    await seekCatalog(page, 1200);
+    await seekCatalog(page, 1300);
     await settledCatalog(page, 'daydreams');
     const daydreams = await readBoard(page);
-    checkHeading(daydreams);
-    checkFullRow(daydreams);
-    near(daydreams.openColumn.left, slot, 6, 'daydreams reaches the first slot');
-    assert.ok(daydreams.board[1] >= home.board[1] - 1, 'the outer facet reaches the docked panel end');
-    assert.ok(daydreams.columns[0].left < 0 && daydreams.columns[0].right <= slot + 6,
-      'the preceding column slides off the left edge and clears the first slot');
-    assert.ok(opening.board[0] > daydreams.board[0] && opening.board[0] < home.board[0]);
+    near(daydreams.openColumn.left, dock.slot, 1, 'a long row in the second category reaches the first slot');
+    assert.ok(daydreams.columns[0].left < 0 && daydreams.columns[0].right <= dock.slot + 1);
+    assert.ok(daydreams.board[1] > dock.right + 1);
     assert.ok(opening.widths[1] > home.widths[1] && opening.widths[1] < daydreams.widths[1]);
+    checkHeading(daydreams);
 
     await clickLink(page, catalogStation('other'));
     await seekCatalog(page, 380);
     const switching = await readBoard(page);
-    checkHeading(switching);
-    await seekCatalog(page, 900);
+    await seekCatalog(page, 1200);
     await settledCatalog(page, 'other');
     const last = await readBoard(page);
-    checkOther(last);
-    near(switching.board[0], (daydreams.board[0] + last.board[0]) / 2, 1, 'the slide is halfway through the move');
-    near(switching.widths[3], (daydreams.widths[3] + last.widths[3]) / 2, 1, 'the width follows the same move');
+    assert.ok(last.openColumn.left > dock.slot + 1, 'the shorter row stops short of the first slot');
+    near(last.board[1], dock.right, 1, 'the outer edge of the rest panel limits the slide');
+    near(switching.widths[3], (daydreams.widths[3] + last.widths[3]) / 2, 1, 'the width moves halfway through the switch');
+    checkHeading(last);
+    checkFullRow(last);
 
-    await clickLink(page, catalogStation('minecraft'));
-    await settledCatalog(page, 'minecraft');
-    const minecraft = await readBoard(page);
-    checkHeading(minecraft);
-    checkFullRow(minecraft);
-    near(minecraft.openColumn.left, slot, 2, 'the folded Minecraft column keeps the first slot');
-    near(minecraft.board[0], home.board[0], 1, 'the first category grows from the docked left edge');
-    const shifts = minecraft.columns.slice(1).map((column, i) => column.left - home.columns[i + 1].left);
-    assert.ok(shifts[0] > 1);
-    for (const shift of shifts.slice(1)) near(shift, shifts[0], 1, 'each neighbour moves with the gain');
-    assert.ok(minecraft.board[1] > minecraft.frame[1] + 1, 'the last facet crosses the right frame');
-    await clickLink(page, '.catalog-back');
-    await checkRestored(page, home);
-
-    await clickLink(page, cover('collected'));
-    await settledCatalog(page, 'collected');
-    const collected = await readBoard(page);
-    checkHeading(collected);
-    checkFullRow(collected);
-    near(collected.board[1], home.board[1], 1, 'the outer edge of the docked panel limits the slide for collected');
-    near(collected.openColumn.left, collected.columns[1].right, 1, 'collected stays directly after daydreams');
     await clickLink(page, '.catalog-back');
     await seekCatalog(page, 380);
     const closing = await readBoard(page);
-    checkHeading(closing);
-    assert.ok(closing.board[0] > collected.board[0] && closing.board[0] < home.board[0]);
-    assert.ok(closing.widths[2] > home.widths[2] && closing.widths[2] < collected.widths[2]);
-    await seekCatalog(page, 1100);
-    await checkRestored(page, home);
-
-    // Exercise a real article as well as the last category's empty card.
-    await evaluate(page, `document.querySelector('[data-category-slug="other"] .catalog-row')
-      .replaceChildren(document.querySelector('[data-category-slug="minecraft"] .catalog-group').cloneNode(true))`);
-    await clickLink(page, cover('minecraft'));
-    await settledCatalog(page, 'minecraft');
-    await clickLink(page, '.chapter-progress-links a[href="#catalog-other"] .chapter-station-title');
-    await seekCatalog(page, 380);
-    const moving = await readBoard(page);
-    checkHeading(moving);
-    await seekCatalog(page, 900);
-    await settledCatalog(page, 'other');
-    const other = await readBoard(page);
-    checkOther(other);
-    assert.ok(moving.board[0] > other.board[0] && moving.board[0] < minecraft.board[0],
-      'switching interpolates the shift with the widths');
-    assert.ok(moving.widths[3] > home.widths[3] && moving.widths[3] < other.widths[3]);
-    await clickLink(page, '.catalog-back');
+    assert.ok(closing.widths[3] > home.widths[3] && closing.widths[3] < last.widths[3]);
+    await seekCatalog(page, 1200);
     await checkRestored(page, home);
   } finally { await close(page); }
 });
@@ -892,7 +853,7 @@ test('a short desktop holds a two-line title and summary inside the open facet',
     })()`);
     assert.deepEqual(fit.lines, [2, 2], 'the fixture exercises both lines of each text field');
     assert.ok(fit.group.every(gap => gap >= -1) && fit.clipped <= 1, `the group fits the display (${fit.group}; ${fit.clipped}px overflow)`);
-    assert.ok(fit.footer.every(gap => gap >= -1), `the footer fits the folded material (${fit.footer})`);
+    assert.ok(fit.footer.every(gap => gap >= -1), `the footer fits the column material (${fit.footer})`);
   } finally { await close(page); }
 });
 
@@ -911,71 +872,146 @@ test('the back control, Escape and browser Back restore the home panel', { skip 
   } finally { await close(page); }
 });
 
-test('a long catalog row spans both frames and scrolls independently of the strip', { skip }, async () => {
+// An open category holds its specimen in the hover pose, in the middle of the
+// widened display and dimmed through its line colour. Group opacity would
+// flatten the 3D planes into one texture that the panel's perspective blurs.
+const SPECIMEN = slug => `(() => {
+  const column = document.querySelector('[data-category-slug="${slug}"]');
+  const scene = column.querySelector('.category-scene');
+  const s = scene.getBoundingClientRect(), d = column.querySelector('.category-display').getBoundingClientRect();
+  const css = getComputedStyle(scene);
+  return {
+    offset: Math.round((s.left + s.width / 2) - (d.left + d.width / 2)),
+    opacity: css.opacity, scale: css.scale,
+    alpha: Number(css.color.match(/([\\d.]+)\\)$/)[1]),
+    camera: Number(getComputedStyle(column.querySelector('.category-stage')).transform.match(/matrix3d\\(([-\\d.e]+)/)[1]).toFixed(3),
+  };
+})()`;
+const specimenStill = slug => `document.querySelector('[data-category-slug="${slug}"] .category-scene').getAnimations({ subtree: true }).length === 0`;
+
+test('an open category keeps its specimen open, centred and dimmed without group opacity', { skip }, async () => {
+  const page = await open('/#series', desktop);
+  try {
+    const rest = await evaluate(page, SPECIMEN('minecraft'));
+    assert.ok(Math.abs(rest.offset) <= 1 && rest.camera === '0.788' && rest.alpha === .55, `the resting specimen sits centred and closed (${JSON.stringify(rest)})`);
+    for (const slug of ['minecraft', 'collected']) {
+      await clickLink(page, cover(slug));
+      await settledCatalog(page, slug);
+      await waitFor(page, specimenStill(slug), 4000);
+      const open = await evaluate(page, SPECIMEN(slug));
+      assert.ok(Math.abs(open.offset) <= 2, `${slug}: the specimen moves to the middle of the widened display (${open.offset}px off)`);
+      assert.equal(open.opacity, '1', `${slug}: no group opacity on the 3D specimen`);
+      assert.equal(open.scale, 'none', `${slug}: the specimen keeps its size`);
+      assert.equal(open.camera, '0.940', `${slug}: the specimen holds its open pose`);
+      assert.equal(open.alpha, .2, `${slug}: the open specimen dims through its line colour`);
+    }
+    await clickLink(page, '.catalog-back');
+    await settledCatalog(page, '');
+    await waitFor(page, specimenStill('collected'), 4000);
+    const closed = await evaluate(page, SPECIMEN('collected'));
+    assert.ok(Math.abs(closed.offset) <= 1 && closed.camera === '0.788' && closed.alpha === .55 && closed.opacity === '1',
+      `closing returns the specimen to its resting pose and brightness (${JSON.stringify(closed)})`);
+  } finally { await close(page); }
+});
+
+test('catalog cards start at the display margin and every group lines up', { skip }, async () => {
+  // Two groups of two; the second group's first title wraps onto a second line.
+  const longTitle = `document.querySelectorAll('[data-category-slug="minecraft"] .catalog-group')[1]
+    .querySelector('.catalog-card-title').textContent = '一个很长很长的测试标题，长到在卡片里要折成两行才放得下';`;
+  const page = await open('/#series', { ...desktop, beforeScripts: withArticles(2, 2) + longTitle });
+  try {
+    await clickLink(page, cover('minecraft'));
+    await settledCatalog(page, 'minecraft');
+    const row = await evaluate(page, `(() => {
+      const column = document.querySelector('[data-category-slug="minecraft"]');
+      const row = column.querySelector('.catalog-row');
+      const css = getComputedStyle(row);
+      const lines = title => Math.round(title.offsetHeight / parseFloat(getComputedStyle(title).lineHeight));
+      return {
+        padding: [parseFloat(css.paddingLeft), parseFloat(css.paddingRight)],
+        start: row.querySelector('.catalog-group').getBoundingClientRect().left - row.getBoundingClientRect().left,
+        width: row.offsetWidth, display: column.querySelector('.category-display').clientWidth,
+        heads: [...row.querySelectorAll('.catalog-group-head')].map(head => head.offsetTop),
+        cards: [...row.querySelectorAll('.catalog-card')].map(card => [card.offsetTop, card.offsetHeight]),
+        lines: [...row.querySelectorAll('.catalog-group')].map(group => [...group.querySelectorAll('.catalog-card-title')].map(lines)),
+      };
+    })()`);
+    assert.deepEqual(row.lines, [[1, 1], [2, 1]], 'the fixture wraps one title in the second group');
+    assert.ok(row.padding[0] > 0 && row.padding[0] === row.padding[1], `the row keeps the same margin at both ends (${row.padding})`);
+    near(row.start, row.padding[0], 1 / 64, 'the first group starts at the display margin');
+    assert.ok(Math.abs(row.display - row.width) <= 1, `the open display widens to fit its row (${row.display} vs ${row.width})`);
+    assert.equal(new Set(row.heads).size, 1, `group heads share one line (${row.heads})`);
+    assert.equal(new Set(row.cards.map(String)).size, 1, `every card shares one top edge and height (${JSON.stringify(row.cards)})`);
+  } finally { await close(page); }
+});
+
+test('a long catalog scrolls the whole board with the heading clamped to the frame', { skip }, async () => {
   const page = await open('/#series', { ...desktop, beforeScripts: withArticles(3, 4) });
   try {
     const home = await readBoard(page);
+    const dock = await flatDock(page);
     await clickLink(page, cover('minecraft'));
     await settledCatalog(page, 'minecraft');
     const view = await readBoard(page);
     assert.equal(view.cards.length, 12);
-    near(view.openColumn.left, view.frame[0], 1, 'projected open column left edge');
-    near(view.openColumn.right, view.frame[1], 1, 'projected open column right edge');
-    checkHeading(view);
+    near(view.openColumn.left, dock.slot, 1, 'the first column grows from its rest slot');
+    const range = view.openColumn.right - view.frame[1];
+    assert.ok(range > 1000);
+    assert.ok(view.items.at(-1).right <= view.display.right);
+    near(view.overflow, 0, 1, 'the display fits the entire row');
+    assert.equal(view.mask, 'none');
+    const displacement = `(${view.board[0]} - ${panelLeft})`;
     const startFraction = (await state(page)).position + 0.5;
     assert.ok(startFraction >= 0.25 && startFraction <= 0.5);
-    const read = `document.querySelector(${JSON.stringify(catalogSelector('minecraft'))})`;
-    const fades = () => evaluate(page, `['left', 'right'].map(side =>
-      parseFloat(getComputedStyle(${read}).getPropertyValue('--catalog-' + side + '-fade')))`);
-    const max = await evaluate(page, `${read}.scrollWidth - ${read}.clientWidth`);
-    assert.ok(max > 1000);
-    assert.deepEqual(await fades(), [0, 90]);
-    for (const [x, y] of [[0, 160], [220, 0]]) {
-      const from = await evaluate(page, `${read}.scrollLeft`);
-      await wheel(page, x, y);
-      await waitFor(page, `${read}.scrollLeft > ${from + 5}`);
-    }
-    assert.deepEqual(await fades(), [90, 90]);
+    await wheel(page, 0, 160);
+    await waitFor(page, `Math.abs(${displacement} - 160) < 1`);
+    await wheel(page, 220, 0);
+    await waitFor(page, `Math.abs(${displacement} - 380) < 1`);
+    const moved = await readBoard(page);
+    near(view.items[0].left - moved.items[0].left, 380, 1, 'the cards travel with the panel');
+    near(view.columns[1].left - moved.columns[1].left, 380, 1, 'the collapsed columns travel with the panel');
+    near(moved.heading.left, view.frame[0], 1, 'the heading holds the left frame');
+    checkHeading(moved);
     await press(page, 'End');
-    await waitFor(page, `Math.abs(${read}.scrollLeft - ${max}) < .5 && getComputedStyle(${read}).getPropertyValue('--catalog-right-fade') === '0px'`);
+    await waitFor(page, `Math.abs(${displacement} - ${range}) < 1`);
     await markerAt(page, 1, 0.9);
-    assert.deepEqual(await fades(), [90, 0]);
     await press(page, 'Home');
-    await waitFor(page, `${read}.scrollLeft < 1`);
+    await waitFor(page, `Math.abs(${displacement}) < 1`);
     await markerAt(page, 1, startFraction);
     await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, page.sessionId);
     await swipe(page, 800, 490, 350);
-    await waitFor(page, `${read}.scrollLeft > 10`);
+    await waitFor(page, `${displacement} > 10`);
     await send('Emulation.setTouchEmulationEnabled', { enabled: false }, page.sessionId);
-    const fromTouch = await evaluate(page, `${read}.scrollLeft`);
+    const fromTouch = await evaluate(page, displacement);
     await press(page, 'PageDown');
-    await waitFor(page, `${read}.scrollLeft > ${fromTouch + 10}`);
-    // Start the axis press away from the moving marker's 44px drag handle.
+    await waitFor(page, `${displacement} > ${fromTouch + 10}`);
     await press(page, 'Home');
-    await waitFor(page, `${read}.scrollLeft === 0`);
+    await waitFor(page, `Math.abs(${displacement}) < 1`);
     const axis = await evaluate(page, RULER_POINT(1, startFraction + (0.9 - startFraction) * 0.5));
     await click(page, axis.x, axis.y);
-    await waitFor(page, `Math.abs((${MARKER}).x - ${axis.x}) <= 1`);
+    await waitFor(page, `Math.abs((${MARKER}).x - ${axis.x}) <= 1 && Math.abs(${displacement} / ${range} - .5) < .035`);
     const start = await evaluate(page, MARKER);
     const target = await evaluate(page, RULER_POINT(1, startFraction + (0.9 - startFraction) * 0.75));
     await mouse(page, 'mousePressed', start.x, start.y, 1);
     await mouse(page, 'mouseMoved', target.x, target.y, 1);
     await mouse(page, 'mouseReleased', target.x, target.y);
-    await waitFor(page, `Math.abs(${read}.scrollLeft / ${max} - .75) < .035`);
+    await waitFor(page, `Math.abs(${displacement} / ${range} - .75) < .035`);
     await press(page, 'Home');
-    await waitFor(page, `${read}.scrollLeft < 1`);
+    await waitFor(page, `Math.abs(${displacement}) < 1`);
+    const read = `document.querySelector(${JSON.stringify(catalogSelector('minecraft'))})`;
     await evaluate(page, `[...${read}.querySelectorAll('ol a')].at(-2).focus({preventScroll: true})`);
     await press(page, 'Tab');
     await waitFor(page, `(() => {
-      const block = ${read}, last = [...block.querySelectorAll('ol a')].at(-1);
-      const card = last.getBoundingClientRect(), clip = block.getBoundingClientRect();
-      return document.activeElement === last && card.left >= clip.left - 1 && card.right <= clip.right + 1;
+      const last = [...${read}.querySelectorAll('ol a')].at(-1);
+      const card = last.getBoundingClientRect();
+      return document.activeElement === last && card.left >= ${view.frame[0]} - 1 && card.right <= ${view.frame[1]} + 1;
     })()`);
+    assert.equal(await evaluate(page, `${read}.scrollLeft`), 0, 'the row remains at its native origin');
     assert.equal((await state(page)).y, view.y);
     const second = await evaluate(page, RULER_POINT(2, 0.5));
     await click(page, second.x, second.y);
     await settledCatalog(page, 'daydreams');
-    await clickLink(page, '.chapter-progress-links a[href="#catalog-minecraft"] .chapter-station-title');
+    await clickLink(page, catalogStation('minecraft'));
     await settledCatalog(page, 'minecraft');
     await clickLink(page, '.catalog-back');
     await checkRestored(page, home);
@@ -988,12 +1024,17 @@ test('the catalog cursor clears its labels and tracks clicks and drags through c
     try {
       await settledCatalog(page, 'minecraft');
       const marker = await evaluate(page, MARKER);
+      const opened = await readBoard(page);
+      const range = opened.openColumn.right - opened.frame[1];
+      const startFraction = (await state(page)).position + .5;
+      const expectedShift = range * (.77 - startFraction) / (.9 - startFraction);
       const right = await evaluate(page, `Math.max(...[...document.querySelector('[data-chapter-link][aria-current]')
         .querySelectorAll('.chapter-station-title, .chapter-station-subtitle')].map(el => el.getBoundingClientRect().right))`);
       assert.ok(marker.x - right >= 8, `at ${width}px the marker clears the label by ${marker.x - right}px`);
       const here = await evaluate(page, RULER_POINT(1, .77));
       await click(page, here.x, here.y);
       await waitFor(page, `Math.abs((${MARKER}).x - ${here.x}) <= 1`);
+      near(opened.board[0] - await evaluate(page, panelLeft), expectedShift, range * .025, 'the pointer picks its fraction of the board range');
       // Drag into station B, then release over C before B's switch finishes.
       await mouse(page, 'mousePressed', here.x, here.y, 1);
       const middle = await evaluate(page, RULER_POINT(2, .6));
@@ -1011,78 +1052,83 @@ test('the catalog cursor clears its labels and tracks clicks and drags through c
   }
 });
 
-test('the catalog slider keys scroll rows, change categories, and expose the new value', { skip }, async () => {
-  const page = await open('/#catalog-minecraft', { ...desktop, reduced: true, beforeScripts: withArticles(3, 4) + `
-    const row = document.querySelector('[data-category-slug="other"] .catalog-row');
-    row.replaceChildren(...[...document.querySelector('[data-category-slug="minecraft"] .catalog-row').children].map(group => group.cloneNode(true)));` });
+test('the catalog slider keys scroll the board, change categories, and expose the new value', { skip }, async () => {
+  const page = await open('/#catalog-minecraft', { ...desktop, reduced: true,
+    beforeScripts: withArticles(3, 4) + withArticles(1, 5, 'collected') + withArticles(3, 4, 'other') });
   try {
-    const row = "document.querySelector('.is-catalog-open .catalog-block')";
+    const initial = await readBoard(page);
+    const displacement = `(${initial.board[0]} - ${panelLeft})`;
     const marker = "document.querySelector('.chapter-progress-marker')";
     await evaluate(page, `${marker}.focus({preventScroll: true})`);
     for (const [key, target] of [['ArrowRight', 100], ['ArrowUp', 200], ['ArrowDown', 100], ['ArrowLeft', 0]]) {
       await press(page, key);
-      await waitFor(page, `${row}.scrollLeft === ${target}`);
+      await waitFor(page, `Math.abs(${displacement} - ${target}) < 1`);
     }
     await press(page, 'End');
     await settledCatalog(page, 'other');
-    await waitFor(page, `${row}.scrollLeft === ${row}.scrollWidth - ${row}.clientWidth`);
+    await waitFor(page, `Math.abs(${columnEdge('other', 'right')} - ${initial.frame[1]}) < 1`);
     await waitFor(page, `${marker}.getAttribute('aria-valuenow') === '97.5'`);
     assert.deepEqual(failures, []);
     const end = await evaluate(page, RULER_POINT(4, .9));
     await waitFor(page, `Math.abs((${MARKER}).x - ${end.x}) <= 1`);
     await markerAt(page, 4, .9);
+    const atEnd = await evaluate(page, panelLeft);
+    await evaluate(page, wheelEvent(1200));
+    await waitFor(page, `Math.abs(${panelLeft} - ${atEnd}) < 1`);
+    assert.equal((await state(page)).hash, '#catalog-other');
     assert.equal(await evaluate(page, `${marker}.getAttribute('aria-valuenow')`), '97.5');
     assert.equal(await evaluate(page, `${marker}.getAttribute('aria-valuetext')`), '其他，98%');
     assert.ok(await evaluate(page, `!${marker}.dispatchEvent(new KeyboardEvent('keydown', {key:' ', code:'Space', bubbles:true, cancelable:true}))`));
     await press(page, 'PageDown');
-    await settledCatalog(page, 'collected');
-    await press(page, 'PageUp');
-    await settledCatalog(page, 'other');
-    await press(page, 'ArrowLeft');
-    await settledCatalog(page, 'collected');
-    await press(page, 'ArrowRight');
-    await settledCatalog(page, 'other');
+    assert.ok(await evaluate(page, `${panelLeft} > ${atEnd + 100}`), 'PageDown reads backward through the last row');
+    for (const [key, slug] of [['PageDown', 'collected'], ['PageUp', 'other'], ['ArrowLeft', 'collected'], ['ArrowRight', 'other']]) {
+      for (let i = 0; i < 60 && await evaluate(page, 'location.hash') !== '#catalog-' + slug; i++) {
+        await press(page, key);
+      }
+      await settledCatalog(page, slug);
+      assert.ok(await evaluate(page, `document.activeElement === ${marker}`));
+    }
     await press(page, 'Home');
     await settledCatalog(page, 'minecraft');
-    assert.equal(await evaluate(page, `${row}.scrollLeft`), 0);
+    near(await evaluate(page, displacement), 0, 1, 'Home returns to the first landing');
     await waitFor(page, `${marker}.getAttribute('aria-valuetext').startsWith('Minecraft，')`);
     assert.ok(await evaluate(page, `document.activeElement === ${marker}`));
   } finally { await close(page); }
 });
 
-test('a short catalog scrolls the chapter to its bottom before the row and keeps the offset on return', { skip }, async () => {
+test('a short catalog scrolls the chapter to its bottom before the board and keeps the offset on return', { skip }, async () => {
   for (const height of [480, 720]) {
     const page = await open('/#series', { ...desktop, width: 1280, height, beforeScripts: withArticles(3, 4) });
     try {
       const chapter = "document.querySelector('#series')";
-      const row = "document.querySelector('.is-catalog-open .catalog-block')";
       assert.equal(await evaluate(page, `${chapter}.classList.contains('is-chapter-scrollable')`), height === 480);
       const initial = await evaluate(page, `(${chapter}.scrollTop = 20, ${chapter}.scrollTop)`);
       await evaluate(page, `document.querySelector('${cover('minecraft')}').click()`);
       await settledCatalog(page, 'minecraft');
+      const displacement = `(${await evaluate(page, panelLeft)} - ${panelLeft})`;
       near(await evaluate(page, `${chapter}.scrollTop`), initial, 1, 'the chapter offset carries into the catalog');
       await wheel(page, 0, 800);
       if (height === 480) {
         await waitFor(page, `${chapter}.scrollTop > ${initial}`);
-        assert.equal(await evaluate(page, `${row}.scrollLeft`), 0);
+        near(await evaluate(page, displacement), 0, 1, 'vertical scroll leaves the board in place');
         assert.ok(await evaluate(page, `(() => {
           const clip = getComputedStyle(document.querySelector('.chapter-viewport')).clipPath.match(/inset\\(([^)]+)/)[1].split(/\\s+/).map(parseFloat);
           return document.querySelector('.is-catalog-open .category-bottom').getBoundingClientRect().bottom < innerHeight - clip[2];
         })()`), 'the category count is above the ruler clip');
         await wheel(page, 0, 150);
-        await waitFor(page, `${row}.scrollLeft > 10`);
+        await waitFor(page, `${displacement} > 10`);
         const bottom = await evaluate(page, `${chapter}.scrollTop`);
         await press(page, 'ArrowUp');
         await waitFor(page, `${chapter}.scrollTop < ${bottom}`);
         const above = await evaluate(page, `${chapter}.scrollTop`);
-        const left = await evaluate(page, `${row}.scrollLeft`);
+        const left = await evaluate(page, displacement);
         await wheel(page, 300, 2);
-        await waitFor(page, `${row}.scrollLeft > ${left + 10}`);
+        await waitFor(page, `${displacement} > ${left + 10}`);
         assert.equal(await evaluate(page, `${chapter}.scrollTop`), above);
         await press(page, 'ArrowDown');
         await waitFor(page, `${chapter}.scrollTop > ${above}`);
       } else {
-        await waitFor(page, `${row}.scrollLeft > 10`);
+        await waitFor(page, `${displacement} > 10`);
         assert.equal(await evaluate(page, `${chapter}.scrollTop`), 0);
       }
       const carried = await evaluate(page, `${chapter}.scrollTop`);
@@ -1092,6 +1138,395 @@ test('a short catalog scrolls the chapter to its bottom before the row and keeps
     } finally { await close(page); }
   }
 });
+
+test('the catalog plate eases flat with its heading and restores the chapter arc', { skip }, async () => {
+  const page = await open('/#series', desktop);
+  try {
+    const poses = () => evaluate(page, `[...document.querySelectorAll('#series :is(.chapter-panel,.chapter-reveal-unit)')]
+      .map(el => getComputedStyle(el).transform)`);
+    const rest = await poses();
+    assert.ok(rest.length >= 2 && rest.every(pose => pose.startsWith('matrix3d(')));
+    await seekCatalog(page, 430, `document.querySelector('${cover('minecraft')}').click();`);
+    const opening = await poses();
+    assert.ok(opening.every((pose, i) => pose !== 'none' && pose !== rest[i]), 'each unit has a partial arc pose during opening');
+    await seekCatalog(page, 750);
+    assert.ok((await poses()).every(pose => pose === 'none'), 'the series is flat by the end of the board move');
+    await seekCatalog(page, 1400);
+    await settledCatalog(page, 'minecraft');
+    const chain = await evaluate(page, `(() => {
+      const result = [];
+      for (let el = document.querySelector('.is-catalog-open .catalog-card').parentElement; el; el = el.parentElement) {
+        const transform = getComputedStyle(el).transform;
+        result.push([el.id || el.className || el.tagName, transform]);
+      }
+      return result;
+    })()`);
+    for (const [element, pose] of chain) {
+      if (element === 'chapter-track') {
+        const matrix = await evaluate(page, `new DOMMatrix(${JSON.stringify(pose)}).toJSON()`);
+        assert.ok(matrix.is2D && matrix.a === 1 && matrix.b === 0 && matrix.c === 0 && matrix.d === 1
+          && Number.isInteger(matrix.e) && matrix.f === 0, 'the track uses an integer horizontal translation');
+      } else assert.equal(pose, 'none', `${element} lies flat behind the cards`);
+    }
+    assert.deepEqual((await readBoard(page)).transforms, Array(4).fill('none'));
+    await seekCatalog(page, 380, "document.querySelector('.catalog-back').click();");
+    assert.ok((await poses()).every((pose, i) => pose !== 'none' && pose !== rest[i]), 'each unit eases back to its arc');
+    await seekCatalog(page, 1200);
+    await settledCatalog(page, '');
+    assert.deepEqual(await poses(), rest);
+  } finally { await close(page); }
+});
+
+const wheelEvent = x => `window.dispatchEvent(new WheelEvent('wheel', { deltaX: ${x}, bubbles: true, cancelable: true }))`;
+
+for (const fitted of [false, true]) {
+  test(`a fully visible neighbour opens on the 40th pixel of ${fitted ? 'wheel input on a fitted board' : 'board travel'}`, { skip }, async () => {
+    const page = await open('/#catalog-minecraft', { ...desktop, reduced: true,
+      beforeScripts: withArticles(1, fitted ? 1 : 12) + withArticles(1, 3, 'daydreams') });
+    try {
+      await settledCatalog(page, 'minecraft');
+      const start = await evaluate(page, panelLeft);
+      await evaluate(page, wheelEvent(-1200));
+      near(await evaluate(page, panelLeft), start, 1, 'the first click landing is a hard stop');
+      await press(page, 'End');
+      const end = await readBoard(page);
+      const reveal = Math.max(0, end.columns[1].right - end.frame[1]);
+      assert.equal(reveal > 0, !fitted);
+      if (fitted) {
+        assert.ok(end.columns.at(-1).right <= end.frame[1]);
+        await evaluate(page, wheelEvent(35));
+        await sleep(600); // The next gesture starts with the neighbour already fully inside.
+      }
+      const samples = await evaluate(page, `(() => {
+        const next = document.querySelector('[data-category-slug="daydreams"]');
+        const sample = () => ({ left: ${panelLeft}, width: next.getBoundingClientRect().width,
+          expanded: next.classList.contains('is-catalog-open') });
+        ${wheelEvent(reveal + 39)};
+        const before = sample();
+        ${wheelEvent(1)};
+        return [before, sample()];
+      })()`);
+      assert.equal(samples[0].expanded, false, '39 pixels after the neighbour enters do not open it');
+      assert.equal(samples[1].expanded, true, `40px beyond full entry opens the neighbour: reveal ${reveal}, ${JSON.stringify(samples)}`);
+      assert.ok(samples[1].width > samples[0].width + 5, 'reduced motion widens in the input frame');
+      for (const [i, sample] of samples.entries()) {
+        near(end.board[0] - sample.left, fitted ? 0 : reveal + 39 + i, 1, 'wheel travel through the threshold');
+      }
+    } finally { await close(page); }
+  });
+}
+
+const longPair = withArticles(3, 4) + withArticles(3, 4, 'daydreams');
+const shortPair = withArticles(1, 7) + withArticles(1, 3, 'daydreams') + withArticles(1, 2, 'collected');
+
+test('opening backward on a fitted board creates no extra scroll travel', { skip }, async () => {
+  const page = await open('/#catalog-daydreams', { ...desktop, width: 2048, height: 1152, reduced: true,
+    beforeScripts: withArticles(1, 1) + withArticles(1, 1, 'daydreams') });
+  try {
+    const initial = await readBoard(page);
+    await evaluate(page, wheelEvent(-39));
+    assert.equal((await readBoard(page)).active[0], false);
+    await evaluate(page, wheelEvent(-1));
+    const widened = await readBoard(page);
+    assert.ok(widened.active[0] && widened.columns[0].width > initial.columns[0].width + 1);
+    near(widened.columns[0].right, initial.columns[0].right, 1, 'the first column opens to the left');
+    assert.ok(widened.columns[0].left >= initial.frame[0] && widened.columns.at(-1).right <= initial.frame[1]);
+    for (const delta of [-200, 24]) {
+      await evaluate(page, wheelEvent(delta));
+      near(await evaluate(page, panelLeft), widened.board[0], 1, 'the entire fitted board stays where it widened');
+    }
+  } finally { await close(page); }
+});
+
+test('a continuous scroll can read through several short neighbours to either hard stop', { skip }, async () => {
+  const page = await open('/#catalog-minecraft', { ...desktop, reduced: true,
+    beforeScripts: shortPair + withArticles(2, 4, 'other') });
+  try {
+    const start = await readBoard(page);
+    const history = (await state(page)).history;
+    const firstFraction = (await state(page)).position + .5;
+    await evaluate(page, wheelEvent(30000));
+    await settledCatalog(page, 'other');
+    near(await evaluate(page, columnEdge('other', 'right')), start.frame[1], 1, 'the last column ends at the frame');
+    await markerAt(page, 4, .9);
+    await evaluate(page, wheelEvent(-30000));
+    await settledCatalog(page, 'minecraft');
+    near(await evaluate(page, panelLeft), start.board[0], 1, 'reading back stops at the first click landing');
+    await markerAt(page, 1, firstFraction);
+    assert.equal((await state(page)).history, history);
+  } finally { await close(page); }
+});
+
+// Record rendered geometry in the page, including the frame on which a column opens or folds.
+function sampleHandOver(page, from, to, delta, inputDuringEntrance = 0) {
+  return evaluate(page, `(async () => {
+    const columns = [...document.querySelectorAll('#category-surface .category-column')];
+    const panel = document.querySelector('#category-surface');
+    const grid = panel.querySelector('.category-columns');
+    const edge = ${from < to ? "'left'" : "'right'"};
+    const oldCards = columns[${from}].querySelectorAll('.catalog-card');
+    const reference = oldCards[${from < to ? 'oldCards.length - 1' : '0'}];
+    const incoming = [...columns[${to}].querySelectorAll('.catalog-card')];
+    const keyframeMetadata = new Set(['offset', 'computedOffset', 'easing', 'composite']);
+    const station = document.querySelector('.chapter-progress-links');
+    const sample = () => {
+      const rect = panel.getBoundingClientRect();
+      const boxes = columns.map(col => {
+        const { left, right, width } = col.getBoundingClientRect();
+        return { left, right, width, expanded: col.classList.contains('is-catalog-open'),
+          folding: col.classList.contains('is-catalog-folding') };
+      });
+      const unsupported = new Set(), movingColumns = new Set();
+      let entering = false;
+      for (const animation of panel.getAnimations({ subtree: true })) {
+        const { effect } = animation;
+        // A folding category's specimen returns to rest through its own CSS
+        // transitions, as it does when the pointer leaves a cover.
+        if (animation instanceof CSSTransition && effect.target.closest('.is-catalog-folding .category-scene')) continue;
+        const keys = new Set(effect.getKeyframes().flatMap(Object.keys));
+        for (const key of keys) {
+          if (!keyframeMetadata.has(key) && !['opacity', 'transform', 'translate'].includes(key)) {
+            const name = effect.target.className || effect.target.localName;
+            unsupported.add(name + (effect.pseudoElement || '') + ': ' + key);
+          }
+        }
+        if (!keys.has('transform') && !keys.has('translate')) continue;
+        const column = columns.indexOf(effect.target);
+        if (column >= 0 && !effect.pseudoElement) movingColumns.add(column);
+        if (incoming.includes(effect.target) && keys.has('opacity')) entering = true;
+      }
+      const style = getComputedStyle(panel);
+      return { time: performance.now(), columns: boxes, left: rect.left, right: rect.right, anchor: boxes[${to}][edge],
+        tracks: getComputedStyle(grid).gridTemplateColumns, width: style.width, cssLeft: parseFloat(style.left),
+        unsupported: [...unsupported], movingColumns: [...movingColumns], entering,
+        reference: reference.getBoundingClientRect().left, marker: (${MARKER}).x,
+        fading: incoming.some(card => {
+          const opacity = Number(getComputedStyle(card).opacity);
+          return opacity > 0 && opacity < 1;
+        }),
+        hash: location.hash, title: document.title, station: station.querySelector('[aria-current]')?.hash,
+        focus: document.activeElement.closest('.category-column')?.dataset.categorySlug };
+    };
+    const frames = [sample()];
+    const start = performance.now();
+    let extraAt = null, openedAt = null;
+    ${wheelEvent(delta)};
+    do {
+      await new Promise(requestAnimationFrame);
+      const now = performance.now();
+      const frame = sample();
+      frames.push(frame);
+      if (frame.columns[${to}].expanded) openedAt ??= now;
+      if (${inputDuringEntrance} && openedAt !== null && now - openedAt >= 80 && extraAt === null) {
+        extraAt = frames.length - 1;
+        ${wheelEvent(inputDuringEntrance)};
+      }
+    } while (performance.now() - start < ${inputDuringEntrance ? 2000 : 1100});
+    return { frames, extraAt };
+  })()`);
+}
+
+function checkHandOverFrames(frames, direction, center, dock) {
+  for (const [i, f] of frames.entries()) {
+    assert.deepEqual(f.unsupported, [], `frame ${i}: every board animation uses compositor properties`);
+    assert.ok(f.left <= dock.left + 1 && f.right >= dock.right - 1,
+      `frame ${i}: board [${f.left}, ${f.right}] covers the dock [${dock.left}, ${dock.right}]`);
+    // Layout snaps edges to 1/64px, so a frame within a hair of a column edge
+    // can read either way. Check the reading line away from the edges.
+    const reading = f.columns.findIndex(col => col.expanded && col.left + 1 / 16 <= center && center < col.right - 1 / 16);
+    if (reading >= 0) {
+      assert.equal(f.hash, '#catalog-' + slugs[reading], `frame ${i}: the reading line sets the URL`);
+      assert.equal(f.station, f.hash, `frame ${i}: the current station matches the URL`);
+      assert.equal(f.title, catalogLabels[reading] + ' · 文章目录 · Gŭdù || 个人博客');
+    }
+    if (!i) continue;
+    const travel = direction * (frames[i - 1].anchor - f.anchor);
+    assert.ok(travel >= -1, `frame ${i}: the anchored edge reversed by ${-travel}px`);
+    const markerTravel = direction * (f.marker - frames[i - 1].marker);
+    assert.ok(markerTravel >= -1 && markerTravel <= travel + 1,
+      `frame ${i}: ruler moved ${markerTravel}px with ${travel}px of board travel`);
+  }
+}
+
+function checkSingleResize(frames, changedAt) {
+  assert.ok(changedAt > 0, 'the sample includes the frame before the resize');
+  for (const [i, frame] of frames.entries()) {
+    const layout = frames[i < changedAt ? 0 : changedAt];
+    assert.equal(frame.tracks, layout.tracks, `frame ${i}: grid tracks change only on the resize frame`);
+    assert.equal(frame.width, layout.width, `frame ${i}: panel width changes only on the resize frame`);
+    assert.equal(frame.cssLeft, layout.cssLeft, `frame ${i}: panel left changes only on the resize frame`);
+  }
+}
+
+for (const [from, to, short] of [[0, 1, false], [1, 0, false], [0, 1, true], [1, 2, true], [2, 1, true]]) {
+  const width = short ? 2048 : 871;
+  const dir = Math.sign(to - from);
+  test(`scroll opens ${slugs[to]} ${dir > 0 ? 'forward' : 'backward'} in place at ${width}px`, { skip }, async () => {
+    const page = await open('/#series', { ...desktop, width, height: short ? 1152 : 817,
+      beforeScripts: short ? shortPair : longPair });
+    try {
+      const dock = await flatDock(page);
+      const restWidth = (await readBoard(page)).widths[from];
+      const oldHistory = (await state(page)).history;
+      await clickLink(page, cover(slugs[from]));
+      await mouse(page, 'mouseMoved', 1, 1, 0);
+      await settledCatalog(page, slugs[from]);
+      const history = (await state(page)).history;
+      assert.equal(history, oldHistory + 1);
+      if (dir > 0) {
+        await evaluate(page, "document.querySelector('.is-catalog-open .catalog-card').focus({preventScroll:true})");
+        await evaluate(page, `window.SiteCatalog.scrub(${from}, 1, true)`);
+      } else await evaluate(page, "document.querySelector('.chapter-progress-marker').focus({preventScroll:true})");
+      const opened = await readBoard(page);
+      const center = (opened.frame[0] + opened.frame[1]) / 2;
+      const neighbour = opened.columns[to];
+      const reveal = Math.max(0, dir > 0 ? neighbour.right - opened.frame[1] : opened.frame[0] - neighbour.left);
+      const available = dir < 0 ? dock.left - opened.board[0]
+        : Math.min(opened.board[1] - dock.right, opened.columns.at(-1).right - opened.frame[1]);
+      const travelToOpen = Math.min(reveal + 40, Math.max(0, available));
+      const { frames, extraAt } = await sampleHandOver(page, from, to, dir * (reveal + 40), dir * 24);
+      checkHandOverFrames(frames, dir, center, dock);
+      const first = frames[0], last = frames.at(-1);
+      const started = frames.findIndex(f => f.columns[to].expanded);
+      checkSingleResize(frames, started);
+      assert.ok(extraAt > started && frames[extraAt].entering, 'the second wheel event arrives during the card entrance');
+      const before = frames[started - 1], after = frames[started];
+      const gain = after.columns[to].width - before.columns[to].width;
+      assert.ok(gain > 1, 'the incoming column widens on the opening frame');
+      const expectedMoves = [];
+      if (dir > 0) {
+        for (let i = to + 1; i < before.columns.length; i++) {
+          const old = before.columns[i];
+          const travel = after.anchor - before.anchor;
+          if (old.left + travel >= width || old.right + travel <= 0) continue;
+          expectedMoves.push(i);
+          near(after.columns[i].left, old.left + travel, 1, `column ${i} starts its FLIP in its old position`);
+          near(last.columns[i].left - last.anchor, old.left - before.anchor + gain, 1,
+            `column ${i} reaches its widened grid position`);
+        }
+        assert.ok(expectedMoves.length, 'the fixture exposes a following column');
+      }
+      const movingColumns = [...new Set(frames.flatMap(f => f.movingColumns))].sort();
+      assert.deepEqual(movingColumns, expectedMoves, 'only visible columns following a forward opening get a FLIP');
+      const referenceRight = dir > 0 ? opened.items.at(-1).width : opened.items[0].width;
+      assert.ok(frames[started].reference < width && frames[started].reference + referenceRight > 0,
+        'the outgoing article used as a reference is on screen');
+      for (const f of frames.slice(started, extraAt + 1)) {
+        near(f.anchor, first.anchor - dir * travelToOpen, 1, 'the neighbour widens about its on-screen edge');
+      }
+      for (const f of frames) {
+        near(f.reference - first.reference, f.anchor - first.anchor, 1, 'the outgoing card follows only the input');
+      }
+      assert.ok(frames.slice(extraAt + 1).some(f => dir * (frames[extraAt].anchor - f.anchor) > 1
+        && f.entering), 'the board accepts input before the card entrance ends');
+      near(dir * (frames[extraAt].anchor - last.anchor), 24, 1, 'the additional input moves the board 1:1');
+      assert.ok(last.columns[from].expanded && last.columns[to].expanded, 'both visible columns remain expanded');
+      assert.ok(frames.some(f => f.fading), 'the incoming cards fade in while their column opens');
+
+      if (!short) {
+        // Read on into the neighbour. The old column folds once the reading line
+        // has left it and its folded board still covers the dock, in view and
+        // toward the reading line, without moving the neighbour.
+        const untilFold = `(() => {
+          const panel = document.querySelector('#category-surface').getBoundingClientRect();
+          const columns = [...document.querySelectorAll('#category-surface .category-column')];
+          const brand = document.querySelector('.site-header .site-brand').getBoundingClientRect();
+          const tools = document.querySelector('.site-header .header-tools').getBoundingClientRect();
+          const center = (brand.left + tools.right) / 2;
+          const next = columns[${to}].getBoundingClientRect(), old = columns[${from}].getBoundingClientRect();
+          const loss = old.width - ${restWidth};
+          const line = ${dir > 0} ? next.left - center : center - next.right;
+          const gap = ${dir > 0} ? panel.left + loss - ${dock.left} : ${dock.right} - (panel.right - loss);
+          return Math.max(line, gap);
+        })()`;
+        const distance = await evaluate(page, untilFold);
+        assert.ok(distance > 60, `the fold is still ${distance}px away`);
+        await evaluate(page, wheelEvent(dir * (distance - 60)));
+        await sleep(900);
+        const before = await evaluate(page, untilFold);
+        assert.ok(before > 0 && (await readBoard(page)).active[from], 'the old column stays open before the fold');
+        const fold = await sampleHandOver(page, from, to, dir * (before + 2));
+        checkHandOverFrames([last, ...fold.frames], dir, center, dock);
+        const started = fold.frames.findIndex(f => !f.columns[from].expanded);
+        assert.ok(started > 0, 'the sample includes the frame before the fold');
+        const ahead = fold.frames[started - 1], begin = fold.frames[started];
+        assert.ok(begin.columns[from].folding, 'the old column folds in view');
+        assert.ok(dir > 0 ? begin.columns[from].right > 0 : begin.columns[from].left < width, 'the fold starts on screen');
+        assert.equal(begin.hash, '#catalog-' + slugs[to]);
+        const restTracks = f => f.tracks.split(' ').filter((_, i) => i !== from).join(' ');
+        let previous = ahead.columns[from].width;
+        for (const f of fold.frames.slice(started)) {
+          assert.ok(Math.abs(f.anchor - ahead.anchor) <= 3, `folding never displaces the neighbour (${f.anchor} vs ${ahead.anchor})`);
+          assert.equal(restTracks(f), restTracks(begin), 'only the folding track changes');
+          assert.ok(f.columns[from].width <= previous + .02, 'the old column narrows steadily');
+          previous = f.columns[from].width;
+        }
+        const done = fold.frames.findIndex(f => !f.columns[from].folding && Math.abs(f.columns[from].width - restWidth) <= 1);
+        assert.ok(done > started, 'the old column reaches its rest width');
+        assert.ok(fold.frames[done].time - begin.time < 650, `the fold takes ${fold.frames[done].time - begin.time}ms`);
+        const end = fold.frames.at(-1);
+        assert.ok(!end.columns[from].expanded && !end.columns[from].folding);
+        near(end.columns[from].width, restWidth, 1, 'the folded column returns to rest');
+        assert.ok(await evaluate(page, `document.querySelector(${JSON.stringify(catalogSelector(slugs[from]))}).hidden`));
+        if (dir > 0) assert.equal(end.focus, slugs[to], 'card focus follows the reading line');
+        else assert.ok(await evaluate(page, "document.activeElement.matches('.chapter-progress-marker')"));
+        assert.ok(dir * (end.marker - last.marker) > 2, 'the ruler advances with the reading line');
+      }
+      assert.equal((await state(page)).history, history, 'scroll hand-over replaces the history entry');
+      await evaluate(page, 'history.back()');
+      await settledCatalog(page, '');
+    } finally { await close(page); }
+  });
+}
+
+// Minecraft has nothing to its left, so it waits until its folded board still
+// reaches the dock's left end. Scrolling back, 白日梦话 folds as the reading
+// line leaves it: the folded categories after it reach the dock's right end.
+for (const [from, to, limit] of [[0, 1, 'dock'], [1, 0, 'line']]) {
+  const dir = Math.sign(to - from);
+  test(`${slugs[from]} folds ${dir > 0 ? 'forward' : 'backward'} on the pixel where its ${limit === 'dock' ? 'folded board covers the dock' : 'reading line leaves it'}`, { skip }, async () => {
+    const page = await open('/#series', { ...desktop, reduced: true, beforeScripts: longPair });
+    try {
+      const dock = await flatDock(page);
+      const rest = await evaluate(page, `document.querySelectorAll('#category-surface .category-column')[${from}].getBoundingClientRect().width`);
+      await clickLink(page, cover(slugs[from]));
+      await settledCatalog(page, slugs[from]);
+      await evaluate(page, `window.SiteCatalog.scrub(${from}, ${dir > 0 ? 1 : 0}, true)`);
+      const read = `(() => {
+        const panel = document.querySelector('#category-surface').getBoundingClientRect();
+        const columns = [...document.querySelectorAll('#category-surface .category-column')];
+        const brand = document.querySelector('.site-header .site-brand').getBoundingClientRect();
+        const tools = document.querySelector('.site-header .header-tools').getBoundingClientRect();
+        const center = (brand.left + tools.right) / 2;
+        const next = columns[${to}].getBoundingClientRect(), old = columns[${from}].getBoundingClientRect();
+        const loss = old.width - ${rest};
+        return { open: columns.map(c => c.classList.contains('is-catalog-open')), hash: location.hash,
+          line: ${dir > 0} ? next.left - center : center - next.right,
+          gap: ${dir > 0} ? panel.left + loss - ${dock.left} : ${dock.right} - (panel.right - loss),
+          board: [panel.left, panel.right] };
+      })()`;
+      let view = await evaluate(page, read);
+      for (let i = 0; i < 400 && !view.open[to]; i++) {
+        await evaluate(page, wheelEvent(dir * 10));
+        view = await evaluate(page, read);
+      }
+      assert.ok(view.open[from] && view.open[to], 'both categories are open after the hand-over');
+      const distance = Math.max(view.line, view.gap);
+      assert.ok(distance > 8, `the fold is still ${distance}px away`);
+      await evaluate(page, wheelEvent(dir * (distance - 2)));
+      view = await evaluate(page, read);
+      assert.ok(view.open[from], `2px before the fold ${slugs[from]} is open: ${JSON.stringify(view)}`);
+      assert.equal(view.line > view.gap ? 'line' : 'dock', limit, `what holds the fold back: ${JSON.stringify(view)}`);
+      if (limit === 'dock') assert.equal(view.hash, '#catalog-' + slugs[to], 'the reading line has already left');
+      await evaluate(page, wheelEvent(dir * 4));
+      view = await evaluate(page, read);
+      assert.ok(!view.open[from], `2px past the fold ${slugs[from]} has folded: ${JSON.stringify(view)}`);
+      assert.equal(view.hash, '#catalog-' + slugs[to]);
+      assert.ok(view.board[0] <= dock.left + 1 && view.board[1] >= dock.right - 1,
+        `the folded board [${view.board}] covers the dock [${dock.left}, ${dock.right}]`);
+    } finally { await close(page); }
+  });
+}
 
 // Seeking all live effects also advances the heading's typing clock.
 async function seekCatalog(page, time, action = '') {
@@ -1106,6 +1541,23 @@ async function seekCatalog(page, time, action = '') {
     }
   })()`);
 }
+
+test('a station switch and the back link start at the board position reached by the wheel', { skip }, async () => {
+  const page = await open('/#catalog-minecraft', { ...desktop, beforeScripts: longPair });
+  try {
+    for (const [from, link] of [['minecraft', catalogStation('daydreams')], ['daydreams', '.catalog-back']]) {
+      await settledCatalog(page, from);
+      const start = await evaluate(page, panelLeft);
+      await wheel(page, 0, 180);
+      await waitFor(page, `Math.abs(${panelLeft} - (${start} - 180)) < .05`);
+      const scrolled = await evaluate(page, panelLeft);
+      await seekCatalog(page, 0, `document.querySelector(${JSON.stringify(link)}).click();`);
+      near(await evaluate(page, panelLeft), scrolled, 1, `${link} keeps the scrolled board in place on its first frame`);
+      await seekCatalog(page, 1600);
+    }
+    await settledCatalog(page, '');
+  } finally { await close(page); }
+});
 
 test('catalog frames show the sink, heading rewrite, widening and card stagger', { skip }, async () => {
   const page = await open('/#series', { ...desktop, beforeScripts: withArticles(1, 3) });
@@ -1152,13 +1604,17 @@ test('only cards in the open window stagger, even with a hundred articles', { sk
   const effects = () => evaluate(page, `[...${block}.querySelectorAll('.catalog-card')].flatMap((card, i) =>
     card.getAnimations().filter(animation => animation.effect.getKeyframes().some(frame => frame.opacity !== undefined))
       .map(animation => [i, animation.effect.getTiming().delay]))`);
-  const visible = () => evaluate(page, `(() => {
+  const visible = (closeCatalog = false) => evaluate(page, `(() => {
     const block = ${block};
-    return [...block.querySelectorAll('.catalog-card')].flatMap((card, i) => {
-      // Overflow clips the row before the column's 3D fold projects it.
-      const x = card.offsetLeft - block.scrollLeft;
-      return x < block.clientWidth && x + card.offsetWidth > 0 ? [i] : [];
+    const left = document.querySelector('.site-brand').getBoundingClientRect().left;
+    const right = document.querySelector('.header-tools').getBoundingClientRect().right;
+    const cards = [...block.querySelectorAll('.catalog-card')].flatMap((card, i) => {
+      const box = card.getBoundingClientRect();
+      return box.left < right && box.right > left ? [i] : [];
     });
+    // The last fraction of an End-key scroll can carry a card across the frame between CDP calls.
+    if (${closeCatalog}) document.querySelector('.catalog-back').click();
+    return cards;
   })()`);
   const neighbours = () => evaluate(page, "[...document.querySelectorAll('.chapter-section:not(#series)')].map(el => el.inert)");
   const covers = () => evaluate(page, `[...document.querySelectorAll('.category-column')].map(column => {
@@ -1184,10 +1640,11 @@ test('only cards in the open window stagger, even with a hundred articles', { sk
     assert.ok((await neighbours()).every(Boolean), 'measuring the dock restored its inert attributes');
     assert.ok((await covers()).every(([inert, expected]) => inert === expected));
 
-    await evaluate(page, `${block}.scrollLeft = ${block}.scrollWidth`);
-    const last = await visible();
+    await press(page, 'End');
+    await waitFor(page, `Math.abs(${columnEdge('minecraft', 'right')} - document.querySelector('.header-tools').getBoundingClientRect().right) < 1`);
+    const last = await visible(true);
     assert.ok(last.includes(99));
-    await seekCatalog(page, 0, "document.querySelector('.catalog-back').click();");
+    await seekCatalog(page, 0);
     assert.deepEqual(await effects(), last.map((i, k) => [i, (last.length - 1 - k) * 40]));
     await seekCatalog(page, 1199);
     assert.equal(await evaluate(page, running), false, 'closing has released input by 1.2 seconds');
@@ -1330,8 +1787,8 @@ test('deep links, reduced motion and both theme palettes render the selected cat
         const card = document.querySelector('.is-catalog-open .catalog-card');
         return [location.hash, root.classList.contains('is-catalog-transitioning'), root.dataset.theme, getComputedStyle(card).backgroundColor];
       })()`);
-      assert.deepEqual(snap, ['#catalog-minecraft', false, theme, theme === 'dark' ? 'rgba(14, 16, 19, 0.3)' : 'rgba(240, 241, 243, 0.3)']);
-      assert.deepEqual((await readBoard(page)).folds, Array(4).fill(false));
+      assert.deepEqual(snap, ['#catalog-minecraft', false, theme, theme === 'dark' ? 'rgba(14, 16, 19, 0.55)' : 'rgba(240, 241, 243, 0.55)']);
+      assert.deepEqual((await readBoard(page)).transforms, Array(4).fill('none'));
       await clickLink(page, '.site-header .site-brand');
       await waitFor(page, "location.hash === '#home' && !document.documentElement.classList.contains('is-catalog')");
     } finally { await close(page); }

@@ -123,8 +123,10 @@
     code: column.querySelector('.category-code').textContent.trim(),
   }));
   const seriesIndex = sections.findIndex(section => section.id === 'series');
+  const seriesUnits = groupsByChapter.get(sections[seriesIndex])?.units || [];
   let chapterLabels = homeStations.map(station => station.name);
   let catalogHeld = false;
+  let catalogPointerPoses = null;
   let catalogLabels = false;
   let catalogStarts = [];
   const labelAnimations = new Set();
@@ -1238,7 +1240,14 @@
     for (const finish of labelAnimations) finish();
   }
 
-  function setCatalogRuler(index, progress = null, { duration = 0, delay = 0, swap = false, speed = 1 } = {}) {
+  function catalogFraction(index, progress) {
+    const start = catalogStarts[index];
+    return progress === null ? 0.5 : start + (0.9 - start) * progress;
+  }
+
+  function setCatalogRuler(index, progress = null, {
+    duration = 0, delay = 0, swap = false, speed = 1, cursorIndex = index, nextProgress = null, between = 0, travel,
+  } = {}) {
     if (verticalMode) return;
     const catalog = index >= 0;
     const stations = catalog ? catalogStations : homeStations;
@@ -1264,12 +1273,24 @@
       if (i === selected) link.setAttribute('aria-current', 'location');
       else link.removeAttribute('aria-current');
     });
-    const start = catalogStarts[selected];
-    const fraction = catalog && progress !== null ? start + (0.9 - start) * progress : 0.5;
-    const offset = (selected + fraction) * progressTrackWidth / chapters.length;
+    // The reading line selects the station independently of the marker's
+    // position between the two categories' reading ranges.
+    let coordinate = catalog ? cursorIndex + catalogFraction(cursorIndex, progress) : selected + 0.5;
+    if (catalog && between > 0 && stations[cursorIndex + 1]) {
+      const end = cursorIndex + 1 + catalogFraction(cursorIndex + 1, nextProgress);
+      coordinate += (end - coordinate) * clamp(between, 0, 1);
+    }
+    const stationWidth = progressTrackWidth / chapters.length;
+    let offset = coordinate * stationWidth;
+    if (catalog && travel !== undefined && cursorOffset !== null && stationWidth > 0) {
+      // A barely overflowing row can cover its whole reading range in a few
+      // pixels. During scroll, let the marker use only this frame's travel.
+      offset = clamp(offset, cursorOffset + Math.min(0, travel), cursorOffset + Math.max(0, travel));
+      coordinate = offset / stationWidth;
+    }
     const percent = (catalog ? offset / Math.max(1, progressTrackWidth) : selected / (chapters.length - 1)) * 100;
     setStyle(progressNav, '--chapter-active-index', String(selected));
-    setStyle(progressNav, '--chapter-position', (selected + fraction - 0.5).toFixed(5));
+    setStyle(progressNav, '--chapter-position', (coordinate - 0.5).toFixed(5));
     setStyle(progressNav, '--site-progress', (percent / 100).toFixed(5));
     setFold(progressScan, foldAt((selected + 0.5) * progressTrackWidth / chapters.length));
     const sliderValue = percent.toFixed(1);
@@ -1310,10 +1331,31 @@
     resetPointerParallax(true);
     goTo(seriesIndex, { historyMode: null, instant: true });
     catalogHeld = held;
+    setClass(root, 'has-flat-catalog', true);
+    setStyle(track, 'transform', `translateX(${-Math.round(clamp(renderedScroll - entry, 0, travel))}px)`);
+  }
+
+  function animateCatalogPose(opening, animate) {
+    const chapter = sections[seriesIndex];
+    const left = panelBounds[seriesIndex - 1].left - clamp(renderedScroll - entry, 0, travel);
+    const top = chapter.scrollTop;
+    seriesUnits.forEach((unit, i) => {
+      // The chapter can scroll vertically while held. Its cached rest bounds
+      // and current scroll reproduce the camera it will have on release.
+      if (!opening) updateUnitDepth(unit, left + unit.bounds.left, unit.bounds.top - top, true);
+      const arc = { transform: (opening && catalogPointerPoses?.[i]) || 'var(--chapter-plate-transform)' };
+      const flat = { transform: 'none' };
+      const animation = animate(unit.element, opening ? [arc, flat] : [flat, arc]);
+      // At the end of the board motion, release the interpolated matrix so
+      // the CSS 'none' applies while the remaining cards are fading in.
+      if (opening) animation.effect.updateTiming({ fill: 'backwards' });
+    });
+    catalogPointerPoses = null;
   }
 
   window.SiteChapters = {
     get catalogHeld() { return catalogHeld; },
+    get catalogStationWidth() { return progressTrackWidth / chapters.length; },
     scrollCatalogChapter(delta) {
       const chapter = scrollableChapter(sections[seriesIndex], Math.sign(delta));
       if (!chapter || !delta) return false;
@@ -1322,7 +1364,15 @@
     },
     holdCatalog() {
       if (catalogHeld) return;
-      if (!verticalMode) measureCatalogDock();
+      if (!verticalMode) {
+        // Preserve the image under the pointer as the strip hands its camera
+        // to the board; docking clears the track's fractional mouse offset.
+        if ((pointerLayer.x || pointerLayer.y) && Math.abs(y() - positions[seriesIndex]) < 1) {
+          const shift = `translate(${pointerLayer.x * 0.75}px, ${pointerLayer.y * 0.75}px)`;
+          catalogPointerPoses = seriesUnits.map(unit => `${shift} ${getComputedStyle(unit.element).transform}`);
+        }
+        measureCatalogDock();
+      }
       catalogHeld = true;
     },
     releaseCatalog() {
@@ -1330,10 +1380,12 @@
       finishCatalogRuler();
       setCatalogRuler(-1);
       catalogHeld = false;
+      catalogPointerPoses = null;
+      setClass(root, 'has-flat-catalog', false);
       if (verticalMode) window.dispatchEvent(new CustomEvent('site:catalog-layout'));
       else if (available()) measure();
     },
-    measureCatalogDock, setCatalogRuler, finishCatalogRuler,
+    measureCatalogDock, animateCatalogPose, setCatalogRuler, finishCatalogRuler,
   };
 
   function hoverRail(event) {
@@ -1814,6 +1866,8 @@
   // down and removes everything it wrote, then later reopens on the chapter
   // the vertical page names in the URL hash.
   function standDown() {
+    setClass(root, 'has-flat-catalog', false);
+    catalogPointerPoses = null;
     finishScrub();
     stop();
     clearProgressFeedback();

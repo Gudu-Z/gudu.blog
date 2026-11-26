@@ -67,7 +67,7 @@ await test('an empty blog builds usable pages and a valid empty feed without sam
       assert.match(html, new RegExp(`data-category-count="${slug}">00<`));
       const block = catalogBlock(html, slug);
       assert.match(block, /<div class="catalog-block" hidden inert>/);
-      assert.match(block, /<p class="catalog-empty">这个分类还没有文章<br \/>写好的文章会归到这里。<\/p>/);
+      assert.match(block, /<p class="catalog-empty"><span class="catalog-empty-count" aria-hidden="true">00<\/span><span class="catalog-empty-code" aria-hidden="true">NO ENTRIES<\/span><span class="catalog-empty-text">这个分类还没有文章<br \/>写好的文章会归到这里。<\/span><\/p>/);
       assert.doesNotMatch(block, /<ol|class="catalog-group"/);
     }
     assert.match(html, /class="journal-empty"/);

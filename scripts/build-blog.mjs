@@ -286,7 +286,9 @@ function renderCatalogBlock(posts) {
   if (groups.has(ungrouped)) names.push(ungrouped);
   const content = names.length
     ? names.map(name => renderCatalogGroup(name, groups.get(name))).join('\n')
-    : '                    <p class="catalog-empty">这个分类还没有文章<br />写好的文章会归到这里。</p>';
+    : '                    <p class="catalog-empty"><span class="catalog-empty-count" aria-hidden="true">00</span>'
+      + '<span class="catalog-empty-code" aria-hidden="true">NO ENTRIES</span>'
+      + '<span class="catalog-empty-text">这个分类还没有文章<br />写好的文章会归到这里。</span></p>';
   return `                <div class="catalog-block" hidden inert>
                   <div class="catalog-row">
 ${content}

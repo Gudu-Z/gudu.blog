@@ -51,29 +51,33 @@ html.is-catalog .site-header:not(:has(.header-search.is-expanded)) .catalog-back
   width: 24px;
   height: 1px;
 }
-.is-catalog-open .category-display { overflow: clip; }
-.is-catalog-open .category-scene { opacity: .62; scale: 1.3; transform-origin: 50% 46%; }
-/* Keep an open specimen out of the link's departing hover pose. */
-.is-catalog-open .category-stage, .is-catalog-open .category-specimen,
-.is-catalog-open .category-scene *, .is-catalog-open .category-scene *::after { transition: none; }
+:is(.is-catalog-open, .is-catalog-folding) .category-display { overflow: clip; }
+/* A category the reader has scrolled past folds toward the reading line. Its
+   cards hold still and fade while the far edge sweeps over them. */
+.is-catalog-fold-right .catalog-row { position: absolute; top: 0; right: 0; }
+/* An open category's specimen stays open (css/categories.css) in the middle
+   of its widened display, behind the cards. It dims through its lines and
+   orange details, not group opacity: an opacity layer flattens the 3D planes
+   into one texture, which the panel's perspective then magnifies into a blur. */
+.is-catalog-open .category-scene { --category-diagram-opacity: .2; --category-detail-opacity: .32; }
 .catalog-block {
-  --catalog-glass: light-dark(rgb(240 241 243 / 30%), rgb(14 16 19 / 30%));
-  --catalog-mask: light-dark(#000, #fff);
+  --catalog-glass: light-dark(rgb(240 241 243 / 55%), rgb(14 16 19 / 55%));
   position: absolute;
   inset: 0;
-  overflow: hidden;
-  scrollbar-width: none;
-  overscroll-behavior: contain;
-  mask-image: linear-gradient(to right, transparent, var(--catalog-mask) var(--catalog-left-fade, 0px),
-    var(--catalog-mask) calc(100% - var(--catalog-right-fade, 0px)), transparent);
+  overflow: clip;
 }
+/* One line of groups. They share the tallest group's height, so their heads
+   and card edges line up, and the line stays centred in the display. The
+   cards start at the display's own margin; the open column widens to fit them. */
 .catalog-row {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  align-content: center;
   gap: calc(31.78 * var(--category-unit));
   width: max-content;
   min-height: 100%;
-  padding-inline: var(--catalog-row-start, 0px) calc(25.42 * var(--category-unit));
+  padding-inline: calc(25.42 * var(--category-unit));
 }
 .catalog-group { display: flex; flex-direction: column; gap: calc(12.71 * var(--category-unit)); }
 .catalog-group-head {
@@ -101,6 +105,7 @@ html.is-catalog .site-header:not(:has(.header-search.is-expanded)) .catalog-back
 }
 .catalog-cards {
   display: flex;
+  flex: 1;
   gap: calc(14.83 * var(--category-unit));
   list-style: none;
   margin: 0;
@@ -116,7 +121,7 @@ html.is-catalog .site-header:not(:has(.header-search.is-expanded)) .catalog-back
   padding: calc(16.95 * var(--category-unit)) calc(16.95 * var(--category-unit)) calc(14.83 * var(--category-unit));
   border: 1px solid light-dark(rgb(24 28 32 / 16%), rgb(210 216 222 / 16%));
   background: var(--catalog-glass);
-  backdrop-filter: blur(1px);
+  backdrop-filter: blur(4px);
   text-decoration: none;
   transition: border-color calc(180ms * var(--catalog-speed, 1)) ease;
 }
@@ -162,14 +167,41 @@ html.is-catalog .site-header:not(:has(.header-search.is-expanded)) .catalog-back
 .catalog-card:is(:hover, :focus-visible) { border-color: light-dark(rgb(24 28 32 / 34%), rgb(210 216 222 / 34%)); }
 .catalog-card:is(:hover, :focus-visible)::before { width: calc(19.07 * var(--category-unit)); height: calc(19.07 * var(--category-unit)); }
 .catalog-card:is(:hover, :focus-visible) .catalog-card-arrow { opacity: 1; }
+/* An empty category reads like an instrument with nothing on it: a card-sized
+   frosted slot with a dashed edge, a large zero count in the categories'
+   numeral face, a NO ENTRIES code over a hairline, then the note. */
 .catalog-empty {
-  padding: calc(14.83 * var(--category-unit)) calc(16.95 * var(--category-unit));
-  border: 1px dashed var(--chapter-rule);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  box-sizing: border-box;
+  width: calc(250 * var(--category-unit));
+  min-height: calc(158.9 * var(--category-unit));
+  margin: 0;
+  padding: calc(16.95 * var(--category-unit)) calc(16.95 * var(--category-unit)) calc(14.83 * var(--category-unit));
+  border: 1px dashed light-dark(rgb(24 28 32 / 24%), rgb(210 216 222 / 22%));
   background: var(--catalog-glass);
-  backdrop-filter: blur(1px);
+  backdrop-filter: blur(4px);
   color: var(--chapter-muted);
   font: max(12px, calc(13.77 * var(--category-unit)))/1.9 var(--ui-sans);
 }
+.catalog-empty-count {
+  color: light-dark(#69737c, #6a747d);
+  font: 600 calc(44 * var(--category-unit))/1 var(--category-tech);
+  letter-spacing: .06em;
+  font-variant-numeric: tabular-nums;
+}
+.catalog-empty-code {
+  display: flex;
+  align-items: center;
+  gap: calc(9.53 * var(--category-unit));
+  margin-top: calc(10.59 * var(--category-unit));
+  color: light-dark(#4b545c, #8a949d);
+  font: max(9px, calc(10.59 * var(--category-unit)))/1 var(--chapter-mono);
+  letter-spacing: .2em;
+}
+.catalog-empty-code::after { content: ""; flex: 1; height: 1px; background: var(--chapter-rule); }
+.catalog-empty-text { margin-top: calc(12.71 * var(--category-unit)); }
 
 /* The docked slot keeps its original place in the chapter strip. */
 .series-section.has-catalog-board :is(.category-panel, .category-heading) {
@@ -178,26 +210,19 @@ html.is-catalog .site-header:not(:has(.header-search.is-expanded)) .catalog-back
   max-width: none;
   margin-inline-start: calc((100% - var(--board-base)) / 2);
 }
-.series-section.has-catalog-board .category-heading {
-  width: var(--board-heading-width);
-  left: var(--board-heading-shift);
-}
+/* js/catalog.js sets the board's width and tracks on the panel and grid. */
 html.has-chapters .home-page .series-section.has-catalog-board .category-panel {
-  width: var(--board-width);
-  left: var(--board-shift);
   background: none;
   box-shadow: none;
   transition: none;
 }
-.has-catalog-board .category-columns {
-  margin-inline: var(--board-inset-left) var(--board-inset-right);
-  grid-template-columns: var(--board-tracks);
-}
-.has-catalog-board .category-scene { left: var(--catalog-scene-x); }
-.has-catalog-board .is-catalog-open .category-scene { --category-art-size: var(--catalog-scene-size); }
-.has-catalog-board .category-column:first-child { transform-origin: right center; }
-.has-catalog-board .category-column:last-child { transform-origin: left center; }
-.has-catalog-board .category-column:is(:first-child, :last-child) { transform: var(--catalog-fold); }
+/* During a scroll hand-over the glass and specimen ink take their final paint
+   with the grid. The specimen planes keep their transform/opacity transitions. */
+.category-panel.is-catalog-hand-over .category-column:not(.is-catalog-folding) :is(.category-scene, .category-display, .category-count-number, .catalog-card),
+.category-panel.is-catalog-hand-over .category-column:not(.is-catalog-folding) .category-cards > i > span,
+.category-panel.is-catalog-hand-over .category-column:not(.is-catalog-folding) :is(.category-bottom, .catalog-card)::before { transition-property: none; }
+.category-panel.is-catalog-hand-over .category-index-line::after { transform-origin: right top; }
+.has-catalog-board :is(.is-catalog-open, .is-catalog-folding) .category-scene { --category-art-size: var(--catalog-scene-size); }
 .has-catalog-board #category-surface > .chapter-panel-light { display: none; }
 .has-catalog-board .category-facet-light {
   position: absolute;
@@ -238,7 +263,7 @@ html.has-chapters .home-page .series-section.has-catalog-board .category-panel {
 }
 html.is-catalog:not(.has-vertical-chapters) .chapter-section:not(#series) { opacity: 0; }
 html.is-catalog:not(.has-vertical-chapters) .chapter-viewport { touch-action: pinch-zoom; }
-/* Keep the native vertical scroll position while the folded columns extend across the viewport. */
+/* Keep the native vertical scrollport wide enough to show the board across the viewport. */
 html.has-chapters .home-page .series-section.has-catalog-board.is-chapter-scrollable { --chapter-bleed: 100vw; }
 .category-heading-label { white-space: pre; }
 .is-catalog-transitioning .category-heading-text { display: inline-block; }
@@ -256,16 +281,16 @@ html.has-vertical-chapters .catalog-back { font-size: 12px; }
 }
 .has-vertical-chapters .is-catalog-open { grid-column: 1 / -1; }
 .has-vertical-chapters .is-catalog-open .category-display { height: auto; container-type: inline-size; }
-.has-vertical-chapters .is-catalog-open .category-scene { left: 50%; opacity: .5; scale: 1; }
-.has-vertical-chapters .catalog-block { position: relative; mask-image: none; overflow: visible; }
+.has-vertical-chapters .catalog-block { position: relative; overflow: visible; }
 .has-vertical-chapters .catalog-row {
+  display: flex;
   width: 100%;
   flex-direction: column;
   align-items: stretch;
   padding: 16px;
 }
 .has-vertical-chapters .catalog-cards { flex-direction: column; gap: 10px; }
-.has-vertical-chapters .catalog-card { width: 100%; }
+.has-vertical-chapters :is(.catalog-card, .catalog-empty) { width: 100%; }
 .has-vertical-chapters :is(.catalog-card, .catalog-empty) {
   background: light-dark(rgb(240 241 243 / 76%), rgb(14 16 19 / 76%));
   -webkit-backdrop-filter: blur(6px);
@@ -307,6 +332,6 @@ html.has-vertical-chapters .catalog-back { font-size: 12px; }
 @media (prefers-reduced-motion: reduce) {
   .catalog-back, .catalog-back > span:first-child { transition: none; }
   /* The global reduced duration still starts implicit transitions. Read the new row geometry immediately. */
-  html.is-catalog:not(.has-vertical-chapters) :is(.category-columns, .catalog-row, .chapter-progress-marker) { transition-property: none; }
-  .has-catalog-board .category-column:is(:first-child, :last-child) { transform: none; }
+  html.has-flat-catalog :is(.chapter-track, #series, .category-panel, .category-heading,
+    .category-columns, .catalog-row, .chapter-progress-marker) { transition-property: none; }
 }

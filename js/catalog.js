@@ -23,6 +23,7 @@
     display: column.querySelector('.category-display'), scene: column.querySelector('.category-scene'),
     action: column.querySelector('.category-action'), line: column.querySelector('.category-index-line'),
     block: column.querySelector('.catalog-block'), row: column.querySelector('.catalog-row'),
+    light: column.querySelector('.category-facet-light'),
   }));
   const reduce = matchMedia('(prefers-reduced-motion: reduce)');
   const phone = () => root.classList.contains('has-vertical-chapters');
@@ -31,14 +32,35 @@
   const px = value => value + 'px';
   const clamp = (n, low, high) => Math.max(low, Math.min(n, high));
   const fromHash = hash => cells.findIndex(cell => hash === '#catalog-' + cell.slug);
+  function bezier(x1, y1, x2, y2) {
+    const at = (a, b, s) => 3 * a * s * (1 - s) ** 2 + 3 * b * s * s * (1 - s) + s ** 3;
+    return t => {
+      let low = 0, high = 1;
+      for (let n = 0; n < 24; n++) {
+        const s = (low + high) / 2;
+        if (at(x1, x2, s) < t) low = s; else high = s;
+      }
+      return at(y1, y2, (low + high) / 2);
+    };
+  }
   function viewportTop(element) {
     let top = -window.scrollY;
     for (let node = element; node; node = node.offsetParent) top += node.offsetTop;
     return top;
   }
-  let active = -1, base, board, run, pendingNavigation, scrollFrame, scrollTarget, touch;
-  let limit = 0, scrollWidth = 0;
-  let pendingScrub;
+  let active = -1, base, board, layoutShift = 0, run, pendingNavigation, touch;
+  let landmarks, distanceRead = 0, remaining = 0, scrollFrame = 0, lastFrame = 0, gesture;
+  const openingDistance = 40;
+  // CSS grid rounds edges independently to 1/64px during layout.
+  const layoutTolerance = 1 / 32;
+  const flips = new Map();
+  const entrances = new Map();
+  // A category the reading line has left folds toward it as soon as the
+  // folded board still reaches both ends of the slot (see foldBehind).
+  const folds = new Map(), behind = new Set();
+  const foldDuration = 450;
+  const foldCurve = bezier(.16, 1, .3, 1); // `arrive`, for the per-frame fold width
+  let pendingScrub, transferringFocus = false;
   if (speed !== 1) root.style.setProperty('--catalog-speed', String(speed));
 
   function positionBack() {
@@ -56,132 +78,77 @@
 
   function measureBase() {
     const css = getComputedStyle(panel);
-    const w = parseFloat(css.width), h = parseFloat(css.height);
-    const padX = parseFloat(css.paddingLeft), padY = parseFloat(css.paddingTop);
-    const bounds = panel.getBoundingClientRect();
-    const headingBounds = heading.getBoundingClientRect();
-    const [ox, oy] = css.transformOrigin.split(' ').map(parseFloat);
-    const pose = new DOMMatrix().translate(ox, oy)
-      .multiply(new DOMMatrix(css.transform === 'none' ? undefined : css.transform)).translate(-ox, -oy);
-    // The track supplies a translation outside the panel's own projection.
-    function point(x, y) {
-      const p = pose.transformPoint({ x, y });
-      return { x: p.x / p.w, y: p.y / p.w };
-    }
-    const corners = [point(0, 0), point(w, 0), point(0, h), point(w, h)];
-    const left = bounds.left - Math.min(...corners.map(p => p.x));
-    const top = bounds.top - Math.min(...corners.map(p => p.y));
-    // Intersect the camera ray with the docked board's plane.
-    function camera(shift) {
-      const x = innerWidth / 2 - shift - left, y = innerHeight / 2 - top;
-      const a = pose.m11 - x * pose.m14, b = pose.m21 - x * pose.m24;
-      const c = pose.m12 - y * pose.m14, d = pose.m22 - y * pose.m24;
-      const e = x * pose.m44 - pose.m41, f = y * pose.m44 - pose.m42;
-      return { x: (e * d - b * f) / (a * d - b * c), y: (a * f - e * c) / (a * d - b * c) };
-    }
+    // Keep the flat grid's exact layout units. Serialised CSS lengths lose
+    // fractions that accumulate when the pixel tracks are written back.
+    const rect = panel.getBoundingClientRect();
+    const tracks = cells.map(({ column }) => column.getBoundingClientRect().width);
+    const hidden = cells.map(c => c.block.hidden);
+    // Measure at rest, including rows that may open later during scrolling.
+    for (const { block } of cells) block.hidden = false;
+    const gains = cells.map(({ row, display }) => Math.max(0,
+      row.getBoundingClientRect().width - display.getBoundingClientRect().width));
+    cells.forEach(({ block }, i) => { block.hidden = hidden[i]; });
     return {
-      w, h, padX, padY, camera, x: (x, y) => left + point(x, y).x,
-      slotLeft: cells[0].column.getBoundingClientRect().left, dockRight: bounds.right,
-      headingLeft: headingBounds.left, headingScale: headingBounds.width / w,
-      p: Math.max(700, 1.1 * innerWidth),
-      frameLeft: document.querySelector('.site-brand').getBoundingClientRect().left,
+      w: rect.width, left: rect.left,
+      padX: grid.getBoundingClientRect().left - rect.left, padY: parseFloat(css.paddingTop),
+      frameLeft: brand.getBoundingClientRect().left,
       frameRight: document.querySelector('.header-tools').getBoundingClientRect().right,
-      tracks: getComputedStyle(grid).gridTemplateColumns.split(' ').map(parseFloat),
-      displays: cells.map(c => parseFloat(getComputedStyle(c.display).width)),
-      art: cells.map(c => getComputedStyle(c.scene).getPropertyValue('--category-art-size').trim() || '1'),
+      tracks, gains, art: cells.map(c => getComputedStyle(c.scene).getPropertyValue('--category-art-size').trim() || '1'),
     };
   }
 
-  function layout(tracks, angle, shift, index = 0, foldShift = shift) {
-    const { w, h, padX, padY, camera, p } = base;
-    const gain = tracks.reduce((extra, width, i) => extra + width - base.tracks[i], 0);
-    const sin = Math.sin(angle * Math.PI / 180), cos = Math.cos(angle * Math.PI / 180);
-    // The extra slide translates the already fitted folds in screen pixels.
-    const eye = camera(foldShift);
-    const a = tracks[0] + padX, b = tracks.at(-1) + padX;
-    const leftInset = eye.x * a * sin / p - a * (1 - cos);
-    const width = (w + gain + leftInset - eye.x * b * sin / p - b * (1 - cos)) / (1 - b * sin / p);
-    const rightInset = width - w - gain - leftInset;
-    // A folded edge turns about its divider before the panel projects it onto the screen.
-    function edge(x, distance, insetY, bound) {
-      const factor = p / (p - Math.abs(distance) * sin);
-      const projectedX = eye.x + (x + distance * (cos - 1) - eye.x) * factor;
-      return bound(...[insetY, h - insetY].map(y => base.x(projectedX, eye.y + (y - eye.y) * factor) + shift));
-    }
-    function fold(hinge, turn) {
-      const x = eye.x - hinge, y = eye.y - h / 2;
-      return `translate(${x}px,${y}px) perspective(${p}px) translate(${-x}px,${-y}px) rotateY(${turn}deg)`;
-    }
-    const start = leftInset + padX + tracks.slice(0, index).reduce((sum, track) => sum + track, 0);
-    const track = tracks[index];
-    const columnLeft = edge(start, index === 0 ? -track : 0, padY, Math.min);
-    const columnRight = edge(start + track, index === tracks.length - 1 ? track : 0, padY, Math.max);
-    const boardRight = edge(width - rightInset - padX, tracks.at(-1), padY, Math.max);
-    const headingLeft = Math.max(base.frameLeft, edge(leftInset, -a, 0, Math.min));
-    const outerRight = edge(width - rightInset, b, 0, Math.max);
-    const headingRight = Math.min(base.frameRight, outerRight);
-    return { width, shift, foldShift, tracks, angle, leftInset, rightInset, columnLeft, columnRight, boardRight, outerRight,
-      headingShift: headingLeft - base.headingLeft, headingWidth: (headingRight - headingLeft) / base.headingScale,
-      folds: [fold(leftInset + a, angle), fold(width - rightInset - b, -angle)],
-    };
+  function layout(tracks, shift) {
+    const width = base.w + tracks.reduce((gain, w, i) => gain + w - base.tracks[i], 0);
+    const headingLeft = Math.max(base.frameLeft, base.left + shift);
+    const headingRight = Math.min(base.frameRight, base.left + shift + width);
+    return { width, tracks, shift, headingShift: headingLeft - base.left, headingWidth: headingRight - headingLeft };
   }
 
+  // Each category has the same reading range however the reader enters it.
   function fit(index) {
-    if (index < 0) return layout(base.tracks, 0, 0);
-    const requested = Math.max(0, parseFloat(getComputedStyle(cells[index].row).width) - base.displays[index]);
-    const span = base.frameRight - base.frameLeft, angle = reduce.matches ? 0 : 6;
-    function place(gain) {
-      const tracks = [...base.tracks];
-      tracks[index] += gain;
-      let result = layout(tracks, angle, 0, index);
-      // Moving the board also changes the camera's position relative to each fold.
-      for (let i = 0; i < 8; i++) {
-        const shift = Math.min(0, result.shift + base.frameRight - result.columnRight);
-        if (Math.abs(shift - result.shift) < .005) break;
-        result = layout(tracks, angle, shift, index);
-      }
-      return result;
-    }
-    // Probe one frame span at a time so even a very long row stays in front of the camera.
-    let lo = 0, hi = Math.min(requested, span);
-    let result = place(hi);
-    while (result.columnRight - result.columnLeft <= span) {
-      if (hi === requested) {
-        if (index === 0 || result.boardRight <= base.frameRight + .005) return result;
-        const extra = clamp(result.columnLeft - base.slotLeft, 0, result.outerRight - base.dockRight);
-        return layout(result.tracks, angle, result.shift - extra, index, result.shift);
-      }
-      lo = hi;
-      hi = Math.min(requested, hi + span);
-      result = place(hi);
-    }
-    while (hi - lo > .005) {
-      const gain = (lo + hi) / 2;
-      result = place(gain);
-      if (result.columnRight - result.columnLeft > span) hi = gain;
-      else lo = gain;
-    }
-    return place(lo);
+    const tracks = [...base.tracks];
+    const gain = base.gains[index];
+    tracks[index] += gain;
+    const preceding = tracks.slice(0, index).reduce((a, b) => a + b, 0);
+    const left = base.left + base.padX + preceding, right = left + tracks[index];
+    const overflow = base.left + base.w + gain - base.padX > base.frameRight;
+    const start = overflow ? -Math.min(preceding, gain) : 0;
+    const end = Math.min(start, base.frameRight - right);
+    const limit = start - end;
+    return { tracks, start, limit };
   }
 
+  function placeBoard(b) {
+    // Keep wheel travel separate from the left offset committed with the grid.
+    const travel = b.shift - layoutShift;
+    panel.style.translate = travel ? px(travel) : '';
+    heading.style.width = px(b.headingWidth);
+    heading.style.left = px(b.headingShift);
+    board = b;
+  }
+
+  // Values that change with the board go straight to the grid, the panel and
+  // the lights. As inherited custom properties they restyled every element on
+  // the board, specimens included, on each frame of a fold.
   function setBoard(b) {
-    const style = series.style;
-    const values = { 'board-base': px(base.w), 'board-width': px(b.width), 'board-shift': px(b.shift),
-      'board-heading-width': px(b.headingWidth), 'board-heading-shift': px(b.headingShift),
-      'board-inset-left': px(b.leftInset), 'board-inset-right': px(b.rightInset),
-      'board-pad-x': px(base.padX), 'board-pad-y': px(base.padY), 'board-tracks': b.tracks.map(px).join(' ') };
-    for (const [name, value] of Object.entries(values)) style.setProperty('--' + name, value);
-    let start = b.leftInset + base.padX;
-    cells.forEach(({ column }, i) => {
-      const s = column.style;
-      s.setProperty('--catalog-scene-x', px(base.displays[i] / 2));
-      s.setProperty('--catalog-scene-size', base.art[i]);
-      s.setProperty('--catalog-light-x', px(-(i === 0 ? b.leftInset : start)));
-      if (i === 0 || i === 3) s.setProperty('--catalog-fold', b.folds[i === 0 ? 0 : 1]);
+    layoutShift = b.shift;
+    panel.style.left = px(layoutShift);
+    if (!series.classList.contains('has-catalog-board')) {
+      series.style.setProperty('--board-base', px(base.w));
+      series.style.setProperty('--board-pad-x', px(base.padX));
+      series.style.setProperty('--board-pad-y', px(base.padY));
+      cells.forEach(({ column }, i) => column.style.setProperty('--catalog-scene-size', base.art[i]));
+      series.classList.add('has-catalog-board');
+    }
+    panel.style.width = px(b.width);
+    grid.style.gridTemplateColumns = b.tracks.map(px).join(' ');
+    let start = base.padX;
+    cells.forEach(({ light }, i) => {
+      light.style.setProperty('--board-width', px(b.width));
+      light.style.setProperty('--catalog-light-x', px(i === 0 ? 0 : -start));
       start += b.tracks[i];
     });
-    series.classList.add('has-catalog-board');
-    board = b;
+    placeBoard(b);
   }
 
   function fitRowHeight(index) {
@@ -203,7 +170,14 @@
 
   function clearBoard() {
     series.classList.remove('has-catalog-board');
-    for (const el of [series, ...cells.map(c => c.column)]) {
+    panel.style.removeProperty('left');
+    panel.style.removeProperty('translate');
+    panel.style.removeProperty('width');
+    grid.style.removeProperty('grid-template-columns');
+    if (!grid.style.length) grid.removeAttribute('style');
+    heading.style.removeProperty('width');
+    heading.style.removeProperty('left');
+    for (const el of [series, ...cells.flatMap(c => [c.column, c.light])]) {
       el.classList.remove('has-compact-row');
       for (const name of [...el.style]) {
         if (name.startsWith('--board-') || name.startsWith('--catalog-')) el.style.removeProperty(name);
@@ -213,48 +187,388 @@
     board = base = null;
   }
 
-  function scrollState(index) {
-    const { block } = cells[index];
-    const x = block.scrollLeft;
-    block.style.setProperty('--catalog-left-fade', px(x > .5 ? 90 : 0));
-    block.style.setProperty('--catalog-right-fade', px(limit - x > .5 ? 90 : 0));
-    return limit ? clamp(x / limit, 0, 1) : null;
-  }
+  const expanded = i => cells[i].column.classList.contains('is-catalog-open');
 
-  function scrollToRow(x) {
-    if (run || phone() || active < 0 || !limit) return;
-    const block = cells[active].block;
-    scrollTarget = clamp(x, 0, limit);
-    if (reduce.matches) { block.scrollLeft = scrollTarget; return; }
-    if (scrollFrame) return;
-    let previous = performance.now(), current = block.scrollLeft;
-    function step(now) {
-      const gain = 1 - Math.exp(-Math.min(64, now - previous) / (85 * speed));
-      current += (scrollTarget - current) * gain;
-      if (Math.abs(current - scrollTarget) < .6) current = scrollTarget;
-      block.scrollLeft = current;
-      previous = now;
-      scrollFrame = current === scrollTarget ? 0 : requestAnimationFrame(step);
+  // Distances along the board with all rows laid out end to end. Only travel
+  // from input advances this coordinate. Growing or removing a track cannot
+  // move the marker, even when it changes the panel's CSS left by thousands.
+  function startReading(index) {
+    let precedingGain = 0, left = base.left + base.padX;
+    const centre = (base.frameLeft + base.frameRight) / 2;
+    landmarks = cells.map((_, i) => {
+      const { start, limit, tracks } = fit(i);
+      const origin = limit || i === index ? precedingGain - start : left + tracks[i] / 2 - centre;
+      precedingGain += base.gains[i];
+      left += tracks[i];
+      return { start: origin, end: origin + limit, limit };
+    });
+    // Short rows can share a click landing. Space their midpoint markers
+    // between the known reading ranges, keeping each long row's endpoints
+    // and the explicitly selected landing at their physical positions.
+    let previous = -1;
+    for (let next = 0; next <= landmarks.length; next++) {
+      if (next < landmarks.length && next !== index && !landmarks[next].limit) continue;
+      let left = landmarks[previous]?.end ?? -Infinity;
+      const right = landmarks[next]?.start ?? Infinity;
+      const gap = Math.min(chapters.catalogStationWidth, (right - left) / (next - previous));
+      for (let i = previous + 1; i < next; i++) {
+        left = clamp(landmarks[i].start, left + gap, right - (next - i) * gap);
+        landmarks[i].start = landmarks[i].end = left;
+      }
+      previous = next;
     }
-    scrollFrame = requestAnimationFrame(step);
+    distanceRead = landmarks[index].start;
   }
 
-  function stepRow(direction) {
-    const position = scrollFrame ? scrollTarget : cells[active].block.scrollLeft;
-    const next = clamp(position + 100 * direction, 0, limit);
-    // Native scroll offsets can be fractional even though scrollWidth and clientWidth are integers.
-    if (Math.abs(next - position) < 1) return false;
-    scrollToRow(next);
-    return true;
+  function scrollState(index = active) {
+    const { start, limit } = landmarks[index];
+    return limit ? clamp((distanceRead - start) / limit, 0, 1) : null;
   }
 
-  function show(index, old = -1) {
+  function paintRuler(travel) {
+    let i = 0;
+    while (i + 1 < cells.length && distanceRead >= landmarks[i + 1].start) i++;
+    const here = landmarks[i], next = landmarks[i + 1];
+    const between = next ? clamp((distanceRead - here.end) / (next.start - here.end), 0, 1) : 0;
+    chapters.setCatalogRuler(active, scrollState(i), {
+      cursorIndex: i, between, nextProgress: next?.limit ? 0 : null, travel,
+    });
+  }
+
+  function columnLeft(index) {
+    return board.tracks.slice(0, index).reduce((left, width) => left + width, base.left + board.shift + base.padX);
+  }
+
+  function focusReadingCard() {
+    transferringFocus = true;
+    (cells[active].block.querySelector('.catalog-card') || back).focus({ preventScroll: true });
+    transferringFocus = false;
+  }
+
+  function readingLine() {
+    const centre = (base.frameLeft + base.frameRight) / 2;
+    let left = columnLeft(0);
+    for (let i = 0; i < cells.length; i++) {
+      const right = left + board.tracks[i];
+      const offset = flipOffset(i);
+      if (expanded(i) && left + offset <= centre && centre < right + offset) {
+        if (active === i) return;
+        const transfer = cells[active].block.contains(document.activeElement);
+        behind.add(active);
+        behind.delete(i);
+        active = i;
+        setPageTitle(i);
+        history.replaceState(history.state, '', '#catalog-' + cells[i].slug);
+        if (transfer) focusReadingCard();
+        break;
+      }
+      left = right;
+    }
+  }
+
+  function cancelEntrance(index) {
+    entrances.get(index)?.forEach(animation => animation.cancel());
+    entrances.delete(index);
+  }
+
+  function finishHandOver() {
+    if (!flips.size && !entrances.size && !folds.size && !scrollFrame) panel.classList.remove('is-catalog-hand-over');
+  }
+
+  function flipOffset(index) {
+    const flip = flips.get(index);
+    if (!flip) return 0;
+    const progress = flip.animation.effect.getComputedTiming().progress ?? (flip.animation.pending ? 0 : 1);
+    return flip.from * (1 - progress);
+  }
+
+  function cancelFlip(index) {
+    flips.get(index)?.animation.cancel();
+    flips.delete(index);
+  }
+
+  function carryFollowingColumns(index, gain) {
+    let left = columnLeft(index + 1);
+    for (let i = index + 1; i < cells.length; i++) {
+      const width = board.tracks[i];
+      const offset = flipOffset(i);
+      cancelFlip(i);
+      if (left + offset < innerWidth && left + offset + width > 0) {
+        // Rebase an unfinished FLIP at its current visual position. Input moves
+        // the whole panel independently of this column-local displacement.
+        const from = offset - gain;
+        const animation = cells[i].column.animate([{ transform: `translateX(${px(from)})` }, { transform: 'none' }],
+          { duration: 480 * speed, easing: 'cubic-bezier(.333333,0,.666667,1)' }); // the previous smoothstep
+        flips.set(i, { from, animation });
+        animation.onfinish = () => {
+          if (flips.get(i)?.animation !== animation) return;
+          flips.delete(i);
+          updateCoverInert();
+          finishHandOver();
+        };
+      }
+      left += width;
+    }
+  }
+
+  function resizeTrack(index, width, fixRight) {
+    const tracks = [...board.tracks];
+    const gain = width - tracks[index];
+    tracks[index] = width;
+    board = layout(tracks, board.shift - (fixRight ? gain : 0));
+  }
+
+  function foldInstantly(i, fixRight) {
+    if (cells[i].block.contains(document.activeElement)) focusReadingCard();
+    cancelFlip(i);
+    cancelEntrance(i);
+    endFold(i);
+    setExpanded(i, false);
+    resizeTrack(i, base.tracks[i], fixRight);
+  }
+
+  // The board as it will stand once every running fold has finished.
+  function settledBoard() {
+    let b = board;
+    for (const [i, fold] of folds) {
+      const tracks = [...b.tracks], loss = tracks[i] - base.tracks[i];
+      tracks[i] = base.tracks[i];
+      b = layout(tracks, b.shift + (fold.fixRight ? loss : 0));
+    }
+    return b;
+  }
+
+  // Folding toward the reading line keeps the edge that faces it in place, so
+  // the folded board must still cover the slot on the far side.
+  function foldFits(i, fixRight) {
+    const b = settledBoard(), loss = b.tracks[i] - base.tracks[i];
+    return fixRight ? b.shift + loss <= layoutTolerance : b.shift + b.width - loss >= base.w - layoutTolerance;
+  }
+
+  function startFold(i, fixRight, now) {
+    const { column, block, line, action } = cells[i];
+    if (block.contains(document.activeElement)) focusReadingCard();
+    cancelFlip(i);
+    cancelEntrance(i);
+    panel.classList.add('is-catalog-hand-over');
+    column.classList.add('is-catalog-folding');
+    column.classList.toggle('is-catalog-fold-right', fixRight);
+    column.classList.remove('is-catalog-open');
+    block.inert = true;
+    const play = (node, frames, delay, duration, easing, pseudoElement) => node.animate(frames, { delay: delay * speed,
+      duration: duration * speed, easing, fill: 'both', ...(pseudoElement && { pseudoElement }) });
+    folds.set(i, { from: board.tracks[i], fixRight, start: now, effects: [
+      play(block, [{ opacity: 1 }, { opacity: 0 }], 0, 140, move),
+      // The open 24 × 1 mark draws back into its resting dot about its top right.
+      play(line, [{ transform: 'translateY(calc(1 * var(--category-unit))) scale(calc(24px / (3 * var(--category-unit))), calc(1px / (3 * var(--category-unit))))' },
+        { transform: 'none' }], 0, 180, arrive, '::after'),
+      play(action, [{ opacity: 0 }, { opacity: 1 }], 120, 200, move),
+    ] });
+  }
+
+  function endFold(i) {
+    const fold = folds.get(i);
+    if (!fold) return;
+    folds.delete(i);
+    cells[i].block.hidden = true;
+    fold.effects.forEach(animation => animation.cancel());
+    cells[i].column.classList.remove('is-catalog-folding', 'is-catalog-fold-right');
+  }
+
+  function advanceFolds(now) {
+    for (const [i, fold] of folds) {
+      const left = columnLeft(i), right = left + board.tracks[i];
+      const t = right <= 0 || left >= innerWidth ? 1 : clamp((now - fold.start) / (foldDuration * speed), 0, 1);
+      resizeTrack(i, fold.from + (base.tracks[i] - fold.from) * foldCurve(t), fold.fixRight);
+      if (t === 1) endFold(i);
+    }
+  }
+
+  function foldBehind(now) {
+    for (let i = 0; i < cells.length; i++) {
+      if (i === active || !expanded(i)) continue;
+      const left = columnLeft(i) + flipOffset(i), before = left + board.tracks[i] <= 0;
+      if (before || left >= innerWidth) {
+        behind.delete(i);
+        foldInstantly(i, before);
+      } else if (behind.has(i) && foldFits(i, i < active)) {
+        behind.delete(i);
+        if (reduce.matches) foldInstantly(i, i < active);
+        else startFold(i, i < active, now);
+      }
+    }
+  }
+
+  function openInPlace(index, direction) {
+    endFold(index);
+    const width = base.tracks[index] + base.gains[index], gain = width - board.tracks[index];
+    if (!reduce.matches && direction > 0 && gain) carryFollowingColumns(index, gain);
+    setExpanded(index, true);
+    resizeTrack(index, width, direction < 0);
+  }
+
+  function enterInPlace(index) {
+    const effects = [];
+    const play = (node, frames, delay, duration, easing = move, pseudoElement) => {
+      const animation = node.animate(frames, { delay: delay * speed, duration: duration * speed,
+        easing, fill: 'backwards', ...(pseudoElement && { pseudoElement }) });
+      effects.push(animation);
+      return animation;
+    };
+    // Scale the final 24 × 1 mark from its resting dot, about its top right.
+    play(cells[index].line, [{ transform: 'translateY(calc(-1 * var(--category-unit))) scale(calc(3 * var(--category-unit) / 24px), calc(3 * var(--category-unit) / 1px))' },
+      { transform: 'none' }], 0, 180, arrive, '::after');
+    animateCellContents(index, true, true, 0, rowCards(index), play);
+    entrances.set(index, effects);
+    Promise.all(effects.map(a => a.finished)).then(() => {
+      if (entrances.get(index) === effects) entrances.delete(index);
+      finishHandOver();
+    }, () => {}); // A fold or explicit navigation cancels the entrance.
+  }
+
+  function travelAvailable(direction) {
+    // The ends hold for the board that running folds are heading to.
+    const b = folds.size ? settledBoard() : board;
+    const left = base.left + b.shift + base.padX, right = b.tracks.reduce((x, width) => x + width, left);
+    // A backward opening can leave a fully fitted board at a negative CSS
+    // left. That anchor correction does not create a new scrolling range.
+    if (right - b.shift <= base.frameRight && left >= base.frameLeft) return 0;
+    if (direction < 0) return Math.max(0, -b.shift);
+    return Math.max(0, Math.min(right - base.frameRight, b.width - base.w + b.shift));
+  }
+
+  function travel(distance) {
+    if (!distance) return;
+    board = layout(board.tracks, board.shift - distance);
+    distanceRead += distance;
+  }
+
+  function applyInput(delta, opened) {
+    const direction = Math.sign(delta);
+    let amount = Math.abs(delta);
+    while (amount > 0) {
+      const travelLimit = Math.min(amount, travelAvailable(direction));
+      let next = active + direction;
+      while (cells[next] && expanded(next)) next += direction;
+      if (!gesture || gesture.direction !== direction || !cells[next]) {
+        travel(direction * travelLimit);
+        if (travelLimit < amount) remaining = 0;
+        break;
+      }
+      const left = columnLeft(next) + flipOffset(next), right = left + board.tracks[next];
+      const enter = Math.max(0, direction > 0 ? right - base.frameRight : base.frameLeft - left);
+      const leave = direction > 0 ? left - base.frameLeft : base.frameRight - right;
+      if (gesture.next !== next || enter > layoutTolerance || leave < -layoutTolerance) gesture.credit = 0;
+      gesture.next = next;
+      const needed = enter + openingDistance - gesture.credit;
+      // Count just the part of this sample after full entry. At a hard stop
+      // input can complete the forty pixels without moving the board.
+      if (enter <= travelLimit + layoutTolerance && needed <= amount + layoutTolerance
+          && Math.min(needed, travelLimit) <= leave + layoutTolerance) {
+        travel(direction * Math.min(needed, travelLimit));
+        amount = Math.max(0, amount - needed);
+        openInPlace(next, direction);
+        opened.push(next);
+        gesture.credit = 0;
+        readingLine();
+      } else {
+        travel(direction * travelLimit);
+        if (travelLimit + layoutTolerance >= enter && travelLimit <= leave + layoutTolerance) {
+          gesture.credit += Math.max(0, amount - enter);
+        }
+        break;
+      }
+    }
+  }
+
+  function renderScroll(now, instant = false) {
+    scrollFrame = 0;
+    const before = board;
+    const previousDistance = distanceRead, previousActive = active;
+    const opened = [];
+    // The first rAF timestamp can precede the input event in the same
+    // display frame. A zero time step leaves that input for the next frame.
+    const step = instant ? 1 : 1 - Math.exp(-clamp(now - lastFrame, 0, 64) / (85 * speed));
+    let delta = remaining * step;
+    if (Math.abs(remaining - delta) < .5) delta = remaining;
+    remaining -= delta;
+    if (delta) applyInput(delta, opened);
+    readingLine();
+    foldBehind(now);
+    advanceFolds(now);
+    if (before.tracks !== board.tracks) setBoard(board);
+    else if (before.shift !== board.shift) placeBoard(board);
+    for (const index of opened) {
+      if (!expanded(index)) continue;
+      fitRowHeight(index);
+      if (!reduce.matches) enterInPlace(index);
+    }
+    updateCoverInert();
+    if (!gesture || delta || previousActive !== active) paintRuler(gesture ? distanceRead - previousDistance : undefined);
+    lastFrame = now;
+    if (remaining || flips.size || folds.size) scrollFrame = requestAnimationFrame(renderScroll);
+    else if (!entrances.size && panel.classList.contains('is-catalog-hand-over')) requestAnimationFrame(finishHandOver);
+  }
+
+  function advanceScroll(instant = false) {
+    if (instant || reduce.matches) {
+      cancelAnimationFrame(scrollFrame);
+      renderScroll(performance.now(), true);
+    } else if (!scrollFrame) {
+      lastFrame = performance.now();
+      scrollFrame = requestAnimationFrame(renderScroll);
+    }
+  }
+
+  function stopScroll() {
+    cancelAnimationFrame(scrollFrame);
+    scrollFrame = remaining = 0;
+    gesture = null;
+    for (const index of flips.keys()) cancelFlip(index);
+    for (const index of entrances.keys()) cancelEntrance(index);
+    if (folds.size) {
+      for (const [index, fold] of folds) {
+        endFold(index);
+        resizeTrack(index, base.tracks[index], fold.fixRight);
+      }
+      setBoard(board);
+    }
+    behind.clear();
+    finishHandOver();
+  }
+
+  function seekBoard(fraction, instant = false) {
+    gesture = null;
+    remaining = landmarks[active].start + fraction * landmarks[active].limit - distanceRead;
+    advanceScroll(instant);
+  }
+
+  function moveBoard(delta, source) {
+    if (!delta) return;
+    const now = performance.now(), direction = Math.sign(delta);
+    if (!gesture || gesture.direction !== direction || gesture.source !== source
+        || (source !== 'touch' && now - gesture.time >= 400)) {
+      gesture = { direction, source, credit: 0 };
+    }
+    gesture.time = now;
+    remaining += delta;
+    advanceScroll(!travelAvailable(direction) && Math.sign(remaining) === direction);
+  }
+
+  function setExpanded(i, open) {
+    const { column, cover, block } = cells[i];
+    panel.classList.add('is-catalog-hand-over');
+    column.classList.toggle('is-catalog-open', open);
+    cover.inert = open;
+    block.hidden = block.inert = !open;
+  }
+
+  function show(index, leaving = []) {
     cells.forEach(({ column, cover, block }, i) => {
       column.classList.toggle('is-catalog-open', i === index);
       cover.inert = i === index;
-      block.hidden = i !== index && i !== old;
+      block.hidden = i !== index && !leaving.includes(i);
       block.inert = i !== index;
-      if (block.hidden) { block.scrollLeft = 0; block.removeAttribute('style'); }
     });
   }
 
@@ -272,9 +586,13 @@
   }
 
   function updateCoverInert() {
-    cells.forEach(({ column, cover }, i) => {
-      const bounds = phone() ? null : column.getBoundingClientRect();
-      cover.inert = i === active || Boolean(bounds && (bounds.right <= 0 || bounds.left >= innerWidth));
+    let left = board ? base.left + board.shift + base.padX : 0;
+    cells.forEach(({ cover }, i) => {
+      const right = left + (board?.tracks[i] || 0);
+      const offset = flipOffset(i);
+      const inert = expanded(i) || Boolean(board && (right + offset <= 0 || left + offset >= innerWidth));
+      if (cover.inert !== inert) cover.inert = inert;
+      left = right;
     });
   }
 
@@ -288,7 +606,12 @@
     } else updateCoverInert();
     root.classList.remove('is-catalog-transitioning');
     chapters.finishCatalogRuler();
-    if (active >= 0 && !phone()) chapters.setCatalogRuler(active, scrollState(active));
+    if (active >= 0 && !phone()) paintRuler();
+  }
+
+  function setPageTitle(index) {
+    document.title = index < 0 ? originalTitle
+      : cells[index].column.querySelector('.category-name').textContent.trim() + ' · 文章目录 · ' + originalTitle;
   }
 
   function writeTitle(open) {
@@ -354,6 +677,7 @@
     cancelAnimationFrame(run.frame);
     run.effects.forEach(effect => effect.cancel());
     focusEnteredCard(run);
+    const deferred = run.wheel;
     run = null;
     writeTitle(active >= 0);
     cleanFinish();
@@ -366,6 +690,9 @@
       const { index, fraction } = pendingScrub;
       pendingScrub = null;
       scrub(index, fraction, interrupted);
+    } else if (deferred && active >= 0 && !phone()) {
+      const { limit } = landmarks[active];
+      if (limit) seekBoard(clamp(deferred / limit, 0, 1), interrupted);
     }
   }
 
@@ -379,53 +706,58 @@
   }
 
   function animateBoard(from, to, delay, duration) {
-    const path = Array.from({ length: 33 }, (_, i) => {
-      const progress = i / 32;
-      const tracks = from.tracks.map((w, n) => w + (to.tracks[n] - w) * progress);
-      const shift = from.shift + (to.shift - from.shift) * progress;
-      const foldShift = from.foldShift + (to.foldShift - from.foldShift) * progress;
-      return layout(tracks, from.angle + (to.angle - from.angle) * progress, shift, 0, foldShift);
+    const box = b => ({ width: px(b.width), left: px(b.shift) });
+    effect(panel, [box(from), box(to)], delay, duration);
+    effect(grid, [from, to].map(b => ({ gridTemplateColumns: b.tracks.map(px).join(' ') })), delay, duration);
+    // The heading meets each frame at a precise point along the same motion.
+    const cross = (a, b, edge) => (edge - a) / (b - a);
+    const leftCross = cross(from.shift, to.shift, base.frameLeft - base.left);
+    const rightCross = cross(from.shift + from.width, to.shift + to.width, base.frameRight - base.left);
+    const offsets = [0, ...[leftCross, rightCross].filter(f => f > 0 && f < 1).sort((a, b) => a - b), 1];
+    effect(heading, offsets.map(offset => {
+      const b = layout(from.tracks.map((w, i) => w + (to.tracks[i] - w) * offset),
+        from.shift + (to.shift - from.shift) * offset);
+      return { offset, width: px(b.headingWidth), left: px(b.headingShift) };
+    }), delay, duration);
+  }
+
+  function rowCards(index) {
+    return [...cells[index].block.querySelectorAll('.catalog-card, .catalog-empty')].filter(card => {
+      const rect = card.getBoundingClientRect();
+      return rect.left < base.frameRight && rect.right > base.frameLeft;
     });
-    path[0] = from;
-    path[path.length - 1] = to;
-    effect(panel, path.map(b => ({ width: px(b.width), left: px(b.shift) })), delay, duration);
-    effect(heading, path.map(b => ({ width: px(b.headingWidth), left: px(b.headingShift) })), delay, duration);
-    const tracks = b => ({ gridTemplateColumns: b.tracks.map(px).join(' '),
-      marginLeft: px(b.leftInset), marginRight: px(b.rightInset) });
-    effect(grid, path.map(tracks), delay, duration);
-    [0, 3].forEach((i, side) => effect(cells[i].column, path.map(b => ({ transform: b.folds[side] })), delay, duration));
   }
 
-  function rowCards(index, visibleOnly) {
-    const { block } = cells[index];
-    const cards = [...block.querySelectorAll('.catalog-card, .catalog-empty')];
-    if (!visibleOnly) return cards;
-    const left = block.scrollLeft, right = left + block.clientWidth;
-    return cards.filter(card => card.offsetLeft < right && card.offsetLeft + card.offsetWidth > left);
+  function animateCell(index, opening, switching, delay, cards) {
+    const mark = [{ width: 'calc(3 * var(--category-unit))', height: 'calc(3 * var(--category-unit))', top: 'calc(-1 * var(--category-unit))' },
+      { width: '24px', height: '1px', top: '0px' }];
+    effect(cells[index].line, opening ? mark : mark.reverse(), 0, 180, arrive, '::after');
+    animateCellContents(index, opening, switching, delay, cards, effect);
   }
 
-  function animateCell(index, opening, switching, delay, duration, cards) {
-    const { column, scene, line, action } = cells[index];
-    const visual = (element, frames, start, time, ease, pseudo) =>
-      effect(element, opening ? frames : [...frames].reverse(), start, time, ease, pseudo);
-    visual(scene, [{ opacity: 1, scale: '1' }, { opacity: .62, scale: '1.3' }], delay, duration);
+  function animateCellContents(index, opening, switching, delay, cards, play) {
+    // The specimen opens, dims and centres itself through CSS (css/catalog.css).
+    const { column, action } = cells[index];
+    const visual = (element, frames, start, time) =>
+      play(element, opening ? frames : [...frames].reverse(), start, time);
     visual(action, [{ opacity: 1 }, { opacity: 0 }], delay, 160);
-    visual(line, [{ width: 'calc(3 * var(--category-unit))', height: 'calc(3 * var(--category-unit))', top: 'calc(-1 * var(--category-unit))' },
-      { width: '24px', height: '1px', top: '0px' }], 0, 180, arrive, '::after');
+    if (switching && !opening) {
+      // Earlier cards can re-enter the frame while their track collapses.
+      play(cells[index].block, [{ opacity: 1 }, { opacity: 0 }], 0, 140);
+      return;
+    }
     const appear = switching ? 440 : 560;
     column.querySelectorAll('.catalog-group-head').forEach(el =>
-      visual(el, [{ opacity: 0 }, { opacity: 1 }], opening ? appear : 0, opening ? 200 : switching ? 140 : 220));
+      visual(el, [{ opacity: 0 }, { opacity: 1 }], opening ? appear : 0, opening ? 200 : 220));
     cards.forEach((el, i) => {
       if (opening) {
-        const animation = effect(el, [{ opacity: 0, translate: '0 14px' }, { opacity: 1, translate: '0 0' }],
+        const animation = play(el, [{ opacity: 0, translate: '0 14px' }, { opacity: 1, translate: '0 0' }],
           appear + i * 60, 360, arrive);
-        if (el === run.focusTarget) {
+        if (el === run?.focusTarget) {
           const transition = run;
           animation.onfinish = () => focusEnteredCard(transition);
         }
-      }
-      else if (switching) effect(el, [{ opacity: 1 }, { opacity: 0 }], 0, 140);
-      else effect(el, [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: '0 10px' }],
+      } else play(el, [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: '0 10px' }],
         (cards.length - 1 - i) * 40, 220);
     });
   }
@@ -435,16 +767,16 @@
       if (index < 0 || historyMode === null) pendingNavigation = { index, historyMode, instant, focus };
       return;
     }
-    if (index === active) return;
+    const leaving = cells.map((_, i) => i).filter(i => i !== index && expanded(i));
+    if (index === active && !leaving.length) return;
     const old = active, opening = index >= 0, switching = opening && old >= 0;
     const desktop = !phone(), motion = !instant && !reduce.matches && !document.hidden && (desktop || !switching);
     const keep = !desktop && opening ? viewportTop(cells[index].column) : null;
     const fromKeyboard = focus && document.activeElement?.matches('.category-cover:focus-visible');
     const previousFocus = document.activeElement;
-    const losingFocus = old >= 0 && (cells[old].block.contains(previousFocus) || previousFocus?.matches('.catalog-back'));
-    const outgoingCards = desktop && motion && old >= 0 ? rowCards(old, !switching) : [];
-    cancelAnimationFrame(scrollFrame);
-    scrollFrame = 0;
+    const losingFocus = leaving.some(i => cells[i].block.contains(previousFocus)) || old >= 0 && previousFocus?.matches('.catalog-back');
+    const outgoingCards = desktop && motion && !opening ? leaving.map(i => rowCards(i)) : [];
+    stopScroll();
     touch = null;
     if (old < 0) {
       chapters.holdCatalog();
@@ -453,28 +785,22 @@
       if (historyMode === 'push' && location.hash !== '#series') history.replaceState(history.state, '', '#series');
     }
     if (desktop && !base) base = measureBase();
-    const from = desktop ? board || fit(-1) : null;
+    const from = desktop ? board || layout(base.tracks, 0) : null;
     root.classList.add('is-catalog');
-    show(index, motion && desktop ? old : -1);
+    show(index, motion && desktop ? leaving : []);
     active = index;
-    document.title = opening
-      ? cells[index].column.querySelector('.category-name').textContent.trim() + ' · 文章目录 · ' + originalTitle
-      : originalTitle;
+    setPageTitle(index);
     if (!desktop && opening) window.dispatchEvent(new CustomEvent('site:catalog-layout', {
       detail: { cell: cells[index].column, keep, instant },
     }));
-    if (desktop && opening) {
-      cells[index].block.style.setProperty('--catalog-row-start', px(base.displays[index] * .62));
-      cells[index].block.scrollLeft = 0;
-    }
     if (desktop) {
-      setBoard(fit(index));
+      const range = opening ? fit(index) : null;
+      if (opening) startReading(index);
+      setBoard(opening ? layout(range.tracks, range.start) : layout(base.tracks, 0));
       fitRowHeight(index);
     }
-    scrollWidth = desktop && opening ? cells[index].block.clientWidth : 0;
-    limit = desktop && opening ? Math.max(0, cells[index].block.scrollWidth - scrollWidth) : 0;
-    const incomingCards = desktop && motion && opening ? rowCards(index, true) : [];
-    const fraction = desktop && opening ? scrollState(index) : null;
+    const incomingCards = desktop && motion && opening ? rowCards(index) : [];
+    const fraction = desktop && opening ? scrollState() : null;
     const hash = opening ? '#catalog-' + cells[index].slug : '#series';
     if (historyMode && location.hash !== hash) history[historyMode + 'State'](history.state, '', hash);
     if (!desktop && !opening && location.hash === '#series') chapters.measureCatalogDock();
@@ -482,26 +808,35 @@
     let focusTarget;
     if ((fromKeyboard || losingFocus) && opening) {
       focusTarget = cells[index].block.querySelector('.catalog-card');
-      if (!focusTarget || !motion) (focusTarget || document.querySelector('.catalog-back')).focus({ preventScroll: true });
+      if (!focusTarget || !motion) {
+        transferringFocus = true;
+        (focusTarget || back).focus({ preventScroll: true });
+        transferringFocus = false;
+      }
     }
     title.setAttribute('aria-label', opening ? '文章目录' : '分类');
     if (desktop) chapters.setCatalogRuler(index, fraction, { swap: motion && !switching, speed,
       delay: motion && !switching ? (opening ? 200 : 300) : 0, duration: motion ? 400 : 0 });
-    if (!motion) { writeTitle(opening); cleanFinish(); return; }
+    if (!motion) {
+      writeTitle(opening);
+      cleanFinish();
+      return;
+    }
     root.classList.add('is-catalog-transitioning');
     const clock = document.body.animate([{}, {}], { duration: 1, fill: 'both' });
     clock.id = 'catalog-transition-clock';
     clock.startTime = document.timeline.currentTime;
-    run = { clock, effects: [clock], focusTarget, length: switching ? 800 : opening ? 1100 : 1000 };
+    run = { clock, effects: [clock], switching, wheel: 0, focusTarget, length: switching ? 800 : opening ? 1100 : 1000 };
     if (desktop) {
       const duration = switching ? 480 : opening ? 620 : 520, delay = switching ? 140 : 120;
       animateBoard(from, board, delay, duration);
-      if (old >= 0) animateCell(old, false, switching, delay, duration, outgoingCards);
-      if (opening) animateCell(index, true, switching, delay, duration, incomingCards);
+      if (!switching) chapters.animateCatalogPose(opening, (node, frames) => effect(node, frames, delay, duration));
+      leaving.forEach((i, n) => animateCell(i, false, switching, delay, outgoingCards[n] || []));
+      if (opening) animateCell(index, true, switching, delay, incomingCards);
       if (!switching) for (const n of neighbours) {
         const rect = n.getBoundingClientRect();
         const cx = innerWidth / 2 - (rect.left + rect.width / 2), cy = innerHeight / 2 - (rect.top + rect.height / 2);
-        const tilt = `translateY(46vh) translate(${cx}px,${cy}px) perspective(${base.p}px) translate(${-cx}px,${-cy}px) rotateX(14deg)`;
+        const tilt = `translateY(46vh) translate(${cx}px,${cy}px) perspective(${Math.max(700, 1.1 * innerWidth)}px) translate(${-cx}px,${-cy}px) rotateX(14deg)`;
         const frames = opening ? [{ transform: 'none' }, { transform: tilt }] : [{ transform: tilt }, { transform: 'none' }];
         effect(n, frames, opening ? 0 : 300, opening ? 560 : 600, opening ? move : arrive);
         const opacity = [{ opacity: 1 }, { opacity: 1, offset: .35 }, { opacity: 0 }];
@@ -527,36 +862,32 @@
   function refresh() {
     finish(true);
     if (active < 0) return;
-    cancelAnimationFrame(scrollFrame);
-    scrollFrame = 0;
-    const index = active, block = cells[index].block;
+    stopScroll();
+    const index = active;
     if (phone()) {
       positionBack();
-      if (base) {
-        clearBoard();
-        block.removeAttribute('style');
-        limit = 0;
-      }
+      if (base) clearBoard();
+      show(index);
+      landmarks = null;
       clearNeighbourInert();
       updateCoverInert();
       return;
     }
-    const fraction = limit ? block.scrollLeft / limit : 0;
+    const fraction = landmarks ? scrollState() || 0 : 0;
     clearBoard();
-    cells[index].column.classList.remove('is-catalog-open');
+    show(-1);
     chapters.measureCatalogDock();
     positionBack();
     holdNeighbourInert();
     base = measureBase();
     show(index);
-    block.style.setProperty('--catalog-row-start', px(base.displays[index] * .62));
-    setBoard(fit(index));
+    const range = fit(index);
+    startReading(index);
+    distanceRead += fraction * range.limit;
+    setBoard(layout(range.tracks, range.start - fraction * range.limit));
     fitRowHeight(index);
-    scrollWidth = block.clientWidth;
-    limit = Math.max(0, block.scrollWidth - scrollWidth);
-    block.scrollLeft = fraction * limit;
     updateCoverInert();
-    chapters.setCatalogRuler(index, scrollState(index));
+    chapters.setCatalogRuler(index, scrollState());
   }
 
   function stop(e) { e.preventDefault(); e.stopImmediatePropagation(); }
@@ -614,28 +945,35 @@
     }
     if (['ArrowLeft', 'ArrowRight'].includes(e.key)) {
       stop(e);
-      stepRow(e.key === 'ArrowRight' ? 1 : -1);
+      moveBoard(e.key === 'ArrowRight' ? 100 : -100, 'key');
       return;
     }
-    const position = scrollFrame ? scrollTarget : cells[active].block.scrollLeft;
-    const keys = { PageDown: position + scrollWidth * .6,
-      PageUp: position - scrollWidth * .6, Home: 0, End: limit };
-    if (Object.hasOwn(keys, e.key)) { stop(e); scrollToRow(keys[e.key]); }
+    const page = (base.frameRight - base.frameLeft) * .6;
+    if (e.key === 'PageDown' || e.key === 'PageUp') {
+      stop(e); moveBoard(e.key === 'PageDown' ? page : -page, 'key');
+    } else if (e.key === 'Home' || e.key === 'End') {
+      stop(e); seekBoard(e.key === 'Home' ? 0 : 1);
+    }
   }, true);
   window.addEventListener('wheel', e => {
     if (active < 0 && !run || e.ctrlKey || phone() && !run) return;
     stop(e);
-    if (run) return;
     const vertical = Math.abs(e.deltaY) >= Math.abs(e.deltaX);
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1;
     const distance = (vertical ? e.deltaY : e.deltaX) * unit;
+    if (!distance) return;
+    if (run) {
+      if (run.switching && !phone()) run.wheel += distance;
+      return;
+    }
     if (vertical && chapters.scrollCatalogChapter(distance)) return;
-    scrollToRow((scrollFrame ? scrollTarget : cells[active].block.scrollLeft) + distance);
+    moveBoard(distance, 'wheel');
   }, { capture: true, passive: false });
   window.addEventListener('touchstart', e => {
     if (active < 0 || phone() || e.touches.length !== 1 || e.target.closest('.chapter-progress')) return;
     const { clientX: x, clientY: y } = e.touches[0];
-    touch = { x, y, start: cells[active].block.scrollLeft };
+    gesture = null;
+    touch = { x, y, previous: 0 };
   }, { capture: true, passive: true });
   window.addEventListener('touchmove', e => {
     if (!touch && !run || e.touches.length !== 1) return;
@@ -643,7 +981,12 @@
     if (!touch || run) return;
     const dx = touch.x - e.touches[0].clientX, dy = touch.y - e.touches[0].clientY;
     if (!touch.axis && Math.max(Math.abs(dx), Math.abs(dy)) >= 14) touch.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
-    if (touch.axis) scrollToRow(touch.start + (touch.axis === 'x' ? dx : dy));
+    if (touch.axis) {
+      const offset = touch.axis === 'x' ? dx : dy;
+      const delta = offset - touch.previous;
+      touch.previous = offset;
+      moveBoard(delta, 'touch');
+    }
   }, { capture: true, passive: false });
   for (const name of ['touchend', 'touchcancel']) window.addEventListener(name, () => { touch = null; });
   cells.forEach(({ block }, i) => {
@@ -651,29 +994,29 @@
       if (phone() && e.propertyName === 'translate' && e.target === run?.focusTarget
           && e.target.classList.contains('is-vertical-shown')) focusEnteredCard(run);
     });
-    block.addEventListener('scroll', () => {
-      if (active === i && !run && !phone()) chapters.setCatalogRuler(i, scrollState(i));
-    });
     block.addEventListener('focusin', e => {
-      if (active !== i || run || phone()) return;
+      if (active !== i || run || transferringFocus || phone()) return;
       const card = e.target.closest('.catalog-card');
       if (!card) return;
-      // Native Tab scrolling can overtake an ease started by the previous card.
-      cancelAnimationFrame(scrollFrame);
-      scrollFrame = 0;
-      const left = card.offsetLeft, right = left + card.offsetWidth;
-      if (left < block.scrollLeft || right > block.scrollLeft + scrollWidth) {
-        scrollToRow(left < block.scrollLeft ? left : right - scrollWidth);
+      // A short chapter is a native vertical scrollport. Chrome can also pan
+      // it horizontally when focus lands on a distant card.
+      if (series.scrollLeft) series.scrollLeft = 0;
+      const rect = card.getBoundingClientRect();
+      if (rect.left < base.frameLeft || rect.right > base.frameRight) {
+        const delta = rect.left < base.frameLeft ? rect.left - base.frameLeft : rect.right - base.frameRight;
+        gesture = null;
+        remaining = delta;
+        advanceScroll();
       }
     });
   });
   function scrub(index, fraction, instant = false) {
     if (active < 0 || phone() || pendingNavigation) return;
-    if (!run && index !== active) change(index, { instant, focus: false });
+    if (!run && (index !== active || cells.some((_, i) => i !== index && expanded(i)))) {
+      change(index, { instant, focus: false });
+    }
     if (run) { pendingScrub = { index, fraction }; return; }
-    const x = clamp(fraction, 0, 1) * limit;
-    if (instant) cells[active].block.scrollLeft = x;
-    else scrollToRow(x);
+    seekBoard(clamp(fraction, 0, 1), instant);
   }
   window.SiteCatalog = {
     scrub,
@@ -687,9 +1030,8 @@
       const directions = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, PageUp: 1, PageDown: -1 };
       const direction = directions[code];
       if (!direction) return false;
-      if (!code.startsWith('Arrow') || !stepRow(direction)) {
-        change(clamp(active + direction, 0, cells.length - 1), { focus: false });
-      }
+      const step = code.startsWith('Arrow') ? 100 : (base.frameRight - base.frameLeft) * .6;
+      moveBoard(direction * step, 'key');
       return true;
     },
   };
