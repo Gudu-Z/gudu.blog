@@ -60,6 +60,12 @@
   const folds = new Map(), behind = new Set();
   const foldDuration = 450;
   const foldCurve = bezier(.16, 1, .3, 1); // `arrive`, for the per-frame fold width
+  const moveCurve = bezier(.65, 0, .35, 1); // `move`
+  // The side chapters sink this many vh along an arc of this angle.
+  const sinkDepth = 46, sinkArc = 50 * Math.PI / 180;
+  // The camera turns up with the panel; the hole and its sky turn down out of
+  // the stage (js/main.js). Phones keep the hero's sky.
+  const tiltSky = (amount, moving = false) => window.SiteBlackHole?.catalog?.(amount, moving);
   let pendingScrub, transferringFocus = false;
   if (speed !== 1) root.style.setProperty('--catalog-speed', String(speed));
 
@@ -597,6 +603,7 @@
   }
 
   function cleanFinish() {
+    tiltSky(active >= 0 && !phone() ? 1 : 0);
     show(active);
     if (active < 0) {
       root.classList.remove('is-catalog');
@@ -836,11 +843,25 @@
       if (!switching) for (const n of neighbours) {
         const rect = n.getBoundingClientRect();
         const cx = innerWidth / 2 - (rect.left + rect.width / 2), cy = innerHeight / 2 - (rect.top + rect.height / 2);
-        const tilt = `translateY(46vh) translate(${cx}px,${cy}px) perspective(${Math.max(700, 1.1 * innerWidth)}px) translate(${-cx}px,${-cy}px) rotateX(14deg)`;
-        const frames = opening ? [{ transform: 'none' }, { transform: tilt }] : [{ transform: tilt }, { transform: 'none' }];
+        // Each side chapter sinks along a circle whose centre lies level with
+        // it, on its outer side: it leaves straight down and bends outward.
+        // The two turns about that centre cancel, so the chapter never rolls.
+        const side = cx < 0 ? 1 : -1, radius = sinkDepth / Math.sin(sinkArc);
+        const pose = (turn, tilt) => `translate(${side * radius}vh,0px) rotate(${-side * turn}rad) `
+          + `translate(${-side * radius}vh,0px) rotate(${side * turn}rad) translate(${cx}px,${cy}px) `
+          + `perspective(${Math.max(700, 1.1 * innerWidth)}px) translate(${-cx}px,${-cy}px) rotateX(${tilt}deg)`;
+        const frames = [{ transform: pose(0, 0) }, { transform: pose(sinkArc, 14) }];
+        if (!opening) frames.reverse();
         effect(n, frames, opening ? 0 : 300, opening ? 560 : 600, opening ? move : arrive);
         const opacity = [{ opacity: 1 }, { opacity: 1, offset: .35 }, { opacity: 0 }];
         effect(n, opening ? opacity : [{ opacity: 0 }, { opacity: 1 }], opening ? 0 : 300, opening ? 560 : 600, opening ? move : arrive);
+      }
+      // The hole speeds up as it nears the stage's edge and eases out of
+      // view; coming back it rises fast and settles behind the panel.
+      if (!switching) {
+        run.sky = opening ? { from: 0, to: 1, delay: 0, duration: 900, curve: moveCurve }
+          : { from: 1, to: 0, delay: 250, duration: 900, curve: foldCurve };
+        run.length = Math.max(run.length, run.sky.delay + run.sky.duration);
       }
     }
     if (!switching) {
@@ -853,6 +874,11 @@
     function tick() {
       const elapsed = clock.currentTime / speed;
       if (!switching) animateHeading(elapsed, opening);
+      const tilt = run.sky;
+      if (tilt) {
+        const t = clamp((elapsed - tilt.delay) / tilt.duration, 0, 1);
+        tiltSky(tilt.from + (tilt.to - tilt.from) * tilt.curve(t), t > 0 && t < 1);
+      }
       if (elapsed >= run.length) finish();
       else run.frame = requestAnimationFrame(tick);
     }
@@ -861,6 +887,7 @@
 
   function refresh() {
     finish(true);
+    tiltSky(active >= 0 && !phone() ? 1 : 0);
     if (active < 0) return;
     stopScroll();
     const index = active;

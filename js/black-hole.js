@@ -27,6 +27,8 @@
     uniform float u_time;
     uniform float u_ink;
     uniform float u_chapter;
+    // How far the camera looks up from the hole, in radians (see setPitch).
+    uniform float u_pitch;
     uniform float u_day;
     #ifdef BEAM
       // During the day/night switch (js/theme-jets.js) each pixel takes its
@@ -326,12 +328,33 @@
       float material;
       float order;
     };
+    // Under the catalog's tilt each pixel sees the sky along the tilted
+    // camera's own sight line, bent as much as the hole bent the slid view's
+    // ray (seen, escaping as escaped). Both rays are local to the untilted
+    // camera; the result is local to the tilted one, as the particle pass
+    // charts the stars. Far from the hole nothing bends, and the hole's own
+    // pixel gets its own ray back.
+    vec3 tiltSky(vec3 seen, vec3 escaped) {
+      float focal = 4.05 * mix(1.0, 0.34, u_chapter);
+      float c = cos(u_pitch), s = sin(u_pitch);
+      // The pixel's place on the untilted screen gives the tilted sight line.
+      vec3 sight = normalize(vec3(focal * seen.x / -seen.z, focal * seen.y / -seen.z - focal * tan(u_pitch), -focal));
+      vec3 a = vec3(seen.x, seen.y * c + seen.z * s, seen.z * c - seen.y * s);
+      vec3 b = vec3(escaped.x, escaped.y * c + escaped.z * s, escaped.z * c - escaped.y * s);
+      // Rodrigues' turn of a onto b, applied to the sight line; an unbent ray
+      // (no axis) leaves it as it is.
+      vec3 axis = cross(a, b);
+      float sine = length(axis), cosine = dot(a, b);
+      axis = axis / max(sine, 1e-9);
+      return sight * cosine + cross(axis, sight) * sine + axis * dot(axis, sight) * (1.0 - cosine);
+    }
     RayHit orientSky(RayHit hit, vec3 origin, vec3 direction, vec3 right, vec3 up, vec3 forward, float roll) {
       if (u_ink < 0.5 && hit.material < -0.5) {
         // Use the escaped light direction at every impact parameter. Blending
         // it back to the camera ray would compress images and magnification.
         vec3 backgroundRay = normalize(hit.ray);
         vec3 local = vec3(dot(backgroundRay, right), dot(backgroundRay, up), -dot(backgroundRay, forward));
+        if (u_pitch != 0.0) local = tiltSky(normalize(vec3(dot(direction, right), dot(direction, up), -dot(direction, forward))), normalize(local));
         local.xy = mat2(cos(roll), sin(roll), -sin(roll), cos(roll)) * local.xy;
         // The XYZ particle observer uses this unrolled local camera frame.
         hit.ray = normalize(local);
@@ -462,6 +485,11 @@
       vec3 right = normalize(cross(forward, vec3(0.0, 1.0, 0.0)));
       vec3 up = cross(right, forward);
       float focal = mix(4.05, 3.70, u_ink) * mix(1.0, 0.34, u_chapter);
+      // The catalog's tilt slides the hole down the stage whole, as far as a
+      // camera looking u_pitch higher would carry its centre; orientSky turns
+      // the sky as that camera sees it. Only chapters tilt, where the beam's
+      // mask never draws.
+      screen.y += focal * tan(u_pitch);
       #ifdef ORBIT
         // The debug page's own camera (debug/black-hole.html) instead: it
         // orbits the hole at u_orbit's inclination from the spin axis, azimuth,
@@ -1006,6 +1034,7 @@
       // site's pages never compile it in.
       this.orbit = orbit ? { inclination: 81 * Math.PI / 180, azimuth: 0, roll: 18 * Math.PI / 180, distance: 31.78443 } : null;
       this.chapter = 0;
+      this.pitch = 0;
       this.day = 0;
       this.intro = 0;
       this.introLayout = null;
@@ -1507,7 +1536,7 @@
         this.timerQuery.beginQueryEXT(this.timerQuery.TIME_ELAPSED_EXT, this.gpuQuery);
         this.gpuTimingValid = true;
       }
-      if (this.style !== 'ink') this.particleSky.render(time, x * (1 - this.chapter), y * (1 - this.chapter));
+      if (this.style !== 'ink') this.particleSky.render(time, x * (1 - this.chapter), y * (1 - this.chapter), 0, this.pitch);
       // The page entrance frames another part of the same virtual figure.
       const crop = this.viewCrop();
       // While the day/night beam is up, its mask is drawn first and the
@@ -1546,6 +1575,7 @@
       gl.uniform4fv(scene.uniforms.u_quiet, this.quiet);
       gl.uniform1f(scene.uniforms.u_time, time);
       gl.uniform1f(scene.uniforms.u_chapter, this.chapter);
+      gl.uniform1f(scene.uniforms.u_pitch, this.pitch);
       if (orbit) gl.uniform4fv(scene.uniforms.u_orbit, orbit);
       if (!beam) gl.uniform1f(scene.uniforms.u_day, this.day);
       // ANGLE can retain samplers from an unreachable theme branch. Bind all
@@ -1784,6 +1814,14 @@
     // composition itself.
     setIntro(amount) {
       this.intro = Math.max(0, Math.min(1, Number(amount) || 0));
+    }
+
+    // The article catalog tilts the view up by this many radians: the sky
+    // turns down and the hole slides down with it, unstretched, out through
+    // the bottom of the stage. The camera mirrors below (introView,
+    // jetCamera) assume an untilted view.
+    setPitch(radians) {
+      this.pitch = Number(radians) || 0;
     }
 
     // The entrance magnifies the view about one fixed point of the stage, so

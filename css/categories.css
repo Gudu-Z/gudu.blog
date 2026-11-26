@@ -132,7 +132,7 @@
 .category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-display { --category-display-tick: light-dark(rgb(8 9 11 / 90%), rgb(240 243 246 / 90%)); }
 
 /* Specimens. All four share one construction: 1px planes in the same camera,
-   over the same drafting floor. On hover the camera drifts and the specimen
+   floating with no floor beneath them. On hover the camera drifts and the specimen
    rises, then each one opens in its own way and shows one orange detail.
    Entry is staged with delays; leaving returns every part at once. An open
    catalog column (css/catalog.css) holds its specimen in the same pose. */
@@ -152,7 +152,7 @@
   transition: color 350ms ease;
   pointer-events: none;
 }
-/* A soft glow over the floor; it scales and moves with the scene. */
+/* A soft glow beneath the specimen; it scales and moves with the scene. */
 .category-scene::before { content: ""; position: absolute; inset: 48px 0 0; background: radial-gradient(ellipse 46% 40% at 50% 62%, light-dark(rgb(25 37 48 / 7%), rgb(190 206 220 / 7%)), transparent 72%); }
 .category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-scene { color: light-dark(rgb(28 41 50 / min(1, calc(var(--category-diagram-opacity) + .25))), rgb(186 202 214 / min(1, calc(var(--category-diagram-opacity) + .25)))); }
 .category-stage {
@@ -164,26 +164,6 @@
   transition: transform var(--category-return) var(--category-ease);
 }
 .category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-stage { transform: rotateX(-24deg) rotateY(-20deg); transition-duration: 1600ms; }
-/* The drafting floor: an 8 x 8 grid with brighter axes, fading out toward its edges. */
-.category-floor {
-  --category-grid: color-mix(in srgb, currentColor 26%, transparent);
-  --category-axis: color-mix(in srgb, currentColor 50%, transparent);
-  position: absolute;
-  left: -52px;
-  top: -52px;
-  width: 104px;
-  height: 104px;
-  transform: rotateX(90deg);
-  background:
-    linear-gradient(90deg, transparent 52px, var(--category-axis) 52px 53px, transparent 53px),
-    linear-gradient(transparent 52px, var(--category-axis) 52px 53px, transparent 53px),
-    repeating-linear-gradient(90deg, var(--category-grid) 0 1px, transparent 1px 13px),
-    repeating-linear-gradient(var(--category-grid) 0 1px, transparent 1px 13px);
-  -webkit-mask: linear-gradient(90deg, transparent, #000 30% 70%, transparent), linear-gradient(transparent, #000 30% 70%, transparent);
-  -webkit-mask-composite: source-in;
-  mask: linear-gradient(90deg, transparent, #000 30% 70%, transparent), linear-gradient(transparent, #000 30% 70%, transparent);
-  mask-composite: intersect;
-}
 .category-specimen { position: absolute; transform-style: preserve-3d; transform: translateY(-56px); transition: transform var(--category-return) var(--category-ease); }
 .category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-specimen { transform: translateY(-62px); transition-duration: 1600ms; }
 .category-specimen i { position: absolute; display: block; box-sizing: border-box; border: 1px solid currentColor; transition: transform var(--category-return) var(--category-ease), opacity var(--category-return) ease; }
@@ -275,7 +255,7 @@
 .category-node { position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; background: var(--red); opacity: 0; transform: rotateZ(45deg) scale(.4); transition: transform var(--category-return) var(--category-ease), opacity var(--category-return) ease; }
 .category-column:is(.is-catalog-open, :has(> .category-cover:is(:hover, :focus-visible))) .category-node { opacity: var(--category-detail-opacity, 1); transform: rotateZ(0deg) scale(1); transition-duration: 900ms, 400ms; transition-delay: 380ms; }
 /* Smaller displays step the specimen down so it stays inside the brackets.
-   Widths follow the moon's orbit, heights the raised specimen over its floor. */
+   Widths follow the moon's orbit, heights the raised specimen and its glow. */
 @container category-display (width < 16.7em) or (height < 18.3em) { .category-scene { --category-art-size: .9; } }
 @container category-display (width < 15.1em) or (height < 16.6em) { .category-scene { --category-art-size: .8; } }
 @container category-display (width < 13.6em) or (height < 14.8em) { .category-scene { --category-art-size: .7; } }

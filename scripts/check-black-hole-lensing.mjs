@@ -118,10 +118,10 @@ const context = vm.createContext({
   mix: (a, b, t) => add(mul(a, 1 - t), mul(b, t)),
   smoothstep: (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); },
   step: (edge, x) => Number(x >= edge),
-  ...Object.fromEntries(['min', 'max', 'abs', 'sqrt', 'sin', 'cos'].map(name => [name, Math[name]])),
-  atan: Math.atan2, u_ink: 0, u_time: 12,
+  ...Object.fromEntries(['min', 'max', 'abs', 'sqrt', 'sin', 'cos', 'tan'].map(name => [name, Math[name]])),
+  atan: Math.atan2, u_ink: 0, u_time: 12, u_pitch: 0, u_chapter: 1,
 });
-vm.runInContext(['acceleration', 'inkHeight', 'traceLayers', 'orientSky']
+vm.runInContext(['acceleration', 'inkHeight', 'traceLayers', 'tiltSky', 'orientSky']
   .map(name => javaScript(shaderFunction(name))).join('\n'), context);
 
 const radius = Number(source.match(/float cameraDistance = ([\d.]+);/)?.[1]);
@@ -230,6 +230,33 @@ test('sky orientation is a rotation of escaped light, preserving angular separat
     forward, right, up, forward, 0.37).ray;
   assert(Math.abs(dot(map(first), map(second)) - dot(normalize(first), normalize(second))) < 1e-12,
     'Sky orientation changed the relative directions of escaped rays');
+});
+
+test('under the catalog tilt each tilted sight line bends as the hole bent the slid view', () => {
+  context.u_ink = 0;
+  const pitch = 50 * Math.PI / 180;
+  context.u_pitch = pitch;
+  try {
+    const focal = 4.05 * 0.34, drop = focal * Math.tan(pitch);
+    // The tilted camera's ray through the pixel the slid view sees along `seen`.
+    const sight = seen => normalize(vector(focal * seen.x / -seen.z, focal * seen.y / -seen.z - drop, -focal));
+    // The particle pass charts the stars in the tilted frame.
+    const tilted = v => vector(v.x, v.y * Math.cos(pitch) + v.z * Math.sin(pitch), v.z * Math.cos(pitch) - v.y * Math.sin(pitch));
+    for (const seen of [vector(0.3, 0.4, -0.866), vector(-0.5, 0.1, -0.86), vector(0.2, -0.9, -1)].map(normalize)) {
+      assert(length(sub(context.tiltSky(seen, seen), sight(seen))) < 1e-9, 'unbent light shows the tilted camera\'s own sky');
+    }
+    const escaped = normalize(vector(0.3, -0.2, -0.9));
+    assert(length(sub(context.tiltSky(vector(0, 0, -1), escaped), tilted(escaped))) < 1e-9,
+      'the hole\'s own pixel sends its lensed light to the sky turned with the camera');
+    for (const impact of [6, 9, 12, 25]) {
+      const { direction, hit, mapped } = ray(impact);
+      if (hit.material !== -1) continue;
+      const bend = Math.acos(Math.min(1, dot(direction, normalize(hit.ray))));
+      const turned = Math.acos(Math.min(1, dot(sight(direction), mapped.ray)));
+      assert(turned <= bend + 1e-9, `b=${impact}: the sight line turned ${turned} for a bend of ${bend}`);
+      assert(Math.abs(length(mapped.ray) - 1) < 1e-12);
+    }
+  } finally { context.u_pitch = 0; }
 });
 
 test('sky-only remapping preserves accretion disk intersections and black-hole capture', () => {

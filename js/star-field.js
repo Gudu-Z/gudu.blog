@@ -12,6 +12,7 @@
     uniform float u_dpr, u_margin;
     uniform vec4 u_camera, u_previousCamera; // zoom, anchor x/y, drift seconds
     uniform vec2 u_pointer, u_previousPointer;
+    uniform vec2 u_pan;          // CSS px the sky has turned down, now and before
     uniform float u_trails, u_amount, u_gain;
     uniform vec4 u_quiet;        // padded CSS bounds; inverted when absent
     varying vec3 v_tile;
@@ -19,10 +20,11 @@
     varying vec2 v_local, v_direction; // device pixels in the trail's local axes
     varying float v_alpha, v_radius, v_length;
 
-    vec2 position(vec4 camera, vec2 pointer, out vec2 cell) {
+    vec2 position(vec4 camera, vec2 pointer, float pan, out vec2 cell) {
       float depth = a_star.w;
       float speed = u_stage.y * 0.0069 * mix(1.0, 0.3, (depth - 0.04) / 0.40);
-      vec2 p = a_star.xy + vec2(-0.832, 0.555) * (speed * camera.w);
+      // A turning camera moves every star alike; the period brings new ones in.
+      vec2 p = a_star.xy + vec2(-0.832, 0.555) * (speed * camera.w) + vec2(0.0, pan);
       vec2 period = 1.12 * u_stage;
       cell = floor((p + 0.06 * u_stage) / period);
       p -= cell * period;
@@ -32,8 +34,8 @@
 
     void main() {
       vec2 cell, previousCell;
-      vec2 p = position(u_camera, u_pointer, cell);
-      vec2 from = position(u_previousCamera, u_previousPointer, previousCell);
+      vec2 p = position(u_camera, u_pointer, u_pan.x, cell);
+      vec2 from = position(u_previousCamera, u_previousPointer, u_pan.y, previousCell);
       vec2 delta = p - from;
       float travel = length(delta);
       bool trail = u_trails > 0.0 && all(equal(cell, previousCell)) && travel > 1.2 && travel < 90.0;
@@ -299,6 +301,7 @@
       gl.uniform4f(u.u_previousCamera, previous.zoom, previous.anchorX, previous.anchorY, previous.time);
       gl.uniform2f(u.u_pointer, state.pointerX, state.pointerY);
       gl.uniform2f(u.u_previousPointer, previous.pointerX, previous.pointerY);
+      gl.uniform2f(u.u_pan, state.pan || 0, previous.pan || 0);
       gl.uniform1f(u.u_trails, this.previous && state.introMoving ? 1 : 0);
       gl.uniform1f(u.u_amount, state.amount);
       const quiet = state.quiet;

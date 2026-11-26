@@ -14,6 +14,7 @@
     uniform vec2 u_sweep;
     uniform vec2 u_chart;
     uniform float u_maxPoint;
+    uniform float u_pitch;
     varying vec2 v_coreSigma;
     varying vec3 v_coreLight;
     varying float v_size;
@@ -27,6 +28,10 @@
       // sides of each boundary. Time itself never resets or jumps backward.
       p.xy = mod(p.xy + 1600.0, 3200.0) - 1600.0;
       float edge = 1.0 - smoothstep(1380.0, 1600.0, max(abs(p.x), abs(p.y)));
+      // A camera looking u_pitch above the horizon sees the sky turned down
+      // by as much. The chart follows the camera, so its sharp centre stays
+      // in the middle of the view.
+      p.yz = vec2(p.y * cos(u_pitch) + p.z * sin(u_pitch), p.z * cos(u_pitch) - p.y * sin(u_pitch));
       float distance = max(length(p), 0.001);
       vec3 d = p / distance;
       float horizontal = max(length(d.xz), 0.0001);
@@ -194,8 +199,9 @@
 
     // `x` and `y` follow the pointer, as on the hero. `lift` raises the
     // observer by that many units: the article page lowers it as the reader
-    // scrolls, so the stars rise behind the text by their nearness.
-    render(time, x, y, lift = 0) {
+    // scrolls, so the stars rise behind the text by their nearness. `pitch`
+    // tilts the camera up by that many radians (js/black-hole.js setPitch).
+    render(time, x, y, lift = 0, pitch = 0) {
       const gl = this.gl, program = this.program, uniforms = program.uniforms;
       gl.useProgram(program.value);
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.target.buffer);
@@ -228,6 +234,7 @@
       }
       gl.uniform2f(uniforms.u_chart, this.size, this.inset);
       gl.uniform1f(uniforms.u_maxPoint, this.maxPoint);
+      gl.uniform1f(uniforms.u_pitch, pitch);
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
       gl.drawArrays(gl.POINTS, 0, this.count);

@@ -141,11 +141,12 @@ function browser({ reduced = false, loading = false, deferInk = false, deferRead
       dispose(options) { this.disposeOptions = options; this.disposed = true; this.ready = false; }
       setStyle(style) { this.style = style; this.ready = !(deferInk && style === 'ink'); }
       setIntro(amount) { this.intro = amount; }
+      setPitch(radians) { this.pitch = radians; }
       introView(amount) { return { x: -674, y: -326, zoom: 1.8 ** amount }; }
       render(time, x, y, chapter = 0, entranceGlow = 0) {
         attempts.push({ time, x, y, chapter, entranceGlow, at: now });
         if (!this.ready || this.lost || this.disposed || this.busy) return false;
-        renders.push({ time, x, y, chapter, entranceGlow, intro: this.intro ?? 0, at: now });
+        renders.push({ time, x, y, chapter, entranceGlow, intro: this.intro ?? 0, pitch: this.pitch ?? 0, at: now });
         now += renderCost;
         return true;
       }
@@ -991,6 +992,38 @@ await test('hidden, offscreen and cached pages discard entrance pulses until the
     assert.equal(site.last.chapter, 0.8);
     assert.equal(site.last.entranceGlow, 0, 'resuming must not flash a stale entrance accent');
   }
+});
+
+await test('the article catalog tilts the scene up: the hole and both skies turn down together', () => {
+  const site = browser({ gpuStars: true });
+  site.renderer.jetCamera = () => ({ x: 320, y: 240 });
+  site.renderer.cameraInterval = 1000 / 60;
+  site.page(0, 'site:chapter', { detail: { progress: 1 } });
+  site.frame(100);
+  assert.equal(site.last.pitch, 0);
+  assert.equal(site.fieldFrames.at(-1).pan, 0, 'the sky rests behind the chapters');
+  assert.deepEqual(site.scene.jetCamera(), { x: 320, y: 240 });
+  // The flat field keeps pace with the scene's stars halfway up the upper
+  // half of the 480px stage, whose scene unit is 240px at a focal of 1.377.
+  const degree = Math.PI / 180, focal = 4.05 * 0.34, rise = Math.atan(120 / 240 / focal);
+  const pan = pitch => 240 * focal * (Math.tan(rise) - Math.tan(rise - pitch));
+  site.scene.catalog(0.5, true);
+  const from = site.renders.length;
+  for (let index = 1; index <= 30; index++) site.frame(100 + index * 1000 / 60);
+  assert.ok(site.renders.length - from >= 29, 'a moving tilt draws every display frame');
+  assert.ok(Math.abs(site.last.pitch - 25 * degree) < 1e-12, 'half the tilt');
+  assert.ok(Math.abs(site.fieldFrames.at(-1).pan - pan(25 * degree)) < 1e-9, 'the flat sky pans down with the scene');
+  assert.equal(site.scene.jetCamera(), null, 'with the hole turned away the switch beam starts at the toggle');
+  site.scene.catalog(1);
+  site.frame(700);
+  assert.ok(Math.abs(site.last.pitch - 50 * degree) < 1e-12, 'the full tilt');
+  assert.ok(Math.abs(site.fieldFrames.at(-1).pan - pan(50 * degree)) < 1e-9);
+  assert.ok(pan(50 * degree) > 2 * pan(25 * degree), 'the sky speeds up as the camera turns');
+  site.scene.catalog(-3);
+  site.frame(800);
+  assert.equal(site.last.pitch, 0, 'the amount is clamped');
+  assert.equal(site.fieldFrames.at(-1).pan, 0);
+  assert.deepEqual(site.scene.jetCamera(), { x: 320, y: 240 });
 });
 
 await test('the black sphere switches day and night on the hero only', () => {

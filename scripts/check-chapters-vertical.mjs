@@ -617,6 +617,13 @@ function readBoard(page) {
       frame: [rect(one('.site-header .site-brand')).left, rect(one('.site-header .header-tools')).right],
       y: scrollY, runway: one('#chapter-scroll').style.height, slot: one('#series').offsetWidth,
       neighbors: neighbors.map(el => ({ top: rect(el).top, ink: ink(el) })),
+      // Where each side chapter's transform origin has gone: its tilt turns
+      // about that point, so only the sink's arc moves it.
+      sinks: [...document.querySelectorAll('.chapter-section:not(#series)')].map(el => {
+        const m = new DOMMatrix(getComputedStyle(el).transform), box = rect(el);
+        return { x: m.m41 / m.m44, y: m.m42 / m.m44, center: (box.left + box.right) / 2 };
+      }),
+      sky: parseFloat(one('.black-hole-fallback').style.translate.split(' ')[1]) || 0,
       cards: group && [...group.querySelectorAll('ol a')].map(ink),
       // Chapter depth owns these inline variables before a catalog opens.
       styles: tracked.map(node => [...node.style].filter(key => !key.startsWith('--chapter-')).map(key => [key, node.style.getPropertyValue(key)])),
@@ -659,9 +666,15 @@ async function checkRestored(page, baseline) {
   assert.deepEqual(view.styles, baseline.styles, 'closing removes temporary inline styles');
   assert.deepEqual(view.blocks, Array(4).fill([true, true]));
   assert.deepEqual(view.transforms, Array(4).fill('none'));
+  assert.equal(view.sky, 0, 'the hole is back behind the panel');
   assert.equal(view.y, baseline.y);
   await markerAt(page, 2, 0.5);
 }
+
+// How far the catalog's full tilt carries the hole down (js/main.js): the
+// stage's scene unit times the chapters' focal length times tan 50°.
+const FULL_SKY = "document.querySelector('#black-hole').offsetHeight / 2 * 4.05 * 0.34 * Math.tan(50 * Math.PI / 180)";
+const SKY = "parseFloat(document.querySelector('.black-hole-fallback').style.translate.split(' ')[1]) || 0";
 
 async function markerAt(page, cell, fraction) {
   const point = await evaluate(page, RULER_POINT(cell, fraction));
@@ -1565,6 +1578,7 @@ test('catalog frames show the sink, heading rewrite, widening and card stagger',
     const home = await readBoard(page);
     const witness = home.neighbors.findIndex(item => item.ink > .01);
     assert.ok(witness >= 0);
+    assert.equal(home.sky, 0, 'the sky rests behind the panel');
     await seekCatalog(page, 0, `document.querySelector(${JSON.stringify(cover('minecraft'))}).click();`);
     let frame = await readBoard(page);
     assert.equal(frame.title, '分类');
@@ -1575,6 +1589,19 @@ test('catalog frames show the sink, heading rewrite, widening and card stagger',
     assert.ok(early.neighbors[witness].top > home.neighbors[witness].top + 2);
     assert.equal(await evaluate(page, "getComputedStyle(document.querySelector('.is-catalog-open .category-index-line'), '::after').width"), '24px');
     await seekCatalog(page, 350);
+    const sinking = await readBoard(page);
+    // The side chapters leave along arcs: nearly straight down at first, then
+    // bending away from the panel on their own side.
+    const centre = (home.columns[0].left + home.columns.at(-1).right) / 2;
+    home.sinks.forEach((rest, i) => {
+      assert.deepEqual([rest.x, rest.y], [0, 0], 'the side chapters rest untransformed');
+      const side = Math.sign(rest.center - centre), bend = view => side * view.sinks[i].x / view.sinks[i].y;
+      assert.ok(early.sinks[i].y > 0 && sinking.sinks[i].y > early.sinks[i].y, 'they sink');
+      assert.ok(bend(early) >= 0 && bend(early) < bend(sinking) / 2, `the path curves: ${bend(early)} then ${bend(sinking)} across per pixel down`);
+      assert.ok(bend(sinking) > 0.2, `outward: ${sinking.sinks[i].x} across, ${sinking.sinks[i].y} down`);
+    });
+    // The hole and its sky turn down with the camera, faster as they go.
+    assert.ok(early.sky > 0 && sinking.sky - early.sky > early.sky, `the sky speeds up: ${early.sky}, ${sinking.sky}`);
     assert.equal(await evaluate(page, "getComputedStyle(document.querySelector('#series-title .accent')).opacity"), '0');
     await seekCatalog(page, 560);
     const middle = await readBoard(page);
@@ -1593,6 +1620,11 @@ test('catalog frames show the sink, heading rewrite, widening and card stagger',
     frame = await readBoard(page);
     assert.equal(frame.title, '文章目录');
     assert.deepEqual(frame.cards, [1, 1, 1]);
+    near(frame.sky, await evaluate(page, FULL_SKY), 0.01, 'the hole has turned down out of the stage');
+    // The hole sits at the stage's centre; its lensed arc reaches about a
+    // quarter of a scene unit above it.
+    assert.ok(await evaluate(page, `${SKY} - 0.4 * document.querySelector('#black-hole').offsetHeight / 2 > innerHeight / 2`),
+      'the whole hole is past the bottom edge');
     assert.ok(!await evaluate(page, "document.documentElement.classList.contains('is-catalog-transitioning')"));
   } finally { await close(page); }
 });
@@ -1703,10 +1735,12 @@ test('catalog keyboard focus follows card entrance, interrupted runs and browser
     await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] }, page.sessionId);
     await press(page, 'Enter');
     assert.equal(await evaluate(page, `document.activeElement === ${first}`), true, 'reduced motion focuses the first card immediately');
+    near(await evaluate(page, SKY), await evaluate(page, FULL_SKY), 0.01, 'reduced motion turns the sky at once');
     await viewport(page, { width: 390, height: 844, mobile: true });
     await waitFor(page, `document.documentElement.classList.contains('has-vertical-chapters')
       && [...document.querySelectorAll('.chapter-section:not(#series)')].every(el => !el.inert)
       && [...document.querySelectorAll('.category-column:not(.is-catalog-open) .category-cover')].every(el => !el.inert)`);
+    assert.equal(await evaluate(page, SKY), 0, 'phones keep the sky still under an open catalog');
   } finally { await close(page); }
 });
 

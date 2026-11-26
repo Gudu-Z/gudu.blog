@@ -67,6 +67,13 @@
   // empty sky it starts on, 0 the hero composition.
   let introAmount = 0;
   let introMoving = false;
+  // The article catalog (js/catalog.js) tilts the camera up by this share of
+  // catalogPitch: the hole and both star layers turn down out of the stage.
+  let catalogAmount = 0;
+  let catalogMoving = false;
+  const catalogPitch = 50 * Math.PI / 180;
+  // Page pixels per unit of the scene's screen: half the virtual figure's height.
+  let figureUnit = 0;
   let beaming = false;
   let contentMoving = false;
   let heldForInteraction = false;
@@ -235,6 +242,8 @@
     }
     fieldNeedsResize = true;
     if (dimensionsChanged || (blackHole?.ready && !blackHole.lost)) starAnchor = null;
+    figureUnit = (document.querySelector('#black-hole')?.offsetHeight || height) / 2;
+    placeFallback();
     // A bright point among the clock's digits would read as punctuation, so
     // the sky dims around that one line. Offsets ignore the line's parallax
     // and entrance transforms.
@@ -265,6 +274,29 @@
     return starAnchor.zoom ** introAmount;
   }
 
+  // The catalog's tilt carries the sky down the stage. Under the scene's
+  // perspective a point at angle e above the view's centre lands at
+  // focal * tan(e - pitch) screen units; the hole sits at e = 0. The flat
+  // star field can only pan, so it keeps pace with the stars halfway up the
+  // stage's upper half, the part of the sky that stays in view.
+  function catalogFocal() {
+    return (blackHoleStyle === 'ink' ? 3.7 : 4.05) * (1 - 0.66 * chapterProgress);
+  }
+
+  function skyPan() {
+    const pitch = catalogAmount * catalogPitch;
+    if (!pitch || !figureUnit) return 0;
+    const focal = catalogFocal(), rise = Math.atan(height / 4 / figureUnit / focal);
+    return figureUnit * focal * (Math.tan(rise) - Math.tan(rise - pitch));
+  }
+
+  // The static illustration has no camera; it drops as far as the hole does.
+  function placeFallback() {
+    const image = document.querySelector('.black-hole-fallback');
+    const drop = catalogAmount && figureUnit ? figureUnit * catalogFocal() * Math.tan(catalogAmount * catalogPitch) : 0;
+    if (image) image.style.translate = drop ? `0 ${drop.toFixed(2)}px` : '';
+  }
+
   function drawStars() {
     if (!pageActive || document.hidden || !context) return;
     const day = isDay();
@@ -272,10 +304,11 @@
     // By day the dark points read as dust on the chapters' pale panels, so
     // they fade to two fifths as the chapters arrive; the hero keeps them all.
     const fade = day ? 1 - 0.6 * chapterProgress : 1;
+    const pan = skyPan();
     if (starFrame && starFrame.x === pointer.x && starFrame.y === pointer.y && starFrame.zoom === zoom
         && starFrame.amount === introAmount && starFrame.style === blackHoleStyle && starFrame.day === day
-        && starFrame.fade === fade) return;
-    starFrame = { x: pointer.x, y: pointer.y, zoom, amount: introAmount, style: blackHoleStyle, day, fade };
+        && starFrame.fade === fade && starFrame.pan === pan) return;
+    starFrame = { x: pointer.x, y: pointer.y, zoom, amount: introAmount, style: blackHoleStyle, day, fade, pan };
     context.clearRect(0, 0, width, height);
     // Daylight draws the same stars as the night sky's negative.
     const { color, gain: tone } = window.StarSky?.tone({ day, ink: blackHoleStyle === 'ink' }) ?? { color: '193,204,223', gain: 1 };
@@ -292,7 +325,9 @@
       // with it and nearer ones lag behind.
       const spread = (zoom - 1) * star.depth;
       const x = star.x + (star.x - anchorX) * spread + pointer.x * (7 - 30 * star.depth);
-      const y = star.y + (star.y - anchorY) * spread + pointer.y * (5 - 22 * star.depth);
+      let y = star.y + (star.y - anchorY) * spread + pointer.y * (5 - 22 * star.depth);
+      // The catalog's tilt pans the sky over the same period as the GPU field.
+      if (pan) y -= Math.floor((y + pan + 0.06 * height) / (1.12 * height)) * (1.12 * height) - pan;
       const fromX = star.lastX, fromY = star.lastY;
       star.lastX = x;
       star.lastY = y;
@@ -344,7 +379,7 @@
         if (starField.render({
           zoom: starZoom(), anchorX: starAnchor?.x ?? 0, anchorY: starAnchor?.y ?? 0,
           pointerX: pointer.x, pointerY: pointer.y, amount: introAmount, introMoving,
-          quiet: starQuiet, time: phase, day, fade: day ? 1 - 0.6 * chapterProgress : 1,
+          quiet: starQuiet, time: phase, day, fade: day ? 1 - 0.6 * chapterProgress : 1, pan: skyPan(),
         })) {
           if (driftEpoch === null) {
             // Reduced motion gives all properties a brief transition. A lost
@@ -391,6 +426,7 @@
     if (shouldHoldScene()) { holdScene(); return false; }
     drawParallax(time);
     blackHole?.setIntro?.(introAmount);
+    blackHole?.setPitch?.(catalogAmount * catalogPitch);
     const submitted = blackHole?.render(time, pointer.x, -pointer.y, chapterProgress, entranceGlow);
     if (submitted === true) drawnFrames++;
     if (submitted === true && !sceneSettled) {
@@ -461,7 +497,8 @@
       pointer.y = pointer.targetY;
     }
     const requestedInterval = animated
-      ? blackHole.getFrameInterval?.((!settled || introMoving) && chapterProgress === 0) ?? blackHole.frameInterval : 1000 / 60;
+      ? blackHole.getFrameInterval?.(((!settled || introMoving) && chapterProgress === 0) || catalogMoving)
+        ?? blackHole.frameInterval : 1000 / 60;
     const frameInterval = Number.isFinite(requestedInterval) && requestedInterval > 0
       ? requestedInterval : 1000 / 30;
     // Retain fractional cadence across 60/75/120/144 Hz displays. A busy GPU
@@ -530,7 +567,9 @@
   // hole along the spin axis, through the scene's own camera.
   window.SiteBlackHole = {
     jetCamera() {
-      if (!pageActive) return null;
+      // Under the catalog's tilt the hole has turned away: the switch's beam
+      // starts at the toggle, as on pages without a black hole.
+      if (!pageActive || catalogAmount > 0) return null;
       const live = blackHole?.ready && !blackHole.lost ? blackHole.jetCamera?.() : null;
       if (live) return live;
       // The static illustration turns and shrinks with the chapters as a
@@ -556,6 +595,19 @@
       introAmount = next;
       introMoving = Boolean(moving) && next > 0;
       if (changed && pageActive && visible && !document.hidden && (paused || loading || !frame)) draw();
+      start();
+    },
+    // The article catalog tilts the camera up by this share of its full
+    // pitch. A moving tilt draws at the interactive cadence; a still one
+    // redraws at once.
+    catalog(amount, moving = false) {
+      const next = Math.max(0, Math.min(1, Number(amount) || 0));
+      const changed = next !== catalogAmount;
+      catalogAmount = next;
+      catalogMoving = Boolean(moving);
+      if (!changed) return;
+      placeFallback();
+      if (pageActive && visible && !document.hidden && (paused || loading || !frame)) draw();
       start();
     },
     // The entrance's own layers follow the camera's fixed point and zoom.
