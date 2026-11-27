@@ -1644,6 +1644,109 @@ for (const [from, to, limit] of [[0, 1, 'dock'], [1, 0, 'line']]) {
   });
 }
 
+// A category that opened ahead of the reader folds no later than the one
+// between them once the reader turns back. Folding the nearer one first
+// pulled 其他 back into view, still open, past a folded 神秘文案.
+for (const [start, ahead, turnedTo, fixtures] of [
+  ['collected', 1, 'daydreams', withArticles(1, 3, 'daydreams') + withArticles(1, 3, 'collected') + withArticles(1, 1, 'other')],
+  ['daydreams', -1, 'collected', withArticles(1, 1) + withArticles(1, 3, 'daydreams') + withArticles(1, 3, 'collected')],
+]) {
+  test(`turning back from ${start} never leaves an open category beyond a folded one`, { skip }, async () => {
+    const page = await open('/#catalog-' + start, { ...desktop, reduced: true, beforeScripts: fixtures });
+    try {
+      await settledCatalog(page, start);
+      const read = "({ open: [...document.querySelectorAll('#category-surface .category-column')].map(c => c.classList.contains('is-catalog-open')), hash: location.hash })";
+      const here = slugs.indexOf(start), far = here + ahead;
+      let view = await evaluate(page, read);
+      for (let i = 0; i < 200 && !view.open[far]; i++) {
+        await evaluate(page, wheelEvent(ahead * 10));
+        view = await evaluate(page, read);
+      }
+      assert.ok(view.open[far] && view.hash === '#catalog-' + start, `${slugs[far]} opens ahead while ${start} is read: ${JSON.stringify(view)}`);
+      const seen = [];
+      for (let i = 0; i < 400 && (view.open[far] || view.open[here]); i++) {
+        await evaluate(page, wheelEvent(-ahead * 10));
+        view = await evaluate(page, read);
+        seen.push(view.open.map(Number).join('') + view.hash.replace('#catalog-', ' '));
+        const open = view.open.flatMap((isOpen, j) => isOpen ? [j] : []);
+        assert.equal(open.at(-1) - open[0] + 1, open.length, `open categories stand side by side: ${seen.join(', ')}`);
+      }
+      assert.ok(seen.some(step => step.endsWith(' ' + turnedTo)), `the reader reached ${turnedTo}: ${seen.join(', ')}`);
+      assert.ok(!view.open[far] && !view.open[here], `both categories the reader left have folded: ${seen.join(', ')}`);
+    } finally { await close(page); }
+  });
+}
+
+const catalogNow = () => `(() => {
+  const brand = document.querySelector('.site-header .site-brand').getBoundingClientRect();
+  const tools = document.querySelector('.site-header .header-tools').getBoundingClientRect();
+  const columns = [...document.querySelectorAll('#category-surface .category-column')];
+  const panel = document.querySelector('#category-surface').getBoundingClientRect();
+  const station = document.querySelector('.chapter-progress-links a[aria-current]');
+  return { open: columns.map(c => c.classList.contains('is-catalog-open')), hash: location.hash,
+    title: document.title.split(' · ')[0], station: station?.hash, centre: (brand.left + tools.right) / 2,
+    lefts: columns.map(c => c.getBoundingClientRect().left), board: [panel.left, panel.right],
+    marker: (${MARKER}).x, segment: (r => [r.left, r.right])(document.querySelector('.chapter-progress-scales > span:nth-child(4)').getBoundingClientRect()) };
+})()`;
+
+// The reading line cannot reach a short last category. At the hard stop,
+// forty more pixels step to it: it becomes current, the URL, title and ruler
+// follow, and the category before it folds.
+test('pushing past the end of the board steps to a short last category', { skip }, async () => {
+  const page = await open('/#series', { ...desktop, reduced: true, beforeScripts: withArticles(3, 4)
+    + withArticles(1, 3, 'daydreams') + withArticles(1, 2, 'collected') + withArticles(1, 1, 'other') });
+  try {
+    const dock = await flatDock(page);
+    await clickLink(page, cover('minecraft'));
+    await settledCatalog(page, 'minecraft');
+    let view = await evaluate(page, catalogNow());
+    for (let i = 0; i < 800 && view.hash !== '#catalog-other'; i++) {
+      await evaluate(page, wheelEvent(10));
+      view = await evaluate(page, catalogNow());
+    }
+    assert.equal(view.hash, '#catalog-other', `the reader reaches 其他: ${JSON.stringify(view)}`);
+    // The board only ever moved left, so 其他 has never been further left.
+    assert.ok(view.lefts[3] > view.centre, `the reading line never reached 其他 (${view.lefts[3] - view.centre}px short), so the reader stepped`);
+    assert.equal(view.title, '其他');
+    assert.equal(view.station, '#catalog-other', 'the ruler lights the last station');
+    assert.ok(view.marker > view.segment[0] && view.marker < view.segment[1], `the marker ${view.marker} sits in [${view.segment}]`);
+    assert.deepEqual(view.open, [false, false, false, true], 'only the last category stays open');
+    assert.ok(view.board[0] <= dock.left + 1 && view.board[1] >= dock.right - 1, `the board [${view.board}] covers the dock`);
+  } finally { await close(page); }
+});
+
+// A board that fits its frame never moves, so its reading line never moves
+// either. Each push steps one category; the last one folds, and the board
+// slides only as far as it must to keep covering the dock.
+test('on a board that fits its frame each push steps one category and folds the last', { skip }, async () => {
+  const page = await open('/#series', { ...desktop, reduced: true, beforeScripts: withArticles(1, 1)
+    + withArticles(1, 1, 'daydreams') + withArticles(1, 1, 'collected') + withArticles(1, 1, 'other') });
+  try {
+    const dock = await flatDock(page);
+    await clickLink(page, cover('minecraft'));
+    await settledCatalog(page, 'minecraft');
+    const start = await readBoard(page);
+    assert.ok(start.columns[0].left >= start.frame[0] && start.columns.at(-1).right <= start.frame[1], 'the fixture fits its frame');
+    for (const [dir, sequence] of [[1, ['daydreams', 'collected', 'other']], [-1, ['collected', 'daydreams', 'minecraft']]]) {
+      for (const slug of sequence) {
+        let view = await evaluate(page, catalogNow());
+        const from = view.hash;
+        for (let i = 0; i < 6 && view.hash === from; i++) {
+          await evaluate(page, wheelEvent(dir * 100));
+          view = await evaluate(page, catalogNow());
+          const open = view.open.flatMap((isOpen, j) => isOpen ? [j] : []);
+          assert.equal(open.at(-1) - open[0] + 1, open.length, `open categories stand side by side: ${JSON.stringify(view)}`);
+          assert.ok(view.board[0] <= dock.left + 1 && view.board[1] >= dock.right - 1, `the board covers the dock: ${JSON.stringify(view)}`);
+          await sleep(500); // A push pauses while the old category folds.
+        }
+        assert.equal(view.hash, '#catalog-' + slug, `one push moves one category: ${JSON.stringify(view)}`);
+        assert.equal(view.station, view.hash, 'the ruler lights the current station');
+        assert.deepEqual(view.open, slugs.map(s => s === slug), `only ${slug} is open: ${JSON.stringify(view)}`);
+      }
+    }
+  } finally { await close(page); }
+});
+
 // Seeking all live effects also advances the heading's typing clock.
 async function seekCatalog(page, time, action = '') {
   await evaluate(page, `(async () => {

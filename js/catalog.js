@@ -50,13 +50,20 @@
   }
   let active = -1, base, board, layoutShift = 0, run, pendingNavigation, touch;
   let landmarks, distanceRead = 0, remaining = 0, scrollFrame = 0, lastFrame = 0, gesture;
-  const openingDistance = 40;
+  // Where the reader last stepped past a hard stop, and whether the ruler
+  // still has to follow that step.
+  let steppedAt = null, stepped = false;
+  // The reading distance at the reading line's last check, and the way the
+  // board last moved (1 forward, -1 back, 0 not since the reading began).
+  let lineAt = 0, lastMoved = 0;
+  const openingDistance = 40, stepPause = 450;
   // CSS grid rounds edges independently to 1/64px during layout.
   const layoutTolerance = 1 / 32;
   const flips = new Map();
   const entrances = new Map();
   // A category the reading line has left folds toward it as soon as the
-  // folded board still reaches both ends of the slot (see foldBehind).
+  // folded board still reaches both ends of the slot, outermost first (see
+  // foldBehind).
   const folds = new Map(), behind = new Set();
   const foldDuration = 450;
   const foldCurve = bezier(.16, 1, .3, 1); // `arrive`, for the per-frame fold width
@@ -223,7 +230,8 @@
       }
       previous = next;
     }
-    distanceRead = landmarks[index].start;
+    distanceRead = lineAt = landmarks[index].start;
+    lastMoved = 0;
   }
 
   function scrollState(index = active) {
@@ -251,25 +259,85 @@
     transferringFocus = false;
   }
 
+  function setCurrent(i) {
+    if (active === i) return;
+    const transfer = cells[active].block.contains(document.activeElement);
+    // The reader leaves every open category on the far side behind: the old
+    // one, any it skipped, and any open beyond it, such as one that opened
+    // ahead and was never read before the reader turned back.
+    const away = Math.sign(active - i);
+    for (let j = i + away; cells[j]; j += away) if (expanded(j)) behind.add(j);
+    behind.delete(i);
+    active = i;
+    setPageTitle(i);
+    history.replaceState(history.state, '', '#catalog-' + cells[i].slug);
+    if (transfer) focusReadingCard();
+  }
+
   function readingLine() {
+    const moved = Math.sign(distanceRead - lineAt);
+    if (moved) lastMoved = moved;
+    lineAt = distanceRead;
+    // A step past a hard stop (see applyInput) holds until the board moves.
+    if (steppedAt !== null) {
+      if (distanceRead === steppedAt) return;
+      steppedAt = null;
+    }
     const centre = (base.frameLeft + base.frameRight) / 2;
     let left = columnLeft(0);
     for (let i = 0; i < cells.length; i++) {
       const right = left + board.tracks[i];
       const offset = flipOffset(i);
       if (expanded(i) && left + offset <= centre && centre < right + offset) {
-        if (active === i) return;
-        const transfer = cells[active].block.contains(document.activeElement);
-        behind.add(active);
-        behind.delete(i);
-        active = i;
-        setPageTitle(i);
-        history.replaceState(history.state, '', '#catalog-' + cells[i].slug);
-        if (transfer) focusReadingCard();
-        break;
+        // The reader only goes the way the board last moved, even on frames
+        // where only animations run: a category left behind but still open
+        // never takes the line back.
+        if (Math.sign(i - active) !== -lastMoved) setCurrent(i);
+        return;
       }
       left = right;
     }
+  }
+
+  function inFrame(i) {
+    const left = columnLeft(i) + flipOffset(i);
+    return left >= base.frameLeft - layoutTolerance && left + board.tracks[i] <= base.frameRight + layoutTolerance;
+  }
+
+  const pausing = now => now < gesture?.pausedUntil;
+
+  // How far the board must still travel for the reading line to stand just
+  // inside column i.
+  function lineReach(i, direction) {
+    const centre = (base.frameLeft + base.frameRight) / 2, left = columnLeft(i) + flipOffset(i);
+    return (direction > 0 ? left - centre : centre - left - board.tracks[i]) + 1 / 64;
+  }
+
+  // The open neighbour this gesture may step to, or -1.
+  function stepTarget(direction, now) {
+    const step = active + direction;
+    return gesture?.direction === direction && !pausing(now) && cells[step] && expanded(step) && inFrame(step) ? step : -1;
+  }
+
+  // The reading line cannot reach a short category at the end of the board,
+  // nor any category of a board that fits its frame. There the reader steps
+  // instead: forty pixels past the hard stop make the open neighbour current.
+  function stepTo(i, now) {
+    setCurrent(i);
+    settleStep(now);
+  }
+
+  // The reader has moved to another category while the board stood still,
+  // by a step or because the reading line took a category that opened at the
+  // stop. The ruler follows; the centre leaves the new category current until
+  // the board moves; the gesture drops the rest of its input and pauses while
+  // the old category folds, so one push moves one category.
+  function settleStep(now) {
+    steppedAt = distanceRead;
+    stepped = true;
+    gesture.pausedUntil = now + stepPause * speed;
+    gesture.credit = 0;
+    remaining = 0;
   }
 
   function cancelEntrance(index) {
@@ -358,21 +426,23 @@
     }
   }
 
-  function resizeTrack(index, width, fixRight) {
+  // The anchor is the share of a width change that moves the board's left
+  // end: 1 keeps the column's right edge in place, 0 its left edge.
+  function resizeTrack(index, width, anchor) {
     const tracks = [...board.tracks];
     const gain = width - tracks[index];
     tracks[index] = width;
-    board = layout(tracks, board.shift - (fixRight ? gain : 0));
+    board = layout(tracks, board.shift - anchor * gain);
   }
 
-  function foldInstantly(i, fixRight) {
+  function foldInstantly(i, anchor) {
     if (cells[i].block.contains(document.activeElement)) focusReadingCard();
     cancelFlip(i);
     cancelEntrance(i);
     cancelGlide(i);
     endFold(i);
     setExpanded(i, false);
-    resizeTrack(i, base.tracks[i], fixRight);
+    resizeTrack(i, base.tracks[i], anchor);
   }
 
   // The board as it will stand once every running fold has finished.
@@ -381,19 +451,30 @@
     for (const [i, fold] of folds) {
       const tracks = [...b.tracks], loss = tracks[i] - base.tracks[i];
       tracks[i] = base.tracks[i];
-      b = layout(tracks, b.shift + (fold.fixRight ? loss : 0));
+      b = layout(tracks, b.shift + fold.anchor * loss);
     }
     return b;
   }
 
-  // Folding toward the reading line keeps the edge that faces it in place, so
-  // the folded board must still cover the slot on the far side.
-  function foldFits(i, fixRight) {
-    const b = settledBoard(), loss = b.tracks[i] - base.tracks[i];
-    return fixRight ? b.shift + loss <= layoutTolerance : b.shift + b.width - loss >= base.w - layoutTolerance;
+  // Where a fold may hold the board (see resizeTrack), or null to wait.
+  // Folding toward the reading line keeps the edge that faces it, as long as
+  // the folded board still covers the dock at both ends. A board that cannot
+  // move on to make room slides instead, just far enough to cover it.
+  function foldAnchor(i, toward, stuck) {
+    const b = settledBoard(), loss = b.tracks[i] - base.tracks[i], want = toward ? 1 : 0;
+    if (loss <= layoutTolerance) return want;
+    // The folded board starts at b.shift + anchor × loss, at or left of the
+    // dock's left end, and must still reach past the dock's right end. A
+    // slide aims inside those exact bounds, so the next fold starts from a
+    // board that covers the dock without help from the tolerance.
+    const high = -b.shift / loss, low = (base.w - b.shift - b.width + loss) / loss;
+    const slack = layoutTolerance / loss;
+    if (want >= low - slack && want <= high + slack) return want;
+    const from = Math.max(0, low), to = Math.min(1, high);
+    return stuck && from <= to + slack ? clamp(want, from, Math.max(from, to)) : null;
   }
 
-  function startFold(i, fixRight, now) {
+  function startFold(i, anchor, now) {
     const { column, block, line } = cells[i];
     if (block.contains(document.activeElement)) focusReadingCard();
     cancelFlip(i);
@@ -401,14 +482,14 @@
     const specimen = specimenAt(i);
     panel.classList.add('is-catalog-hand-over');
     column.classList.add('is-catalog-folding');
-    column.classList.toggle('is-catalog-fold-right', fixRight);
+    column.classList.toggle('is-catalog-fold-right', anchor >= .5);
     column.classList.remove('is-catalog-open');
     block.inert = true;
     glideSpecimen(i, specimen, (node, frames, delay, duration, easing) =>
       node.animate(frames, { delay: delay * speed, duration: duration * speed, easing, fill: 'backwards' }));
     const play = (node, frames, delay, duration, easing, pseudoElement) => node.animate(frames, { delay: delay * speed,
       duration: duration * speed, easing, fill: 'both', ...(pseudoElement && { pseudoElement }) });
-    folds.set(i, { from: board.tracks[i], fixRight, start: now, effects: [
+    folds.set(i, { from: board.tracks[i], anchor, start: now, effects: [
       play(block, [{ opacity: 1 }, { opacity: 0 }], 0, 140, move),
       // The open 24 × 1 mark draws back into its resting dot about its top right.
       play(line, [{ transform: 'translateY(calc(1 * var(--category-unit))) scale(calc(24px / (3 * var(--category-unit))), calc(1px / (3 * var(--category-unit))))' },
@@ -429,22 +510,39 @@
     for (const [i, fold] of folds) {
       const left = columnLeft(i), right = left + board.tracks[i];
       const t = right <= 0 || left >= innerWidth ? 1 : clamp((now - fold.start) / (foldDuration * speed), 0, 1);
-      resizeTrack(i, fold.from + (base.tracks[i] - fold.from) * foldCurve(t), fold.fixRight);
+      resizeTrack(i, fold.from + (base.tracks[i] - fold.from) * foldCurve(t), fold.anchor);
       if (t === 1) endFold(i);
     }
   }
 
+  // Each side of the reading line folds from the board's end inward: a
+  // category waits while one beyond it is still open. Folding the nearer one
+  // first would pull the open one beyond it back into view, with a folded
+  // category between it and the one being read.
   function foldBehind(now) {
-    for (let i = 0; i < cells.length; i++) {
-      if (i === active || !expanded(i)) continue;
-      const left = columnLeft(i) + flipOffset(i), before = left + board.tracks[i] <= 0;
-      if (before || left >= innerWidth) {
-        behind.delete(i);
-        foldInstantly(i, before);
-      } else if (behind.has(i) && foldFits(i, i < active)) {
-        behind.delete(i);
-        if (reduce.matches) foldInstantly(i, i < active);
-        else startFold(i, i < active, now);
+    if (active < 0) return;
+    const order = cells.map((_, i) => i);
+    for (const side of [order.slice(0, active), order.slice(active + 1).reverse()]) {
+      let held = false;
+      for (const i of side) {
+        if (!expanded(i)) continue;
+        const left = columnLeft(i) + flipOffset(i), before = left + board.tracks[i] <= 0;
+        if (held) {
+          // Even out of sight, a category waits for the open one beyond it.
+        } else if (before || left >= innerWidth) {
+          behind.delete(i);
+          foldInstantly(i, before ? 1 : 0);
+        } else if (behind.has(i)) {
+          // Waiting only helps while the board can still carry the reader on.
+          const toward = i < active;
+          const anchor = foldAnchor(i, toward, travelAvailable(toward ? 1 : -1) <= layoutTolerance);
+          if (anchor !== null) {
+            behind.delete(i);
+            if (reduce.matches) foldInstantly(i, anchor);
+            else startFold(i, anchor, now);
+          }
+        }
+        held ||= expanded(i);
       }
     }
   }
@@ -455,7 +553,7 @@
     if (!reduce.matches && direction > 0 && gain) carryFollowingColumns(index, gain);
     cells[index].specimenFrom = reduce.matches ? null : specimenAt(index);
     setExpanded(index, true);
-    resizeTrack(index, width, direction < 0);
+    resizeTrack(index, width, direction < 0 ? 1 : 0);
   }
 
   function enterInPlace(index) {
@@ -498,16 +596,43 @@
     distanceRead += distance;
   }
 
-  function applyInput(delta, opened) {
+  function applyInput(delta, opened, now) {
     const direction = Math.sign(delta);
     let amount = Math.abs(delta);
     while (amount > 0) {
-      const travelLimit = Math.min(amount, travelAvailable(direction));
-      let next = active + direction;
-      while (cells[next] && expanded(next)) next += direction;
-      if (!gesture || gesture.direction !== direction || !cells[next]) {
+      const available = travelAvailable(direction), step = stepTarget(direction, now);
+      if (step >= 0 && available <= layoutTolerance) {
+        // A hard stop: the board cannot carry the reader any closer to this
+        // open neighbour, so forty more pixels step to it.
+        if (gesture.next !== step) gesture.credit = 0;
+        gesture.next = step;
+        if (openingDistance - gesture.credit <= amount + layoutTolerance) stepTo(step, now);
+        else gesture.credit += amount;
+        break;
+      }
+      let travelLimit = Math.min(amount, available);
+      // Only the category next to the current one opens. One that has opened
+      // ahead becomes current where the reading line reaches it, so a long
+      // input stops there first and reads on from the new category.
+      const next = active + direction;
+      if (!gesture || gesture.direction !== direction || pausing(now) || !cells[next] || expanded(next)) {
+        if (cells[next] && expanded(next)) {
+          const reach = lineReach(next, direction);
+          if (reach < travelLimit) {
+            travel(direction * Math.max(0, reach));
+            amount -= Math.max(0, reach);
+            readingLine();
+            if (active === next) continue;
+            travelLimit = Math.min(amount, travelAvailable(direction));
+          }
+        }
         travel(direction * travelLimit);
-        if (travelLimit < amount) remaining = 0;
+        if (travelLimit < amount) {
+          // Input past a hard stop is dropped, unless it can step on.
+          amount -= travelLimit;
+          if (stepTarget(direction, now) >= 0) continue;
+          remaining = 0;
+        }
         break;
       }
       const left = columnLeft(next) + flipOffset(next), right = left + board.tracks[next];
@@ -522,10 +647,17 @@
           && Math.min(needed, travelLimit) <= leave + layoutTolerance) {
         travel(direction * Math.min(needed, travelLimit));
         amount = Math.max(0, amount - needed);
+        // Whether the board stands at a hard stop as the neighbour opens.
+        const stopped = travelAvailable(direction) <= layoutTolerance;
         openInPlace(next, direction);
         opened.push(next);
         gesture.credit = 0;
         readingLine();
+        // At a hard stop the reading line can take the new category at once.
+        if (stopped && active === next) {
+          settleStep(now);
+          break;
+        }
       } else {
         travel(direction * travelLimit);
         if (travelLimit + layoutTolerance >= enter && travelLimit <= leave + layoutTolerance) {
@@ -547,7 +679,7 @@
     let delta = remaining * step;
     if (Math.abs(remaining - delta) < .5) delta = remaining;
     remaining -= delta;
-    if (delta) applyInput(delta, opened);
+    if (delta) applyInput(delta, opened, now);
     readingLine();
     foldBehind(now);
     advanceFolds(now);
@@ -560,7 +692,14 @@
       if (!reduce.matches) enterInPlace(index);
     }
     updateCoverInert();
-    if (!gesture || delta || previousActive !== active) paintRuler(gesture ? distanceRead - previousDistance : undefined);
+    if (stepped) {
+      // The ruler follows a step as it follows a click on that station.
+      stepped = false;
+      chapters.setCatalogRuler(active, scrollState(), { duration: 400, speed });
+    } else if (steppedAt === null && (!gesture || distanceRead !== previousDistance || previousActive !== active)) {
+      // Until the board moves, the station a step reached stays on the ruler.
+      paintRuler(gesture ? distanceRead - previousDistance : undefined);
+    }
     lastFrame = now;
     if (remaining || flips.size || folds.size) scrollFrame = requestAnimationFrame(renderScroll);
     else if (!entrances.size && panel.classList.contains('is-catalog-hand-over')) requestAnimationFrame(finishHandOver);
@@ -580,13 +719,15 @@
     cancelAnimationFrame(scrollFrame);
     scrollFrame = remaining = 0;
     gesture = null;
+    steppedAt = null;
+    stepped = false;
     for (const index of flips.keys()) cancelFlip(index);
     for (const index of entrances.keys()) cancelEntrance(index);
     cells.forEach((_, i) => cancelGlide(i));
     if (folds.size) {
       for (const [index, fold] of folds) {
         endFold(index);
-        resizeTrack(index, base.tracks[index], fold.fixRight);
+        resizeTrack(index, base.tracks[index], fold.anchor);
       }
       setBoard(board);
     }
@@ -966,6 +1107,7 @@
     const range = fit(index);
     startReading(index);
     distanceRead += fraction * range.limit;
+    lineAt = distanceRead;
     setBoard(layout(range.tracks, range.start - fraction * range.limit));
     fitRowHeight(index);
     markClipped(index);
