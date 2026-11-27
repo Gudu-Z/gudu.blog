@@ -1225,14 +1225,16 @@
     element.textContent = value;
   }
 
-  function finishMarkerGlide() {
+  // Lands a running glide at its target, or (land = false) leaves the marker
+  // where the glide has carried it.
+  function finishMarkerGlide(land = true) {
     if (!markerGlide) return;
     const { animation, to } = markerGlide;
     markerGlide = null;
     cancelAnimationFrame(glideFrame);
     animation.onfinish = null;
     animation.cancel();
-    placeMarker(to);
+    if (land) placeMarker(to);
   }
 
   function finishCatalogRuler() {
@@ -1282,10 +1284,14 @@
     }
     const stationWidth = progressTrackWidth / chapters.length;
     let offset = coordinate * stationWidth;
-    if (catalog && travel !== undefined && cursorOffset !== null && stationWidth > 0) {
+    // Scroll during a glide, as right after a catalog step, moves the glide's
+    // target; the marker keeps gliding instead of stopping short of it.
+    const retarget = catalog && !duration && travel !== undefined && markerGlide !== null;
+    const from = retarget ? markerGlide.to : cursorOffset;
+    if (catalog && travel !== undefined && from !== null && stationWidth > 0) {
       // A barely overflowing row can cover its whole reading range in a few
       // pixels. During scroll, let the marker use only this frame's travel.
-      offset = clamp(offset, cursorOffset + Math.min(0, travel), cursorOffset + Math.max(0, travel));
+      offset = clamp(offset, from + Math.min(0, travel), from + Math.max(0, travel));
       coordinate = offset / stationWidth;
     }
     const percent = (catalog ? offset / Math.max(1, progressTrackWidth) : selected / (chapters.length - 1)) * 100;
@@ -1299,25 +1305,30 @@
     const label = `${stations[selected].name}，${Math.round(Number(sliderValue))}%`;
     if (progressMarker?.getAttribute('aria-valuetext') !== label) progressMarker?.setAttribute('aria-valuetext', label);
     if (markerGlide?.to === offset) return;
-    finishMarkerGlide();
+    const glide = animate && duration && progressMarker?.animate;
+    if (retarget) markerGlide.to = offset;
+    // A new glide sets out from wherever the running one has carried the
+    // marker, as when the catalog steps faster than the marker glides.
+    else finishMarkerGlide(!glide);
     if (catalogHeld && offset !== cursorOffset && !duration) {
       lastIdleActivity = performance.now();
       clearIdle();
       updateProgressFeedback(offset, true, false, currentIndex, currentIndex);
       scheduleIdle(renderedScroll);
     }
-    if (!animate || !duration || !progressMarker?.animate || cursorOffset === offset) { placeMarker(offset); return; }
-    const from = cursorOffset;
+    if (retarget) return;
+    if (!glide || cursorOffset === offset) { placeMarker(offset); return; }
+    const start = cursorOffset;
     // The marker changes projection at each hinge. Sample the same timeline for its fold and lens.
     const animation = progressMarker.animate([], { duration: duration * speed, delay: delay * speed, fill: 'both',
       easing: 'cubic-bezier(0.65, 0, 0.35, 1)' });
-    markerGlide = { animation, to: offset };
+    const current = markerGlide = { animation, to: offset };
     const paint = () => {
       const progress = animation.effect.getComputedTiming().progress ?? 0;
-      placeMarker(from + (offset - from) * progress);
+      placeMarker(start + (current.to - start) * progress);
       glideFrame = requestAnimationFrame(paint);
     };
-    animation.onfinish = finishMarkerGlide;
+    animation.onfinish = () => finishMarkerGlide();
     paint();
   }
 

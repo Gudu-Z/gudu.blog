@@ -56,7 +56,10 @@
   // The reading distance at the reading line's last check, and the way the
   // board last moved (1 forward, -1 back, 0 not since the reading began).
   let lineAt = 0, lastMoved = 0;
-  const openingDistance = 40, stepPause = 450;
+  // The reading distance where the reader last stood on a category without
+  // travel: where reading began, or where a step landed (see settleStep).
+  let anchoredAt = 0;
+  const openingDistance = 40;
   // CSS grid rounds edges independently to 1/64px during layout.
   const layoutTolerance = 1 / 32;
   const flips = new Map();
@@ -230,7 +233,7 @@
       }
       previous = next;
     }
-    distanceRead = lineAt = landmarks[index].start;
+    distanceRead = lineAt = anchoredAt = landmarks[index].start;
     lastMoved = 0;
   }
 
@@ -304,8 +307,6 @@
     return left >= base.frameLeft - layoutTolerance && left + board.tracks[i] <= base.frameRight + layoutTolerance;
   }
 
-  const pausing = now => now < gesture?.pausedUntil;
-
   // How far the board must still travel for the reading line to stand just
   // inside column i.
   function lineReach(i, direction) {
@@ -314,28 +315,43 @@
   }
 
   // The open neighbour this gesture may step to, or -1.
-  function stepTarget(direction, now) {
+  function stepTarget(direction) {
     const step = active + direction;
-    return gesture?.direction === direction && !pausing(now) && cells[step] && expanded(step) && inFrame(step) ? step : -1;
+    return gesture?.direction === direction && cells[step] && expanded(step) && inFrame(step) ? step : -1;
   }
 
   // The reading line cannot reach a short category at the end of the board,
   // nor any category of a board that fits its frame. There the reader steps
   // instead: forty pixels past the hard stop make the open neighbour current.
-  function stepTo(i, now) {
+  function stepTo(i) {
     setCurrent(i);
-    settleStep(now);
+    settleStep();
   }
 
   // The reader has moved to another category while the board stood still,
   // by a step or because the reading line took a category that opened at the
   // stop. The ruler follows; the centre leaves the new category current until
-  // the board moves; the gesture drops the rest of its input and pauses while
-  // the old category folds, so one push moves one category.
-  function settleStep(now) {
+  // the board moves; the gesture drops the rest of its input, so one push
+  // moves one category. The next push steps on at once, without waiting for
+  // the old category to fold.
+  //
+  // When every category fits the frame, the reading distance only places
+  // the ruler between categories. A reader there who has hardly travelled
+  // since standing on the last category has a distance that never came
+  // along, so it moves to the new category's landmark: the ruler and any
+  // travel after it read on from there rather than from the category left
+  // behind. Elsewhere the distance stays as read: a long category's reading
+  // range must keep lining up with the board, and travel that already
+  // brought the reader most of the way, as to a hard stop at the end of the
+  // board, keeps reading back in step.
+  function settleStep() {
+    const landing = landmarks[active].start;
+    if (landmarks.every(({ limit }) => !limit)
+        && Math.abs(distanceRead - anchoredAt) <= Math.abs(landing - distanceRead)) {
+      distanceRead = lineAt = anchoredAt = landing;
+    }
     steppedAt = distanceRead;
     stepped = true;
-    gesture.pausedUntil = now + stepPause * speed;
     gesture.credit = 0;
     remaining = 0;
   }
@@ -596,17 +612,17 @@
     distanceRead += distance;
   }
 
-  function applyInput(delta, opened, now) {
+  function applyInput(delta, opened) {
     const direction = Math.sign(delta);
     let amount = Math.abs(delta);
     while (amount > 0) {
-      const available = travelAvailable(direction), step = stepTarget(direction, now);
+      const available = travelAvailable(direction), step = stepTarget(direction);
       if (step >= 0 && available <= layoutTolerance) {
         // A hard stop: the board cannot carry the reader any closer to this
         // open neighbour, so forty more pixels step to it.
         if (gesture.next !== step) gesture.credit = 0;
         gesture.next = step;
-        if (openingDistance - gesture.credit <= amount + layoutTolerance) stepTo(step, now);
+        if (openingDistance - gesture.credit <= amount + layoutTolerance) stepTo(step);
         else gesture.credit += amount;
         break;
       }
@@ -615,7 +631,7 @@
       // ahead becomes current where the reading line reaches it, so a long
       // input stops there first and reads on from the new category.
       const next = active + direction;
-      if (!gesture || gesture.direction !== direction || pausing(now) || !cells[next] || expanded(next)) {
+      if (!gesture || gesture.direction !== direction || !cells[next] || expanded(next)) {
         if (cells[next] && expanded(next)) {
           const reach = lineReach(next, direction);
           if (reach < travelLimit) {
@@ -630,7 +646,7 @@
         if (travelLimit < amount) {
           // Input past a hard stop is dropped, unless it can step on.
           amount -= travelLimit;
-          if (stepTarget(direction, now) >= 0) continue;
+          if (stepTarget(direction) >= 0) continue;
           remaining = 0;
         }
         break;
@@ -655,7 +671,7 @@
         readingLine();
         // At a hard stop the reading line can take the new category at once.
         if (stopped && active === next) {
-          settleStep(now);
+          settleStep();
           break;
         }
       } else {
@@ -679,7 +695,7 @@
     let delta = remaining * step;
     if (Math.abs(remaining - delta) < .5) delta = remaining;
     remaining -= delta;
-    if (delta) applyInput(delta, opened, now);
+    if (delta) applyInput(delta, opened);
     readingLine();
     foldBehind(now);
     advanceFolds(now);

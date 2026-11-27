@@ -1685,8 +1685,10 @@ const catalogNow = () => `(() => {
   const station = document.querySelector('.chapter-progress-links a[aria-current]');
   return { open: columns.map(c => c.classList.contains('is-catalog-open')), hash: location.hash,
     title: document.title.split(' · ')[0], station: station?.hash, centre: (brand.left + tools.right) / 2,
-    lefts: columns.map(c => c.getBoundingClientRect().left), board: [panel.left, panel.right],
-    marker: (${MARKER}).x, segment: (r => [r.left, r.right])(document.querySelector('.chapter-progress-scales > span:nth-child(4)').getBoundingClientRect()) };
+    lefts: columns.map(c => c.getBoundingClientRect().left), board: [panel.left, panel.right], marker: (${MARKER}).x,
+    segments: [...document.querySelectorAll('.chapter-progress-scales > span')].slice(0, 4).map(span => (r => [r.left, r.right])(span.getBoundingClientRect())),
+    // The station coordinate the ruler aims at; a step aims at the middle of its station.
+    target: Number(document.querySelector('.chapter-progress').style.getPropertyValue('--chapter-position')) + 0.5 };
 })()`;
 
 // The reading line cannot reach a short last category. At the hard stop,
@@ -1709,16 +1711,17 @@ test('pushing past the end of the board steps to a short last category', { skip 
     assert.ok(view.lefts[3] > view.centre, `the reading line never reached 其他 (${view.lefts[3] - view.centre}px short), so the reader stepped`);
     assert.equal(view.title, '其他');
     assert.equal(view.station, '#catalog-other', 'the ruler lights the last station');
-    assert.ok(view.marker > view.segment[0] && view.marker < view.segment[1], `the marker ${view.marker} sits in [${view.segment}]`);
+    assert.ok(view.marker > view.segments[3][0] && view.marker < view.segments[3][1], `the marker ${view.marker} sits in [${view.segments[3]}]`);
     assert.deepEqual(view.open, [false, false, false, true], 'only the last category stays open');
     assert.ok(view.board[0] <= dock.left + 1 && view.board[1] >= dock.right - 1, `the board [${view.board}] covers the dock`);
   } finally { await close(page); }
 });
 
 // A board that fits its frame never moves, so its reading line never moves
-// either. Each push steps one category; the last one folds, and the board
-// slides only as far as it must to keep covering the dock.
-test('on a board that fits its frame each push steps one category and folds the last', { skip }, async () => {
+// either. Each push steps one category at once, with no pause after the
+// last; the category left folds, and the board slides only as far as it must
+// to keep covering the dock. The ruler's marker comes along.
+test('on a board that fits its frame each push steps one category at once and folds the last', { skip }, async () => {
   const page = await open('/#series', { ...desktop, reduced: true, beforeScripts: withArticles(1, 1)
     + withArticles(1, 1, 'daydreams') + withArticles(1, 1, 'collected') + withArticles(1, 1, 'other') });
   try {
@@ -1729,20 +1732,84 @@ test('on a board that fits its frame each push steps one category and folds the 
     assert.ok(start.columns[0].left >= start.frame[0] && start.columns.at(-1).right <= start.frame[1], 'the fixture fits its frame');
     for (const [dir, sequence] of [[1, ['daydreams', 'collected', 'other']], [-1, ['collected', 'daydreams', 'minecraft']]]) {
       for (const slug of sequence) {
-        let view = await evaluate(page, catalogNow());
-        const from = view.hash;
-        for (let i = 0; i < 6 && view.hash === from; i++) {
-          await evaluate(page, wheelEvent(dir * 100));
-          view = await evaluate(page, catalogNow());
-          const open = view.open.flatMap((isOpen, j) => isOpen ? [j] : []);
-          assert.equal(open.at(-1) - open[0] + 1, open.length, `open categories stand side by side: ${JSON.stringify(view)}`);
-          assert.ok(view.board[0] <= dock.left + 1 && view.board[1] >= dock.right - 1, `the board covers the dock: ${JSON.stringify(view)}`);
-          await sleep(500); // A push pauses while the old category folds.
-        }
-        assert.equal(view.hash, '#catalog-' + slug, `one push moves one category: ${JSON.stringify(view)}`);
-        assert.equal(view.station, view.hash, 'the ruler lights the current station');
+        // The pushes follow one another within a few milliseconds.
+        await evaluate(page, wheelEvent(dir * 100));
+        const view = await evaluate(page, catalogNow());
+        assert.equal(view.hash, '#catalog-' + slug, `each push moves one category: ${JSON.stringify(view)}`);
         assert.deepEqual(view.open, slugs.map(s => s === slug), `only ${slug} is open: ${JSON.stringify(view)}`);
+        assert.ok(view.board[0] <= dock.left + 1 && view.board[1] >= dock.right - 1, `the board covers the dock: ${JSON.stringify(view)}`);
+        assert.equal(view.station, view.hash, 'the ruler lights the current station');
+        const segment = view.segments[slugs.indexOf(slug)];
+        assert.ok(view.marker > segment[0] && view.marker < segment[1], `the marker ${view.marker} sits in [${segment}]`);
       }
+    }
+  } finally { await close(page); }
+});
+
+// The builder's markup for a category without articles (scripts/build-blog.mjs).
+function withoutArticles(slug) {
+  return `{
+    document.querySelector('[data-category-slug="${slug}"] .catalog-row').innerHTML = '<p class="catalog-empty">'
+      + '<span class="catalog-empty-count" aria-hidden="true">00</span><span class="catalog-empty-code" aria-hidden="true">NO ENTRIES</span>'
+      + '<span class="catalog-empty-text">这个分类还没有文章<br />写好的文章会归到这里。</span></p>';
+  }`;
+}
+
+// One short category and three empty ones, as the live catalog has, on a
+// board that fits a wide frame.
+const liveCatalog = { width: 2113, height: 1257, mobile: false, reduced: true, beforeScripts: withArticles(1, 1)
+  + withoutArticles('daydreams') + withoutArticles('collected') + withoutArticles('other') };
+
+// After some steps the board can still travel a little, as when the category
+// left waits to fold; the ruler must read that travel from the category the
+// reader stepped to, not from the one the board never left.
+test('quick pushes on a board that fits keep the ruler on the current category', { skip }, async () => {
+  const page = await open('/#series', liveCatalog);
+  try {
+    await clickLink(page, cover('minecraft'));
+    await settledCatalog(page, 'minecraft');
+    let view, read = 0;
+    for (const dir of [1, -1]) {
+      const end = '#catalog-' + (dir > 0 ? 'other' : 'minecraft');
+      // Small pushes pass through every state on the way.
+      for (let i = 0; i < 300 && view?.hash !== end; i++) {
+        await evaluate(page, wheelEvent(dir * 10));
+        view = await evaluate(page, catalogNow());
+        const current = slugs.indexOf(view.hash.replace('#catalog-', ''));
+        // Off the middle of its station, the ruler has read travel.
+        if (Math.abs(view.target - (current + 0.5)) > 0.01) read++;
+        assert.equal(view.station, view.hash, `the ruler lights the current station: ${JSON.stringify(view)}`);
+        assert.ok(Math.floor(view.target) === current, `the ruler aims inside ${view.hash}'s station: ${JSON.stringify(view)}`);
+        const segment = view.segments[current];
+        assert.ok(view.marker > segment[0] && view.marker < segment[1],
+          `the marker ${view.marker} sits in ${view.hash}'s segment [${segment}]: ${JSON.stringify(view)}`);
+      }
+      assert.equal(view.hash, end, 'the pushes reach the end of the board');
+    }
+    assert.ok(read > 0, 'the ruler read travel after a step at least once');
+  } finally { await close(page); }
+});
+
+// Home and End seek within the category a step reached. Seeking from the
+// reading distance of the category left behind travelled the board and put
+// the ruler back on that category.
+test('home and end after a step on a board that fits stay on the current category', { skip }, async () => {
+  const page = await open('/#series', liveCatalog);
+  try {
+    await clickLink(page, cover('minecraft'));
+    await settledCatalog(page, 'minecraft');
+    await evaluate(page, wheelEvent(100));
+    let view = await evaluate(page, catalogNow());
+    assert.equal(view.hash, '#catalog-daydreams', `the push steps to 白日梦话: ${JSON.stringify(view)}`);
+    assert.ok(view.open[0], 'Minecraft waits to fold, so the board can still travel');
+    for (const key of ['End', 'Home']) {
+      const before = view;
+      await press(page, key);
+      view = await evaluate(page, catalogNow());
+      assert.equal(view.hash, '#catalog-daydreams', `${key} keeps 白日梦话 current: ${JSON.stringify(view)}`);
+      near(view.board[0], before.board[0], 1, `${key} leaves the board where it was`);
+      const segment = view.segments[1];
+      assert.ok(view.marker > segment[0] && view.marker < segment[1], `after ${key} the marker ${view.marker} sits in [${segment}]: ${JSON.stringify(view)}`);
     }
   } finally { await close(page); }
 });
