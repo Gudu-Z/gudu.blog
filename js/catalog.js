@@ -474,9 +474,11 @@
 
   // Where a fold may hold the board (see resizeTrack), or null to wait.
   // Folding toward the reading line keeps the edge that faces it, as long as
-  // the folded board still covers the dock at both ends. A board that cannot
-  // move on to make room slides instead, just far enough to cover it.
-  function foldAnchor(i, toward, stuck) {
+  // the folded board still covers the dock at both ends. Otherwise the fold
+  // waits while the reader can still travel on far enough to make that room.
+  // A board that cannot, as one that fits its frame or can move only a few
+  // pixels more, folds at once and slides just far enough to cover the dock.
+  function foldAnchor(i, toward) {
     const b = settledBoard(), loss = b.tracks[i] - base.tracks[i], want = toward ? 1 : 0;
     if (loss <= layoutTolerance) return want;
     // The folded board starts at b.shift + anchor × loss, at or left of the
@@ -486,8 +488,11 @@
     const high = -b.shift / loss, low = (base.w - b.shift - b.width + loss) / loss;
     const slack = layoutTolerance / loss;
     if (want >= low - slack && want <= high + slack) return want;
+    // The travel toward the reading line that would give the fold its room.
+    const needed = (toward ? want - high : low - want) * loss;
+    if (travelAvailable(toward ? 1 : -1) >= needed - layoutTolerance) return null;
     const from = Math.max(0, low), to = Math.min(1, high);
-    return stuck && from <= to + slack ? clamp(want, from, Math.max(from, to)) : null;
+    return from <= to + slack ? clamp(want, from, Math.max(from, to)) : null;
   }
 
   function startFold(i, anchor, now) {
@@ -549,9 +554,9 @@
           behind.delete(i);
           foldInstantly(i, before ? 1 : 0);
         } else if (behind.has(i)) {
-          // Waiting only helps while the board can still carry the reader on.
+          // Waiting only helps while travel can still make room.
           const toward = i < active;
-          const anchor = foldAnchor(i, toward, travelAvailable(toward ? 1 : -1) <= layoutTolerance);
+          const anchor = foldAnchor(i, toward);
           if (anchor !== null) {
             behind.delete(i);
             if (reduce.matches) foldInstantly(i, anchor);
