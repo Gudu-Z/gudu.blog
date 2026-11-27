@@ -846,6 +846,7 @@ const ENTRY = `(() => {
     centre,
     clipped: card.classList.contains('is-clipped'),
     columns: ['.catalog-card-title', '.catalog-card-summary'].map(selector => columns(card.querySelector(selector))),
+    titleColumns: (el => el.offsetWidth / parseFloat(getComputedStyle(el).lineHeight))(card.querySelector('.catalog-card-title')),
     shown: ['.catalog-card-index', '.catalog-card-summary', '.catalog-card-meta'].map(selector => getComputedStyle(card.querySelector(selector)).opacity),
     title: within(rect(card.querySelector('.catalog-card-title')), box),
     group: within(rect(col.querySelector('.catalog-group')), rect(col.querySelector('.category-display'))),
@@ -888,7 +889,10 @@ test('a short desktop keeps a long title in one column and lets it run on when p
     const pointed = await evaluate(page, ENTRY);
     assert.equal(pointed.hover, true);
     assert.ok(pointed.columns[0] >= 2, `the clipped title runs on into the right column (${pointed.columns[0]} columns)`);
-    assert.deepEqual(pointed.shown, ['0', '0', '0'], 'the numeral, summary and date step aside for it');
+    assert.ok(Math.abs(pointed.titleColumns - Math.round(pointed.titleColumns)) < .05,
+      `the unfolded title shows whole columns, none cut through (${pointed.titleColumns})`);
+    assert.deepEqual(pointed.shown.slice(1), ['0', '0'], 'the summary and date step aside for it');
+    assert.equal(pointed.shown[0], rest.shown[0], 'the numeral stays behind it');
     assert.ok(pointed.title.every(gap => gap >= -1), `the unfolded title stays inside its frame (${pointed.title})`);
 
     await mouse(page, 'mouseMoved', 1, 1);
@@ -896,6 +900,50 @@ test('a short desktop keeps a long title in one column and lets it run on when p
     const left = await evaluate(page, ENTRY);
     assert.deepEqual([left.columns, left.shown[1]], [[1, 2], '1'], 'leaving the entry folds the title back');
   } finally { await close(page); }
+});
+
+// The date runs in its own column beside the title, starting a little above
+// it, its last digit level with the summary's first character, a fading
+// hairline below. The numeral stands large and faint under the title, which
+// stops above it. An empty category mirrors this inside its own frame: 00 in
+// the numeral's place, NO ENTRIES in the date's.
+test('a desktop entry sets its date beside the title and its numeral large under it', { skip }, async () => {
+  const read = slug => `(() => {
+    const card = document.querySelector('[data-category-slug="${slug}"] :is(.catalog-card, .catalog-empty)');
+    const rect = node => node.getBoundingClientRect().toJSON();
+    const glyph = (node, i) => { const range = document.createRange(); range.setStart(node.firstChild, i); range.setEnd(node.firstChild, i + 1); return range.getBoundingClientRect(); };
+    const mid = r => (r.top + r.bottom) / 2;
+    const title = card.querySelector('.catalog-card-title, .catalog-empty-text');
+    const date = card.querySelector('.catalog-card-meta time, .catalog-empty-code');
+    const summary = card.querySelector('.catalog-card-summary');
+    const numeral = card.querySelector('.catalog-card-index, .catalog-empty-count');
+    const rail = getComputedStyle(date.closest('.catalog-card-meta, .catalog-empty-code'), '::after');
+    return { card: rect(card), title: rect(title), date: rect(date), numeral: rect(numeral), summary: summary && rect(summary),
+      above: glyph(title, 0).top - glyph(date, 0).top,
+      level: summary && mid(glyph(date, date.textContent.length - 1)) - mid(glyph(summary, 0)),
+      size: parseFloat(getComputedStyle(numeral).fontSize) / parseFloat(getComputedStyle(card.querySelector('.catalog-card-title') || title).fontSize),
+      opacity: getComputedStyle(numeral).opacity, rail: [rail.content, parseFloat(rail.height) > 0, rail.backgroundImage.startsWith('linear-gradient')] };
+  })()`;
+  for (const [slug, scripts] of [['minecraft', withArticles(1, 2)], ['daydreams', withoutArticles('daydreams')]]) {
+    const page = await open('/#catalog-' + slug, { ...desktop, reduced: true, beforeScripts: scripts });
+    try {
+      await settledCatalog(page, slug);
+      const entry = await evaluate(page, read(slug));
+      const json = JSON.stringify(entry);
+      assert.ok(entry.title.right <= entry.date.left + 1, `the date stands right of the title: ${json}`);
+      if (entry.summary) {
+        assert.ok(entry.date.right <= entry.summary.left + 1, `the summary stands right of the date: ${json}`);
+        assert.ok(entry.above > 0, `the date starts above the title's first character: ${json}`);
+        assert.ok(Math.abs(entry.level) <= 1, `the date's last digit sits level with the summary's first character: ${json}`);
+      }
+      assert.deepEqual(entry.rail, ['""', true, true], `a fading hairline runs on below the date: ${json}`);
+      assert.ok(entry.size >= 3, `the numeral stands at least three title characters tall: ${json}`);
+      assert.equal(entry.opacity, '0.1', 'the numeral is faint');
+      assert.ok(entry.numeral.top >= entry.title.bottom - 1, `the numeral stands under the title: ${json}`);
+      assert.ok(entry.numeral.left >= entry.card.left && entry.numeral.right <= entry.card.right && entry.numeral.bottom <= entry.card.bottom,
+        `the numeral stays inside the entry's frame: ${json}`);
+    } finally { await close(page); }
+  }
 });
 
 test('the back control, Escape and browser Back restore the home panel', { skip }, async () => {
@@ -1720,35 +1768,6 @@ test('pushing past the end of the board steps to a short last category', { skip 
   } finally { await close(page); }
 });
 
-// A board that fits its frame never moves, so its reading line never moves
-// either. Each push steps one category at once, with no pause after the
-// last; the category left folds, and the board slides only as far as it must
-// to keep covering the dock. The ruler's marker comes along.
-test('on a board that fits its frame each push steps one category at once and folds the last', { skip }, async () => {
-  const page = await open('/#series', { ...desktop, reduced: true, beforeScripts: withArticles(1, 1)
-    + withArticles(1, 1, 'daydreams') + withArticles(1, 1, 'collected') + withArticles(1, 1, 'other') });
-  try {
-    const dock = await flatDock(page);
-    await clickLink(page, cover('minecraft'));
-    await settledCatalog(page, 'minecraft');
-    const start = await readBoard(page);
-    assert.ok(start.columns[0].left >= start.frame[0] && start.columns.at(-1).right <= start.frame[1], 'the fixture fits its frame');
-    for (const [dir, sequence] of [[1, ['daydreams', 'collected', 'other']], [-1, ['collected', 'daydreams', 'minecraft']]]) {
-      for (const slug of sequence) {
-        // The pushes follow one another within a few milliseconds.
-        await evaluate(page, wheelEvent(dir * 100));
-        const view = await evaluate(page, catalogNow());
-        assert.equal(view.hash, '#catalog-' + slug, `each push moves one category: ${JSON.stringify(view)}`);
-        assert.deepEqual(view.open, slugs.map(s => s === slug), `only ${slug} is open: ${JSON.stringify(view)}`);
-        assert.ok(view.board[0] <= dock.left + 1 && view.board[1] >= dock.right - 1, `the board covers the dock: ${JSON.stringify(view)}`);
-        assert.equal(view.station, view.hash, 'the ruler lights the current station');
-        const segment = view.segments[slugs.indexOf(slug)];
-        assert.ok(view.marker > segment[0] && view.marker < segment[1], `the marker ${view.marker} sits in [${segment}]`);
-      }
-    }
-  } finally { await close(page); }
-});
-
 // The builder's markup for a category without articles (scripts/build-blog.mjs).
 function withoutArticles(slug) {
   return `{
@@ -1816,11 +1835,13 @@ test('home and end after steps on a board that fits stay on the current category
   } finally { await close(page); }
 });
 
-// One push on the live catalog steps on, and the category left folds at
-// once. The board could still travel a few pixels, too few to make room for
-// a fold toward the reader, so the board slides instead of waiting for the
-// next push. Going back, Minecraft opens away from the reading line, which
-// can never reach it; the push that opens it steps to it, as going forward.
+// The live catalog fits its frame, so its reading line never reaches a
+// neighbour: each push steps one category at once, with no pause after the
+// last, and the category left folds at once. The board could still travel a
+// few pixels, too few to make room for a fold toward the reader, so it
+// slides instead of waiting for the next push. Going back, Minecraft opens
+// away from the reading line, which can never reach it; the push that opens
+// it steps to it, as going forward. The ruler's marker comes along.
 test('each push on the live catalog moves one category both ways and folds the one left at once', { skip }, async () => {
   const page = await open('/#series', liveCatalog);
   try {
@@ -1828,11 +1849,15 @@ test('each push on the live catalog moves one category both ways and folds the o
     await clickLink(page, cover('minecraft'));
     await settledCatalog(page, 'minecraft');
     for (const [dir, slug] of [[1, 'daydreams'], [1, 'collected'], [1, 'other'], [-1, 'collected'], [-1, 'daydreams'], [-1, 'minecraft']]) {
+      // The pushes follow one another within a few milliseconds.
       await evaluate(page, wheelEvent(dir * 100));
       const view = await evaluate(page, catalogNow());
       assert.equal(view.hash, '#catalog-' + slug, `the push steps to ${slug}: ${JSON.stringify(view)}`);
       assert.deepEqual(view.open, slugs.map(s => s === slug), `only ${slug} is open: ${JSON.stringify(view)}`);
       assert.ok(view.board[0] <= dock.left + 1 && view.board[1] >= dock.right - 1, `the board covers the dock: ${JSON.stringify(view)}`);
+      assert.equal(view.station, view.hash, 'the ruler lights the current station');
+      const segment = view.segments[slugs.indexOf(slug)];
+      assert.ok(view.marker > segment[0] && view.marker < segment[1], `the marker ${view.marker} sits in [${segment}]`);
     }
   } finally { await close(page); }
 });

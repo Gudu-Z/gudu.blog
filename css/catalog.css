@@ -98,20 +98,26 @@ html.is-catalog .site-header:not(:has(.header-search.is-expanded)) .catalog-back
 /* Desktop: each article stands as a vertical entry in an open frame: a top
    line, a long left line and a right line that stops two thirds of the way
    down. One character grid sets the entry. A title character is exactly two
-   summary characters tall; the numeral sits level with the title's first
-   character and the summary starts on its third. Titles keep one size and
-   one column; a title cut short unfolds into the summary's place on hover or
-   focus. The row's start padding holds the open category's spine. */
+   summary characters tall, and the summary starts on the title's third. The
+   date runs in its own column beside the title, its last digit level with
+   the summary's first character, and a hairline runs on below it, fading.
+   The numeral stands large and faint at the foot, under the title, which
+   stops above it. Titles keep one size and one column; a title cut short
+   unfolds into the summary's place on hover or focus. The row's start
+   padding holds the open category's spine. */
 html:not(.has-vertical-chapters) .catalog-row {
   --u: var(--category-unit);
   --sf: max(12px, calc(12 * var(--u)));
   --tf: calc(2 * var(--sf));
+  --df: max(9px, calc(10.59 * var(--u)));
+  --num: calc(3.1 * var(--tf));
   --cell: calc(1.1 * var(--tf));
   --row-pad: calc(13 * var(--u));
   --card-h: calc(100cqh - 2 * var(--row-pad));
   --pad-top: calc(30 * var(--u));
   --pad-bottom: calc(16 * var(--u));
-  --entry-w: calc(46 * var(--u) + 1.9 * var(--tf) + 3.8 * var(--sf));
+  /* Title, gap, date, gap and two summary columns. */
+  --entry-w: calc(46 * var(--u) + 2.12 * var(--tf) + var(--df) + 3.8 * var(--sf));
   --line: light-dark(rgb(24 28 32 / 46%), rgb(226 230 234 / 44%));
   display: grid;
   grid-auto-flow: column;
@@ -144,10 +150,13 @@ html:not(.has-vertical-chapters) .catalog-group-count { color: var(--chapter-sig
 html:not(.has-vertical-chapters) .catalog-cards { display: flex; gap: calc(26 * var(--u)); height: var(--card-h); }
 html:not(.has-vertical-chapters) .catalog-cards > li { display: flex; height: var(--card-h); }
 html:not(.has-vertical-chapters) :is(.catalog-card, .catalog-empty) {
+  position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  column-gap: calc(.78 * var(--tf));
+  grid-template-columns: auto auto minmax(0, 1fr);
+  grid-template-rows: var(--cell) var(--cell) minmax(0, 1fr);
+  column-gap: calc(.5 * var(--tf));
   align-items: start;
+  isolation: isolate;
   width: var(--entry-w);
   height: var(--card-h);
   padding: var(--pad-top) calc(24 * var(--u)) var(--pad-bottom) calc(22 * var(--u));
@@ -155,10 +164,7 @@ html:not(.has-vertical-chapters) :is(.catalog-card, .catalog-empty) {
   border-left: 1px solid var(--line);
   transition: border-color 220ms ease;
 }
-html:not(.has-vertical-chapters) .catalog-card {
-  grid-template-rows: var(--cell) var(--cell) minmax(0, 1fr) auto;
-  grid-template-areas: "title index" "title ." "title summary" "title date";
-}
+html:not(.has-vertical-chapters) .catalog-card { grid-template-areas: "title date ." "title date ." "title . summary"; }
 /* The left line's orange head marks the first title character; on hover it
    runs the whole line. */
 html:not(.has-vertical-chapters) .catalog-card::before {
@@ -183,19 +189,24 @@ html:not(.has-vertical-chapters) :is(.catalog-card, .catalog-empty)::after {
 }
 html:not(.has-vertical-chapters) .catalog-card:is(:hover, :focus-visible) { --line: light-dark(rgb(24 28 32 / 80%), rgb(240 243 246 / 80%)); }
 html:not(.has-vertical-chapters) .catalog-card:is(:hover, :focus-visible)::before { height: calc(100% + 1px); }
+/* The numeral stands large and faint behind the foot of the entry, under the
+   title. */
 html:not(.has-vertical-chapters) :is(.catalog-card-index, .catalog-empty-count) {
-  justify-self: start;
-  margin-top: calc(.04 * var(--tf));
+  position: absolute;
+  z-index: -1;
+  bottom: calc(var(--pad-bottom) + 2 * var(--u));
+  left: calc(22 * var(--u) - .05em);
+  margin: 0;
   color: var(--chapter-text);
-  opacity: .3;
-  font: 300 calc(.92 * var(--tf))/1 var(--category-tech);
-  letter-spacing: .02em;
-  transition: opacity 200ms ease;
+  opacity: .1;
+  font: 200 var(--num)/.78 var(--category-tech);
+  letter-spacing: -.03em;
+  pointer-events: none;
 }
-html:not(.has-vertical-chapters) .catalog-card-index { grid-area: index; }
 html:not(.has-vertical-chapters) .catalog-card-title {
   grid-area: title;
-  height: calc(var(--card-h) - var(--pad-top) - var(--pad-bottom));
+  /* The title stops above the numeral. */
+  height: calc(var(--card-h) - var(--pad-top) - var(--pad-bottom) - .78 * var(--num) - 2 * var(--u) - .35 * var(--tf));
   overflow: hidden;
   font: 300 var(--tf)/1.12 var(--ui-sans);
   letter-spacing: .1em;
@@ -219,21 +230,36 @@ html:not(.has-vertical-chapters) .catalog-card-summary {
   overflow: hidden;
   transition: opacity 200ms ease;
 }
-/* The date stands at the foot of the right column. */
+/* The date stands in its own column beside the title. It ends on the line
+   where the summary starts, then drops by half the summary's first character
+   and half its own last one, so the two sit level. A hairline runs on below
+   it and fades. */
 html:not(.has-vertical-chapters) :is(.catalog-card-meta, .catalog-empty-code) {
+  --tracking: .12em;
+  position: relative;
   align-self: end;
   justify-self: start;
-  margin-top: calc(.5 * var(--tf));
-  line-height: 1;
-  letter-spacing: .12em;
+  margin-bottom: calc(-.5 * var(--sf) - .5ch - var(--tracking));
+  font: var(--df)/1 var(--chapter-mono);
+  letter-spacing: var(--tracking);
   white-space: nowrap;
   writing-mode: vertical-lr;
 }
+html:not(.has-vertical-chapters) :is(.catalog-card-meta, .catalog-empty-code)::after {
+  content: "";
+  position: absolute;
+  top: calc(100% + .9em);
+  left: 50%;
+  width: 1px;
+  height: calc(.36 * var(--card-h));
+  background: linear-gradient(var(--line), transparent);
+}
 html:not(.has-vertical-chapters) .catalog-card-meta { grid-area: date; opacity: .85; transition: opacity 200ms ease; }
 html:not(.has-vertical-chapters) .catalog-card-reading { display: none; }
-/* A title cut short (js/catalog.js marks it) runs on into the right column. */
-html:not(.has-vertical-chapters) .catalog-card.is-clipped:is(:hover, :focus-visible) :is(.catalog-card-index, .catalog-card-summary, .catalog-card-meta) { opacity: 0; }
-html:not(.has-vertical-chapters) .catalog-card.is-clipped:is(:hover, :focus-visible) .catalog-card-summary { position: absolute; }
+/* A title cut short (js/catalog.js marks it) runs on into the summary's
+   place; the numeral stays behind it. */
+html:not(.has-vertical-chapters) .catalog-card.is-clipped:is(:hover, :focus-visible) :is(.catalog-card-summary, .catalog-card-meta) { opacity: 0; }
+html:not(.has-vertical-chapters) .catalog-card.is-clipped:is(:hover, :focus-visible) :is(.catalog-card-summary, .catalog-card-meta) { position: absolute; }
 html:not(.has-vertical-chapters) .catalog-card.is-clipped:is(:hover, :focus-visible) .catalog-card-title {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -241,20 +267,15 @@ html:not(.has-vertical-chapters) .catalog-card.is-clipped:is(:hover, :focus-visi
   white-space: normal;
 }
 /* An empty category is an entry left blank: dashed lines, 00 where the
-   numeral goes, the note where the title would be, NO ENTRIES at the foot. */
+   numeral goes, the note where the title would be, NO ENTRIES where the date
+   would be. */
 html:not(.has-vertical-chapters) .catalog-empty {
-  grid-template-rows: var(--cell) minmax(0, 1fr) auto;
-  grid-template-areas: "text count" "text ." "text code";
+  grid-template-areas: "text code ." "text code ." "text . .";
   border-style: dashed none none dashed;
 }
 html:not(.has-vertical-chapters) .catalog-empty::after { width: 0; background: none; border-right: 1px dashed var(--line); }
-html:not(.has-vertical-chapters) .catalog-empty-count { grid-area: count; }
 html:not(.has-vertical-chapters) .catalog-empty-text { grid-area: text; }
-html:not(.has-vertical-chapters) .catalog-empty-code {
-  grid-area: code;
-  font: max(9px, calc(10.59 * var(--u)))/1 var(--chapter-mono);
-  letter-spacing: .2em;
-}
+html:not(.has-vertical-chapters) .catalog-empty-code { --tracking: .2em; grid-area: code; }
 
 /* The open category keeps the spine every desktop column stands at its left
    (css/categories.css): its row starts after it, and the display takes the

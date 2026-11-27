@@ -668,6 +668,8 @@
       // input can complete the forty pixels without moving the board.
       if (enter <= travelLimit + layoutTolerance && needed <= amount + layoutTolerance
           && Math.min(needed, travelLimit) <= leave + layoutTolerance) {
+        // Whether the reader came by a step and has not travelled since.
+        const stepping = steppedAt !== null;
         travel(direction * Math.min(needed, travelLimit));
         amount = Math.max(0, amount - needed);
         // Whether the board stands at a hard stop as the neighbour opens.
@@ -677,14 +679,15 @@
         gesture.credit = 0;
         readingLine();
         // At a hard stop the reading line can take the new category at once.
-        // A short one, no wider than the frame, that leaves too little travel
-        // for the line ever to reach it, as one that opened away from the
-        // line, is stepped to by the same push, as one that opens under the
-        // line is taken.
-        const unreachable = active !== next && board.tracks[next] <= base.frameRight - base.frameLeft + layoutTolerance
-          && lineReach(next, direction) > travelAvailable(direction) + layoutTolerance;
-        if (unreachable) setCurrent(next);
-        if (unreachable || (stopped && active === next)) {
+        // A short one, no wider than the frame, is stepped to by the same
+        // push, as one that opens under the line is taken, when the line
+        // could never reach it, as one that opened away from it, or when the
+        // reader is stepping from category to category rather than reading
+        // across the board.
+        const stepOn = active !== next && board.tracks[next] <= base.frameRight - base.frameLeft + layoutTolerance
+          && (stepping || lineReach(next, direction) > travelAvailable(direction) + layoutTolerance);
+        if (stepOn) setCurrent(next);
+        if (stepOn || (stopped && active === next)) {
           settleStep();
           break;
         }
