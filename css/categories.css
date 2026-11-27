@@ -120,13 +120,13 @@
   /* The specimen steps down with this container's size; one em is ten category units. */
   container: category-display / size;
   font-size: calc(10 * var(--category-unit));
-  /* Corner brackets and a faint dot grid: a small holo screen. */
+  /* Corner brackets frame a small holo screen; its field stays plain (the dot grid
+     that once filled it was taken out at the owner's request). */
   background:
     linear-gradient(var(--category-display-tick) 0 0) left top / 9px 1px no-repeat, linear-gradient(var(--category-display-tick) 0 0) left top / 1px 9px no-repeat,
     linear-gradient(var(--category-display-tick) 0 0) right top / 9px 1px no-repeat, linear-gradient(var(--category-display-tick) 0 0) right top / 1px 9px no-repeat,
     linear-gradient(var(--category-display-tick) 0 0) left bottom / 9px 1px no-repeat, linear-gradient(var(--category-display-tick) 0 0) left bottom / 1px 9px no-repeat,
-    linear-gradient(var(--category-display-tick) 0 0) right bottom / 9px 1px no-repeat, linear-gradient(var(--category-display-tick) 0 0) right bottom / 1px 9px no-repeat,
-    radial-gradient(circle, light-dark(rgb(21 31 40 / 7%), rgb(200 214 226 / 7%)) .8px, transparent 1.2px) center / 13px 13px;
+    linear-gradient(var(--category-display-tick) 0 0) right bottom / 9px 1px no-repeat, linear-gradient(var(--category-display-tick) 0 0) right bottom / 1px 9px no-repeat;
   transition: --category-display-tick 300ms ease;
 }
 .category-column:has(> .category-cover:is(:hover, :focus-visible)) .category-display { --category-display-tick: light-dark(rgb(8 9 11 / 90%), rgb(240 243 246 / 90%)); }
@@ -350,6 +350,77 @@
   .category-panel { padding-block: calc(20 * var(--category-unit)); }
   .category-name { margin-top: calc(12 * var(--category-unit)); }
   .category-bottom { margin-top: calc(14 * var(--category-unit)); }
+}
+/* Desktop columns stand their name, description and count as a vertical
+   spine at the left, and an open catalog keeps it as it is (css/catalog.css):
+   the name's first character stands level with the open entries' first
+   characters, the description beside it in two columns, the count at the
+   foot. Phones keep them under the display. */
+html:not(.has-vertical-chapters) .category-column {
+  /* The spine's width: the name's column, two columns of description in its
+     own (clamped) size, and a gap before what follows. */
+  --category-spine-text: max(12px, calc(12 * var(--category-unit)));
+  --category-spine: calc(82 * var(--category-unit) + 3.8 * var(--category-spine-text));
+  container: category-column / size;
+  /* Queries measure the column in tens of category units; every text inside
+     sets its own size. */
+  font-size: calc(10 * var(--category-unit));
+}
+html:not(.has-vertical-chapters) .category-column :is(.category-name, .category-description, .category-bottom) {
+  position: absolute;
+  z-index: 1;
+  margin: 0;
+  writing-mode: vertical-lr;
+}
+/* The header strip, the display's top gap, and an open row's and entry's padding. */
+html:not(.has-vertical-chapters) .category-column :is(.category-name, .category-description) { top: calc(81 * var(--category-unit)); }
+html:not(.has-vertical-chapters) .category-column .category-name { left: calc(30 * var(--category-unit)); letter-spacing: .06em; }
+html:not(.has-vertical-chapters) .category-column .category-description {
+  left: calc(84 * var(--category-unit));
+  min-height: 0;
+  max-height: calc(150 * var(--category-unit));
+  font-size: var(--category-spine-text);
+  line-height: 1.9;
+  letter-spacing: .12em;
+}
+html:not(.has-vertical-chapters) .category-column .category-bottom {
+  top: auto;
+  bottom: calc(29 * var(--category-unit));
+  left: calc(30 * var(--category-unit));
+  padding: 0;
+  border: 0;
+}
+html:not(.has-vertical-chapters) .category-column .category-bottom::before,
+html:not(.has-vertical-chapters) .category-column .category-action { display: none; }
+/* The specimen stands in the room the spine leaves: centred between the
+   count and the display's right edge, at the same height above the display's
+   foot however tall the display grows. It never rises into the description,
+   which reaches at most 150 units down from 81: the floor allows for the
+   display's top gap, the specimen standing above its scene's centre, and its
+   hover pose. An open catalog centres it in the widened display
+   (js/catalog.js glides it). */
+html:not(.has-vertical-chapters) .category-column:not(.is-catalog-open) .category-scene {
+  left: calc(50% + 18 * var(--category-unit));
+  top: max(calc(100% - 140 * var(--category-unit)), calc(291 * var(--category-unit)));
+}
+/* A narrow column (its content under 180 units wide) leaves the specimen
+   little room between the count and the display's edge: a size smaller keeps
+   its hover pose clear of both. */
+@container category-column (width < 18em) {
+  html:not(.has-vertical-chapters) .category-column:not(.is-catalog-open) .category-scene { --category-art-size: .7; }
+}
+/* Under 385 units a full-size specimen no longer fits beneath the
+   description: a smaller one does, on the same floor rule. */
+@container category-column (height < 38.5em) {
+  html:not(.has-vertical-chapters) .category-column:not(.is-catalog-open) .category-scene {
+    --category-art-size: .6;
+    top: calc(248 * var(--category-unit));
+  }
+}
+/* Under 340 units the name steps down a size so it clears the count. */
+@container category-column (height < 34em) {
+  html:not(.has-vertical-chapters) .category-column .category-name { font-size: calc(26 * var(--category-unit)); }
+  html:not(.has-vertical-chapters) .category-column .category-latin { font-size: calc(28 * var(--category-unit)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .category-column, .category-column::after, .category-column *, .category-column ::before, .category-column ::after { transition: none !important; animation: none !important; }

@@ -934,7 +934,9 @@ test('an open category keeps its specimen open, centred and dimmed without group
   const page = await open('/#series', desktop);
   try {
     const rest = await evaluate(page, SPECIMEN('minecraft'));
-    assert.ok(Math.abs(rest.offset) <= 1 && rest.camera === '0.788' && rest.alpha === .55, `the resting specimen sits centred and closed (${JSON.stringify(rest)})`);
+    const restCollected = await evaluate(page, SPECIMEN('collected'));
+    assert.ok(rest.offset > 10 && rest.camera === '0.788' && rest.alpha === .55,
+      `the resting specimen stands right of the display's middle, clear of the spine, and closed (${JSON.stringify(rest)})`);
     for (const slug of ['minecraft', 'collected']) {
       await clickLink(page, cover(slug));
       await settledCatalog(page, slug);
@@ -950,9 +952,68 @@ test('an open category keeps its specimen open, centred and dimmed without group
     await settledCatalog(page, '');
     await waitFor(page, specimenStill('collected'), 4000);
     const closed = await evaluate(page, SPECIMEN('collected'));
-    assert.ok(Math.abs(closed.offset) <= 1 && closed.camera === '0.788' && closed.alpha === .55 && closed.opacity === '1',
-      `closing returns the specimen to its resting pose and brightness (${JSON.stringify(closed)})`);
+    assert.ok(Math.abs(closed.offset - restCollected.offset) <= 1 && closed.camera === '0.788' && closed.alpha === .55 && closed.opacity === '1',
+      `closing returns the specimen to its resting place, pose and brightness (${JSON.stringify(closed)} vs ${restCollected.offset})`);
   } finally { await close(page); }
+});
+
+// Every desktop column stands its name, description and count as a spine at
+// its left, and opening a category leaves the spine where it is. The
+// specimen keeps clear of the spine: under it in a tall column, beside it in
+// a short one.
+const SPINE = slug => `(() => {
+  const column = document.querySelector('[data-category-slug="${slug}"]');
+  const parts = { name: '.category-name', description: '.category-description', count: '.category-bottom' };
+  const rect = node => node.getBoundingClientRect();
+  const union = rects => rects.reduce((u, r) => ({ left: Math.min(u.left, r.left), top: Math.min(u.top, r.top),
+    right: Math.max(u.right, r.right), bottom: Math.max(u.bottom, r.bottom) }), { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity });
+  const boxes = Object.fromEntries(Object.entries(parts).map(([key, selector]) => [key, rect(column.querySelector(selector))]));
+  // Only the parts that show: the moon, core and node stay clear until hovered.
+  boxes.specimen = union([...column.querySelectorAll('.category-specimen *')].filter(node => getComputedStyle(node).opacity !== '0')
+    .map(rect).filter(r => r.width && r.height));
+  const keys = Object.keys(boxes), clashes = [];
+  for (let i = 0; i < keys.length; i++) for (let j = i + 1; j < keys.length; j++) {
+    const a = boxes[keys[i]], b = boxes[keys[j]];
+    const across = Math.min(a.right, b.right) - Math.max(a.left, b.left), down = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+    if (across > 1 && down > 1) clashes.push(keys[i] + '/' + keys[j]);
+  }
+  const display = rect(column.querySelector('.category-display')), s = boxes.specimen;
+  return {
+    // Layout offsets within the column, which the panel's 3D pose cannot skew.
+    places: Object.fromEntries(Object.entries(parts).map(([key, selector]) => {
+      const node = column.querySelector(selector);
+      return [key, [node.offsetLeft, node.offsetTop, node.offsetWidth, node.offsetHeight].map(Math.round)];
+    })),
+    modes: Object.values(parts).map(selector => getComputedStyle(column.querySelector(selector)).writingMode),
+    clashes,
+    inside: s.left >= display.left - 1 && s.right <= display.right + 1 && s.top >= display.top - 1 && s.bottom <= display.bottom + 1,
+  };
+})()`;
+
+test('desktop columns stand as spines that opening leaves in place, with the specimen clear of them', { skip }, async () => {
+  for (const size of [desktop, { ...desktop, width: 1280, height: 600 }, { ...desktop, width: 1024, height: 768 }]) {
+    const label = `${size.width}×${size.height}`;
+    const page = await open('/#series', size);
+    try {
+      const rest = {};
+      for (const slug of slugs) {
+        rest[slug] = await evaluate(page, SPINE(slug));
+        assert.deepEqual(rest[slug].modes, ['vertical-lr', 'vertical-lr', 'vertical-lr'], `${label} ${slug}: name, description and count stand vertical`);
+        assert.deepEqual(rest[slug].clashes, [], `${label} ${slug}: the spine's parts and the specimen keep apart`);
+        assert.ok(rest[slug].inside, `${label} ${slug}: the specimen stays inside its display`);
+      }
+      await clickLink(page, cover('minecraft'));
+      await settledCatalog(page, 'minecraft');
+      await waitFor(page, specimenStill('minecraft'), 4000);
+      const open = await evaluate(page, SPINE('minecraft'));
+      for (const part of ['name', 'description', 'count']) {
+        assert.ok(open.places[part].every((value, i) => Math.abs(value - rest.minecraft.places[part][i]) <= 1),
+          `${label}: opening leaves the ${part} where it stood (${rest.minecraft.places[part]} → ${open.places[part]})`);
+      }
+      // The open specimen is a dimmed background behind the entries.
+      assert.deepEqual(open.clashes.filter(pair => !pair.includes('specimen')), [], `${label}: the open spine keeps its parts apart`);
+    } finally { await close(page); }
+  }
 });
 
 test("catalog entries start after the open category's spine and every entry shares one frame", { skip }, async () => {
@@ -970,7 +1031,7 @@ test("catalog entries start after the open category's spine and every entry shar
       const row = column.querySelector('.catalog-row');
       const rect = node => node.getBoundingClientRect();
       const probe = column.appendChild(document.createElement('div'));
-      probe.style.cssText = 'position: absolute; width: var(--catalog-spine)';
+      probe.style.cssText = 'position: absolute; width: var(--category-spine)';
       const spine = parseFloat(getComputedStyle(probe).width);
       probe.remove();
       const group = row.querySelector('.catalog-group');
@@ -980,7 +1041,7 @@ test("catalog entries start after the open category's spine and every entry shar
         padding: parseFloat(getComputedStyle(row).paddingLeft), spine,
         start: rect(group).left - rect(row).left,
         spineEnd: Math.max(...[...column.querySelectorAll(':is(.category-name, .category-description, .category-bottom)')].map(node => rect(node).right)) - rect(group).left,
-        level: rect(column.querySelector('.category-name-glyph')).top - rect(titles[0]).top,
+        level: rect(column.querySelector('.category-name')).top - rect(titles[0]).top,
         width: row.offsetWidth, display: column.querySelector('.category-display').clientWidth,
         heads: [...row.querySelectorAll('.catalog-group-head')].map(head => head.offsetTop),
         cards: cards.map(card => [card.offsetTop, card.offsetHeight, card.offsetWidth]),

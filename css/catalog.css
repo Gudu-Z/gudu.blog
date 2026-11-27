@@ -120,7 +120,7 @@ html:not(.has-vertical-chapters) .catalog-row {
   box-sizing: border-box;
   width: max-content;
   height: 100cqh;
-  padding: var(--row-pad) calc(25.42 * var(--u)) var(--row-pad) var(--catalog-spine);
+  padding: var(--row-pad) calc(25.42 * var(--u)) var(--row-pad) var(--category-spine);
 }
 html:not(.has-vertical-chapters) .catalog-group { flex-direction: row; height: var(--card-h); gap: calc(24 * var(--u)); }
 /* The subcategory stands at the head of its entries: its name, a fading
@@ -256,45 +256,9 @@ html:not(.has-vertical-chapters) .catalog-empty-code {
   letter-spacing: .2em;
 }
 
-/* The open category stands as a spine at the head of its row. Its name,
-   description and count turn vertical at the left, level with the entries'
-   first characters, and the display takes the column's whole height.
-   js/catalog.js flies the name's characters between the row and the spine. */
-.category-column {
-  /* The spine's width: the name's column, then two columns of description in
-     its own (clamped) size and a gap before the first subcategory. */
-  --catalog-spine-text: max(12px, calc(12 * var(--category-unit)));
-  --catalog-spine: calc(82 * var(--category-unit) + 3.8 * var(--catalog-spine-text));
-}
-.category-name-glyph { display: inline-block; }
-html:not(.has-vertical-chapters) .has-catalog-board .is-catalog-open :is(.category-name, .category-description, .category-bottom) {
-  position: absolute;
-  z-index: 3;
-  margin: 0;
-  writing-mode: vertical-lr;
-}
-html:not(.has-vertical-chapters) .has-catalog-board .is-catalog-open :is(.category-name, .category-description) {
-  /* The header strip, the display's top gap, the row's and the entry's padding. */
-  top: calc(81 * var(--category-unit));
-}
-html:not(.has-vertical-chapters) .has-catalog-board .is-catalog-open .category-name { left: calc(30 * var(--category-unit)); letter-spacing: .06em; }
-html:not(.has-vertical-chapters) .has-catalog-board .is-catalog-open .category-description {
-  left: calc(84 * var(--category-unit));
-  min-height: 0;
-  max-height: calc(150 * var(--category-unit));
-  font-size: var(--catalog-spine-text);
-  line-height: 1.9;
-  letter-spacing: .12em;
-}
-html:not(.has-vertical-chapters) .has-catalog-board .is-catalog-open .category-bottom {
-  top: auto;
-  bottom: calc(29 * var(--category-unit));
-  left: calc(30 * var(--category-unit));
-  padding: 0;
-  border: 0;
-}
-html:not(.has-vertical-chapters) .has-catalog-board .is-catalog-open .category-bottom::before,
-html:not(.has-vertical-chapters) .has-catalog-board .is-catalog-open .category-action { display: none; }
+/* The open category keeps the spine every desktop column stands at its left
+   (css/categories.css): its row starts after it, and the display takes the
+   column's whole height. */
 
 /* Phones: a typographic index. No boxes: a hairline with an orange start
    above each article, a large thin numeral, the title, its date and reading

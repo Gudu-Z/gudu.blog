@@ -54,7 +54,7 @@
     '.connection-heading', '.connection-footnote', '.connection-card-head', '.connection-action',
     '.chapter-panel h2', '.chapter-panel > :is(.eyebrow, h3, p, .text-link)',
     '.series-empty', '.series-reading-link', '.journal-heading-part', '.category-heading',
-    '.category-index', '.category-composition', '.category-description', '.category-bottom',
+    '.category-index', '.category-composition', '.category-name', '.category-description', '.category-bottom',
     '.catalog-group-head', '.catalog-card', '.catalog-empty',
     '.journal-toolbar', '.journal-empty', '.search-empty', '.posts-list > .post-card',
     '.archive-year > h3', '.archive-year li', '.archive-group > h3', '.archive-item', '.site-footer',
