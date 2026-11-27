@@ -1646,10 +1646,13 @@ for (const [from, to, limit] of [[0, 1, 'dock'], [1, 0, 'line']]) {
 
 // A category that opened ahead of the reader folds no later than the one
 // between them once the reader turns back. Folding the nearer one first
-// pulled 其他 back into view, still open, past a folded 神秘文案.
+// pulled 其他 back into view, still open, past a folded 神秘文案. The far
+// category is long enough to open past the frame: a short one that the
+// reading line can never reach is stepped to by the push that opens it, so
+// it never waits ahead.
 for (const [start, ahead, turnedTo, fixtures] of [
-  ['collected', 1, 'daydreams', withArticles(1, 3, 'daydreams') + withArticles(1, 3, 'collected') + withArticles(1, 1, 'other')],
-  ['daydreams', -1, 'collected', withArticles(1, 1) + withArticles(1, 3, 'daydreams') + withArticles(1, 3, 'collected')],
+  ['collected', 1, 'daydreams', withArticles(1, 3, 'daydreams') + withArticles(1, 3, 'collected') + withArticles(2, 4, 'other')],
+  ['daydreams', -1, 'collected', withArticles(2, 4) + withArticles(1, 3, 'daydreams') + withArticles(1, 3, 'collected')],
 ]) {
   test(`turning back from ${start} never leaves an open category beyond a folded one`, { skip }, async () => {
     const page = await open('/#catalog-' + start, { ...desktop, reduced: true, beforeScripts: fixtures });
@@ -1760,24 +1763,20 @@ function withoutArticles(slug) {
 const liveCatalog = { width: 2113, height: 1257, mobile: false, reduced: true, beforeScripts: withArticles(1, 1)
   + withoutArticles('daydreams') + withoutArticles('collected') + withoutArticles('other') };
 
-// After some steps the board can still travel a little, as when the category
-// left waits to fold; the ruler must read that travel from the category the
-// reader stepped to, not from the one the board never left.
+// Small pushes pass through every state on the way to each end of the live
+// catalog and back; the ruler stays on the category the reader is in.
 test('quick pushes on a board that fits keep the ruler on the current category', { skip }, async () => {
   const page = await open('/#series', liveCatalog);
   try {
     await clickLink(page, cover('minecraft'));
     await settledCatalog(page, 'minecraft');
-    let view, read = 0;
+    let view;
     for (const dir of [1, -1]) {
       const end = '#catalog-' + (dir > 0 ? 'other' : 'minecraft');
-      // Small pushes pass through every state on the way.
       for (let i = 0; i < 300 && view?.hash !== end; i++) {
         await evaluate(page, wheelEvent(dir * 10));
         view = await evaluate(page, catalogNow());
         const current = slugs.indexOf(view.hash.replace('#catalog-', ''));
-        // Off the middle of its station, the ruler has read travel.
-        if (Math.abs(view.target - (current + 0.5)) > 0.01) read++;
         assert.equal(view.station, view.hash, `the ruler lights the current station: ${JSON.stringify(view)}`);
         assert.ok(Math.floor(view.target) === current, `the ruler aims inside ${view.hash}'s station: ${JSON.stringify(view)}`);
         const segment = view.segments[current];
@@ -1786,31 +1785,32 @@ test('quick pushes on a board that fits keep the ruler on the current category',
       }
       assert.equal(view.hash, end, 'the pushes reach the end of the board');
     }
-    assert.ok(read > 0, 'the ruler read travel after a step at least once');
   } finally { await close(page); }
 });
 
-// Home and End seek within the category the steps reached. Seeking from the
-// reading distance of the category the board never left travelled the board
-// toward it and put the ruler back there. Minecraft, opened ahead, gives the
-// board room to travel.
+// Home and End after steps seek within the category the steps reached: the
+// category, the board and the ruler stay where the steps left them. (Once a
+// seek started from the reading distance of a category the board never left,
+// and travelled the board back toward it.)
 test('home and end after steps on a board that fits stay on the current category', { skip }, async () => {
   const page = await open('/#series', liveCatalog);
   try {
     await clickLink(page, cover('other'));
     await settledCatalog(page, 'other');
     let view = await evaluate(page, catalogNow());
-    for (let i = 0; i < 6 && !(view.hash === '#catalog-daydreams' && view.open[0]); i++) {
+    for (let i = 0; i < 6 && view.hash !== '#catalog-minecraft'; i++) {
       await evaluate(page, wheelEvent(-100));
       view = await evaluate(page, catalogNow());
     }
-    assert.ok(view.hash === '#catalog-daydreams' && view.open[0], `Minecraft opens ahead while 白日梦话 is read: ${JSON.stringify(view)}`);
+    assert.equal(view.hash, '#catalog-minecraft', `the pushes step back to Minecraft: ${JSON.stringify(view)}`);
+    const left = await evaluate(page, panelLeft);
     for (const key of ['End', 'Home']) {
       await press(page, key);
       view = await evaluate(page, catalogNow());
-      assert.equal(view.hash, '#catalog-daydreams', `${key} keeps 白日梦话 current: ${JSON.stringify(view)}`);
-      assert.ok(Math.floor(view.target) === 1, `after ${key} the ruler aims inside 白日梦话's station: ${JSON.stringify(view)}`);
-      const segment = view.segments[1];
+      assert.equal(view.hash, '#catalog-minecraft', `${key} keeps Minecraft current: ${JSON.stringify(view)}`);
+      near(await evaluate(page, panelLeft), left, 1, `${key} leaves the board where the steps left it`);
+      assert.ok(Math.floor(view.target) === 0, `after ${key} the ruler aims inside Minecraft's station: ${JSON.stringify(view)}`);
+      const segment = view.segments[0];
       assert.ok(view.marker > segment[0] && view.marker < segment[1], `after ${key} the marker ${view.marker} sits in [${segment}]: ${JSON.stringify(view)}`);
     }
   } finally { await close(page); }
@@ -1819,14 +1819,15 @@ test('home and end after steps on a board that fits stay on the current category
 // One push on the live catalog steps on, and the category left folds at
 // once. The board could still travel a few pixels, too few to make room for
 // a fold toward the reader, so the board slides instead of waiting for the
-// next push.
-test('each push on the live catalog folds the category left at once', { skip }, async () => {
+// next push. Going back, Minecraft opens away from the reading line, which
+// can never reach it; the push that opens it steps to it, as going forward.
+test('each push on the live catalog moves one category both ways and folds the one left at once', { skip }, async () => {
   const page = await open('/#series', liveCatalog);
   try {
     const dock = await flatDock(page);
     await clickLink(page, cover('minecraft'));
     await settledCatalog(page, 'minecraft');
-    for (const [dir, slug] of [[1, 'daydreams'], [1, 'collected'], [1, 'other'], [-1, 'collected'], [-1, 'daydreams']]) {
+    for (const [dir, slug] of [[1, 'daydreams'], [1, 'collected'], [1, 'other'], [-1, 'collected'], [-1, 'daydreams'], [-1, 'minecraft']]) {
       await evaluate(page, wheelEvent(dir * 100));
       const view = await evaluate(page, catalogNow());
       assert.equal(view.hash, '#catalog-' + slug, `the push steps to ${slug}: ${JSON.stringify(view)}`);

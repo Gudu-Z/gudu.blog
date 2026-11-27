@@ -475,9 +475,11 @@
   // Where a fold may hold the board (see resizeTrack), or null to wait.
   // Folding toward the reading line keeps the edge that faces it, as long as
   // the folded board still covers the dock at both ends. Otherwise the fold
-  // waits while the reader can still travel on far enough to make that room.
-  // A board that cannot, as one that fits its frame or can move only a few
-  // pixels more, folds at once and slides just far enough to cover the dock.
+  // waits while the reader travels on far enough to make that room. A reader
+  // who has just stepped is not travelling, and a board may have too little
+  // travel left, as one that fits its frame or can move only a few pixels
+  // more: then the fold goes at once and slides just far enough to cover the
+  // dock.
   function foldAnchor(i, toward) {
     const b = settledBoard(), loss = b.tracks[i] - base.tracks[i], want = toward ? 1 : 0;
     if (loss <= layoutTolerance) return want;
@@ -490,7 +492,7 @@
     if (want >= low - slack && want <= high + slack) return want;
     // The travel toward the reading line that would give the fold its room.
     const needed = (toward ? want - high : low - want) * loss;
-    if (travelAvailable(toward ? 1 : -1) >= needed - layoutTolerance) return null;
+    if (steppedAt === null && travelAvailable(toward ? 1 : -1) >= needed - layoutTolerance) return null;
     const from = Math.max(0, low), to = Math.min(1, high);
     return from <= to + slack ? clamp(want, from, Math.max(from, to)) : null;
   }
@@ -675,7 +677,14 @@
         gesture.credit = 0;
         readingLine();
         // At a hard stop the reading line can take the new category at once.
-        if (stopped && active === next) {
+        // A short one, no wider than the frame, that leaves too little travel
+        // for the line ever to reach it, as one that opened away from the
+        // line, is stepped to by the same push, as one that opens under the
+        // line is taken.
+        const unreachable = active !== next && board.tracks[next] <= base.frameRight - base.frameLeft + layoutTolerance
+          && lineReach(next, direction) > travelAvailable(direction) + layoutTolerance;
+        if (unreachable) setCurrent(next);
+        if (unreachable || (stopped && active === next)) {
           settleStep();
           break;
         }
