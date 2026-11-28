@@ -52,8 +52,12 @@ html.is-catalog .site-header:not(:has(.header-search.is-expanded)) .catalog-back
   height: 1px;
 }
 /* A widening or folding display clips its row across. Only the specimen's
-   glow reaches below the display, and it fades out into the panel there. */
+   glow reaches below the display, and it fades out into the panel there.
+   Phones clip both ways, as the index's rise reveal (js/chapters-vertical.js)
+   never sees a card in a display clipped across only, and let the glow
+   through by a margin instead. */
 :is(.is-catalog-open, .is-catalog-folding) .category-display { overflow-x: clip; overflow-y: visible; }
+.has-vertical-chapters :is(.is-catalog-open, .is-catalog-folding) .category-display { overflow: clip; overflow-clip-margin: 64px; }
 /* A category the reader has scrolled past folds toward the reading line. Its
    cards hold still and fade while the far edge sweeps over them. */
 .is-catalog-fold-right .catalog-row { position: absolute; top: 0; right: 0; }
