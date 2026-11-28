@@ -44,7 +44,10 @@ function deferred() {
 
 // Execute the real head script. Browser timing stays controllable so a callback
 // already dequeued before pagehide can also be delivered after cancellation.
-function browser({ reduced = false, hidden = false, pendingResources = false } = {}) {
+// `came` sets how the page was reached: the referrer, the navigation type,
+// whether the loader was seen earlier in the session, and the parse state.
+function browser({ reduced = false, hidden = false, pendingResources = false,
+  came: { referrer = '', type = 'navigate', seen = false, readyState = 'complete' } = {} } = {}) {
   let now = 0;
   let sequence = 0;
   let removed = false;
@@ -65,8 +68,12 @@ function browser({ reduced = false, hidden = false, pendingResources = false } =
   const fallback = { decode: () => image.promise };
   const reducedMotion = eventTarget({ matches: reduced });
   const window = eventTarget();
+  const store = new Map(seen ? [['gudu-loader', 'seen']] : []);
+  const sessionStorage = { getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)) };
   const document = eventTarget({
     hidden,
+    referrer,
+    readyState,
     documentElement: root,
     fonts: { load: () => font.promise },
     querySelector(selector) {
@@ -82,7 +89,10 @@ function browser({ reduced = false, hidden = false, pendingResources = false } =
   runInNewContext(source, {
     window,
     document,
-    performance: { now: () => now },
+    sessionStorage,
+    URL,
+    location: { origin: 'https://gudu.blog' },
+    performance: { now: () => now, getEntriesByType: kind => (kind === 'navigation' ? [{ type }] : []) },
     matchMedia: () => reducedMotion,
     Event: class { constructor(type) { this.type = type; } },
     requestAnimationFrame(callback) { const id = ++sequence; frames.set(id, callback); return id; },
@@ -96,7 +106,7 @@ function browser({ reduced = false, hidden = false, pendingResources = false } =
   }, { filename: 'js/loading.js' });
 
   return {
-    window, document, root, loader, frames, timers, events,
+    window, document, root, loader, frames, timers, events, store,
     get removed() { return removed; },
     steps: () => rows.map(row => row.dataset.state).join(' '),
     async flushPromises() {
@@ -196,6 +206,55 @@ test('deadline and reduced motion still release a visible page without trapping 
   changed.reduce();
   assertReleased(changed);
   assert.deepEqual(changed.events, ['site:revealed']);
+});
+
+// A reader coming back to the home page from one of the site's articles has
+// watched the loader once this session: a plain curtain, without the logo,
+// the readout or the entrance, lifts two frames after the deferred scripts
+// have laid the page out, and the page still hears it revealed.
+test('coming back from an article lifts a plain curtain as soon as the page is laid out', async () => {
+  const page = browser({ came: { referrer: 'https://gudu.blog/posts/test-article.html', seen: true, readyState: 'loading' } });
+  assert.equal(page.root.classList.contains('is-returning'), true);
+  assert.equal(page.root.classList.contains('has-site-intro'), false, 'no entrance');
+  assert.equal(page.frames.size, 0, 'the curtain waits for the deferred scripts');
+  page.document.dispatchEvent({ type: 'DOMContentLoaded' });
+  page.frame();
+  assert.deepEqual(page.events, []);
+  page.frame();
+  assert.deepEqual(page.events, ['site:revealing']);
+  assert.equal(page.root.classList.contains('is-loading-exit'), true);
+  // Scene readiness arriving meanwhile neither holds the curtain nor replays it.
+  page.window.SiteLoader.ready();
+  await page.flushPromises();
+  page.frame();
+  page.frame();
+  assert.deepEqual(page.events, ['site:revealing']);
+  page.finishFade();
+  assertReleased(page);
+  assert.deepEqual(page.events, ['site:revealing', 'site:revealed']);
+});
+
+test('a reload, a first visit or any other referrer keeps the full loader', () => {
+  for (const came of [
+    { referrer: 'https://gudu.blog/posts/test-article.html', seen: true, type: 'reload' },
+    { referrer: 'https://gudu.blog/posts/test-article.html', seen: false },
+    { referrer: 'https://example.com/posts/test-article.html', seen: true },
+    { referrer: 'https://gudu.blog/', seen: true },
+  ]) {
+    const page = browser({ came });
+    assert.equal(page.root.classList.contains('is-returning'), false, JSON.stringify(came));
+    assert.equal(page.root.classList.contains('has-site-intro'), true, JSON.stringify(came));
+  }
+});
+
+test('stepping back through history skips it too, and a release remembers the loader was seen', () => {
+  const back = browser({ came: { type: 'back_forward', seen: true } });
+  assert.equal(back.root.classList.contains('is-returning'), true);
+  const first = browser();
+  assert.equal(first.store.get('gudu-loader'), undefined);
+  first.advance(4000);
+  assertReleased(first);
+  assert.equal(first.store.get('gudu-loader'), 'seen');
 });
 
 test('scene readiness holds the loader until the first live frame without waiting for an unused fallback', async () => {

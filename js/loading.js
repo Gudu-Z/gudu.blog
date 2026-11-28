@@ -17,7 +17,21 @@
   // percentage: the heading font, the compiled scene, and its first frame
   // (or the decoded illustration when there is no live scene).
   const steps = { font: 'active', scene: 'pending', frame: 'pending' };
-  root.classList.add('is-loading', 'has-site-intro');
+  // A reader coming back from one of the site's articles, by a link or
+  // through history, has watched the loader once this session: the page
+  // opens behind a plain curtain that lifts as soon as it is laid out,
+  // without the logo, the readout or the entrance. A reload plays it all.
+  const returning = (() => {
+    try {
+      if (sessionStorage.getItem('gudu-loader') !== 'seen') return false;
+      const type = performance.getEntriesByType?.('navigation')?.[0]?.type;
+      if (type === 'reload') return false;
+      if (type === 'back_forward') return true;
+      const from = document.referrer ? new URL(document.referrer) : null;
+      return !!from && from.origin === location.origin && from.pathname.includes('/posts/');
+    } catch { return false; }
+  })();
+  root.classList.add('is-loading', returning ? 'is-returning' : 'has-site-intro');
 
   function markStep(name, state) {
     if (released || steps[name] === 'done' || steps[name] === 'off') return;
@@ -64,8 +78,9 @@
     if (!notify || reducedMotion.matches || document.hidden || !root.classList.contains('is-loading-exit')) {
       root.classList.remove('has-site-intro');
     }
-    root.classList.remove('is-loading', 'is-loading-exit');
+    root.classList.remove('is-loading', 'is-loading-exit', 'is-returning');
     document.querySelector('#site-loader')?.remove();
+    try { sessionStorage.setItem('gudu-loader', 'seen'); } catch { /* A blocked store shows it every time. */ }
     if (notify) announceReveal();
   }
 
@@ -76,6 +91,7 @@
   const deadline = setTimeout(release, 4000);
 
   function dismiss() {
+    if (returning) { lift(); return; }
     if (!active || released || closing) return;
     closing = true;
     if (reducedMotion.matches || document.hidden) { release(); return; }
@@ -100,6 +116,27 @@
       exitTimer = setTimeout(release, 550);
     }
     finishIntro();
+  }
+
+  // The returning reader's curtain fades out two frames after the deferred
+  // scripts have run, which have laid the page out on its chapter or catalog
+  // by then; the scene comes up behind it or right after.
+  function lift() {
+    if (!active || released || closing) return;
+    closing = true;
+    const loader = document.querySelector('#site-loader');
+    if (reducedMotion.matches || document.hidden || !loader) { release(); return; }
+    loader.addEventListener('transitionend', event => {
+      if (event.target === loader && event.propertyName === 'opacity') release();
+    });
+    root.classList.add('is-loading-exit');
+    window.dispatchEvent(new Event('site:revealing'));
+    exitTimer = setTimeout(release, 400);
+  }
+  if (returning) {
+    const afterLayout = () => { readyFrame = requestAnimationFrame(() => { readyFrame = requestAnimationFrame(lift); }); };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', afterLayout, { once: true });
+    else afterLayout();
   }
 
   function ready({ scene, compiled } = {}) {

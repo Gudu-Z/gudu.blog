@@ -46,7 +46,7 @@ function style() {
 // Execute the real entrance script against a controlled page: a hero with its
 // two-part title and clock, the scene's camera hooks, and a manual clock.
 function browser({ search = '', hash = '', seen = false, storageBlocked = false, reduced = false, loading = true,
-  live = true, text = '个人博客', navigation = 'navigate',
+  returning = false, live = true, text = '个人博客', navigation = 'navigate',
   timing = time => ({ measured: true, quality: 1, frameInterval: 1000 / 60,
     gpuTimes: Array(Math.floor(time / 32) % 8).fill(8), gpuPending: null }) } = {}) {
   let now = 0;
@@ -56,7 +56,8 @@ function browser({ search = '', hash = '', seen = false, storageBlocked = false,
   const events = [];
   const storage = new Map(seen ? [['gudu-intro', 'seen']] : []);
   const created = [];
-  const root = { classList: classList(loading ? ['is-loading', 'has-site-intro'] : []), dataset: {}, style: style() };
+  // A reader coming back from an article gets a plain curtain (js/loading.js).
+  const root = { classList: classList(loading ? ['is-loading', returning ? 'is-returning' : 'has-site-intro'] : []), dataset: {}, style: style() };
 
   const period = { style: style() };
   const second = { style: style(), childNodes: [], getBoundingClientRect: () => ({ left: 100, top: 300, width: 560, height: 120 }) };
@@ -404,8 +405,9 @@ test('a loader released without its animated exit never starts the entrance', ()
     assert.equal(page.root.classList.contains('is-intro'), false, leave);
     assert.deepEqual(page.events, [], leave);
   }
-  // Reduced motion, a finished loader or a page without the scene: no part.
-  for (const options of [{ reduced: true }, { loading: false }]) {
+  // Reduced motion, a finished loader, a reader coming back from an article
+  // (even one who never saw the entrance) or a page without the scene: no part.
+  for (const options of [{ reduced: true }, { loading: false }, { returning: true }]) {
     const page = browser(options);
     assert.deepEqual(page.scene.calls, []);
     page.reveal();

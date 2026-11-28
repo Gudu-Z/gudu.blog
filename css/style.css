@@ -101,6 +101,10 @@ body { margin: 0; color: var(--paper); background: var(--space); }
 .loader-step[data-state="off"] em::before { content: "--"; font-size: 10px; }
 .loader-step[data-state="active"]::after { content: ""; position: absolute; right: 0.14em; top: 50%; width: 4px; height: 4px; margin-top: -2px; background: var(--red); animation: loader-step-wait 900ms steps(1, end) infinite; }
 .is-loading-exit .site-loader { opacity: 0; }
+/* Coming back from an article (js/loading.js), the curtain is plain and
+   lifts quickly as soon as the page is laid out. */
+.is-returning .loader-content { display: none; }
+.is-returning .site-loader { transition-duration: 200ms; transition-delay: 0ms; }
 
 /* Four corner marks frame the logo while the loader waits, then open out to
    the hero's own frame as the curtain lifts and fade once the page settles.

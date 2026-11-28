@@ -2377,6 +2377,41 @@ test('the phone catalog wraps group names and sets its articles as a typographic
   } finally { await close(page); }
 });
 
+// On a phone the open category's index rises card by card as it comes into
+// view. The display clips both ways: in one clipped across only, the rise
+// reveal (js/chapters-vertical.js) never sees a card. The specimen stands half
+// as large again in the index's bottom right corner, across the last entry's
+// foot, and a clip margin lets its glow through.
+test('the phone index rises into view and ends on its specimen', { skip }, async () => {
+  const page = await open('/?theme=dark#catalog-minecraft', { ...phone, beforeScripts: withArticles(1, 2) });
+  try {
+    await waitFor(page, `document.querySelectorAll('.is-catalog-open .catalog-card.is-vertical-shown').length > 0`, 8000);
+    const state = await evaluate(page, `(() => {
+      const column = document.querySelector('.is-catalog-open');
+      const display = column.querySelector('.category-display'), scene = column.querySelector('.category-scene');
+      // A specimen at full rest size is scaled 1.35 category units per pixel (css/categories.css).
+      const probe = column.appendChild(document.createElement('div'));
+      probe.style.cssText = 'position: absolute; width: calc(100 * var(--category-unit))';
+      const unit = probe.offsetWidth / 100;
+      probe.remove();
+      const parts = [...scene.querySelectorAll('.category-specimen *')].filter(n => getComputedStyle(n).opacity !== '0')
+        .map(n => n.getBoundingClientRect()).filter(r => r.width && r.height);
+      const draw = { left: Math.min(...parts.map(r => r.left)), right: Math.max(...parts.map(r => r.right)),
+        top: Math.min(...parts.map(r => r.top)), bottom: Math.max(...parts.map(r => r.bottom)) };
+      const last = [...column.querySelectorAll('.catalog-card')].at(-1).getBoundingClientRect(), d = display.getBoundingClientRect();
+      const css = getComputedStyle(display);
+      return { clip: [css.overflowX, css.overflowY, css.overflowClipMargin],
+        scale: new DOMMatrixReadOnly(getComputedStyle(scene).transform).a / (1.35 * unit),
+        straddles: draw.top < last.bottom && draw.bottom > last.bottom, right: draw.left + draw.right > d.left + d.right,
+        alpha: getComputedStyle(scene).color };
+    })()`);
+    assert.deepEqual(state.clip, ['clip', 'clip', '64px'], 'the display clips both ways, with room for the glow');
+    near(state.scale, 1.5, .01, 'the specimen stands half as large again');
+    assert.ok(state.straddles && state.right, `the specimen stands in the bottom right corner, across the last entry's foot: ${JSON.stringify(state)}`);
+    assert.match(state.alpha, /0\.14\)$/, 'it dims as on desktop');
+  } finally { await close(page); }
+});
+
 test('desktop catalog cards have a keyboard focus frame and the viewport allows pinch zoom', { skip }, async () => {
   const page = await open('/?theme=dark#catalog-minecraft', { ...desktop, reduced: true });
   try {

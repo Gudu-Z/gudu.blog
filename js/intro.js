@@ -26,9 +26,11 @@
   // to it, or stepping back through history, is not.
   const reloaded = performance.getEntriesByType?.('navigation')?.[0]?.type === 'reload';
   const wanted = requested === 'short' ? false : forcedFull || !seen || reloaded;
-  // Only a page still behind its loader can open on the starting sky.
+  // Only a page still behind its loader can open on the starting sky; a
+  // reader coming back from an article (js/loading.js) gets no entrance.
   if (!hero || !wanted || reducedMotion.matches || !window.SiteBlackHole?.intro
-      || !root.classList.contains('is-loading') || root.classList.contains('is-loading-exit')) return;
+      || !root.classList.contains('is-loading') || root.classList.contains('is-loading-exit')
+      || root.classList.contains('is-returning')) return;
 
   // Milliseconds after the curtain starts to lift, before --intro-slow.
   const PULL_FROM = 460, PULL_TO = 1700;

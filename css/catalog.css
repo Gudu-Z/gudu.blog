@@ -64,11 +64,9 @@ html.is-catalog .site-header:not(:has(.header-search.is-expanded)) .catalog-back
 /* An open category's specimen stays open (css/categories.css) and dims
    through its lines and orange details, not group opacity: an opacity layer
    flattens the 3D planes into one texture, which the panel's perspective then
-   magnifies into a blur. On desktop it stands in the row's bottom right
-   corner (below), fainter still; on phones in the middle of the display,
-   behind the index. */
-.is-catalog-open .category-scene { --category-diagram-opacity: .2; --category-detail-opacity: .32; }
-html:not(.has-vertical-chapters) .is-catalog-open .category-scene { --category-diagram-opacity: .14; --category-detail-opacity: .22; }
+   magnifies into a blur. It stands half as large again in the bottom right
+   corner of the row on desktop (below) and of the index on phones. */
+.is-catalog-open .category-scene { --category-diagram-opacity: .14; --category-detail-opacity: .22; }
 .catalog-block {
   position: absolute;
   inset: 0;
@@ -456,7 +454,18 @@ html.has-vertical-chapters .catalog-back { font-size: 12px; }
   width: 100%;
   flex-direction: column;
   align-items: stretch;
-  padding: 16px;
+  /* Below the last entry the index keeps room for two thirds of its
+     specimen, as the desktop row does past its last entry. */
+  padding: 16px 16px calc(16px + 150 * var(--category-unit));
+}
+/* The specimen stands half as large again in the index's bottom right
+   corner, inside its padding, a third of it over the last entry: the widest
+   open pose (150 units at rest size) ends at the right padding, the tallest
+   (148, standing about 22 above its scene's centre) on the bottom one. */
+.has-vertical-chapters .is-catalog-open .category-scene {
+  --category-art-size: 1.5;
+  left: calc(100% - 16px - 112.5 * var(--category-unit));
+  top: calc(100% - 16px - 78 * var(--category-unit));
 }
 .has-vertical-chapters .catalog-group-head {
   --catalog-heading-line: max(12px, calc(14.83 * var(--category-unit)));
