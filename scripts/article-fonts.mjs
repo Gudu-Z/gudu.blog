@@ -49,6 +49,17 @@ export function articleFonts(post, bodyHTML = '', extraHTML = '') {
   });
 }
 
+// The article index lists every article on every page, so its words share one
+// cut across all pages instead of joining each page's own: a new or renamed
+// article then remakes this one cut, not every page's prose cut.
+export function indexFont(indexHTML = '') {
+  const characters = hanCharacters(plain(indexHTML));
+  if (!characters) return [];
+  const face = { family: 'Gudu Index', weight: 400, range: '400', display: 'swap' };
+  const hash = createHash('sha256').update(`${recipe}\n${face.weight}\n${characters}`).digest('hex').slice(0, 10);
+  return [{ ...face, characters, path: `${articleFontDirectory}/site-index-${hash}.woff2` }];
+}
+
 // Every cut is preloaded. The title blocks briefly rather than swapping, so it
 // appears once in its own face; the prose shows at once in the system face and
 // swaps when its cut arrives, which keeps every line where it was.

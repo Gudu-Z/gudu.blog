@@ -14,20 +14,72 @@
   let readout = null;
 
   // The contents rail: an orange cursor between the section stations, and a
-  // readout of how much has been read. Both hide where the contents fold into
-  // a row (css/blog.css). The rail also answers the pointer (setupRail).
+  // readout of how much has been read. The page brings both, so they show
+  // from its first paint; older pages without them get them here. Both hide
+  // where the contents fold into a row (css/blog.css). The rail also answers
+  // the pointer (setupRail).
   if (article && nav && headings.length === links.length) {
-    cursor = document.createElement('span');
-    cursor.className = 'toc-cursor';
-    cursor.setAttribute('aria-hidden', 'true');
-    nav.append(cursor);
-    const row = document.createElement('p');
-    row.className = 'toc-readout';
-    row.setAttribute('aria-hidden', 'true');
-    row.innerHTML = '<span>READ</span><output>0%</output>';
-    nav.after(row);
-    readout = row.querySelector('output');
+    cursor = nav.querySelector('.toc-cursor');
+    if (!cursor) {
+      cursor = document.createElement('span');
+      cursor.className = 'toc-cursor';
+      cursor.setAttribute('aria-hidden', 'true');
+      nav.append(cursor);
+    }
+    readout = nav.parentElement.querySelector('.toc-readout output');
+    if (!readout) {
+      const row = document.createElement('p');
+      row.className = 'toc-readout';
+      row.setAttribute('aria-hidden', 'true');
+      row.innerHTML = '<span>READ</span><output>0%</output>';
+      nav.after(row);
+      readout = row.querySelector('output');
+    }
     setupRail();
+  }
+
+  // The contents and the article index start level with the top of the
+  // article's frame, beside the title, rather than beside the body. The lift
+  // is the header's height and gaps: the page measures it into --side-lift on
+  // the shell as soon as the header is parsed, and this keeps it current as
+  // the header reflows (from layout, not from the moving boxes). Without
+  // scripts they start beside the body (css/blog.css).
+  const layout = document.querySelector('.article-layout');
+  const header = document.querySelector('.article-header');
+  if (layout && header && layout.querySelector(':scope > :is(.article-toc, .article-index)')) {
+    const lift = () => {
+      const frameGap = parseFloat(getComputedStyle(layout).getPropertyValue('--rail-gap')) || 0;
+      const distance = layout.offsetTop - header.offsetTop + frameGap;
+      header.parentElement.style.setProperty('--side-lift', `${Math.max(0, Math.round(distance))}px`);
+    };
+    lift();
+    if ('ResizeObserver' in window) new ResizeObserver(lift).observe(header);
+    else window.addEventListener('resize', lift, { passive: true });
+  }
+
+  // The article index scrolls on its own when it is taller than the window.
+  // It opens with this article in the middle of its view, and fades at its
+  // foot while more of it lies below (css/blog.css).
+  const indexScroll = document.querySelector('.index-scroll');
+  if (indexScroll) {
+    const markEnds = () => {
+      const overflowing = indexScroll.scrollHeight - indexScroll.clientHeight > 1;
+      indexScroll.classList.toggle('is-overflowing', overflowing);
+      indexScroll.classList.toggle('is-at-end', overflowing && indexScroll.scrollTop + indexScroll.clientHeight >= indexScroll.scrollHeight - 1);
+    };
+    const here = indexScroll.querySelector('[aria-current="page"]');
+    if (here && indexScroll.scrollHeight > indexScroll.clientHeight) {
+      const offset = here.getBoundingClientRect().top - indexScroll.getBoundingClientRect().top;
+      indexScroll.scrollTop = Math.max(0, offset - (indexScroll.clientHeight - here.offsetHeight) / 2);
+    }
+    markEnds();
+    indexScroll.addEventListener('scroll', markEnds, { passive: true });
+    // The window and the arriving fonts change both heights.
+    if ('ResizeObserver' in window) {
+      const watch = new ResizeObserver(markEnds);
+      watch.observe(indexScroll);
+      if (indexScroll.firstElementChild) watch.observe(indexScroll.firstElementChild);
+    } else window.addEventListener('resize', markEnds, { passive: true });
   }
 
   // The rail stands for the article: its top for the start, each station for

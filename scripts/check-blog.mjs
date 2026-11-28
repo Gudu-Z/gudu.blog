@@ -144,6 +144,47 @@ await test('published routes, escaping, archive order, and feeds agree with the 
   });
 });
 
+await test('each article lists every published article by category and series beside it, opening its own category, in a cut shared by every page', async () => {
+  await fixture(async ({ read, post, root }) => {
+    await post('a.json', fixturePost({ slug: 'mine-new', title: '新的红石', date: '2026-10-20', subcategory: '红石' }));
+    await post('b.json', fixturePost({ slug: 'mine-old', title: '旧的红石', date: '2026-09-01', subcategory: '红石' }));
+    await post('f.json', fixturePost({ slug: 'mine-house', title: '一座房子', date: '2026-09-15', subcategory: '建筑' }));
+    await post('g.json', fixturePost({ slug: 'mine-loose', title: '随手一记', date: '2026-10-25', tags: [] }));
+    await post('c.json', fixturePost({ slug: 'dream', title: '一个梦', date: '2026-10-30', category: '白日梦话' }));
+    await post('d.json', fixturePost({ slug: 'odd', title: '<随手>', date: '2026-08-08', category: '随笔' }));
+    await post('e.json', fixturePost({ slug: 'hidden', title: '草稿', draft: true }));
+    await buildBlog({ root });
+    const page = await read('posts/mine-old.html');
+    const index = page.match(/<nav class="article-index" aria-label="文章目录">([\s\S]*?)<\/nav>/)?.[1];
+    assert.ok(index, 'the article index is a labelled navigation');
+    assert.ok(index.startsWith('<div class="index-scroll"><div class="index-groups"><details'), 'the categories name themselves; the list shows no heading');
+    // Categories in the catalog's order without empty ones, unknown labels under 其他;
+    // only this article's category is open.
+    assert.deepEqual([...index.matchAll(/<details class="index-group"( open)?><summary class="index-group-label">([^<]*) <span aria-hidden="true">\/ ([^<]*)<\/span><\/summary>/g)].map(match => `${match[2]} ${match[3]}${match[1] ? ' open' : ''}`),
+      ['Minecraft GAME JOURNAL · 04 open', '白日梦话 DAYDREAMS · 01', '其他 MISCELLANY · 01']);
+    // Series in the order of their newest article, each newest first; articles of no
+    // series after them, straight under the category; drafts left out.
+    const minecraft = index.split('<details')[1];
+    assert.deepEqual([...minecraft.matchAll(/<p class="index-series-label"><span aria-hidden="true">\/\/<\/span> ([^<]*) <span aria-hidden="true">· (\d+)<\/span><\/p>/g)].map(match => `${match[1]} ${match[2]}`), ['红石 02', '建筑 01']);
+    assert.deepEqual([...index.matchAll(/href="\.\/([^"]+)\.html"/g)].map(match => match[1]), ['mine-new', 'mine-old', 'mine-house', 'mine-loose', 'dream', 'odd']);
+    assert.ok(minecraft.includes('</ol></li><li><a href="./mine-loose.html">随手一记</a></li></ol></details>'), 'an article of no series hangs from the category itself');
+    assert.doesNotMatch(index, /未分组/);
+    assert.ok(index.includes('<a href="./mine-old.html" aria-current="page">旧的红石</a>'));
+    assert.ok(index.includes('<a href="./odd.html">&lt;随手&gt;</a>'));
+    assert.doesNotMatch(index, /<time/, 'entries name their titles alone');
+    assert.equal(index.match(/aria-current/g).length, 1, 'only this article is marked');
+    assert.doesNotMatch(index, /\.\/hidden\.html|草稿/);
+    assert.match((await read('posts/dream.html')).match(/<nav class="article-index"[\s\S]*?<\/nav>/)[0], /<details class="index-group"><summary class="index-group-label">Minecraft[\s\S]*<details class="index-group" open><summary class="index-group-label">白日梦话/,
+      'another article opens its own category instead');
+    // The contents keep their own name, so the two navigations differ.
+    assert.ok(page.includes('<aside class="article-toc" aria-label="本文目录">'));
+    // Every page names the same index cut, and the article's own cuts leave the list out.
+    const cut = html => html.match(/assets\/fonts\/articles\/site-index-[0-9a-f]{10}\.woff2/g);
+    assert.equal(new Set([...cut(page), ...cut(await read('posts/dream.html'))]).size, 1);
+    assert.ok(page.includes('@font-face { font-family: "Gudu Index"; src: url("../assets/fonts/articles/site-index-'));
+  });
+});
+
 await test('each catalog block groups cards by effective subcategory, newest first and ungrouped last', async () => {
   await fixture(async ({ root, read, post, metadata }) => {
     // A blank YAML value uses the same fallback as omitting the field.
@@ -245,32 +286,34 @@ await test('each article loads Noto Sans SC cuts of its own words: the title in 
     const sorted = text => [...new Set(text)].sort((a, b) => a.codePointAt(0) - b.codePointAt(0)).join('');
     const directory = join(root, articleFontDirectory);
     const note = title => writeFile(join(root, 'content', 'posts', 'note.md'), `---\ntitle: ${title}\ndate: 2026-10-14\ncategory: Minecraft\n---\n\n正文 Text 一段，**加粗**。\n\n## 小节\n\n\`\`\`js\n// 代码里的字\n\`\`\`\n`, 'utf8');
-    const named = fonts => Object.fromEntries(fonts.map(font => [font.path.match(/-(title|body|bold)-/)[1], font.path]));
+    const named = fonts => Object.fromEntries(fonts.map(font => [font.path.match(/-(title|body|bold|index)-/)[1], font.path]));
 
     await note('红石 Red 红石');
     let { fonts } = await buildBlog({ root });
     let paths = named(fonts);
-    assert.deepEqual(Object.keys(paths), ['title', 'body', 'bold']);
-    for (const path of Object.values(paths)) assert.match(path, /^assets\/fonts\/articles\/note-(title|body|bold)-[0-9a-f]{10}\.woff2$/);
+    assert.deepEqual(Object.keys(paths), ['title', 'body', 'bold', 'index']);
+    for (const path of Object.values(paths)) assert.match(path, /^assets\/fonts\/articles\/(note-(title|body|bold)|site-index)-[0-9a-f]{10}\.woff2$/);
     const html = await read('posts/note.html');
     for (const path of Object.values(paths)) assert.ok(html.includes(`<link rel="preload" href="../${path}" as="font" type="font/woff2" crossorigin />`));
     assert.ok(html.includes(`@font-face { font-family: "Gudu Title"; src: url("../${paths.title}") format("woff2"); font-weight: 900; font-display: block; }`));
     assert.ok(html.includes(`@font-face { font-family: "Gudu Body"; src: url("../${paths.body}") format("woff2"); font-weight: 400; font-display: swap; }`));
     assert.ok(html.includes(`@font-face { font-family: "Gudu Body"; src: url("../${paths.bold}") format("woff2"); font-weight: 600 700; font-display: swap; }`));
+    assert.ok(html.includes(`@font-face { font-family: "Gudu Index"; src: url("../${paths.index}") format("woff2"); font-weight: 400; font-display: swap; }`));
 
     await assert.rejects(syncArticleFonts({ root, fonts, checkOnly: true, cut }), /note-title-/);
     await syncArticleFonts({ root, fonts, cut });
     // The title keeps every character. The prose keeps Han and CJK punctuation
     // from the text, headings and closing line, and from the page's own chrome
     // (back link, facts, contents, neighbours, foot bar), but nothing from code.
+    // The article index has a cut of its own: its categories, series and titles.
     const prose = '正文一段，加粗。小节' + '本文完。谢谢你的阅读。';
     const chrome = '返回文章列表' + '分类子分类未分组发布阅读标签' + '约分钟' + '本文目录' + '上一篇下一篇已到达这一端' + '在自己的轨道上，保持好奇。' + '订阅';
-    assert.deepEqual(made, ['900: Rde石红', `400:${sorted(prose + chrome)}`, `600:${sorted('加粗小节' + '已到达这一端')}`]);
+    assert.deepEqual(made, ['900: Rde石红', `400:${sorted(prose + chrome)}`, `600:${sorted('加粗小节' + '已到达这一端')}`, `400:${sorted('红石')}`]);
     assert.ok(!made[1].includes('代'), 'code stays out of the cut');
     assert.equal(await readFile(join(root, paths.body), 'utf8'), made[1]);
     await syncArticleFonts({ root, fonts, checkOnly: true, cut });
     await syncArticleFonts({ root, fonts, cut });
-    assert.equal(made.length, 3, 'Unchanged words keep their cuts.');
+    assert.equal(made.length, 4, 'Unchanged words keep their cuts.');
 
     await writeFile(join(directory, 'hand-made.woff2'), 'keep', 'utf8');
     await note('红石矿车');
@@ -278,9 +321,10 @@ await test('each article loads Noto Sans SC cuts of its own words: the title in 
     const renamed = named(fonts);
     assert.notEqual(renamed.title, paths.title);
     assert.equal(renamed.body, paths.body, 'A new title leaves the prose cuts alone.');
+    assert.notEqual(renamed.index, paths.index, 'The index cut follows the titles.');
     await assert.rejects(syncArticleFonts({ root, fonts, checkOnly: true, cut }), /note-title-/);
     await syncArticleFonts({ root, fonts, cut });
-    assert.deepEqual(made.slice(3), ['900: 石矿红车']);
+    assert.deepEqual(made.slice(4), ['900: 石矿红车', `400:${sorted('红石矿车')}`]);
     assert.deepEqual((await readdir(directory)).sort(), ['hand-made.woff2', ...Object.values(renamed).map(path => path.split('/').pop())].sort());
   });
 });

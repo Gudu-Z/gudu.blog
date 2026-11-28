@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { parseMarkdown } from './markdown.mjs';
 import { createSceneResolver } from './mc-article-assets.mjs';
 import { commentsAssets, readCommentsConfig, renderComments } from './comments.mjs';
-import { articleFontHead, articleFonts, syncArticleFonts } from './article-fonts.mjs';
+import { articleFontHead, articleFonts, indexFont, syncArticleFonts } from './article-fonts.mjs';
 
 const defaultRoot = fileURLToPath(new URL('../', import.meta.url));
 const site = 'https://gudu.blog';
@@ -132,7 +132,7 @@ function documentHead({ title, description, canonical, prefix, noindex = false, 
     <script src="${prefix}js/site-theme.js?v=20261030-day-mode"></script>
     <script src="${prefix}js/theme-jets.js?v=20261118-beam" defer></script>
     <link rel="stylesheet" href="${prefix}css/style.css?v=20261118-beam" />
-    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261122-rail" />`.replace(/[ \t]+$/gm, '');
+    <link rel="stylesheet" href="${prefix}css/blog.css?v=20261128-index" />`.replace(/[ \t]+$/gm, '');
 }
 
 function renderArticle(post, index, posts, commentsConfig) {
@@ -166,28 +166,58 @@ function renderArticle(post, index, posts, commentsConfig) {
   const deck = post.deck ? `<p class="article-deck">${escape(post.deck)}</p>` : '';
   const factList = `<dl class="article-facts">${facts.map(([name, code, value]) => `<div><dt>${name} <span aria-hidden="true">/ ${code}</span></dt><dd>${value}</dd></div>`).join('')}</dl>`;
   const notice = post.demo ? '<p class="demo-notice">这是一篇用于预览版式的示例文章，不代表作者的真实经历或正式发布内容。</p>' : '';
-  const contents = toc.length ? `<aside class="article-toc" aria-label="文章目录"><p class="toc-label">本文目录 <span aria-hidden="true">/ CONTENTS</span></p><nav><ol>${toc.map(heading => `<li${heading.level === 3 ? ' class="toc-subheading"' : ''}><a data-toc-link href="#${escape(heading.id)}">${escape(heading.text)}</a></li>`).join('')}</ol></nav></aside>` : '';
+  // The contents' cursor and read-out are written here rather than by
+  // js/article.js, so they show from the first paint (css/blog.css hides
+  // them when scripts are off).
+  const contents = toc.length ? `<aside class="article-toc" aria-label="本文目录"><p class="toc-label">本文目录 <span aria-hidden="true">/ CONTENTS</span></p><nav><ol>${toc.map(heading => `<li${heading.level === 3 ? ' class="toc-subheading"' : ''}><a data-toc-link href="#${escape(heading.id)}">${escape(heading.text)}</a></li>`).join('')}</ol><span class="toc-cursor" aria-hidden="true"></span></nav><p class="toc-readout" aria-hidden="true"><span>READ</span><output>0%</output></p></aside>` : '';
+  // The article index, left of the article, in three levels as the home
+  // catalog groups them: each category in the catalog's order, its series
+  // (the subcategories) in the order of their newest article, and the
+  // articles newest first. Articles of no series hang from the category
+  // itself, after the series. Each entry is its title alone. This article's
+  // category is open and marked as the page; the others are folded. It shows
+  // no heading of its own: the categories name themselves, and screen readers
+  // hear its label. Its words have a cut of their own, shared by every page.
+  const indexEntry = item => `<li><a href="./${item.slug}.html"${item.slug === post.slug ? ' aria-current="page"' : ''}>${escape(item.title)}</a></li>`;
+  const indexBranch = items => {
+    const series = Map.groupBy(items, item => item.subcategory);
+    const named = [...series.keys()].filter(name => name !== ungrouped);
+    return `<ol>${named.map(name => `<li class="index-series"><p class="index-series-label"><span aria-hidden="true">//</span> ${escape(name)} <span aria-hidden="true">· ${twoDigits(series.get(name).length)}</span></p><ol>${series.get(name).map(indexEntry).join('')}</ol></li>`).join('')}${(series.get(ungrouped) ?? []).map(indexEntry).join('')}</ol>`;
+  };
+  const indexGroups = categories.map(category => ({ category, items: posts.filter(item => item.categorySlug === category.slug) })).filter(group => group.items.length);
+  const articleIndex = `<nav class="article-index" aria-label="文章目录"><div class="index-scroll"><div class="index-groups">${indexGroups.map(({ category, items }) => `<details class="index-group"${category.slug === post.categorySlug ? ' open' : ''}><summary class="index-group-label">${escape(category.name)} <span aria-hidden="true">/ ${escape(category.code)} · ${twoDigits(items.length)}</span></summary>${indexBranch(items)}</details>`).join('')}</div></div></nav>`;
   const neighbours = `<nav class="article-pagination" aria-label="其他文章">${postLink(newer, 'article-prev', '上一篇', 'PREV', '←')}${postLink(older, 'article-next', '下一篇', 'NEXT', '→')}</nav>`;
   const footer = siteFooter('../');
-  const fonts = articleFonts(post, body, [back, deck, factList, notice, contents, `<p>${endNote}</p>`, neighbours, footer].join('\n'));
+  // Two small scripts run while the page is parsed, so nothing moves after it
+  // first paints. The first, in the head, marks that scripts run and restores
+  // the mouse parallax where the last article left it (js/article-parallax.js
+  // saves it as the page goes; only a value from the last ten seconds, and
+  // only for a fine pointer without reduced motion). The second, right after
+  // the header, lifts the side columns to the top of the frame: it measures
+  // the header's height and gaps into --side-lift, which js/article.js keeps
+  // current as the header reflows.
+  const earlyScript = '<script>(() => { const root = document.documentElement; root.classList.add(\'has-article-script\'); try { const saved = JSON.parse(sessionStorage.getItem(\'gudu:article-pointer\') || \'null\'); if (!saved || !(Date.now() - saved.at < 10000) || !matchMedia(\'(hover: hover) and (pointer: fine)\').matches || matchMedia(\'(prefers-reduced-motion: reduce)\').matches) return; const x = Math.max(-1, Math.min(1, Number(saved.x) || 0)); const y = Math.max(-1, Math.min(1, Number(saved.y) || 0)); root.style.setProperty(\'--pointer-x\', String(x)); root.style.setProperty(\'--pointer-y\', String(y)); window.ArticlePointerStart = { x, y }; } catch {} })();</script>';
+  const liftScript = '<script>(() => { const script = document.currentScript; const header = script.previousElementSibling; const style = getComputedStyle(header); const lift = header.offsetHeight + (parseFloat(style.marginBottom) || 0) + (parseFloat(style.getPropertyValue(\'--rail-gap\')) || 0); script.parentElement.style.setProperty(\'--side-lift\', Math.round(lift) + \'px\'); })();</script>';
+  const fonts = [...articleFonts(post, body, [back, deck, factList, notice, contents, `<p>${endNote}</p>`, neighbours, footer].join('\n')), ...indexFont(articleIndex)];
   const html = `<!doctype html>
 ${generated}
 <html lang="zh-CN">
   <head>
     ${documentHead({ title: `${post.title} · Gudu 的个人博客`, description: post.excerpt, canonical: postURL(post), prefix: '../', noindex: post.demo, article: post })}
+    ${earlyScript}
     ${articleFontHead(fonts, '../')}
 ${structuredData}
     <script src="../js/particle-sky.js?v=20261122-lift" defer></script>
-    <script src="../js/article-parallax.js?v=20261122-depth" defer></script>
+    <script src="../js/article-parallax.js?v=20261128-index" defer></script>
     <script src="../js/article-sky.js?v=20261122-depth" defer></script>
-    <script src="../js/article.js?v=20261122-rail" defer></script>${post.hasScenes ? '\n    <link rel="stylesheet" href="../css/mc-article.css?v=20261122-depth" />\n    <script type="module" src="../js/mc-article.mjs"></script>' : ''}
+    <script src="../js/article.js?v=20261128-index" defer></script>${post.hasScenes ? '\n    <link rel="stylesheet" href="../css/mc-article.css?v=20261122-depth" />\n    <script type="module" src="../js/mc-article.mjs"></script>' : ''}
     ${comments.head}
   </head>
-  <body class="article-page">
+  <body class="article-page${contents ? ' has-toc' : ''}">
     <div class="article-sky" aria-hidden="true"><canvas data-particle-sky></canvas></div>
     <div class="reading-progress" aria-hidden="true" hidden><span data-reading-progress></span></div>
     ${siteHeader('../')}
-    <main class="article-shell" id="main-content" tabindex="-1">
+    <main class="article-shell${contents ? ' has-toc' : ''} has-index" id="main-content" tabindex="-1">
       ${back}
       <header class="article-header">
         <h1 class="article-title">${escape(post.title)}</h1>
@@ -195,12 +225,14 @@ ${structuredData}
         ${factList}
         ${notice}
       </header>
+      ${liftScript}
       <div class="article-layout">
         <article class="article-body" aria-label="文章正文">
           ${body}
           <div class="article-end"><span class="article-end-mark" aria-hidden="true"></span><p>${endNote}<span class="article-end-code" aria-hidden="true">END OF ENTRY</span></p><div class="article-tools"><button class="copy-link" type="button" hidden>复制文章链接 <span aria-hidden="true">↗</span></button><p class="copy-status" role="status" aria-live="polite"></p></div></div>
         </article>
         ${contents}
+        ${articleIndex}
       </div>
       ${neighbours}
       ${comments.body}

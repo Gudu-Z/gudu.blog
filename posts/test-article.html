@@ -21,25 +21,28 @@
     <script src="../js/site-theme.js?v=20261030-day-mode"></script>
     <script src="../js/theme-jets.js?v=20261118-beam" defer></script>
     <link rel="stylesheet" href="../css/style.css?v=20261118-beam" />
-    <link rel="stylesheet" href="../css/blog.css?v=20261122-rail" />
+    <link rel="stylesheet" href="../css/blog.css?v=20261128-index" />
+    <script>(() => { const root = document.documentElement; root.classList.add('has-article-script'); try { const saved = JSON.parse(sessionStorage.getItem('gudu:article-pointer') || 'null'); if (!saved || !(Date.now() - saved.at < 10000) || !matchMedia('(hover: hover) and (pointer: fine)').matches || matchMedia('(prefers-reduced-motion: reduce)').matches) return; const x = Math.max(-1, Math.min(1, Number(saved.x) || 0)); const y = Math.max(-1, Math.min(1, Number(saved.y) || 0)); root.style.setProperty('--pointer-x', String(x)); root.style.setProperty('--pointer-y', String(y)); window.ArticlePointerStart = { x, y }; } catch {} })();</script>
     <link rel="preload" href="../assets/fonts/articles/test-article-title-3ba7581393.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="../assets/fonts/articles/test-article-body-950db373f5.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="../assets/fonts/articles/test-article-bold-2485400026.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="../assets/fonts/articles/site-index-9cf366c355.woff2" as="font" type="font/woff2" crossorigin />
     <style>
       @font-face { font-family: "Gudu Title"; src: url("../assets/fonts/articles/test-article-title-3ba7581393.woff2") format("woff2"); font-weight: 900; font-display: block; }
       @font-face { font-family: "Gudu Body"; src: url("../assets/fonts/articles/test-article-body-950db373f5.woff2") format("woff2"); font-weight: 400; font-display: swap; }
       @font-face { font-family: "Gudu Body"; src: url("../assets/fonts/articles/test-article-bold-2485400026.woff2") format("woff2"); font-weight: 600 700; font-display: swap; }
+      @font-face { font-family: "Gudu Index"; src: url("../assets/fonts/articles/site-index-9cf366c355.woff2") format("woff2"); font-weight: 400; font-display: swap; }
     </style>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"测试文章","description":"我也不知道，总之先写一点滚木。","datePublished":"2026-11-18","mainEntityOfPage":"https://gudu.blog/posts/test-article.html","inLanguage":"zh-CN"}</script>
     <script src="../js/particle-sky.js?v=20261122-lift" defer></script>
-    <script src="../js/article-parallax.js?v=20261122-depth" defer></script>
+    <script src="../js/article-parallax.js?v=20261128-index" defer></script>
     <script src="../js/article-sky.js?v=20261122-depth" defer></script>
-    <script src="../js/article.js?v=20261122-rail" defer></script>
+    <script src="../js/article.js?v=20261128-index" defer></script>
     <link rel="stylesheet" href="../css/mc-article.css?v=20261122-depth" />
     <script type="module" src="../js/mc-article.mjs"></script>
     
   </head>
-  <body class="article-page">
+  <body class="article-page has-toc">
     <div class="article-sky" aria-hidden="true"><canvas data-particle-sky></canvas></div>
     <div class="reading-progress" aria-hidden="true" hidden><span data-reading-progress></span></div>
     <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -51,7 +54,7 @@
       <a class="header-rss" href="../feed.xml" aria-label="RSS 订阅"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="5" cy="19" r="1.5" /><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16" /></svg><span>RSS</span></a>
       <button class="header-theme" type="button" data-theme-toggle aria-label="日间模式" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><g transform="rotate(18 12 12)"><path class="theme-jet" pathLength="1" d="M12 1.2v6.3M12 16.5v6.3" /><ellipse cx="12" cy="12" rx="10.2" ry="3.1" /><circle class="theme-core" cx="12" cy="12" r="2.2" /></g></svg></button>
     </header>
-    <main class="article-shell" id="main-content" tabindex="-1">
+    <main class="article-shell has-toc has-index" id="main-content" tabindex="-1">
       <a class="article-back" href="../index.html#journal"><span aria-hidden="true">←</span> 返回文章列表</a>
       <header class="article-header">
         <h1 class="article-title">测试文章</h1>
@@ -59,6 +62,7 @@
         <dl class="article-facts"><div><dt>分类 <span aria-hidden="true">/ CATEGORY</span></dt><dd><a class="article-category" href="../index.html#catalog-minecraft">Minecraft</a></dd></div><div><dt>子分类 <span aria-hidden="true">/ SUBCATEGORY</span></dt><dd>红石</dd></div><div><dt>发布 <span aria-hidden="true">/ DATE</span></dt><dd><time datetime="2026-11-18">2026.11.18</time></dd></div><div><dt>阅读 <span aria-hidden="true">/ READ TIME</span></dt><dd>约 5 分钟</dd></div><div><dt>标签 <span aria-hidden="true">/ TAGS</span></dt><dd><ul class="article-tags" aria-label="文章标签"><li>#红石</li></ul></dd></div></dl>
         
       </header>
+      <script>(() => { const script = document.currentScript; const header = script.previousElementSibling; const style = getComputedStyle(header); const lift = header.offsetHeight + (parseFloat(style.marginBottom) || 0) + (parseFloat(style.getPropertyValue('--rail-gap')) || 0); script.parentElement.style.setProperty('--side-lift', Math.round(lift) + 'px'); })();</script>
       <div class="article-layout">
         <article class="article-body" aria-label="文章正文">
           <p>我也不知道，总之先写一点滚木。</p>
@@ -180,7 +184,8 @@ function backFace(corners, eye, depth = 0.955) {
 
           <div class="article-end"><span class="article-end-mark" aria-hidden="true"></span><p>本文完。谢谢你的阅读。<span class="article-end-code" aria-hidden="true">END OF ENTRY</span></p><div class="article-tools"><button class="copy-link" type="button" hidden>复制文章链接 <span aria-hidden="true">↗</span></button><p class="copy-status" role="status" aria-live="polite"></p></div></div>
         </article>
-        <aside class="article-toc" aria-label="文章目录"><p class="toc-label">本文目录 <span aria-hidden="true">/ CONTENTS</span></p><nav><ol><li><a data-toc-link href="#先试试红石机器渲染">先试试红石机器渲染</a></li><li><a data-toc-link href="#大段文字">大段文字</a></li><li class="toc-subheading"><a data-toc-link href="#gta6-延期六年只因为一个它不敢提的名字">GTA6 延期六年，只因为一个它不敢提的名字</a></li><li><a data-toc-link href="#版式测试">版式测试</a></li></ol></nav></aside>
+        <aside class="article-toc" aria-label="本文目录"><p class="toc-label">本文目录 <span aria-hidden="true">/ CONTENTS</span></p><nav><ol><li><a data-toc-link href="#先试试红石机器渲染">先试试红石机器渲染</a></li><li><a data-toc-link href="#大段文字">大段文字</a></li><li class="toc-subheading"><a data-toc-link href="#gta6-延期六年只因为一个它不敢提的名字">GTA6 延期六年，只因为一个它不敢提的名字</a></li><li><a data-toc-link href="#版式测试">版式测试</a></li></ol><span class="toc-cursor" aria-hidden="true"></span></nav><p class="toc-readout" aria-hidden="true"><span>READ</span><output>0%</output></p></aside>
+        <nav class="article-index" aria-label="文章目录"><div class="index-scroll"><div class="index-groups"><details class="index-group" open><summary class="index-group-label">Minecraft <span aria-hidden="true">/ GAME JOURNAL · 01</span></summary><ol><li class="index-series"><p class="index-series-label"><span aria-hidden="true">//</span> 红石 <span aria-hidden="true">· 01</span></p><ol><li><a href="./test-article.html" aria-current="page">测试文章</a></li></ol></li></ol></details></div></div></nav>
       </div>
       <nav class="article-pagination" aria-label="其他文章"><span class="article-prev is-unavailable"><span>上一篇 <i aria-hidden="true">/ PREV</i></span><strong>已到达这一端</strong></span><span class="article-next is-unavailable"><span>下一篇 <i aria-hidden="true">/ NEXT</i></span><strong>已到达这一端</strong></span></nav>
       

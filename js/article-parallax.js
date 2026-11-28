@@ -1,34 +1,42 @@
 /* The article page follows a mouse in depth, as the home page does: the
- * page's HUD (the site bar, the contents and the reading progress) travels a
- * little further than the article, and the stars behind move against both
- * (js/article-sky.js reads window.ArticlePointer). The pointer is eased over
- * about 110 ms and comes home when it leaves the window. While a button is
- * held or a field has focus the page holds still, so nothing slides under a
- * selection, a drag or typing. Touch, coarse pointers and reduced motion leave
- * the page still. The depth while scrolling is css/blog.css.
+ * page's HUD (the site bar, the contents, the article index and the reading
+ * progress) travels a little further than the article, and the stars behind
+ * move against both (js/article-sky.js reads window.ArticlePointer). The
+ * pointer is eased over about 110 ms and comes home when it leaves the
+ * window. While a button is held or a field has focus the page holds still,
+ * so nothing slides under a selection, a drag or typing. Touch, coarse
+ * pointers and reduced motion leave the page still. The depth while
+ * scrolling is css/blog.css.
+ *
+ * The eased pointer is written as --pointer-x and --pointer-y on the root
+ * (right and up positive, −1 to 1), and css/blog.css turns them into each
+ * layer's travel. As the page goes, the pointer is saved, and the next
+ * article restores it in its head before it first paints
+ * (scripts/build-blog.mjs), so a new article opens where the last one stood
+ * instead of jumping home and sliding back on the first move.
  */
 (() => {
   'use strict';
 
   const fine = window.matchMedia('(hover: hover) and (pointer: fine)');
   const still = window.matchMedia('(prefers-reduced-motion: reduce)');
-  const pointer = window.ArticlePointer = { x: 0, y: 0 };
-  // Each layer's travel at full deflection, in CSS pixels, as on the home page.
-  const layers = [
-    ['.article-shell', 6, 3.75],
-    ['.site-header', 8, 5],
-    ['.reading-progress', 8, 5],
-    // The contents sit inside the shell, so this is the rest of the HUD's travel.
-    ['.article-toc', 2, 1.25],
-  ].map(([selector, x, y]) => [document.querySelector(selector), x, y]).filter(([node]) => node);
-
-  let toX = 0, toY = 0, at = 0, frame = 0;
+  const root = document.documentElement;
   const live = () => fine.matches && !still.matches;
+  const start = live() ? window.ArticlePointerStart : null;
+  const pointer = window.ArticlePointer = { x: start?.x ?? 0, y: start?.y ?? 0 };
+  const saveKey = 'gudu:article-pointer';
+
+  let toX = pointer.x, toY = pointer.y, at = 0, frame = 0;
   const typing = () => document.activeElement?.matches?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
 
   function place() {
-    const moved = pointer.x !== 0 || pointer.y !== 0;
-    for (const [node, x, y] of layers) node.style.translate = moved ? `${(pointer.x * x).toFixed(2)}px ${(-pointer.y * y).toFixed(2)}px` : '';
+    if (pointer.x !== 0 || pointer.y !== 0) {
+      root.style.setProperty('--pointer-x', pointer.x.toFixed(4));
+      root.style.setProperty('--pointer-y', pointer.y.toFixed(4));
+    } else {
+      root.style.removeProperty('--pointer-x');
+      root.style.removeProperty('--pointer-y');
+    }
   }
 
   function tick(now) {
@@ -61,6 +69,12 @@
     if (!event.buttons && live()) aim(0, 0);
   });
 
+  // The mouse stays where it was when a link opens the next article.
+  window.addEventListener('pagehide', () => {
+    if (!live()) return;
+    try { sessionStorage.setItem(saveKey, JSON.stringify({ x: toX, y: toY, at: Date.now() })); } catch {}
+  });
+
   // Reduced motion or a coarse pointer puts everything home at once.
   function settle() {
     if (live()) return;
@@ -72,4 +86,5 @@
   }
   fine.addEventListener('change', settle);
   still.addEventListener('change', settle);
+  place();
 })();

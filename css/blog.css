@@ -381,6 +381,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 }
 @keyframes depth-panel { from { translate: 0 var(--depth-panel); } to { translate: 0 calc(-1 * var(--depth-panel)); } }
 @keyframes depth-mark { from { translate: 0 var(--depth-mark); } to { translate: 0 calc(-1 * var(--depth-mark)); } }
+/* Depth under the mouse. js/article-parallax.js writes the eased pointer as
+   --pointer-x and --pointer-y (right and up positive, −1 to 1; the article's
+   head restores the last article's value before the first paint). Each
+   layer's travel at full deflection is the home page's: the article 6×3.75px,
+   the site bar and the reading progress 8×5px. The contents and the article
+   index sit inside the article, so theirs is the rest of the HUD's travel. */
+.article-page .article-shell { translate: calc(var(--pointer-x, 0) * 6px) calc(var(--pointer-y, 0) * -3.75px); }
+.article-page :is(.site-header, .reading-progress) { translate: calc(var(--pointer-x, 0) * 8px) calc(var(--pointer-y, 0) * -5px); }
+.article-page :is(.article-toc, .article-index) { translate: calc(var(--pointer-x, 0) * 2px) calc(var(--pointer-y, 0) * -1.25px); }
 .code-copy { position: absolute; top: 3px; right: 8px; padding: 5px 8px; border: 0; background: none; color: var(--code-name); font-size: 11px; line-height: 1.5; letter-spacing: 0.06em; transition: color 160ms ease; }
 .code-copy:hover { color: var(--paper); }
 .code-copy.is-done { color: var(--signal-text); }
@@ -458,6 +467,76 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 }
 .toc-readout { display: flex; justify-content: space-between; gap: 12px; margin: calc(16 * var(--header-unit, 1px)) 0 0; padding-top: calc(9 * var(--header-unit, 1px)); border-top: 1px solid var(--rule); color: var(--code-name); font: calc(10.5 * var(--header-unit, 1px))/1.4 var(--mono); letter-spacing: 0.14em; }
 .toc-readout output { color: var(--paper); letter-spacing: 0.06em; }
+/* The page brings the cursor and read-out so they show from its first paint;
+   without scripts nothing would move them, so they stay hidden. */
+html:not(.has-article-script) .article-toc :is(.toc-cursor, .toc-readout) { display: none; }
+/* The article index stands left of the article as the contents stand right of
+   it, and mirrors them: every published article by category
+   (scripts/build-blog.mjs), drawn in the contents' units and marks, but set
+   right, with its rails on the side nearer the article and the ticks reaching
+   left from them; this article sits on an orange tick, the cursor pointing
+   left at it. It needs no heading of its own: each category names itself as
+   the contents' label does. Each entry is its title alone. It has three
+   levels: categories, their series and the articles (below).
+   When the list is taller than the window it scrolls on its own with no
+   scroll bar, fading at its foot while more lies below; js/article.js marks
+   that and opens the list on this article. Its words are cut once for every
+   page as "Gudu Index" (scripts/article-fonts.mjs). It shows only where the
+   window has room for it (below). */
+.article-index { display: none; flex-direction: column; position: sticky; top: 44px; min-width: 0; max-height: calc(100vh - 88px); text-align: right; overflow-wrap: anywhere; font-family: "Segoe UI Variable Text", "Segoe UI", "Gudu Index", "Gudu Body", -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; font-size: calc(13 * var(--header-unit, 1px)); }
+.index-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.index-scroll::-webkit-scrollbar { display: none; }
+.index-scroll.is-overflowing { -webkit-mask-image: linear-gradient(#000 calc(100% - 48px), transparent); mask-image: linear-gradient(#000 calc(100% - 48px), transparent); }
+.index-scroll.is-overflowing.is-at-end { -webkit-mask-image: none; mask-image: none; }
+.index-groups { padding: calc(4 * var(--header-unit, 1px)) 0 calc(6 * var(--header-unit, 1px)); }
+.index-group + .index-group { margin-top: calc(22 * var(--header-unit, 1px)); }
+/* Each category is a ruler of its own, as the contents are.
+   - Its name and code ("/ CODE · count") stand over it as the contents'
+     label does, the name a size up. This article's category is open (a
+     bright name); the others fold to their label (a quieter name), and a
+     click opens them.
+   - Under an open category runs its rail, on the side nearer the article,
+     and its series ("// name · count") and any articles of no series hang
+     from the rail on ticks, as the contents' sections do.
+   - Each series holds its articles one step further in, on a branch that
+     drops from under its name: ├ for each, └ for the last.
+   The cursor rides the open category's rail. */
+.article-index { --index-step: calc(12 * var(--header-unit, 1px)); --index-to-rail: calc(20 * var(--header-unit, 1px)); }
+.index-series { --index-to-rail: calc(32 * var(--header-unit, 1px)); }
+.index-group-label { display: flex; flex-direction: column; align-items: flex-end; gap: calc(3 * var(--header-unit, 1px)); list-style: none; cursor: pointer; color: var(--label); font-size: calc(14 * var(--header-unit, 1px)); line-height: 1.5; letter-spacing: 0.08em; transition: color 160ms ease; }
+.index-group-label::-webkit-details-marker { display: none; }
+.index-group[open] > .index-group-label { margin-bottom: calc(12 * var(--header-unit, 1px)); color: var(--paper); }
+.index-group-label:hover { color: var(--paper); }
+.index-group-label > span { color: var(--code-name); font: calc(9.5 * var(--header-unit, 1px))/1.4 var(--mono); letter-spacing: 0.08em; }
+.index-series-label { margin: 0 0 calc(8 * var(--header-unit, 1px)); color: var(--label); font-size: calc(12 * var(--header-unit, 1px)); line-height: 1.5; letter-spacing: 0.06em; }
+.index-series-label > span { color: var(--code-name); font: calc(9.5 * var(--header-unit, 1px))/1.4 var(--mono); letter-spacing: 0.08em; }
+.index-series:has(a[aria-current]) > .index-series-label { color: var(--paper); }
+.article-index ol { margin: 0; padding: 0; list-style: none; }
+/* The category's ruler: the contents' rail and texture, its entries 20 units in. */
+.index-group > ol { position: relative; padding: calc(4 * var(--header-unit, 1px)) calc(20 * var(--header-unit, 1px)) calc(6 * var(--header-unit, 1px)) 0; }
+.index-group > ol::before { content: ""; position: absolute; top: 0; bottom: 0; right: 0; width: 4px; background: linear-gradient(var(--rule-strong) 0 0) right / 1px 100% no-repeat, repeating-linear-gradient(var(--rule) 0 1px, transparent 1px 8px) right top / 4px 100% no-repeat; pointer-events: none; }
+.index-series > ol { padding-right: var(--index-step); }
+/* --gap spaces the entries of one list; --tick is the middle of an entry's
+   first line, where its tick stands; --lead is how far a series' branch
+   reaches above its first article, to just under the series' name. */
+.article-index li { --gap: calc(8 * var(--header-unit, 1px)); --tick: calc(10.4 * var(--header-unit, 1px)); --lead: calc(5 * var(--header-unit, 1px)); position: relative; margin: 0 0 var(--gap); line-height: 1.6; }
+.index-group > ol > li { --gap: calc(14 * var(--header-unit, 1px)); }
+.article-index li.index-series { --tick: calc(9 * var(--header-unit, 1px)); }
+.article-index li:last-child { margin-bottom: 0; }
+/* On the ruler: a tick from the rail, as the contents tick their sections. */
+.index-group > ol > li::before { content: ""; position: absolute; top: var(--tick); right: calc(-20 * var(--header-unit, 1px)); width: calc(9 * var(--header-unit, 1px)); height: 1px; background: var(--rule-strong); pointer-events: none; }
+/* On a series' branch, half a step out from its articles. */
+.index-series > ol > li::before { content: ""; position: absolute; top: var(--tick); right: calc(-0.5 * var(--index-step)); width: calc(0.5 * var(--index-step) - 2 * var(--header-unit, 1px)); height: 1px; background: var(--rule-strong); pointer-events: none; }
+.index-series > ol > li::after { content: ""; position: absolute; top: calc(-1 * var(--gap)); bottom: 0; right: calc(-0.5 * var(--index-step)); width: 1px; background: var(--rule-strong); pointer-events: none; }
+.index-series > ol > li:first-child::after { top: calc(-1 * var(--lead)); }
+.index-series > ol > li:last-child::after { bottom: calc(100% - var(--tick) - 1px); }
+/* Set right, a title that breaks would leave its last word alone at the rail;
+   balanced lines break it evenly. */
+.article-index a { position: relative; display: block; color: var(--muted); text-wrap: balance; transition: color 160ms ease; }
+.article-index a:hover, .article-index a[aria-current] { color: var(--paper); }
+.article-index li:has(> a[aria-current])::before { background: var(--red); }
+/* The cursor stays on the rail, level with this article's tick. */
+.article-index a[aria-current]::after { content: ""; position: absolute; top: calc(var(--tick) - 4px); right: calc(-1 * var(--index-to-rail) - 3px); width: 7px; height: 9px; background: var(--red); clip-path: polygon(100% 0, 0 50%, 100% 100%); pointer-events: none; }
 .reading-progress { position: fixed; top: 0; left: 0; width: 100%; height: 2px; z-index: 30; pointer-events: none; }
 .reading-progress span { display: block; width: 0; height: 100%; background: var(--red); }
 /* A short calibration as the page opens: the header rule draws in and the
@@ -489,9 +568,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
   .about-section { gap: 60px; }
 }
 /* The original body, gutter and contents occupied 730 + 70 + 210px.
-   Keep that span for the article and fit the contents on its right. */
+   Keep that span for the article and fit the contents on its right.
+   scripts/build-blog.mjs marks which side columns a page has (has-toc on the
+   page and the shell, has-index on the shell), so these columns stand from
+   the first paint, while the page is still being read in; a rule that waited
+   on :has() could lay the shell out before its columns had arrived. */
 @media (width > 900px) {
-  .article-shell:has(> .article-layout > .article-toc) {
+  .article-shell.has-toc {
     --toc-width: clamp(100px, 11vw, 210px);
     /* The contents are not part of the article: its right rail stands in this
        gap, reaching --rail-gap + 4px out from the text, and the contents
@@ -505,7 +588,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
        contents; the left keeps room for the left rail, the right 24px. */
     margin-inline-start: clamp(var(--rail-room), max(7.5%, calc((100% - 1080px) / 2)), calc(100% - 24px - var(--layout-width)));
   }
-  .article-layout:has(> .article-toc) {
+  .has-toc > .article-layout {
     grid-template-columns: minmax(0, 1fr) var(--toc-width);
     column-gap: var(--toc-gap);
   }
@@ -513,7 +596,38 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
     max-width: calc(100% - var(--toc-space, 0px));
   }
   /* The contents rail shows the progress, so the top bar steps aside. */
-  .article-page:has(.article-toc) .reading-progress { display: none; }
+  .article-page.has-toc .reading-progress { display: none; }
+  /* The side columns start level with the top of the article's frame, beside
+     the title: the page measures the header's height and gaps into
+     --side-lift as soon as the header is read in, and js/article.js keeps it
+     current. Without scripts they start beside the body. They still stick
+     44px from the top of the window. */
+  .article-layout > :is(.article-toc, .article-index) { margin-top: calc(-1 * var(--side-lift, 0px)); }
+}
+/* With room on both sides, the index joins as a first column and the three
+   stand centred: the index, the article between its rails and the contents,
+   the two outer columns as wide and as far off the rails. Where the window
+   is too narrow for their full widths, the outer edges keep to the top bar's
+   (its 4.2% side padding), under the logo and the last control, and the
+   article narrows. The back link, the header, the neighbours and the
+   comments start with the article. */
+@media (width >= 1200px) {
+  .article-shell.has-index {
+    --index-width: clamp(100px, 11vw, 210px);
+    --index-gap: calc(var(--rail-gap) + 36px);
+    --index-space: calc(var(--index-width) + var(--index-gap));
+    --layout-width: calc(var(--article-width) + var(--toc-space, 0px) + var(--index-space));
+    width: min(100% - 8.4%, var(--layout-width));
+    margin-inline: auto;
+  }
+  .article-shell.has-index > :is(.article-back, .article-header, .article-pagination, .article-comments) { margin-inline-start: var(--index-space); }
+  .article-shell.has-index > :is(.article-header, .article-pagination, .article-comments) { max-width: calc(100% - var(--toc-space, 0px) - var(--index-space)); }
+  .has-index > .article-layout { grid-template-columns: var(--index-width) minmax(0, 1fr); column-gap: var(--index-gap); }
+  .has-index.has-toc > .article-layout { grid-template-columns: var(--index-width) minmax(0, 1fr) var(--toc-width); }
+  .has-index > .article-layout::before { left: calc(var(--index-space) - 5px - var(--rail-gap)); }
+  .article-layout > .article-index { display: flex; grid-area: 1 / 1; }
+  .has-index > .article-layout > .article-body { grid-area: 1 / 2; }
+  .has-index > .article-layout > .article-toc { grid-area: 1 / 3; }
 }
 @media (max-width: 900px) {
   .article-layout { row-gap: 28px; }
