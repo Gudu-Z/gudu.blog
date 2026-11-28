@@ -111,6 +111,8 @@ html:not(.has-vertical-chapters) .catalog-row {
   --tf: calc(2 * var(--sf));
   --df: max(9px, calc(10.59 * var(--u)));
   --num: calc(3.1 * var(--tf));
+  /* The numeral's band at the foot, and the gap above it. */
+  --num-band: calc(.78 * var(--num) + 2 * var(--u) + .35 * var(--tf));
   --cell: calc(1.1 * var(--tf));
   --row-pad: calc(13 * var(--u));
   --card-h: calc(100cqh - 2 * var(--row-pad));
@@ -190,7 +192,7 @@ html:not(.has-vertical-chapters) :is(.catalog-card, .catalog-empty)::after {
 html:not(.has-vertical-chapters) .catalog-card:is(:hover, :focus-visible) { --line: light-dark(rgb(24 28 32 / 80%), rgb(240 243 246 / 80%)); }
 html:not(.has-vertical-chapters) .catalog-card:is(:hover, :focus-visible)::before { height: calc(100% + 1px); }
 /* The numeral stands large and faint behind the foot of the entry, under the
-   title. */
+   title, the date and the summary's first column. */
 html:not(.has-vertical-chapters) :is(.catalog-card-index, .catalog-empty-count) {
   position: absolute;
   z-index: -1;
@@ -206,7 +208,7 @@ html:not(.has-vertical-chapters) :is(.catalog-card-index, .catalog-empty-count) 
 html:not(.has-vertical-chapters) .catalog-card-title {
   grid-area: title;
   /* The title stops above the numeral. */
-  height: calc(var(--card-h) - var(--pad-top) - var(--pad-bottom) - .78 * var(--num) - 2 * var(--u) - .35 * var(--tf));
+  height: calc(var(--card-h) - var(--pad-top) - var(--pad-bottom) - var(--num-band));
   overflow: hidden;
   font: 300 var(--tf)/1.12 var(--ui-sans);
   letter-spacing: .1em;
@@ -229,6 +231,15 @@ html:not(.has-vertical-chapters) .catalog-card-summary {
   -webkit-line-clamp: 2;
   overflow: hidden;
   transition: opacity 200ms ease;
+}
+/* The summary's first column stops above the numeral, which reaches under
+   it; the second runs on to the foot. A float one column wide holds the
+   numeral's band at the end of the first. */
+html:not(.has-vertical-chapters) .catalog-card-summary::before {
+  content: "";
+  float: inline-end;
+  inline-size: var(--num-band);
+  block-size: 1lh;
 }
 /* The date stands in its own column beside the title. It ends on the line
    where the summary starts, then drops by half the summary's first character

@@ -904,10 +904,13 @@ test('a short desktop keeps a long title in one column and lets it run on when p
 
 // The date runs in its own column beside the title, starting a little above
 // it, its last digit level with the summary's first character, a fading
-// hairline below. The numeral stands large and faint under the title, which
-// stops above it. An empty category mirrors this inside its own frame: 00 in
-// the numeral's place, NO ENTRIES in the date's.
+// hairline below. The numeral stands large and faint under the title; the
+// title and the summary's first column stop above it, while the summary's
+// second column runs on beside it. An empty category mirrors this inside its
+// own frame: 00 in the numeral's place, NO ENTRIES in the date's.
 test('a desktop entry sets its date beside the title and its numeral large under it', { skip }, async () => {
+  const longSummary = `document.querySelector('[data-category-slug="minecraft"] .catalog-card-summary').textContent =
+    '把观察到的细节按顺序记下来，比较每一步变化，再从头检查整个过程，最后把结论写成一页笔记，留给以后的自己慢慢翻看。';`;
   const read = slug => `(() => {
     const card = document.querySelector('[data-category-slug="${slug}"] :is(.catalog-card, .catalog-empty)');
     const rect = node => node.getBoundingClientRect().toJSON();
@@ -918,13 +921,24 @@ test('a desktop entry sets its date beside the title and its numeral large under
     const summary = card.querySelector('.catalog-card-summary');
     const numeral = card.querySelector('.catalog-card-index, .catalog-empty-count');
     const rail = getComputedStyle(date.closest('.catalog-card-meta, .catalog-empty-code'), '::after');
-    return { card: rect(card), title: rect(title), date: rect(date), numeral: rect(numeral), summary: summary && rect(summary),
+    // The summary's visible columns, from its glyphs.
+    const columns = summary && (() => {
+      const range = document.createRange(), box = summary.getBoundingClientRect(), found = [];
+      range.selectNodeContents(summary);
+      for (const r of range.getClientRects()) {
+        if (!r.width || r.left >= box.right - 1) continue;
+        const column = found.find(c => Math.abs(c.left - r.left) < 4);
+        if (column) column.bottom = Math.max(column.bottom, r.bottom); else found.push({ left: r.left, bottom: r.bottom });
+      }
+      return found.sort((a, b) => a.left - b.left);
+    })();
+    return { card: rect(card), title: rect(title), date: rect(date), numeral: rect(numeral), summary: summary && rect(summary), columns,
       above: glyph(title, 0).top - glyph(date, 0).top,
       level: summary && mid(glyph(date, date.textContent.length - 1)) - mid(glyph(summary, 0)),
       size: parseFloat(getComputedStyle(numeral).fontSize) / parseFloat(getComputedStyle(card.querySelector('.catalog-card-title') || title).fontSize),
       opacity: getComputedStyle(numeral).opacity, rail: [rail.content, parseFloat(rail.height) > 0, rail.backgroundImage.startsWith('linear-gradient')] };
   })()`;
-  for (const [slug, scripts] of [['minecraft', withArticles(1, 2)], ['daydreams', withoutArticles('daydreams')]]) {
+  for (const [slug, scripts] of [['minecraft', withArticles(1, 2) + longSummary], ['daydreams', withoutArticles('daydreams')]]) {
     const page = await open('/#catalog-' + slug, { ...desktop, reduced: true, beforeScripts: scripts });
     try {
       await settledCatalog(page, slug);
@@ -938,6 +952,13 @@ test('a desktop entry sets its date beside the title and its numeral large under
       }
       assert.deepEqual(entry.rail, ['""', true, true], `a fading hairline runs on below the date: ${json}`);
       assert.ok(entry.size >= 3, `the numeral stands at least three title characters tall: ${json}`);
+      if (entry.summary) {
+        const [first, second] = entry.columns;
+        assert.equal(entry.columns.length, 2, `the fixture fills both summary columns: ${json}`);
+        assert.ok(first.bottom <= entry.numeral.top, `the summary's first column stops above the numeral: ${json}`);
+        assert.ok(second.bottom > entry.numeral.top + 1, `the second column runs on past the numeral's top: ${json}`);
+        assert.ok(second.left >= entry.numeral.right, `the second column stays clear of the numeral: ${json}`);
+      }
       assert.equal(entry.opacity, '0.1', 'the numeral is faint');
       assert.ok(entry.numeral.top >= entry.title.bottom - 1, `the numeral stands under the title: ${json}`);
       assert.ok(entry.numeral.left >= entry.card.left && entry.numeral.right <= entry.card.right && entry.numeral.bottom <= entry.card.bottom,
