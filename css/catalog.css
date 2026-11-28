@@ -51,15 +51,20 @@ html.is-catalog .site-header:not(:has(.header-search.is-expanded)) .catalog-back
   width: 24px;
   height: 1px;
 }
-:is(.is-catalog-open, .is-catalog-folding) .category-display { overflow: clip; }
+/* A widening or folding display clips its row across. Only the specimen's
+   glow reaches below the display, and it fades out into the panel there. */
+:is(.is-catalog-open, .is-catalog-folding) .category-display { overflow-x: clip; overflow-y: visible; }
 /* A category the reader has scrolled past folds toward the reading line. Its
    cards hold still and fade while the far edge sweeps over them. */
 .is-catalog-fold-right .catalog-row { position: absolute; top: 0; right: 0; }
-/* An open category's specimen stays open (css/categories.css) in the middle
-   of its widened display, behind the cards. It dims through its lines and
-   orange details, not group opacity: an opacity layer flattens the 3D planes
-   into one texture, which the panel's perspective then magnifies into a blur. */
+/* An open category's specimen stays open (css/categories.css) and dims
+   through its lines and orange details, not group opacity: an opacity layer
+   flattens the 3D planes into one texture, which the panel's perspective then
+   magnifies into a blur. On desktop it stands in the row's bottom right
+   corner (below), fainter still; on phones in the middle of the display,
+   behind the index. */
 .is-catalog-open .category-scene { --category-diagram-opacity: .2; --category-detail-opacity: .32; }
+html:not(.has-vertical-chapters) .is-catalog-open .category-scene { --category-diagram-opacity: .14; --category-detail-opacity: .22; }
 .catalog-block {
   position: absolute;
   inset: 0;
@@ -128,7 +133,16 @@ html:not(.has-vertical-chapters) .catalog-row {
   box-sizing: border-box;
   width: max-content;
   height: 100cqh;
-  padding: var(--row-pad) calc(25.42 * var(--u)) var(--row-pad) var(--category-spine);
+  padding: var(--row-pad) calc(25.42 * var(--u) + var(--catalog-end)) var(--row-pad) var(--category-spine);
+}
+/* Past the last entry the row keeps room for two thirds of its specimen,
+   which stands half as large again as at rest in the row's bottom right
+   corner (below), a dimmed backdrop reaching back over the last entry. The
+   widest open pose is 150 units across at rest size; js/catalog.js sets the
+   rest size before it measures the rows. */
+html:not(.has-vertical-chapters) .category-column {
+  --catalog-end-art: calc(1.5 * var(--catalog-scene-size, 1));
+  --catalog-end: calc(100 * var(--category-unit) * var(--catalog-end-art));
 }
 html:not(.has-vertical-chapters) .catalog-group { flex-direction: row; height: var(--card-h); gap: calc(24 * var(--u)); }
 /* The subcategory stands at the head of its entries: its name, a fading
@@ -359,7 +373,21 @@ html.has-chapters .home-page .series-section.has-catalog-board .category-panel {
 .category-panel.is-catalog-hand-over .category-column:not(.is-catalog-folding) .category-cards > i > span,
 .category-panel.is-catalog-hand-over .category-column:not(.is-catalog-folding) :is(.category-bottom, .catalog-card)::before { transition-property: none; }
 .category-panel.is-catalog-hand-over .category-index-line::after { transform-origin: right top; }
-.has-catalog-board :is(.is-catalog-open, .is-catalog-folding) .category-scene { --category-art-size: var(--catalog-scene-size); }
+/* A folding specimen keeps its rest size, measured before its column widened
+   (js/catalog.js), so the display's size steps cannot change it on the way.
+   An open one stands half as large again in the display's bottom right
+   corner: the widest open pose (150 units at rest size) ends at the row's end
+   padding, and the tallest (148, standing about 22 above its scene's centre)
+   on the entries' foot, 29 units up. It tops out 153 units above that line,
+   which caps the size so it keeps 13 units below the display's top. It rides
+   out with the row's end as the column widens (js/catalog.js). */
+.has-catalog-board .is-catalog-folding .category-scene { --category-art-size: var(--catalog-scene-size); }
+.has-catalog-board .is-catalog-open .category-scene {
+  --catalog-open-art: min(var(--catalog-end-art), calc((100cqh - 42 * var(--category-unit)) / (153 * var(--category-unit))));
+  --category-art-size: var(--catalog-open-art);
+  left: calc(100% - 25.42 * var(--category-unit) - 75 * var(--category-unit) * var(--catalog-open-art));
+  top: calc(100% - 29 * var(--category-unit) - 52 * var(--category-unit) * var(--catalog-open-art));
+}
 .has-catalog-board #category-surface > .chapter-panel-light { display: none; }
 .has-catalog-board .category-facet-light {
   position: absolute;

@@ -4295,10 +4295,14 @@ await test('the catalog holds its chapter stop while its ruler crosses between r
     [1, 1, null, 1.9, 2.5],
   ]) {
     for (const between of [0, .25, .5, .75, 1, .75, .5, .25, 0]) {
-      const expected = (from + (to - from) * between) * quarter;
       for (const selected of [cursorIndex, cursorIndex + 1]) {
+        // The marker follows travel between the endpoints, but keeps to the
+        // lit station, a quarter pixel inside its edges: it waits at the edge
+        // until the reading line takes the next category.
+        const expected = Math.min(Math.max((from + (to - from) * between) * quarter, selected * quarter + .25),
+          (selected + 1) * quarter - .25);
         api.setCatalogRuler(selected, progress, { cursorIndex, nextProgress, between });
-        assert.ok(Math.abs(site.markerX - expected) < .001, 'the marker follows travel between the endpoints');
+        assert.ok(Math.abs(site.markerX - expected) < .001, 'the marker follows travel between the endpoints within the lit station');
         assert.equal(site.navLinks[selected].getAttribute('aria-current'), 'location');
         assert.equal(site.navLinks.filter(link => link.hasAttribute('aria-current')).length, 1);
         assert.ok(site.progressMarker.getAttribute('aria-valuetext').startsWith(names()[selected]));

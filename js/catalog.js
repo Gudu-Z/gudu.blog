@@ -98,6 +98,11 @@
     // fractions that accumulate when the pixel tracks are written back.
     const rect = panel.getBoundingClientRect();
     const tracks = cells.map(({ column }) => column.getBoundingClientRect().width);
+    // Each specimen's rest size. An open row keeps room at its end for the
+    // specimen half as large again (css/catalog.css), so it is set before the
+    // rows are measured, and kept while the board stands.
+    const art = cells.map(c => getComputedStyle(c.scene).getPropertyValue('--category-art-size').trim() || '1');
+    cells.forEach(({ column }, i) => column.style.setProperty('--catalog-scene-size', art[i]));
     const hidden = cells.map(c => c.block.hidden);
     // Measure at rest, including rows that may open later during scrolling.
     for (const { block } of cells) block.hidden = false;
@@ -109,7 +114,7 @@
       padX: grid.getBoundingClientRect().left - rect.left, padY: parseFloat(css.paddingTop),
       frameLeft: brand.getBoundingClientRect().left,
       frameRight: document.querySelector('.header-tools').getBoundingClientRect().right,
-      tracks, gains, art: cells.map(c => getComputedStyle(c.scene).getPropertyValue('--category-art-size').trim() || '1'),
+      tracks, gains,
     };
   }
 
@@ -153,7 +158,6 @@
       series.style.setProperty('--board-base', px(base.w));
       series.style.setProperty('--board-pad-x', px(base.padX));
       series.style.setProperty('--board-pad-y', px(base.padY));
-      cells.forEach(({ column }, i) => column.style.setProperty('--catalog-scene-size', base.art[i]));
       series.classList.add('has-catalog-board');
     }
     panel.style.width = px(b.width);
@@ -245,10 +249,25 @@
   function paintRuler(travel) {
     let i = 0;
     while (i + 1 < cells.length && distanceRead >= landmarks[i + 1].start) i++;
+    if (i !== active && Math.sign(active - i) === lastMoved) {
+      // The reading line has taken a category the reading distance has not
+      // yet reached: a short category on a board that overflows its frame is
+      // left within a few pixels of travel, while the board still has its
+      // whole range to go. The marker stands where the reader came into the
+      // current category, as after a step: at the near end of a long one's
+      // range, in the middle of a short one's station.
+      const progress = landmarks[active].limit ? (lastMoved > 0 ? 0 : 1) : null;
+      chapters.setCatalogRuler(active, progress, { travel, speed });
+      return;
+    }
+    // Otherwise the marker follows the reading distance, kept to the current
+    // category's station (js/chapters.js): a distance that runs ahead of the
+    // reading line leaves the marker waiting at the station's edge, and it
+    // crosses with the line.
     const here = landmarks[i], next = landmarks[i + 1];
     const between = next ? clamp((distanceRead - here.end) / (next.start - here.end), 0, 1) : 0;
     chapters.setCatalogRuler(active, scrollState(i), {
-      cursorIndex: i, between, nextProgress: next?.limit ? 0 : null, travel,
+      cursorIndex: i, between, nextProgress: next?.limit ? 0 : null, travel, speed,
     });
   }
 
@@ -364,9 +383,9 @@
   // A desktop column stands its name, description and count as a spine at
   // its left whether it is open or not (css/categories.css), so opening
   // leaves them where they are and only the specimen moves: from its place
-  // under the spine to the middle of the open display, and back. Positions
-  // are layout offsets within the column, so the panel's 3D pose cannot
-  // skew them.
+  // under the spine to the end of the open row, growing half as large again,
+  // and back. Positions are layout offsets within the column, so the panel's
+  // 3D pose cannot skew them; the size is the scene's own scale.
   function specimenAt(i) {
     const { column, scene } = cells[i];
     let x = scene.offsetWidth / 2, y = scene.offsetHeight / 2;
@@ -374,7 +393,7 @@
       x += node.offsetLeft;
       y += node.offsetTop;
     }
-    return [x, y];
+    return [x, y, new DOMMatrixReadOnly(getComputedStyle(scene).transform).a];
   }
 
   function cancelGlide(i) {
@@ -383,14 +402,18 @@
   }
 
   // The specimen glides from where it stood before its column opened or
-  // closed to where it stands now.
-  function glideSpecimen(i, before, animate, delay = 0) {
+  // closed to where it stands now, and from its size then to its size now.
+  // Where the column's width is still on its way, the glide keeps the width's
+  // own timing: the place it heads for moves with the row's end, and the two
+  // add up to one straight path however far that end carries it.
+  function glideSpecimen(i, before, animate, delay = 0, duration = 640, easing = arrive) {
     cancelGlide(i);
     if (reduce.matches || !before) return;
-    const [x0, y0] = before, [x1, y1] = specimenAt(i);
-    if (Math.hypot(x0 - x1, y0 - y1) <= .5) return;
-    cells[i].glide = animate(cells[i].scene, [{ translate: `calc(-50% + ${x0 - x1}px) calc(-50% + ${y0 - y1}px)` },
-      { translate: '-50% -50%' }], delay, 640, arrive);
+    const [x0, y0, k0] = before, [x1, y1, k1] = specimenAt(i);
+    if (Math.hypot(x0 - x1, y0 - y1) <= .5 && Math.abs(k0 - k1) <= .001 * k1) return;
+    cells[i].glide = animate(cells[i].scene, [
+      { translate: `calc(-50% + ${x0 - x1}px) calc(-50% + ${y0 - y1}px)`, scale: String(k0 / k1) },
+      { translate: '-50% -50%', scale: '1' }], delay, duration, easing);
   }
 
   // A title longer than its column ends in an ellipsis; css/catalog.css lets
@@ -508,8 +531,9 @@
     column.classList.toggle('is-catalog-fold-right', anchor >= .5);
     column.classList.remove('is-catalog-open');
     block.inert = true;
-    glideSpecimen(i, specimen, (node, frames, delay, duration, easing) =>
-      node.animate(frames, { delay: delay * speed, duration: duration * speed, easing, fill: 'backwards' }));
+    // The specimen keeps time with the fold's width (advanceFolds).
+    glideSpecimen(i, specimen, (node, frames, delay, duration, easing) => node.animate(frames,
+      { delay: delay * speed, duration: duration * speed, easing, fill: 'backwards' }), 0, foldDuration, arrive);
     const play = (node, frames, delay, duration, easing, pseudoElement) => node.animate(frames, { delay: delay * speed,
       duration: duration * speed, easing, fill: 'both', ...(pseudoElement && { pseudoElement }) });
     folds.set(i, { from: board.tracks[i], anchor, start: now, effects: [
@@ -735,7 +759,11 @@
     }
     lastFrame = now;
     if (remaining || flips.size || folds.size) scrollFrame = requestAnimationFrame(renderScroll);
-    else if (!entrances.size && panel.classList.contains('is-catalog-hand-over')) requestAnimationFrame(finishHandOver);
+    else {
+      // At rest, the marker goes all the way into the current station.
+      if (steppedAt === null) chapters.settleCatalogRuler();
+      if (!entrances.size && panel.classList.contains('is-catalog-hand-over')) requestAnimationFrame(finishHandOver);
+    }
   }
 
   function advanceScroll(instant = false) {
@@ -969,7 +997,7 @@
 
   function animateCellContents(index, opening, switching, delay, cards, play) {
     // The specimen opens and dims through CSS (css/catalog.css); glideSpecimen
-    // carries it to the middle of the display.
+    // carries it to the end of the row.
     const { column } = cells[index];
     const visual = (element, frames, start, time) =>
       play(element, opening ? frames : [...frames].reverse(), start, time);
@@ -1068,7 +1096,7 @@
       if (!switching) chapters.animateCatalogPose(opening, (node, frames) => effect(node, frames, delay, duration));
       leaving.forEach((i, n) => animateCell(i, false, switching, delay, outgoingCards[n] || []));
       if (opening) animateCell(index, true, switching, delay, incomingCards);
-      for (const [i, before] of specimens) glideSpecimen(i, before, effect);
+      for (const [i, before] of specimens) glideSpecimen(i, before, effect, delay, duration, move);
       if (!switching) for (const n of neighbours) {
         const rect = n.getBoundingClientRect();
         const cx = innerWidth / 2 - (rect.left + rect.width / 2), cy = innerHeight / 2 - (rect.top + rect.height / 2);

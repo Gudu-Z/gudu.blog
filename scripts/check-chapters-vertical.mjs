@@ -525,6 +525,10 @@ test('section links, catalog search and linked URLs land on their chapter', { sk
 });
 
 const desktop = { width: 1600, height: 860, mobile: false };
+// A frame wide for its height, which a catalog of one entry per category
+// still fits. At 1600 × 860 the room past an open row's last entry for its
+// specimen (css/catalog.css) carries such a board past the frame.
+const wideDesktop = { ...desktop, width: 2400, height: 1000 };
 const phone = { width: 390, height: 844, mobile: true };
 const slugs = ['minecraft', 'daydreams', 'collected', 'other'];
 const homeLabels = ['关于', '分类', '最新文章', '归档'];
@@ -706,7 +710,7 @@ const flatDock = page => evaluate(page, `(() => {
 })()`);
 
 test('a category opens inside its docked panel and a switch moves the expansion', { skip }, async () => {
-  const page = await open('/#series', desktop);
+  const page = await open('/#series', wideDesktop);
   try {
     const home = await readBoard(page);
     const dock = await flatDock(page);
@@ -774,7 +778,7 @@ test('a category opens inside its docked panel and a switch moves the expansion'
 });
 
 test('a catalog that fits keeps its docked left edge for every category', { skip }, async () => {
-  for (const [width, height] of [[1280, 720], [1600, 860]]) {
+  for (const [width, height] of [[1920, 860], [2400, 1000]]) {
     const page = await open('/#series', { ...desktop, width, height });
     try {
       const dock = await flatDock(page);
@@ -793,7 +797,7 @@ test('a catalog that fits keeps its docked left edge for every category', { skip
 
 test('the narrow catalog slides toward the first slot and stops at the docked panel end', { skip }, async () => {
   const page = await open('/#series', { ...desktop, width: 871, height: 817, deviceScaleFactor: 2,
-    beforeScripts: withArticles(1, 5, 'daydreams') + withArticles(1, 2, 'other') });
+    beforeScripts: withArticles(1, 5, 'daydreams') + withArticles(1, 1, 'other') });
   try {
     const home = await readBoard(page);
     const dock = await flatDock(page);
@@ -982,16 +986,36 @@ test('the back control, Escape and browser Back restore the home panel', { skip 
   } finally { await close(page); }
 });
 
-// An open category holds its specimen in the hover pose, in the middle of the
-// widened display and dimmed through its line colour. Group opacity would
-// flatten the 3D planes into one texture that the panel's perspective blurs.
+// An open category holds its specimen in the hover pose, half as large again,
+// in the bottom right corner of its row, reaching back over its last entry,
+// and dimmed through its line colour. Group opacity would flatten the 3D
+// planes into one texture that the panel's perspective blurs.
 const SPECIMEN = slug => `(() => {
   const column = document.querySelector('[data-category-slug="${slug}"]');
   const scene = column.querySelector('.category-scene');
   const s = scene.getBoundingClientRect(), d = column.querySelector('.category-display').getBoundingClientRect();
   const css = getComputedStyle(scene);
+  const probe = column.appendChild(document.createElement('div'));
+  probe.style.cssText = 'position: absolute; width: calc(100 * var(--category-unit))';
+  const u = probe.offsetWidth / 100;
+  probe.remove();
+  // Only the parts that show: the moon, core and node stay clear until hovered.
+  const parts = [...scene.querySelectorAll('.category-specimen *')].filter(node => getComputedStyle(node).opacity !== '0')
+    .map(node => node.getBoundingClientRect()).filter(r => r.width && r.height);
+  const drawing = { left: Math.min(...parts.map(r => r.left)), right: Math.max(...parts.map(r => r.right)),
+    top: Math.min(...parts.map(r => r.top)), bottom: Math.max(...parts.map(r => r.bottom)) };
+  const lastEntry = Math.max(...[...column.querySelectorAll('.catalog-card, .catalog-empty')].map(card => card.getBoundingClientRect().right));
   return {
     offset: Math.round((s.left + s.width / 2) - (d.left + d.width / 2)),
+    // Across the last entry's right edge: the share of the drawing over the
+    // entry, and how far, in category units, the drawing keeps from the
+    // display's right end and foot.
+    over: (lastEntry - drawing.left) / (drawing.right - drawing.left),
+    toEnd: (d.right - drawing.right) / u, toFoot: (d.bottom - drawing.bottom) / u,
+    // The display clips across only, so the glow beneath can reach below it.
+    clip: (({ overflowX, overflowY }) => overflowX + ' ' + overflowY)(getComputedStyle(column.querySelector('.category-display'))),
+    inside: drawing.left >= d.left - 1 && drawing.right <= d.right + 1 && drawing.top >= d.top - 1 && drawing.bottom <= d.bottom + 1,
+    size: new DOMMatrixReadOnly(css.transform).a,
     opacity: css.opacity, scale: css.scale,
     alpha: Number(css.color.match(/([\\d.]+)\\)$/)[1]),
     camera: Number(getComputedStyle(column.querySelector('.category-stage')).transform.match(/matrix3d\\(([-\\d.e]+)/)[1]).toFixed(3),
@@ -999,30 +1023,35 @@ const SPECIMEN = slug => `(() => {
 })()`;
 const specimenStill = slug => `document.querySelector('[data-category-slug="${slug}"] .category-scene').getAnimations({ subtree: true }).length === 0`;
 
-test('an open category keeps its specimen open, centred and dimmed without group opacity', { skip }, async () => {
+test('an open category keeps its specimen open, larger and dimmed in its bottom right corner, without group opacity', { skip }, async () => {
   const page = await open('/#series', desktop);
   try {
-    const rest = await evaluate(page, SPECIMEN('minecraft'));
-    const restCollected = await evaluate(page, SPECIMEN('collected'));
-    assert.ok(rest.offset > 10 && rest.camera === '0.788' && rest.alpha === .55,
-      `the resting specimen stands right of the display's middle, clear of the spine, and closed (${JSON.stringify(rest)})`);
+    const rest = { minecraft: await evaluate(page, SPECIMEN('minecraft')), collected: await evaluate(page, SPECIMEN('collected')) };
+    assert.ok(rest.minecraft.offset > 10 && rest.minecraft.camera === '0.788' && rest.minecraft.alpha === .55,
+      `the resting specimen stands right of the display's middle, clear of the spine, and closed (${JSON.stringify(rest.minecraft)})`);
     for (const slug of ['minecraft', 'collected']) {
       await clickLink(page, cover(slug));
       await settledCatalog(page, slug);
       await waitFor(page, specimenStill(slug), 4000);
       const open = await evaluate(page, SPECIMEN(slug));
-      assert.ok(Math.abs(open.offset) <= 2, `${slug}: the specimen moves to the middle of the widened display (${open.offset}px off)`);
+      assert.ok(open.over > .2 && open.over < .45, `${slug}: about a third of the specimen reaches back over the last entry (${open.over})`);
+      assert.ok(open.toEnd < 50 && open.toFoot > 20 && open.toFoot < 50,
+        `${slug}: the specimen stands in the row's bottom right corner, on about the entries' foot (${open.toEnd}u, ${open.toFoot}u)`);
+      assert.equal(open.clip, 'clip visible', `${slug}: the display clips across only, so the glow below is not cut`);
+      assert.ok(open.inside, `${slug}: the specimen stays inside the widened display`);
+      near(open.size / rest[slug].size, 1.5, .01, `${slug}: the open specimen is half as large again`);
       assert.equal(open.opacity, '1', `${slug}: no group opacity on the 3D specimen`);
-      assert.equal(open.scale, 'none', `${slug}: the specimen keeps its size`);
+      assert.equal(open.scale, 'none', `${slug}: the glide leaves no scale behind`);
       assert.equal(open.camera, '0.940', `${slug}: the specimen holds its open pose`);
-      assert.equal(open.alpha, .2, `${slug}: the open specimen dims through its line colour`);
+      assert.equal(open.alpha, .14, `${slug}: the open specimen dims through its line colour`);
     }
     await clickLink(page, '.catalog-back');
     await settledCatalog(page, '');
     await waitFor(page, specimenStill('collected'), 4000);
     const closed = await evaluate(page, SPECIMEN('collected'));
-    assert.ok(Math.abs(closed.offset - restCollected.offset) <= 1 && closed.camera === '0.788' && closed.alpha === .55 && closed.opacity === '1',
-      `closing returns the specimen to its resting place, pose and brightness (${JSON.stringify(closed)} vs ${restCollected.offset})`);
+    assert.ok(Math.abs(closed.offset - rest.collected.offset) <= 1 && Math.abs(closed.size - rest.collected.size) < .001
+      && closed.camera === '0.788' && closed.alpha === .55 && closed.opacity === '1',
+      `closing returns the specimen to its resting place, size, pose and brightness (${JSON.stringify(closed)} vs ${JSON.stringify(rest.collected)})`);
   } finally { await close(page); }
 });
 
@@ -1079,8 +1108,9 @@ test('desktop columns stand as spines that opening leaves in place, with the spe
         assert.ok(open.places[part].every((value, i) => Math.abs(value - rest.minecraft.places[part][i]) <= 1),
           `${label}: opening leaves the ${part} where it stood (${rest.minecraft.places[part]} → ${open.places[part]})`);
       }
-      // The open specimen is a dimmed background behind the entries.
-      assert.deepEqual(open.clashes.filter(pair => !pair.includes('specimen')), [], `${label}: the open spine keeps its parts apart`);
+      // The open specimen stands in the row's far corner, clear of the spine.
+      assert.deepEqual(open.clashes, [], `${label}: the open spine's parts and the specimen keep apart`);
+      assert.ok(open.inside, `${label}: the open specimen stays inside its display`);
     } finally { await close(page); }
   }
 });
@@ -1366,7 +1396,7 @@ const wheelEvent = x => `window.dispatchEvent(new WheelEvent('wheel', { deltaX: 
 
 for (const fitted of [false, true]) {
   test(`a fully visible neighbour opens on the 40th pixel of ${fitted ? 'wheel input on a fitted board' : 'board travel'}`, { skip }, async () => {
-    const page = await open('/#catalog-minecraft', { ...desktop, reduced: true,
+    const page = await open('/#catalog-minecraft', { ...(fitted ? wideDesktop : desktop), reduced: true,
       beforeScripts: withArticles(1, fitted ? 1 : 12) + withArticles(1, 3, 'daydreams') });
     try {
       await settledCatalog(page, 'minecraft');
@@ -1405,7 +1435,7 @@ const longPair = withArticles(3, 4) + withArticles(3, 4, 'daydreams');
 const shortPair = withArticles(1, 7) + withArticles(1, 3, 'daydreams') + withArticles(1, 2, 'collected');
 
 test('opening backward on a fitted board creates no extra scroll travel', { skip }, async () => {
-  const page = await open('/#catalog-daydreams', { ...desktop, width: 2048, height: 1152, reduced: true,
+  const page = await open('/#catalog-daydreams', { ...wideDesktop, reduced: true,
     beforeScripts: withArticles(1, 1) + withArticles(1, 1, 'daydreams') });
   try {
     const initial = await readBoard(page);
@@ -1470,7 +1500,7 @@ function sampleHandOver(page, from, to, delta, inputDuringEntrance = 0) {
         if (animation instanceof CSSTransition && effect.target.closest('.is-catalog-folding .category-scene')) continue;
         const keys = new Set(effect.getKeyframes().flatMap(Object.keys));
         for (const key of keys) {
-          if (!keyframeMetadata.has(key) && !['opacity', 'transform', 'translate'].includes(key)) {
+          if (!keyframeMetadata.has(key) && !['opacity', 'transform', 'translate', 'scale'].includes(key)) {
             const name = effect.target.className || effect.target.localName;
             unsupported.add(name + (effect.pseudoElement || '') + ': ' + key);
           }
@@ -1485,6 +1515,7 @@ function sampleHandOver(page, from, to, delta, inputDuringEntrance = 0) {
         tracks: getComputedStyle(grid).gridTemplateColumns, width: style.width, cssLeft: parseFloat(style.left),
         unsupported: [...unsupported], movingColumns: [...movingColumns], entering,
         reference: reference.getBoundingClientRect().left, marker: (${MARKER}).x,
+        gliding: document.querySelector('.chapter-progress-marker').getAnimations().length > 0,
         fading: incoming.some(card => {
           const opacity = Number(getComputedStyle(card).opacity);
           return opacity > 0 && opacity < 1;
@@ -1527,8 +1558,11 @@ function checkHandOverFrames(frames, direction, center, dock) {
     if (!i) continue;
     const travel = direction * (frames[i - 1].anchor - f.anchor);
     assert.ok(travel >= -1, `frame ${i}: the anchored edge reversed by ${-travel}px`);
+    // The marker moves with the board. Once the board comes to rest with the
+    // marker short of the current category's station, it glides in
+    // (js/chapters.js settleCatalogRuler), still the way the board went.
     const markerTravel = direction * (f.marker - frames[i - 1].marker);
-    assert.ok(markerTravel >= -1 && markerTravel <= travel + 1,
+    assert.ok(markerTravel >= -1 && (f.gliding || markerTravel <= travel + 1),
       `frame ${i}: ruler moved ${markerTravel}px with ${travel}px of board travel`);
   }
 }
@@ -1798,15 +1832,18 @@ function withoutArticles(slug) {
   }`;
 }
 
-// One short category and three empty ones, as the live catalog has, on a
-// board that fits a wide frame.
+// One short category and three empty ones, as the live catalog has, in the
+// owner's window. There the room past Minecraft's entry for its specimen
+// carries the board past the frame, so the reader reads across it.
 const liveCatalog = { width: 2113, height: 1257, mobile: false, reduced: true, beforeScripts: withArticles(1, 1)
   + withoutArticles('daydreams') + withoutArticles('collected') + withoutArticles('other') };
+// The same catalog in a frame wide for its height, which it fits.
+const liveWide = { ...liveCatalog, width: 2400, height: 1000 };
 
 // Small pushes pass through every state on the way to each end of the live
 // catalog and back; the ruler stays on the category the reader is in.
 test('quick pushes on a board that fits keep the ruler on the current category', { skip }, async () => {
-  const page = await open('/#series', liveCatalog);
+  const page = await open('/#series', liveWide);
   try {
     await clickLink(page, cover('minecraft'));
     await settledCatalog(page, 'minecraft');
@@ -1833,7 +1870,7 @@ test('quick pushes on a board that fits keep the ruler on the current category',
 // seek started from the reading distance of a category the board never left,
 // and travelled the board back toward it.)
 test('home and end after steps on a board that fits stay on the current category', { skip }, async () => {
-  const page = await open('/#series', liveCatalog);
+  const page = await open('/#series', liveWide);
   try {
     await clickLink(page, cover('other'));
     await settledCatalog(page, 'other');
@@ -1856,15 +1893,15 @@ test('home and end after steps on a board that fits stay on the current category
   } finally { await close(page); }
 });
 
-// The live catalog fits its frame, so its reading line never reaches a
+// In a frame it fits, the live catalog's reading line never reaches a
 // neighbour: each push steps one category at once, with no pause after the
 // last, and the category left folds at once. The board could still travel a
 // few pixels, too few to make room for a fold toward the reader, so it
 // slides instead of waiting for the next push. Going back, Minecraft opens
 // away from the reading line, which can never reach it; the push that opens
 // it steps to it, as going forward. The ruler's marker comes along.
-test('each push on the live catalog moves one category both ways and folds the one left at once', { skip }, async () => {
-  const page = await open('/#series', liveCatalog);
+test('each push on the live catalog in a frame it fits moves one category both ways and folds the one left at once', { skip }, async () => {
+  const page = await open('/#series', liveWide);
   try {
     const dock = await flatDock(page);
     await clickLink(page, cover('minecraft'));
@@ -1880,6 +1917,56 @@ test('each push on the live catalog moves one category both ways and folds the o
       const segment = view.segments[slugs.indexOf(slug)];
       assert.ok(view.marker > segment[0] && view.marker < segment[1], `the marker ${view.marker} sits in [${segment}]`);
     }
+  } finally { await close(page); }
+});
+
+// In the owner's window the room past Minecraft's entry carries the live
+// catalog past its frame, so the reader reads across the board, and the
+// reading distance runs behind or ahead of the reading line: a short
+// category is left within a few pixels of travel. Pushes of either size
+// still leave the ruler's marker in the station of the category the line is
+// in, and they reach each end of the board.
+test('pushes across the overflowing live catalog keep the marker in the current category', { skip }, async () => {
+  const page = await open('/#series', liveCatalog);
+  try {
+    await clickLink(page, cover('minecraft'));
+    await settledCatalog(page, 'minecraft');
+    let view;
+    for (const size of [100, 10]) {
+      for (const dir of [1, -1]) {
+        const end = '#catalog-' + (dir > 0 ? 'other' : 'minecraft');
+        for (let i = 0; i < 400 && view?.hash !== end; i++) {
+          await evaluate(page, wheelEvent(dir * size));
+          view = await evaluate(page, catalogNow());
+          const current = slugs.indexOf(view.hash.replace('#catalog-', ''));
+          assert.equal(view.station, view.hash, `${size}px: the ruler lights the current station: ${JSON.stringify(view)}`);
+          assert.ok(Math.floor(view.target) === current, `${size}px: the ruler aims inside ${view.hash}'s station: ${JSON.stringify(view)}`);
+          const segment = view.segments[current];
+          assert.ok(view.marker > segment[0] && view.marker < segment[1],
+            `${size}px: the marker ${view.marker} sits in ${view.hash}'s segment [${segment}]: ${JSON.stringify(view)}`);
+        }
+        assert.equal(view.hash, end, `${size}px pushes reach the end of the board`);
+      }
+    }
+  } finally { await close(page); }
+});
+
+// With motion, a push that lets the reading line take the next category
+// carries the marker into that category's station by a glide, as a step
+// does, instead of leaving it where the board's travel stopped.
+test('the marker glides into the station of the category a push reads into', { skip }, async () => {
+  const page = await open('/#series', { ...liveCatalog, reduced: false });
+  try {
+    await clickLink(page, cover('minecraft'));
+    await settledCatalog(page, 'minecraft');
+    await evaluate(page, wheelEvent(100));
+    await sleep(1200);
+    const view = await evaluate(page, catalogNow());
+    const current = slugs.indexOf(view.hash.replace('#catalog-', ''));
+    assert.ok(current > 0, `the push reads into the next category: ${JSON.stringify(view)}`);
+    const segment = view.segments[current];
+    assert.ok(view.marker > segment[0] && view.marker < segment[1],
+      `the marker ${view.marker} glides into ${view.hash}'s segment [${segment}]: ${JSON.stringify(view)}`);
   } finally { await close(page); }
 });
 

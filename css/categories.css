@@ -397,8 +397,8 @@ html:not(.has-vertical-chapters) .category-column .category-action { display: no
    foot however tall the display grows. It never rises into the description,
    which reaches at most 150 units down from 81: the floor allows for the
    display's top gap, the specimen standing above its scene's centre, and its
-   hover pose. An open catalog centres it in the widened display
-   (js/catalog.js glides it). */
+   hover pose. An open catalog carries it past the row's last entry
+   (css/catalog.css; js/catalog.js glides it). */
 html:not(.has-vertical-chapters) .category-column:not(.is-catalog-open) .category-scene {
   left: calc(50% + 18 * var(--category-unit));
   top: max(calc(100% - 140 * var(--category-unit)), calc(291 * var(--category-unit)));

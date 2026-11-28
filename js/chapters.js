@@ -132,6 +132,10 @@
   const labelAnimations = new Set();
   let markerGlide = null;
   let glideFrame = 0;
+  // The catalog station the ruler last lit, or -1 on the home chapters, and
+  // the last catalog paint's place, for settleCatalogRuler.
+  let catalogLit = -1;
+  let catalogPaint = null;
   // Every inline style and inert state the strip writes, so it can hand the
   // page over clean when the vertical phone page takes it (standDown).
   const styleValues = new Map();
@@ -1247,11 +1251,24 @@
     return progress === null ? 0.5 : start + (0.9 - start) * progress;
   }
 
+  // Scroll moves the marker only as far as the board travels, and the marker
+  // crosses into the next station with the reading line. A board that comes
+  // to rest just as the line takes another category can leave the marker
+  // short of that category's station: then it glides in, as after a step.
+  function settleCatalogRuler() {
+    const stationWidth = progressTrackWidth / chapters.length;
+    if (!catalogPaint || catalogLit < 0 || markerGlide || cursorOffset === null || stationWidth <= 1) return;
+    if (cursorOffset > catalogLit * stationWidth && cursorOffset < (catalogLit + 1) * stationWidth) return;
+    const [index, progress, options] = catalogPaint;
+    setCatalogRuler(index, progress, { ...options, duration: 400 });
+  }
+
   function setCatalogRuler(index, progress = null, {
     duration = 0, delay = 0, swap = false, speed = 1, cursorIndex = index, nextProgress = null, between = 0, travel,
   } = {}) {
     if (verticalMode) return;
     const catalog = index >= 0;
+    catalogPaint = catalog ? [index, progress, { speed, cursorIndex, nextProgress, between }] : null;
     const stations = catalog ? catalogStations : homeStations;
     const selected = catalog ? index : seriesIndex - 1;
     if (!stations[selected]) return;
@@ -1284,6 +1301,13 @@
     }
     const stationWidth = progressTrackWidth / chapters.length;
     let offset = coordinate * stationWidth;
+    // The marker aims inside the current category's station, a quarter pixel
+    // from its edges: heading on toward the next one, it waits at the edge
+    // for the reading line, and scroll carries it across with the line.
+    const inStation = catalog && stationWidth > 1;
+    const low = selected * stationWidth + 0.25, high = (selected + 1) * stationWidth - 0.25;
+    if (inStation) offset = clamp(offset, low, high);
+    catalogLit = catalog ? selected : -1;
     // Scroll during a glide, as right after a catalog step, moves the glide's
     // target; the marker keeps gliding instead of stopping short of it.
     const retarget = catalog && !duration && travel !== undefined && markerGlide !== null;
@@ -1292,8 +1316,8 @@
       // A barely overflowing row can cover its whole reading range in a few
       // pixels. During scroll, let the marker use only this frame's travel.
       offset = clamp(offset, from + Math.min(0, travel), from + Math.max(0, travel));
-      coordinate = offset / stationWidth;
     }
+    if (catalog && stationWidth > 0) coordinate = offset / stationWidth;
     const percent = (catalog ? offset / Math.max(1, progressTrackWidth) : selected / (chapters.length - 1)) * 100;
     setStyle(progressNav, '--chapter-active-index', String(selected));
     setStyle(progressNav, '--chapter-position', (coordinate - 0.5).toFixed(5));
@@ -1396,7 +1420,7 @@
       if (verticalMode) window.dispatchEvent(new CustomEvent('site:catalog-layout'));
       else if (available()) measure();
     },
-    measureCatalogDock, animateCatalogPose, setCatalogRuler, finishCatalogRuler,
+    measureCatalogDock, animateCatalogPose, setCatalogRuler, settleCatalogRuler, finishCatalogRuler,
   };
 
   function hoverRail(event) {
